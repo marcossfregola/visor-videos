@@ -1,6 +1,11 @@
 import os
 
-from escanear_videos import escanear_videos, listar_videos, obtener_datos_ffprobe
+from escanear_videos import (
+    escanear_videos,
+    guardar_video,
+    listar_videos,
+    obtener_datos_ffprobe,
+)
 from rutas import ruta_carpeta_videos
 from tareas import TareaBase
 
@@ -75,3 +80,28 @@ class TareaLecturaCatalogo(TareaBase):
 
     def _trabajo(self):
         return listar_videos(self._ruta_db)
+
+
+class TareaGuardarVideo(TareaBase):
+    def __init__(self, datos, ruta_db=None, parent=None):
+        super().__init__(parent)
+        try:
+            self._datos = dict(datos)
+            self._datos_invalidos = None
+        except (TypeError, ValueError) as exc:
+            self._datos = None
+            self._datos_invalidos = exc
+        self._ruta_db = ruta_db
+
+    @property
+    def datos(self):
+        return dict(self._datos) if isinstance(self._datos, dict) else self._datos
+
+    @property
+    def ruta_db(self):
+        return self._ruta_db
+
+    def _trabajo(self):
+        if self._datos_invalidos is not None:
+            raise TypeError(f"datos inválidos: {self._datos_invalidos}")
+        return guardar_video(self._datos, self._ruta_db)

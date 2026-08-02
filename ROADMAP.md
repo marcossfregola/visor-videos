@@ -14,10 +14,15 @@ arquitectónicas.
 -   Escaneo asíncrono — **completado** (`TareaEscaneo`).
 -   Lectura asíncrona del catálogo SQLite — **completado**
     (`TareaLecturaCatalogo`).
+-   Escritura individual asíncrona — **completado** (`TareaGuardarVideo`).
 
-1.  Escritura/sincronización SQLite asíncrona.
-2.  Encadenamiento progresivo del pipeline.
-3.  Actualización asíncrona de la interfaz.
+1.  Sincronización SQLite asíncrona — **pendiente** (solo existe
+    escritura individual; la sincronización completa del catálogo y la
+    escritura masiva no están implementadas).
+2.  Encadenamiento progresivo del pipeline — **pendiente** (el pipeline
+    Escaneo → SQLite aún no está encadenado).
+3.  Actualización asíncrona de la interfaz — **pendiente** (la interfaz
+    no consume las tareas asíncronas).
 4.  FFmpeg en segundo plano.
 5.  Generación de múltiples miniaturas por video.
 

@@ -203,6 +203,52 @@ def listar_videos(ruta_db=None):
     finally:
         conn.close()
 
+def guardar_video(datos, ruta_db=None):
+    if not isinstance(datos, dict):
+        raise TypeError("datos debe ser un diccionario")
+    for clave in ("nombre", "ruta", "extension", "fecha_importacion"):
+        if clave not in datos:
+            raise ValueError(f"falta la clave obligatoria: {clave}")
+    if ruta_db is None:
+        ruta_db = ruta_biblioteca()
+    if not os.path.isfile(ruta_db):
+        raise FileNotFoundError(f"Base de datos no encontrada: {ruta_db}")
+    conn = sqlite3.connect(ruta_db)
+    try:
+        conn.execute(
+            """
+            INSERT INTO videos (nombre, ruta, extension, fecha_importacion, duracion_segundos, ancho, alto, codec_video, cantidad_miniaturas)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(nombre) DO UPDATE SET
+                ruta = excluded.ruta,
+                extension = excluded.extension,
+                fecha_importacion = excluded.fecha_importacion,
+                duracion_segundos = excluded.duracion_segundos,
+                ancho = excluded.ancho,
+                alto = excluded.alto,
+                codec_video = excluded.codec_video,
+                cantidad_miniaturas = excluded.cantidad_miniaturas
+            """,
+            (
+                datos["nombre"],
+                datos["ruta"],
+                datos["extension"],
+                datos["fecha_importacion"],
+                datos.get("duracion_segundos"),
+                datos.get("ancho"),
+                datos.get("alto"),
+                datos.get("codec_video"),
+                datos.get("cantidad_miniaturas"),
+            ),
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    return {"guardado": True, "nombre": datos["nombre"]}
+
 def main():
     conn = conectar_bd()
     sincronizar_bd(conn, ruta_carpeta_videos())
