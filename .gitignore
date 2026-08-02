@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+
+# Archivos temporales del sistema
+Thumbs.db
+Desktop.ini
+.DS_Store
+*.tmp
+*~
+
+# Archivos temporales del editor
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# Base de datos derivada (regenerable con: python escanear_videos.py)
+biblioteca.db
+
+# Miniaturas derivadas de los videos
+miniaturas/
+
+# Salida del script de prueba main.py
+datos.txt
