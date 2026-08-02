@@ -1,16 +1,19 @@
 import os
 import sys
+import tempfile
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QApplication,
+    QFileDialog,
     QFrame,
     QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QMainWindow,
+    QPushButton,
     QScrollArea,
     QVBoxLayout,
     QWidget,
@@ -27,6 +30,8 @@ TAMANIO_PAGINA_INICIAL = 100
 
 MENSAJE_CARGANDO = "Cargando catálogo…"
 MENSAJE_ERROR = "No se pudo cargar el catálogo"
+MENSAJE_SIN_CARPETA = "Ninguna carpeta seleccionada"
+MENSAJE_RUTA_INVALIDA = "La ruta no es válida o no es una carpeta"
 
 
 def formatear_valor(valor):
@@ -106,6 +111,7 @@ class VisorVideos(QMainWindow):
         self._ruta_db = ruta_db
         self._carga_completada = False
         self.tarea_lectura = None
+        self.carpeta_seleccionada = None
 
         self.busqueda = QLineEdit()
         self.busqueda.setPlaceholderText("Buscar por nombre...")
@@ -113,6 +119,20 @@ class VisorVideos(QMainWindow):
 
         self.contador = QLabel()
         self.estado_carga = QLabel(MENSAJE_CARGANDO)
+
+        self.boton_seleccionar_carpeta = QPushButton("Seleccionar carpeta")
+        self.boton_seleccionar_carpeta.clicked.connect(self.seleccionar_carpeta)
+
+        self.etiqueta_carpeta = QLabel(MENSAJE_SIN_CARPETA)
+        self.etiqueta_carpeta.setTextInteractionFlags(Qt.TextSelectableByMouse)
+
+        self.mensaje_carpeta = QLabel()
+        self.mensaje_carpeta.setStyleSheet("color: #b00020;")
+
+        fila_carpeta = QHBoxLayout()
+        fila_carpeta.addWidget(self.boton_seleccionar_carpeta)
+        fila_carpeta.addWidget(self.etiqueta_carpeta, 1)
+        fila_carpeta.addWidget(self.mensaje_carpeta)
 
         barra = QHBoxLayout()
         barra.addWidget(self.busqueda, 1)
@@ -131,6 +151,7 @@ class VisorVideos(QMainWindow):
 
         raiz = QWidget()
         layout = QVBoxLayout(raiz)
+        layout.addLayout(fila_carpeta)
         layout.addLayout(barra)
         layout.addWidget(self.area)
         self.setCentralWidget(raiz)
@@ -145,6 +166,20 @@ class VisorVideos(QMainWindow):
             TAMANIO_PAGINA_INICIAL, 0, None, self._ruta_db
         )
         self.gestor.iniciar(self.tarea_lectura)
+
+    def seleccionar_carpeta(self):
+        ruta = QFileDialog.getExistingDirectory(
+            self, "Seleccionar carpeta de videos", ""
+        )
+        if not ruta:
+            return
+        ruta_absoluta = os.path.abspath(ruta)
+        if not os.path.isdir(ruta_absoluta):
+            self.mensaje_carpeta.setText(MENSAJE_RUTA_INVALIDA)
+            return
+        self.carpeta_seleccionada = ruta_absoluta
+        self.etiqueta_carpeta.setText(ruta_absoluta)
+        self.mensaje_carpeta.clear()
 
     def _al_resultado(self, resultado):
         if self._carga_completada:
@@ -197,31 +232,51 @@ def main():
     ventana.resize(720, 540)
     ventana.show()
 
+    print(f"carpeta_inicio={ventana.carpeta_seleccionada}")
+    print(f"etiqueta_inicio={ventana.etiqueta_carpeta.text()}")
     print(f"visibles_inicio={ventana.tarjetas_visibles()}")
     print(f"estado_inicio={ventana.estado_carga.text()}")
 
-    intentos = {"valor": 0}
+    original_dialogo = QFileDialog.getExistingDirectory
+    temp_carpeta = tempfile.TemporaryDirectory()
+    try:
+        QFileDialog.getExistingDirectory = (
+            lambda *args, **kwargs: temp_carpeta.name
+        )
+        ventana.seleccionar_carpeta()
+        print(f"carpeta_seleccion={ventana.carpeta_seleccionada}")
+        print(f"etiqueta_seleccion={ventana.etiqueta_carpeta.text()}")
 
-    def comprobar_carga():
-        if not ventana._carga_completada and intentos["valor"] < 100:
-            intentos["valor"] += 1
-            QTimer.singleShot(100, comprobar_carga)
-            return
-        print(f"visibles_cargados={ventana.tarjetas_visibles()}")
-        print(f"contador_cargado={ventana.contador.text()}")
-        ventana.busqueda.setText("real")
+        QFileDialog.getExistingDirectory = lambda *args, **kwargs: ""
+        ventana.seleccionar_carpeta()
+        print(f"carpeta_tras_cancelar={ventana.carpeta_seleccionada}")
+        print(f"etiqueta_tras_cancelar={ventana.etiqueta_carpeta.text()}")
 
-        def verificar_y_cerrar():
-            visibles = ventana.tarjetas_visibles()
-            print(f"visibles_filtro={visibles}")
-            print(f"contador_final={ventana.contador.text()}")
-            ventana.close()
-            app.quit()
+        intentos = {"valor": 0}
 
-        QTimer.singleShot(1500, verificar_y_cerrar)
+        def comprobar_carga():
+            if not ventana._carga_completada and intentos["valor"] < 100:
+                intentos["valor"] += 1
+                QTimer.singleShot(100, comprobar_carga)
+                return
+            print(f"visibles_cargados={ventana.tarjetas_visibles()}")
+            print(f"contador_cargado={ventana.contador.text()}")
+            ventana.busqueda.setText("real")
 
-    QTimer.singleShot(200, comprobar_carga)
-    codigo = app.exec()
+            def verificar_y_cerrar():
+                visibles = ventana.tarjetas_visibles()
+                print(f"visibles_filtro={visibles}")
+                print(f"contador_final={ventana.contador.text()}")
+                ventana.close()
+                app.quit()
+
+            QTimer.singleShot(1500, verificar_y_cerrar)
+
+        QTimer.singleShot(200, comprobar_carga)
+        codigo = app.exec()
+    finally:
+        QFileDialog.getExistingDirectory = original_dialogo
+        temp_carpeta.cleanup()
     sys.exit(codigo)
 
 

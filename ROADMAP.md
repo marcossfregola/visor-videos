@@ -27,21 +27,33 @@ arquitectónicas.
 -   Escritura de colección asíncrona — **completado**
     (`TareaGuardarVideos`): persiste colecciones de registros preparados
     en una única transacción atómica.
+-   Selección de carpeta desde la interfaz — **completado**
+    (`visor_videos.py`): el usuario elige la carpeta de videos con
+    `QFileDialog`; la ruta se normaliza a absoluta, se valida que exista
+    y sea un directorio, se muestra y se conserva durante la sesión sin
+    escanearla.
 
-1.  Selección de carpeta — **pendiente** (permitir elegir la carpeta de
-    videos desde la interfaz; la carga inicial asíncrona de la primera
-    página del catálogo ya está integrada).
-2.  Sincronización Escaneo → SQLite — **pendiente** (solo existe la
+1.  Opción de incluir o excluir subcarpetas — **pendiente** (configurar
+    si el escaneo de la carpeta elegida recorre las subcarpetas).
+2.  Escaneo real de la carpeta seleccionada — **pendiente** (conectar la
+    carpeta elegida en la interfaz con `TareaEscaneo` y mostrar el
+    resultado del escaneo).
+3.  Sincronización Escaneo → SQLite — **pendiente** (solo existe la
     escritura de colecciones preparadas con upsert; la sincronización
     completa del catálogo —detección de archivos, FFprobe y eliminación
     de registros ausentes— y la escritura masiva no están implementadas).
-3.  Generación asíncrona de miniaturas — **pendiente** (FFmpeg en
+4.  FFprobe — **pendiente** (integrar la ejecución de FFprobe en el
+    pipeline Escaneo → SQLite para completar los metadatos).
+5.  Generación asíncrona de miniaturas — **pendiente** (FFmpeg en
     segundo plano).
-4.  Actualización dinámica de tarjetas — **pendiente** (refrescar la
+6.  Actualización dinámica de tarjetas — **pendiente** (refrescar la
     grilla a medida que se sincroniza el catálogo).
-5.  Progreso — **pendiente** (barra de progreso y estado de las tareas
+7.  Progreso — **pendiente** (barra de progreso y estado de las tareas
     en curso).
-6.  Beta funcional — **pendiente** (aplicación utilizable de punta a
+8.  Persistencia de configuración — **pendiente** (recordar entre
+    sesiones la carpeta seleccionada y las preferencias; hoy la
+    selección vive solo en la sesión).
+9.  Beta funcional — **pendiente** (aplicación utilizable de punta a
     punta con las funcionalidades anteriores integradas).
 
 ------------------------------------------------------------------------
