@@ -111,13 +111,32 @@ def generar_miniatura(ruta_video, ruta_miniatura):
     except (OSError, subprocess.SubprocessError):
         return False
 
+def siguiente_indice_libre(video):
+    indice = 1
+    while os.path.isfile(ruta_miniatura(video, indice)):
+        indice += 1
+    return indice
+
+def miniatura_reutilizable(video, ruta_video):
+    prefijo = os.path.splitext(video)[0]
+    if not os.path.isdir(CARPETA_MINIATURAS):
+        return None
+    for nombre in sorted(os.listdir(CARPETA_MINIATURAS)):
+        if os.path.splitext(nombre)[0].startswith(prefijo):
+            ruta = os.path.join(CARPETA_MINIATURAS, nombre)
+            if miniatura_vigente(ruta_video, ruta):
+                return ruta
+    return None
+
 def asegurar_miniatura(video, ruta_video):
     if not ffmpeg_disponible() or os.path.getsize(ruta_video) == 0:
         return 0
-    os.makedirs(CARPETA_MINIATURAS, exist_ok=True)
-    ruta = ruta_miniatura(video)
-    if miniatura_vigente(ruta_video, ruta):
+    if miniatura_reutilizable(video, ruta_video) is not None:
         return 1
+    os.makedirs(CARPETA_MINIATURAS, exist_ok=True)
+    ruta = ruta_miniatura(video, siguiente_indice_libre(video))
+    if os.path.isfile(ruta):
+        return 0
     return 1 if generar_miniatura(ruta_video, ruta) else 0
 
 def contar_miniaturas(video):
