@@ -3,6 +3,7 @@ import os
 from escanear_videos import (
     escanear_videos,
     guardar_video,
+    guardar_videos,
     listar_videos,
     obtener_datos_ffprobe,
 )
@@ -105,3 +106,30 @@ class TareaGuardarVideo(TareaBase):
         if self._datos_invalidos is not None:
             raise TypeError(f"datos inválidos: {self._datos_invalidos}")
         return guardar_video(self._datos, self._ruta_db)
+
+
+class TareaGuardarVideos(TareaBase):
+    def __init__(self, datos_videos, ruta_db=None, parent=None):
+        super().__init__(parent)
+        try:
+            if isinstance(datos_videos, (str, bytes, bytearray)):
+                raise TypeError("datos_videos debe ser una colección, no texto")
+            self._datos = [dict(d) for d in list(datos_videos)]
+            self._datos_invalidos = None
+        except Exception as exc:
+            self._datos = []
+            self._datos_invalidos = exc
+        self._ruta_db = ruta_db
+
+    @property
+    def datos(self):
+        return [dict(d) for d in self._datos]
+
+    @property
+    def ruta_db(self):
+        return self._ruta_db
+
+    def _trabajo(self):
+        if self._datos_invalidos is not None:
+            raise TypeError(f"colección inválida: {self._datos_invalidos}")
+        return guardar_videos(self._datos, self._ruta_db)

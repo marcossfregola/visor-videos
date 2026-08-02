@@ -203,44 +203,52 @@ def listar_videos(ruta_db=None):
     finally:
         conn.close()
 
-def guardar_video(datos, ruta_db=None):
+def _validar_registro_video(datos):
     if not isinstance(datos, dict):
         raise TypeError("datos debe ser un diccionario")
     for clave in ("nombre", "ruta", "extension", "fecha_importacion"):
         if clave not in datos:
             raise ValueError(f"falta la clave obligatoria: {clave}")
+
+
+def _upsert_video(conn, datos):
+    conn.execute(
+        """
+        INSERT INTO videos (nombre, ruta, extension, fecha_importacion, duracion_segundos, ancho, alto, codec_video, cantidad_miniaturas)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(nombre) DO UPDATE SET
+            ruta = excluded.ruta,
+            extension = excluded.extension,
+            fecha_importacion = excluded.fecha_importacion,
+            duracion_segundos = excluded.duracion_segundos,
+            ancho = excluded.ancho,
+            alto = excluded.alto,
+            codec_video = excluded.codec_video,
+            cantidad_miniaturas = excluded.cantidad_miniaturas
+        """,
+        (
+            datos["nombre"],
+            datos["ruta"],
+            datos["extension"],
+            datos["fecha_importacion"],
+            datos.get("duracion_segundos"),
+            datos.get("ancho"),
+            datos.get("alto"),
+            datos.get("codec_video"),
+            datos.get("cantidad_miniaturas"),
+        ),
+    )
+
+
+def guardar_video(datos, ruta_db=None):
+    _validar_registro_video(datos)
     if ruta_db is None:
         ruta_db = ruta_biblioteca()
     if not os.path.isfile(ruta_db):
         raise FileNotFoundError(f"Base de datos no encontrada: {ruta_db}")
     conn = sqlite3.connect(ruta_db)
     try:
-        conn.execute(
-            """
-            INSERT INTO videos (nombre, ruta, extension, fecha_importacion, duracion_segundos, ancho, alto, codec_video, cantidad_miniaturas)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(nombre) DO UPDATE SET
-                ruta = excluded.ruta,
-                extension = excluded.extension,
-                fecha_importacion = excluded.fecha_importacion,
-                duracion_segundos = excluded.duracion_segundos,
-                ancho = excluded.ancho,
-                alto = excluded.alto,
-                codec_video = excluded.codec_video,
-                cantidad_miniaturas = excluded.cantidad_miniaturas
-            """,
-            (
-                datos["nombre"],
-                datos["ruta"],
-                datos["extension"],
-                datos["fecha_importacion"],
-                datos.get("duracion_segundos"),
-                datos.get("ancho"),
-                datos.get("alto"),
-                datos.get("codec_video"),
-                datos.get("cantidad_miniaturas"),
-            ),
-        )
+        _upsert_video(conn, datos)
         conn.commit()
     except Exception:
         conn.rollback()
@@ -248,6 +256,34 @@ def guardar_video(datos, ruta_db=None):
     finally:
         conn.close()
     return {"guardado": True, "nombre": datos["nombre"]}
+
+
+def guardar_videos(datos_videos, ruta_db=None):
+    if isinstance(datos_videos, (str, bytes, bytearray)):
+        raise TypeError("datos_videos debe ser una colección, no texto")
+    try:
+        iterable = list(datos_videos)
+    except TypeError:
+        raise TypeError("datos_videos debe ser una colección iterable") from None
+    registros = []
+    for datos in iterable:
+        _validar_registro_video(datos)
+        registros.append(dict(datos))
+    if ruta_db is None:
+        ruta_db = ruta_biblioteca()
+    if not os.path.isfile(ruta_db):
+        raise FileNotFoundError(f"Base de datos no encontrada: {ruta_db}")
+    conn = sqlite3.connect(ruta_db)
+    try:
+        for datos in registros:
+            _upsert_video(conn, datos)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    return {"guardados": len(registros), "nombres": [d["nombre"] for d in registros]}
 
 def main():
     conn = conectar_bd()

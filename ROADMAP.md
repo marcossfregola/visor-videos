@@ -15,10 +15,14 @@ arquitectónicas.
 -   Lectura asíncrona del catálogo SQLite — **completado**
     (`TareaLecturaCatalogo`).
 -   Escritura individual asíncrona — **completado** (`TareaGuardarVideo`).
+-   Escritura de colección asíncrona — **completado**
+    (`TareaGuardarVideos`): persiste colecciones de registros preparados
+    en una única transacción atómica.
 
-1.  Sincronización SQLite asíncrona — **pendiente** (solo existe
-    escritura individual; la sincronización completa del catálogo y la
-    escritura masiva no están implementadas).
+1.  Sincronización SQLite asíncrona — **pendiente** (solo existe la
+    escritura de colecciones preparadas con upsert; la sincronización
+    completa del catálogo —detección de archivos, FFprobe y eliminación
+    de registros ausentes— y la escritura masiva no están implementadas).
 2.  Encadenamiento progresivo del pipeline — **pendiente** (el pipeline
     Escaneo → SQLite aún no está encadenado).
 3.  Actualización asíncrona de la interfaz — **pendiente** (la interfaz
