@@ -4,9 +4,9 @@ import sqlite3
 import subprocess
 from datetime import datetime
 
-NOMBRE_DB = "biblioteca.db"
+from rutas import ruta_biblioteca, ruta_carpeta_miniaturas, ruta_carpeta_videos
+
 EXTENSIONES = {".mp4", ".mkv", ".avi"}
-CARPETA_MINIATURAS = "miniaturas"
 EXTENSION_MINIATURA = ".jpg"
 COLUMNAS_EXTRA = [
     ("duracion_segundos", "REAL"),
@@ -23,7 +23,7 @@ def escanear_videos(carpeta):
     )
 
 def conectar_bd():
-    conn = sqlite3.connect(NOMBRE_DB)
+    conn = sqlite3.connect(ruta_biblioteca())
     conn.execute("""
         CREATE TABLE IF NOT EXISTS videos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -77,7 +77,7 @@ def ffmpeg_disponible():
 def ruta_miniatura(video, indice=1):
     prefijo = os.path.splitext(video)[0]
     return os.path.join(
-        CARPETA_MINIATURAS,
+        ruta_carpeta_miniaturas(),
         f"{prefijo}_{indice:02d}{EXTENSION_MINIATURA}",
     )
 
@@ -119,11 +119,12 @@ def siguiente_indice_libre(video):
 
 def miniatura_reutilizable(video, ruta_video):
     prefijo = os.path.splitext(video)[0]
-    if not os.path.isdir(CARPETA_MINIATURAS):
+    carpeta = ruta_carpeta_miniaturas()
+    if not os.path.isdir(carpeta):
         return None
-    for nombre in sorted(os.listdir(CARPETA_MINIATURAS)):
+    for nombre in sorted(os.listdir(carpeta)):
         if os.path.splitext(nombre)[0].startswith(prefijo):
-            ruta = os.path.join(CARPETA_MINIATURAS, nombre)
+            ruta = os.path.join(carpeta, nombre)
             if miniatura_vigente(ruta_video, ruta):
                 return ruta
     return None
@@ -133,7 +134,7 @@ def asegurar_miniatura(video, ruta_video):
         return 0
     if miniatura_reutilizable(video, ruta_video) is not None:
         return 1
-    os.makedirs(CARPETA_MINIATURAS, exist_ok=True)
+    os.makedirs(ruta_carpeta_miniaturas(), exist_ok=True)
     ruta = ruta_miniatura(video, siguiente_indice_libre(video))
     if os.path.isfile(ruta):
         return 0
@@ -141,10 +142,11 @@ def asegurar_miniatura(video, ruta_video):
 
 def contar_miniaturas(video):
     prefijo = os.path.splitext(video)[0]
-    if not os.path.isdir("miniaturas"):
+    carpeta = ruta_carpeta_miniaturas()
+    if not os.path.isdir(carpeta):
         return 0
     return sum(
-        1 for nombre in os.listdir("miniaturas")
+        1 for nombre in os.listdir(carpeta)
         if os.path.splitext(nombre)[0].startswith(prefijo)
     )
 
@@ -185,7 +187,7 @@ def sincronizar_bd(conn, carpeta):
         conn.execute("DELETE FROM videos WHERE nombre = ?", (nombre,))
 
 def listar_videos():
-    conn = sqlite3.connect(NOMBRE_DB)
+    conn = sqlite3.connect(ruta_biblioteca())
     try:
         return conn.execute(
             """
@@ -199,7 +201,7 @@ def listar_videos():
 
 def main():
     conn = conectar_bd()
-    sincronizar_bd(conn, "videos_prueba")
+    sincronizar_bd(conn, ruta_carpeta_videos())
     conn.commit()
     conn.close()
 

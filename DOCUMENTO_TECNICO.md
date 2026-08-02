@@ -15,6 +15,7 @@ prueba/
 ├── operaciones.py         Helper trivial de prueba (ajeno al visor)
 ├── prueba_agente.py       Artifacto de prueba (ajeno al visor)
 ├── escanear_videos.py     CLI / backend: escaneo + SQLite + FFprobe
+├── rutas.py               Resolución centralizada de rutas del proyecto (independiente del CWD)
 ├── visor_videos.py        Interfaz gráfica (PySide6) + smoke test automático
 ├── DOCUMENTO_TECNICO.md   Este documento
 ├── miniaturas/            Imágenes de miniatura (JPG, generadas automáticamente)
@@ -56,7 +57,17 @@ prueba/
 - `contar_miniaturas(video)` — cuenta miniaturas existentes en `miniaturas/` cuyo nombre empieza con el prefijo del video.
 - `insertar_video`, `actualizar_datos`, `sincronizar_bd` — lógica de sincronización disco ↔ BD: inserta nuevos, actualiza metadatos (incluida `cantidad_miniaturas` tras `asegurar_miniatura`), elimina de la BD los que ya no están en disco.
 - `listar_videos()` — **capa de lectura** que consume la interfaz: devuelve las filas del catálogo (nombre, duración, ancho, alto, codec, cantidad de miniaturas) ordenadas por nombre.
-- `main()` — CLI: sincroniza el catálogo contra `videos_prueba/`.
+- `main()` — CLI: sincroniza el catálogo contra `videos_prueba/` (ruta resuelta por `rutas.py`).
+
+### `rutas.py` — capa centralizada de resolución de rutas
+Único módulo responsable de derivar las rutas del proyecto a partir de su ubicación real (`os.path.dirname(os.path.abspath(__file__))`), sin depender del directorio de trabajo:
+
+- `ruta_raiz()` — directorio raíz del proyecto.
+- `ruta_biblioteca()` — ruta de `biblioteca.db`.
+- `ruta_carpeta_miniaturas()` — ruta de `miniaturas/`.
+- `ruta_carpeta_videos()` — ruta de `videos_prueba/`.
+
+Diseñado como punto único de extensión para futuras rutas de configuración; no constituye todavía un módulo de configuración completo.
 
 ### `visor_videos.py` — interfaz gráfica
 - `VisorVideos(QMainWindow)` — ventana principal: barra de búsqueda, contador, grilla de tarjetas dentro de un `QScrollArea`.
@@ -83,7 +94,7 @@ prueba/
 | FFmpeg | `escanear_videos.generar_miniatura` | Extrae un fotograma del video; genera la miniatura automáticamente. |
 | Generación de miniaturas | `escanear_videos.asegurar_miniatura` | Genera o reutiliza; escribe solo en la siguiente ranura libre y preserva los archivos existentes. |
 | Caché | — | **No existe** un módulo de caché; la BD cumple parcialmente ese rol para metadatos. |
-| Configuración | — | **No existe**; constantes y rutas fijas en código. |
+| Configuración | `rutas.py` | Resolución de rutas del proyecto (raíz, BD, miniaturas, videos) centralizada e independiente del CWD. Aún no hay módulo de configuración completo. |
 | Trabajos en segundo plano | — | **Ausente**; FFprobe se ejecuta en el hilo principal y bloquea. |
 
 ## 5. Flujo de ejecución (apertura → tarjetas)
@@ -128,14 +139,14 @@ Durante un escaneo se genera **como máximo una miniatura nueva por video**, y �
 3. **Módulo de configuración** — centralizar rutas (`videos_prueba`, `miniaturas`, `biblioteca.db`), extensiones, tamaños de tarjeta y número de columnas.
 4. **Caché de miniaturas/metadatos** — formalizar la BD como caché de metadatos y evitar re-escaneos.
 5. **Lectura/vistas del catálogo** — sobre `listar_videos()`, agregar orden/agrupación/filtros adicionales sin tocar la UI.
-6. **Autenticación de rutas absolutas** — resolver `miniaturas/` y `videos_prueba/` respecto de la ubicación del módulo para independizar del directorio de trabajo.
+6. **Autenticación de rutas absolutas** — **implementada** en `rutas.py`: `biblioteca.db`, `miniaturas/` y `videos_prueba/` se resuelven desde la ubicación real del módulo, independientemente del directorio de trabajo.
 
 ## 8. Problemas detectados
 
 | # | Severidad | Problema |
 | --- | --- | --- |
 | 1 | Media | La interfaz (`visor_videos.py`) accedía a SQLite directamente y duplicaba el nombre de BD (`"biblioteca.db"`). **Corregido** en esta etapa. |
-| 2 | Media | Rutas relativas (`miniaturas/`, `videos_prueba/`, `biblioteca.db`) dependen del directorio de trabajo; la app falla si se lanza desde otra ubicación. Pendiente. |
+| 2 | Media | Rutas relativas (`miniaturas/`, `videos_prueba/`, `biblioteca.db`) dependían del directorio de trabajo; la app fallaba si se lanzaba desde otra ubicación. **Resuelto** (ver §9, etapa de rutas). |
 | 3 | Media | No existía generación de miniaturas; solo conteo. **Resuelto** (ver §6). |
 | 4 | Media | FFprobe se ejecuta en el hilo principal con timeout de 30 s por video; el escaneo bloquea. Pendiente. |
 | 5 | Baja | `contar_miniaturas`/`miniatura_principal` usan coincidencia por prefijo (`startswith`); un video `video_real.mp4` podría matchear miniaturas de un hipotético `video_realista.mp4`. Pendiente. |
@@ -167,9 +178,21 @@ Mínimos y justificados (etapa de congelamiento, sin funcionalidad nueva):
   - Nuevas funciones `ffmpeg_disponible`, `ruta_miniatura`, `calcular_tiempo_miniatura`, `miniatura_vigente`, `generar_miniatura`, `siguiente_indice_libre`, `miniatura_reutilizable`, `asegurar_miniatura`.
   - `sincronizar_bd()` invoca `asegurar_miniatura` para cada video antes de `actualizar_datos` (reutiliza si existe una miniatura válida; si no, escribe en la siguiente ranura libre, sin sobrescribir ni eliminar).
 
+### Etapa de rutas independientes del directorio de trabajo
+
+- `rutas.py` (nuevo)
+  - Capa centralizada de resolución de rutas: `ruta_raiz()`, `ruta_biblioteca()`, `ruta_carpeta_miniaturas()`, `ruta_carpeta_videos()`.
+  - La raíz se ancla en `os.path.dirname(os.path.abspath(__file__))`, por lo que el proyecto funciona sin importar desde dónde se ejecute Python.
+- `escanear_videos.py`
+  - Eliminadas las constantes relativas `NOMBRE_DB` y `CARPETA_MINIATURAS`.
+  - `conectar_bd()`, `listar_videos()`, `ruta_miniatura()`, `miniatura_reutilizable()`, `asegurar_miniatura()`, `contar_miniaturas()` y `main()` resuelven `biblioteca.db`, `miniaturas/` y `videos_prueba/` a través de `rutas.py`.
+  - No se modificaron SQLite, el escaneo ni el algoritmo de miniaturas.
+- `visor_videos.py`
+  - `miniatura_principal()` resuelve `miniaturas/` a través de `rutas.py`. Sin cambios de interfaz.
+
 ## 10. Recomendaciones priorizadas
 
-1. **Alta — Configurar rutas absolutas** (`escanear_videos.py`, `visor_videos.py`): resolver `miniaturas/`, `videos_prueba/` y `biblioteca.db` a partir de `os.path.dirname(__file__)` o un módulo de configuración.
+1. **Alta — Configurar rutas absolutas** (`escanear_videos.py`, `visor_videos.py`): resolver `miniaturas/`, `videos_prueba/` y `biblioteca.db` a partir de `os.path.dirname(__file__)` o un módulo de configuración. **Resuelto** — implementado en `rutas.py` (capa de rutas; sin módulo de configuración completo todavía).
 2. **Alta — Limpieza controlada de miniaturas obsoletas**: definir una política segura para archivar o eliminar versiones antiguas y evitar el crecimiento acumulativo de ranuras `_NN`. **Ninguna eliminación, sobrescritura, movimiento o archivado automático puede implementarse sin: una política segura previamente definida, autorización expresa y verificación de que no se perderán datos necesarios.** (La generación con FFmpeg ya está implementada.)
 3. **Media — Trabajos en segundo plano**: mover FFprobe/FFmpeg fuera del hilo principal (hilos o `QThread`), con barras de progreso.
 4. **Media — Módulo de configuración** centralizado (rutas, extensiones, dimensiones, columnas).
@@ -189,9 +212,16 @@ Mínimos y justificados (etapa de congelamiento, sin funcionalidad nueva):
 | Reutilización (etapa posterior) | `python escanear_videos.py` (2.º escaneo) | Miniatura válida reutilizada; sin archivos nuevos ni modificados. |
 | Regeneración (etapa posterior) | `python escanear_videos.py` (video con `mtime` posterior) | Se crea una ranura nueva (`_02`) sin sobrescribir `_01`; `cantidad_miniaturas` = 2. |
 | Smoke test GUI (etapa posterior) | `python visor_videos.py` | Salida idéntica a la línea base (`4 videos` → filtro `real` → `1 video`), exit 0 — **sin regresiones** |
+| Compilación (etapa de rutas) | `python -m py_compile rutas.py escanear_videos.py visor_videos.py` | OK (exit 0) |
+| Sincronización (etapa de rutas, CWD = proyecto) | `python escanear_videos.py` | OK (exit 0); miniaturas reutilizadas, sin archivos nuevos |
+| Regeneración (etapa de rutas) | escaneo con `mtime` del video posterior | Se creó `video_real_03.jpg` en la ranura siguiente; `_01` y `_02` preservados; `cantidad_miniaturas` = 3 |
+| Smoke test GUI (etapa de rutas, CWD = proyecto) | `python visor_videos.py` | `4 videos` → filtro `real` → `1 video`, exit 0 — **sin regresiones** |
+| Escaneo desde directorio ajeno al proyecto | `python C:\prueba\escanear_videos.py` (CWD = `%TEMP%\opencode`) | OK (exit 0); `biblioteca.db` y `miniaturas/` actualizados en `C:\prueba`; no se crearon archivos en el CWD |
+| Interfaz desde directorio ajeno al proyecto | `python C:\prueba\visor_videos.py` (CWD = `%TEMP%\opencode`) | Salida idéntica (`4 videos` → `1 video`), exit 0 — rutas independientes del CWD |
 
 ## 12. Registro de cambios
 
 1. **Arquitectura congelada** — línea base aprobada (2026-08-02). Este documento quedó como referencia.
 2. **Incorporación de Git** — se añadió control de versiones al proyecto.
 3. **Primera generación de miniaturas con preservación de archivos** — se implementó la generación automática (como máximo una miniatura nueva por video por escaneo, solo si no existe ninguna vigente) con reutilización por `mtime`; las miniaturas existentes nunca se sobrescriben ni se eliminan automáticamente.
+4. **Rutas independientes del directorio de trabajo** — se creó `rutas.py` como capa centralizada de resolución de rutas y se reemplazaron los literales relativos (`biblioteca.db`, `miniaturas/`, `videos_prueba/`) en `escanear_videos.py` y `visor_videos.py`. La aplicación ahora funciona sin importar desde dónde se ejecute Python.

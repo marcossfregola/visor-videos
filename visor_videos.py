@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 )
 
 from escanear_videos import listar_videos
+from rutas import ruta_carpeta_miniaturas
 
 ANCHO_TARJETA = 320
 ALTO_TARJETA = 180
@@ -33,7 +34,7 @@ def formatear_valor(valor):
 
 def miniatura_principal(nombre):
     prefijo = os.path.splitext(nombre)[0]
-    carpeta = "miniaturas"
+    carpeta = ruta_carpeta_miniaturas()
     if os.path.isdir(carpeta):
         for archivo in sorted(os.listdir(carpeta)):
             if os.path.splitext(archivo)[0].startswith(prefijo):
