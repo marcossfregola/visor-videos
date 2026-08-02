@@ -5,6 +5,30 @@ Este documento es referencia para las próximas etapas de desarrollo.
 
 ---
 
+## Documentación del proyecto
+
+El proyecto se documenta con cuatro documentos que cumplen roles distintos y complementarios. En conjunto constituyen la fuente principal de contexto del proyecto.
+
+| Documento | Rol | Contenido y responsabilidad |
+| --- | --- | --- |
+| `DOCUMENTO_TECNICO.md` | Referencia técnica de la arquitectura | Describe la arquitectura: módulos, separación de responsabilidades, flujos, problemas detectados, cambios aplicados, verificación ejecutada y registro de cambios. Se actualiza cuando cambia la arquitectura o el comportamiento técnico (ver `REGLAS_PROYECTO.md`, §9). |
+| `REGLAS_PROYECTO.md` | Reglas permanentes de desarrollo | Define cómo se desarrolla el proyecto: metodología por etapas, inspección previa, alcance de los cambios, auditoría, flujo de commits, preservación de archivos, separación de arquitectura, evidencia y prioridades de calidad. Son permanentes y solo cambian con autorización expresa. |
+| `ESTADO_PROYECTO.md` | Estado actual del proyecto | Indica dónde está el proyecto: última etapa aprobada, último commit, arquitectura completada/en desarrollo, pendientes prioritarios, problemas abiertos y próxima etapa. Se actualiza al aprobar cada etapa. |
+| `ROADMAP.md` | Dirección de desarrollo | Reúne las funcionalidades previstas (prioridad inmediata, experiencia de usuario, calidad de miniaturas, organización, administración y futuro). No describe el estado actual sino la dirección; su orden puede cambiar según las decisiones arquitectónicas. |
+
+Para evitar duplicación de información, cada documento responde una pregunta distinta:
+
+- `REGLAS_PROYECTO.md` — **cómo** se desarrolla (proceso, permanente).
+- `ESTADO_PROYECTO.md` — **dónde estamos** (estado actual y próximos pasos).
+- `ROADMAP.md` — **hacia dónde vamos** (funcionalidades futuras, sin comprometer el estado actual).
+- `DOCUMENTO_TECNICO.md` — **qué es el sistema** (arquitectura y detalle técnico).
+
+La información de estado y de problemas abiertos vive en `ESTADO_PROYECTO.md` y `DOCUMENTO_TECNICO.md`; el detalle técnico de los problemas se remite a `DOCUMENTO_TECNICO.md` en lugar de repetirse. Las funcionalidades futuras no se describen como estado: solo pasan de `ROADMAP.md` al desarrollo cuando existe una etapa aprobada que las implemente.
+
+Al iniciar un nuevo hilo de desarrollo, estos documentos deben consultarse en conjunto y constituyen la fuente principal de contexto del proyecto.
+
+---
+
 ## 1. Árbol de directorios
 
 ```
