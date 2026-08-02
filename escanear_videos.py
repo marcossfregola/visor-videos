@@ -203,6 +203,60 @@ def listar_videos(ruta_db=None):
     finally:
         conn.close()
 
+
+def listar_videos_paginado(limite, desplazamiento=0, texto=None, ruta_db=None):
+    if isinstance(limite, bool) or not isinstance(limite, int):
+        raise TypeError("limite debe ser un entero")
+    if limite < 1:
+        raise ValueError("limite debe ser un entero positivo")
+    if isinstance(desplazamiento, bool) or not isinstance(desplazamiento, int):
+        raise TypeError("desplazamiento debe ser un entero")
+    if desplazamiento < 0:
+        raise ValueError("desplazamiento debe ser un entero mayor o igual que cero")
+    if texto is not None and not isinstance(texto, str):
+        raise TypeError("texto debe ser None o texto")
+    if ruta_db is None:
+        ruta_db = ruta_biblioteca()
+    if not os.path.isfile(ruta_db):
+        raise FileNotFoundError(f"Base de datos no encontrada: {ruta_db}")
+    conn = sqlite3.connect(ruta_db)
+    try:
+        if texto is None:
+            filas = conn.execute(
+                """
+                SELECT nombre, duracion_segundos, ancho, alto, codec_video, cantidad_miniaturas
+                FROM videos
+                ORDER BY nombre
+                LIMIT ? OFFSET ?
+                """,
+                (limite, desplazamiento),
+            ).fetchall()
+            total = conn.execute("SELECT COUNT(*) FROM videos").fetchone()[0]
+        else:
+            patron = f"%{texto}%"
+            filas = conn.execute(
+                """
+                SELECT nombre, duracion_segundos, ancho, alto, codec_video, cantidad_miniaturas
+                FROM videos
+                WHERE nombre LIKE ?
+                ORDER BY nombre
+                LIMIT ? OFFSET ?
+                """,
+                (patron, limite, desplazamiento),
+            ).fetchall()
+            total = conn.execute(
+                "SELECT COUNT(*) FROM videos WHERE nombre LIKE ?",
+                (patron,),
+            ).fetchone()[0]
+    finally:
+        conn.close()
+    return {
+        "videos": filas,
+        "total": total,
+        "limite": limite,
+        "desplazamiento": desplazamiento,
+    }
+
 def _validar_registro_video(datos):
     if not isinstance(datos, dict):
         raise TypeError("datos debe ser un diccionario")

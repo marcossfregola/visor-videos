@@ -5,6 +5,7 @@ from escanear_videos import (
     guardar_video,
     guardar_videos,
     listar_videos,
+    listar_videos_paginado,
     obtener_datos_ffprobe,
 )
 from rutas import ruta_carpeta_videos
@@ -81,6 +82,39 @@ class TareaLecturaCatalogo(TareaBase):
 
     def _trabajo(self):
         return listar_videos(self._ruta_db)
+
+
+class TareaLecturaCatalogoPaginada(TareaBase):
+    def __init__(self, limite, desplazamiento=0, texto=None, ruta_db=None, parent=None):
+        super().__init__(parent)
+        self._limite = limite
+        self._desplazamiento = desplazamiento
+        self._texto = texto
+        self._ruta_db = ruta_db
+
+    @property
+    def limite(self):
+        return self._limite
+
+    @property
+    def desplazamiento(self):
+        return self._desplazamiento
+
+    @property
+    def texto(self):
+        return self._texto
+
+    @property
+    def ruta_db(self):
+        return self._ruta_db
+
+    def _trabajo(self):
+        return listar_videos_paginado(
+            self._limite,
+            self._desplazamiento,
+            self._texto,
+            self._ruta_db,
+        )
 
 
 class TareaGuardarVideo(TareaBase):

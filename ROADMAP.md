@@ -14,6 +14,11 @@ arquitectónicas.
 -   Escaneo asíncrono — **completado** (`TareaEscaneo`).
 -   Lectura asíncrona del catálogo SQLite — **completado**
     (`TareaLecturaCatalogo`).
+-   Lectura paginada del catálogo SQLite — **completado**
+    (`listar_videos_paginado` / `TareaLecturaCatalogoPaginada`):
+    consulta paginada (`LIMIT`/`OFFSET`) y `COUNT` con el mismo filtro,
+    ambos en SQL, con búsqueda parcial por `LIKE` parametrizada; aún no
+    consumida por la interfaz.
 -   Escritura individual asíncrona — **completado** (`TareaGuardarVideo`).
 -   Escritura de colección asíncrona — **completado**
     (`TareaGuardarVideos`): persiste colecciones de registros preparados
@@ -26,7 +31,9 @@ arquitectónicas.
 2.  Encadenamiento progresivo del pipeline — **pendiente** (el pipeline
     Escaneo → SQLite aún no está encadenado).
 3.  Actualización asíncrona de la interfaz — **pendiente** (la interfaz
-    no consume las tareas asíncronas).
+    no consume las tareas asíncronas; la lectura paginada
+    `TareaLecturaCatalogoPaginada` está implementada pero aún no se
+    integra con la ventana).
 4.  FFmpeg en segundo plano.
 5.  Generación de múltiples miniaturas por video.
 

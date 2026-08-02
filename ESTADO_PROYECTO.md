@@ -7,13 +7,15 @@ grandes colecciones de videos mediante miniaturas representativas.
 
 **Estado actual:** Arquitectura base consolidada; escaneo asíncrono
 (`TareaEscaneo`), lectura asíncrona del catálogo SQLite
-(`TareaLecturaCatalogo`), escritura individual asíncrona
-(`TareaGuardarVideo`) y escritura de colección asíncrona
-(`TareaGuardarVideos`) aprobados; pendiente la integración funcional del
-pipeline asíncrono del catálogo (sincronización completa SQLite con
-detección de archivos y eliminación de registros ausentes; el pipeline
-Escaneo → SQLite aún no está encadenado y la interfaz no consume las
-tareas asíncronas).
+(`TareaLecturaCatalogo`), **lectura paginada del catálogo SQLite**
+(`TareaLecturaCatalogoPaginada` con `LIMIT`/`OFFSET`/`COUNT` en SQL),
+escritura individual asíncrona (`TareaGuardarVideo`) y escritura de
+colección asíncrona (`TareaGuardarVideos`) aprobados; pendiente la
+integración funcional del pipeline asíncrono del catálogo
+(sincronización completa SQLite con detección de archivos y eliminación
+de registros ausentes; el pipeline Escaneo → SQLite aún no está
+encadenado y la interfaz no consume las tareas asíncronas; la lectura
+paginada está implementada pero aún no se integra con la ventana).
 
 ## Último commit aprobado
 
@@ -37,14 +39,16 @@ escribe en este documento para evitar autorreferencias al commit).
 
 ## Última etapa aprobada
 
-Implementación de la escritura de colección transaccional asíncrona
-(`guardar_videos` en `escanear_videos.py` + `TareaGuardarVideos` en
-`tareas_videos.py`) sobre la infraestructura de trabajos en segundo
-plano, con pruebas automatizadas y reutilización de la capa de escritura
-transaccional existente. La escritura persiste colecciones de registros
-**ya preparados** en una única transacción; la sincronización completa
-del catálogo (detección de archivos, FFprobe y eliminación de registros
-ausentes) sigue pendiente.
+Implementación de la lectura paginada asíncrona del catálogo
+(`listar_videos_paginado` en `escanear_videos.py` +
+`TareaLecturaCatalogoPaginada` en `tareas_videos.py`): consulta paginada
+(`LIMIT`/`OFFSET`) y `COUNT` con el mismo filtro, ambos en SQL, orden
+determinista por `nombre` y búsqueda parcial por `LIKE` parametrizada
+(sin interpolación del texto), preparada para catálogos de decenas de
+miles de registros sin cargar toda la tabla en memoria. Aprobada con
+observaciones resueltas. La operación **no se conecta todavía con la
+interfaz**; la integración de la primera carga asíncrona paginada en
+`visor_videos.py` queda para la próxima etapa.
 
 ## Estado de la arquitectura
 
@@ -60,6 +64,7 @@ ausentes) sigue pendiente.
 -   Procesamiento asíncrono de FFprobe.
 -   Escaneo asíncrono de videos.
 -   Lectura asíncrona del catálogo.
+-   Lectura paginada asíncrona del catálogo.
 -   Escritura individual asíncrona.
 -   Escritura de colección asíncrona.
 -   Pruebas automatizadas.
@@ -70,21 +75,24 @@ Integración funcional del pipeline asíncrono del catálogo (la
 sincronización completa del catálogo —detección de archivos, FFprobe y
 eliminación de registros ausentes— sigue pendiente; el pipeline
 Escaneo → SQLite aún no está encadenado y la interfaz no consume las
-tareas asíncronas).
+tareas asíncronas; la lectura paginada está implementada pero aún no se
+integra con la ventana).
 
 ## Pendientes prioritarios
 
 1.  Sincronización SQLite asíncrona (solo existe escritura de
     colecciones preparadas con upsert; falta la escritura masiva con
     detección de archivos, FFprobe y eliminación de registros ausentes).
-2.  Integración SQLite asíncrona en el pipeline (encadenado).
-3.  Actualización asíncrona de la interfaz.
-4.  FFmpeg asíncrono.
-5.  Varias miniaturas por video.
-6.  Selección inteligente de miniaturas.
-7.  Barra de progreso.
-8.  Caché avanzada.
-9.  Optimización para miles de videos.
+2.  Integración de la primera carga asíncrona paginada en la interfaz
+    (`visor_videos.py` consume `TareaLecturaCatalogoPaginada`).
+3.  Integración SQLite asíncrona en el pipeline (encadenado).
+4.  Actualización asíncrona de la interfaz.
+5.  FFmpeg asíncrono.
+6.  Varias miniaturas por video.
+7.  Selección inteligente de miniaturas.
+8.  Barra de progreso.
+9.  Caché avanzada.
+10. Optimización para miles de videos.
 
 ## Problemas abiertos
 
@@ -92,9 +100,12 @@ Ver `DOCUMENTO_TECNICO.md`.
 
 Pendientes principales: - cancelación cooperativa; - integración
 definitiva del ciclo de vida de tareas con la ventana; - la interfaz
-todavía no consume las tareas asíncronas (usa la lectura síncrona); -
-FFmpeg continúa siendo síncrono; - siguen pendientes progreso y
-cancelación; - limpieza controlada de miniaturas antiguas.
+todavía no consume las tareas asíncronas (usa la lectura síncrona); la
+lectura paginada implementada aún no se integra con la ventana; -
+decisión pendiente sobre si `%` y `_` como comodines `LIKE` en la
+búsqueda de `listar_videos_paginado` se aceptan como contrato; - FFmpeg
+continúa siendo síncrono; - siguen pendientes progreso y cancelación; -
+limpieza controlada de miniaturas antiguas.
 
 ## Deuda técnica
 
@@ -110,13 +121,16 @@ cancelación; - limpieza controlada de miniaturas antiguas.
 
 ## Próxima etapa
 
-Diseñar una etapa **limitada** de infraestructura común de pruebas: una
-primera consolidación de los helpers y falsificaciones que las suites
-repiten (`Captura`/`correr`, construcción de bases SQLite temporales,
-conectores de conteo de conexiones/hilos y de fallo controlado),
-sin cambiar el comportamiento ni el contrato de los módulos probados y
-manteniendo `escanear_videos.py` como única capa de datos. Solo se
-diseñará; no se implementará todavía.
+Integración de la primera carga asíncrona paginada en la interfaz
+(`visor_videos.py`): consumir `TareaLecturaCatalogoPaginada` para cargar
+la primera página del catálogo en segundo plano y mostrarla, dentro del
+criterio de etapas limitadas del proyecto. Después de esa integración,
+una etapa posterior de infraestructura común de pruebas consolidará los
+helpers y falsificaciones que las suites repiten (`Captura`/`correr`,
+bases SQLite temporales, conectores de conteo de conexiones/hilos y de
+fallo controlado), sin cambiar el comportamiento ni el contrato de los
+módulos probados y manteniendo `escanear_videos.py` como única capa de
+datos. Solo se diseñará; no se implementará todavía.
 
 ## Documentos del proyecto
 
