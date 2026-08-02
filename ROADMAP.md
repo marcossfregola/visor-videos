@@ -17,25 +17,32 @@ arquitectónicas.
 -   Lectura paginada del catálogo SQLite — **completado**
     (`listar_videos_paginado` / `TareaLecturaCatalogoPaginada`):
     consulta paginada (`LIMIT`/`OFFSET`) y `COUNT` con el mismo filtro,
-    ambos en SQL, con búsqueda parcial por `LIKE` parametrizada; aún no
-    consumida por la interfaz.
+    ambos en SQL, con búsqueda parcial por `LIKE` parametrizada.
+-   Integración de la lectura asíncrona paginada con la interfaz —
+    **completado** (`visor_videos.py` consume `TareaLecturaCatalogoPaginada`
+    mediante `GestorTareas`): la primera página del catálogo se carga en
+    segundo plano con estado de carga, manejo de errores y apagado
+    ordenado, sin bloquear la ventana.
 -   Escritura individual asíncrona — **completado** (`TareaGuardarVideo`).
 -   Escritura de colección asíncrona — **completado**
     (`TareaGuardarVideos`): persiste colecciones de registros preparados
     en una única transacción atómica.
 
-1.  Sincronización SQLite asíncrona — **pendiente** (solo existe la
+1.  Selección de carpeta — **pendiente** (permitir elegir la carpeta de
+    videos desde la interfaz; la carga inicial asíncrona de la primera
+    página del catálogo ya está integrada).
+2.  Sincronización Escaneo → SQLite — **pendiente** (solo existe la
     escritura de colecciones preparadas con upsert; la sincronización
     completa del catálogo —detección de archivos, FFprobe y eliminación
     de registros ausentes— y la escritura masiva no están implementadas).
-2.  Encadenamiento progresivo del pipeline — **pendiente** (el pipeline
-    Escaneo → SQLite aún no está encadenado).
-3.  Actualización asíncrona de la interfaz — **pendiente** (la interfaz
-    no consume las tareas asíncronas; la lectura paginada
-    `TareaLecturaCatalogoPaginada` está implementada pero aún no se
-    integra con la ventana).
-4.  FFmpeg en segundo plano.
-5.  Generación de múltiples miniaturas por video.
+3.  Generación asíncrona de miniaturas — **pendiente** (FFmpeg en
+    segundo plano).
+4.  Actualización dinámica de tarjetas — **pendiente** (refrescar la
+    grilla a medida que se sincroniza el catálogo).
+5.  Progreso — **pendiente** (barra de progreso y estado de las tareas
+    en curso).
+6.  Beta funcional — **pendiente** (aplicación utilizable de punta a
+    punta con las funcionalidades anteriores integradas).
 
 ------------------------------------------------------------------------
 

@@ -16,12 +16,17 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from escanear_videos import listar_videos
 from rutas import ruta_carpeta_miniaturas
+from tareas import GestorTareas
+from tareas_videos import TareaLecturaCatalogoPaginada
 
 ANCHO_TARJETA = 320
 ALTO_TARJETA = 180
 COLUMNAS = 2
+TAMANIO_PAGINA_INICIAL = 100
+
+MENSAJE_CARGANDO = "Cargando catálogo…"
+MENSAJE_ERROR = "No se pudo cargar el catálogo"
 
 
 def formatear_valor(valor):
@@ -93,24 +98,31 @@ class Tarjeta(QFrame):
 
 
 class VisorVideos(QMainWindow):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, ruta_db=None, parent=None):
+        super().__init__(parent)
         self.setWindowTitle("Biblioteca de videos")
         self.tarjetas = []
+        self.visibles = []
+        self._ruta_db = ruta_db
+        self._carga_completada = False
+        self.tarea_lectura = None
 
         self.busqueda = QLineEdit()
         self.busqueda.setPlaceholderText("Buscar por nombre...")
         self.busqueda.textChanged.connect(self.filtrar)
 
         self.contador = QLabel()
+        self.estado_carga = QLabel(MENSAJE_CARGANDO)
 
         barra = QHBoxLayout()
         barra.addWidget(self.busqueda, 1)
         barra.addWidget(self.contador)
+        barra.addWidget(self.estado_carga)
 
         self.contenedor = QWidget()
         self.cuadricula = QGridLayout(self.contenedor)
-        self.cargar_tarjetas()
+        self.cuadricula.setColumnStretch(0, 1)
+        self.cuadricula.setColumnStretch(1, 1)
         self.actualizar_contador()
 
         self.area = QScrollArea()
@@ -123,15 +135,37 @@ class VisorVideos(QMainWindow):
         layout.addWidget(self.area)
         self.setCentralWidget(raiz)
 
-    def cargar_tarjetas(self):
-        self.visibles = []
-        for indice, fila in enumerate(listar_videos()):
+        self.gestor = GestorTareas(self)
+        self.gestor.tarea_resultado.connect(self._al_resultado)
+        self.gestor.tarea_error.connect(self._al_error)
+        self._iniciar_carga()
+
+    def _iniciar_carga(self):
+        self.tarea_lectura = TareaLecturaCatalogoPaginada(
+            TAMANIO_PAGINA_INICIAL, 0, None, self._ruta_db
+        )
+        self.gestor.iniciar(self.tarea_lectura)
+
+    def _al_resultado(self, resultado):
+        if self._carga_completada:
+            return
+        self.estado_carga.hide()
+        self._crear_tarjetas(resultado.get("videos", []))
+        self._carga_completada = True
+
+    def _al_error(self, mensaje):
+        if self._carga_completada:
+            return
+        self.estado_carga.setText(MENSAJE_ERROR)
+        self._carga_completada = True
+
+    def _crear_tarjetas(self, filas):
+        for indice, fila in enumerate(filas):
             tarjeta = Tarjeta(fila)
             self.tarjetas.append((fila[0], tarjeta))
             self.visibles.append(fila[0])
             self.cuadricula.addWidget(tarjeta, indice // COLUMNAS, indice % COLUMNAS)
-        self.cuadricula.setColumnStretch(0, 1)
-        self.cuadricula.setColumnStretch(1, 1)
+        self.filtrar(self.busqueda.text())
 
     def filtrar(self, texto):
         texto = texto.lower()
@@ -152,6 +186,10 @@ class VisorVideos(QMainWindow):
         palabra = "video" if cantidad == 1 else "videos"
         self.contador.setText(f"{cantidad} {palabra}")
 
+    def closeEvent(self, event):
+        self.gestor.cerrar()
+        super().closeEvent(event)
+
 
 def main():
     app = QApplication(sys.argv)
@@ -160,17 +198,29 @@ def main():
     ventana.show()
 
     print(f"visibles_inicio={ventana.tarjetas_visibles()}")
-    print(f"contador_inicio={ventana.contador.text()}")
+    print(f"estado_inicio={ventana.estado_carga.text()}")
 
-    QTimer.singleShot(2000, lambda: ventana.busqueda.setText("real"))
+    intentos = {"valor": 0}
 
-    def verificar_y_cerrar():
-        visibles = ventana.tarjetas_visibles()
-        print(f"visibles_filtro={visibles}")
-        print(f"contador_final={ventana.contador.text()}")
-        app.quit()
+    def comprobar_carga():
+        if not ventana._carga_completada and intentos["valor"] < 100:
+            intentos["valor"] += 1
+            QTimer.singleShot(100, comprobar_carga)
+            return
+        print(f"visibles_cargados={ventana.tarjetas_visibles()}")
+        print(f"contador_cargado={ventana.contador.text()}")
+        ventana.busqueda.setText("real")
 
-    QTimer.singleShot(5000, verificar_y_cerrar)
+        def verificar_y_cerrar():
+            visibles = ventana.tarjetas_visibles()
+            print(f"visibles_filtro={visibles}")
+            print(f"contador_final={ventana.contador.text()}")
+            ventana.close()
+            app.quit()
+
+        QTimer.singleShot(1500, verificar_y_cerrar)
+
+    QTimer.singleShot(200, comprobar_carga)
     codigo = app.exec()
     sys.exit(codigo)
 

@@ -47,9 +47,10 @@ prueba/
 ├── prueba_escaneo.py      Pruebas automatizadas de TareaEscaneo
 ├── prueba_lectura.py      Pruebas automatizadas de TareaLecturaCatalogo
 ├── prueba_lectura_paginada.py  Pruebas automatizadas de TareaLecturaCatalogoPaginada
+├── prueba_interfaz_asincrona.py  Pruebas automatizadas de la integración asíncrona de la interfaz (29)
 ├── prueba_guardar.py      Pruebas automatizadas de TareaGuardarVideo
 ├── prueba_guardar_videos.py  Pruebas automatizadas de TareaGuardarVideos
-├── visor_videos.py        Interfaz gráfica (PySide6) + smoke test automático
+├── visor_videos.py        Interfaz gráfica (PySide6): carga asíncrona de la primera página + smoke test automático
 ├── DOCUMENTO_TECNICO.md   Este documento
 ├── miniaturas/            Imágenes de miniatura (JPG, generadas automáticamente)
 │   └── <prefijo>_<NN>.jpg  Convención de nombres; caché ignorada, contenido variable
@@ -106,12 +107,17 @@ prueba/
 Diseñado como punto único de extensión para futuras rutas de configuración; no constituye todavía un módulo de configuración completo.
 
 ### `visor_videos.py` — interfaz gráfica
-- `VisorVideos(QMainWindow)` — ventana principal: barra de búsqueda, contador, grilla de tarjetas dentro de un `QScrollArea`.
+- `VisorVideos(QMainWindow)` — ventana principal: barra de búsqueda, contador, grilla de tarjetas dentro de un `QScrollArea`. Se construye **sin consultas SQLite**; la primera página del catálogo se carga en segundo plano mediante `GestorTareas` + `TareaLecturaCatalogoPaginada` (constantes `TAMANIO_PAGINA_INICIAL = 100`, `MENSAJE_CARGANDO = "Cargando catálogo…"`, `MENSAJE_ERROR = "No se pudo cargar el catálogo"`).
 - `Tarjeta(QFrame)` — tarjeta por video: miniatura (o recuadro "Sin miniatura") + campos de texto (nombre, duración, resolución, codec, miniaturas).
-- `cargar_tarjetas()` — construye las tarjetas a partir de `listar_videos()` (delegado a `escanear_videos`).
-- `filtrar(texto)` — filtrado por coincidencia de nombre; mantiene `visibles` y actualiza el contador.
+- `_iniciar_carga()` — crea `TareaLecturaCatalogoPaginada(TAMANIO_PAGINA_INICIAL, 0, None, ruta_db)` y la inicia con `gestor.iniciar()`.
+- `_al_resultado(resultado)` — al recibir el resultado: oculta el estado de carga, crea las tarjetas (`_crear_tarjetas`) y marca `_carga_completada`.
+- `_al_error(mensaje)` — al fallar la lectura: muestra `MENSAJE_ERROR` sin cerrar la ventana.
+- `_crear_tarjetas(filas)` — construye una `Tarjeta` por fila en la `QGridLayout` (2 columnas) y reaplica el filtro vigente.
+- `filtrar(texto)` — filtrado por coincidencia de nombre **sobre las tarjetas ya cargadas** (primera página); mantiene `visibles` y actualiza el contador.
+- `actualizar_contador()` — muestra "N videos" / "1 video" según las tarjetas visibles.
+- `closeEvent(event)` — apagado ordenado: llama `gestor.cerrar()` (timeout por defecto 5000 ms) y acepta el evento.
 - `miniatura_principal(nombre)` — ubica la primera miniatura cuyo prefijo coincide con el video.
-- `main()` — bootstrap de la app + **smoke test automático**: abre la ventana, imprime visibles/contador iniciales, a los 2 s filtra con "real", a los 5 s imprime el resultado final y cierra con `exit 0`.
+- `main()` — bootstrap de la app + **smoke test automático**: abre la ventana, imprime visibles/estado iniciales, espera la carga asíncrona, filtra con "real", imprime el resultado final y cierra con `exit 0`.
 
 ### `tareas.py` — infraestructura genérica de trabajos en segundo plano
 - `Estado` — estados del ciclo de vida: `inactivo`, `ocupado`, `finalizando`, `cerrado`.
@@ -148,7 +154,8 @@ Diseñado como punto único de extensión para futuras rutas de configuración; 
 | FFprobe asíncrono | `tareas_videos.TareaFFprobe` | Metadatos de video en segundo plano; resultado y error por ruta. |
 | Lectura del catálogo | `escanear_videos.listar_videos` | Capa de lectura SQLite; abre y cierra su propia conexión en el hilo que la invoca. |
 | Lectura asíncrona del catálogo | `tareas_videos.TareaLecturaCatalogo` | Lectura SQLite en segundo plano; errores por señal `error`; conexión por hilo (sin `check_same_thread=False`). |
-| Lectura paginada del catálogo | `escanear_videos.listar_videos_paginado` + `tareas_videos.TareaLecturaCatalogoPaginada` | Página (`LIMIT`/`OFFSET`) y `COUNT` con el mismo filtro en SQL; búsqueda parcial por `LIKE` parametrizada; sin leer toda la tabla; aún no consumida por la interfaz. |
+| Lectura paginada del catálogo | `escanear_videos.listar_videos_paginado` + `tareas_videos.TareaLecturaCatalogoPaginada` | Página (`LIMIT`/`OFFSET`) y `COUNT` con el mismo filtro en SQL; búsqueda parcial por `LIKE` parametrizada; sin leer toda la tabla; consumida por la interfaz para la carga inicial asíncrona de la primera página. |
+| Carga inicial asíncrona de la interfaz | `visor_videos.VisorVideos` + `tareas.GestorTareas` + `tareas_videos.TareaLecturaCatalogoPaginada` | La ventana se construye sin consultas SQL; `_iniciar_carga()` lee la primera página en segundo plano; estados de carga/error visibles y apagado ordenado en `closeEvent` (`gestor.cerrar()`). |
 | Escritura individual | `escanear_videos.guardar_video` | Upsert transaccional de un único registro (datos preparados); `commit`/`rollback`/`close` propios; base inexistente → `FileNotFoundError` sin crear archivos. |
 | Escritura individual asíncrona | `tareas_videos.TareaGuardarVideo` | Guarda un registro en segundo plano; `commit` y `rollback` dentro del hilo de trabajo; resultado `{"guardado": True, "nombre": ...}`. |
 | Escritura de colección | `escanear_videos.guardar_videos` | Upsert de una colección de registros en una **única transacción atómica** (un solo `connect` y un solo `commit`; `rollback` total ante cualquier fallo); validación completa y copias previas a SQL; resultado `{"guardados": n, "nombres": [...]}`; no elimina registros. |
@@ -158,24 +165,20 @@ Diseñado como punto único de extensión para futuras rutas de configuración; 
 
 ## 5. Flujo de ejecución (apertura → tarjetas)
 
-1. `python visor_videos.py` → `main()` crea `QApplication`.
-2. `VisorVideos.__init__` crea la barra de búsqueda, el contador y el `QScrollArea`.
-3. `cargar_tarjetas()` llama a `escanear_videos.listar_videos()`:
-   - abre `biblioteca.db`;
-   - `SELECT nombre, duracion_segundos, ancho, alto, codec_video, cantidad_miniaturas FROM videos ORDER BY nombre`;
-   - cierra la conexión.
-4. Para cada fila crea una `Tarjeta` y la ubica en la `QGridLayout` (2 columnas, con estiramiento de columnas).
-5. Se muestra la ventana; la `QScrollArea` permite recorrer las tarjetas.
-6. Cada tarjeta consulta `miniatura_principal(nombre)` sobre `miniaturas/`; si no encuentra imagen, muestra el recuadro "Sin miniatura".
-7. El `QLineEdit` filtra en vivo (`filtrar`) y el contador muestra "N videos".
+1. `python visor_videos.py` → `main()` crea `QApplication` y la `VisorVideos`.
+2. `VisorVideos.__init__` crea la barra de búsqueda, el contador, el estado de carga ("Cargando catálogo…") y el `QScrollArea`. **No abre SQLite**: crea `GestorTareas(self)` y arranca `_iniciar_carga()`.
+3. `_iniciar_carga()` construye `TareaLecturaCatalogoPaginada(TAMANIO_PAGINA_INICIAL, 0, None, ruta_db)` y la ejecuta en un `QThread` mediante `gestor.iniciar()`.
+4. En el hilo de trabajo, `TareaLecturaCatalogoPaginada._trabajo()` invoca `listar_videos_paginado`, que abre su propia conexión, ejecuta `SELECT ... ORDER BY nombre LIMIT ? OFFSET ?` y `SELECT COUNT(*) ...`, la cierra y devuelve `{"videos": [...], "total": n, "limite": n, "desplazamiento": n}`.
+5. Al emitirse `tarea_resultado`, `_al_resultado` oculta el estado de carga, `_crear_tarjetas` crea una `Tarjeta` por fila en la `QGridLayout` (2 columnas) y se aplica el filtro vigente.
+6. Si la lectura falla, `_al_error` muestra "No se pudo cargar el catálogo" y la ventana permanece utilizable.
+7. Cada tarjeta consulta `miniatura_principal(nombre)` sobre `miniaturas/`; si no encuentra imagen, muestra el recuadro "Sin miniatura".
+8. El `QLineEdit` filtra en vivo (`filtrar`) **sobre las tarjetas ya cargadas** y el contador muestra "N videos".
+9. Al cerrar la ventana, `closeEvent` llama `gestor.cerrar()` (timeout por defecto 5000 ms) para un apagado ordenado del hilo en curso.
 
-Flujo de lectura paginada (nueva operación, aún no conectada a la interfaz):
-
-1. La interfaz futura solicitará una página con `listar_videos_paginado(limite, desplazamiento, texto)` (o `TareaLecturaCatalogoPaginada` en segundo plano).
-2. La función valida los parámetros y la existencia de la base antes de conectar.
-3. Abre su propia conexión en el hilo que la invoca y ejecuta en SQLite: `SELECT ... FROM videos ORDER BY nombre LIMIT ? OFFSET ?` para la página y `SELECT COUNT(*) FROM videos` para el total (sin filtro), o ambas con `WHERE nombre LIKE ?` aplicando el mismo patrón cuando hay texto de búsqueda.
-4. Cierra la conexión y devuelve `{"videos": [...], "total": n, "limite": n, "desplazamiento": n}`.
-5. Esta operación no construye tarjetas ni se invoca todavía desde `visor_videos.py`; su integración es la próxima etapa.
+La carga inicial muestra únicamente la primera página del catálogo
+(primeros `TAMANIO_PAGINA_INICIAL` registros); el resto del catálogo no
+se carga todavía (paginación adicional, scroll infinito y búsqueda en
+SQL quedan para etapas futuras).
 
 Flujo de datos (respaldo/escritura) — ejecución previa del CLI:
 
@@ -208,10 +211,10 @@ Durante un escaneo se genera **como máximo una miniatura nueva por video**, y �
 ## 7. Puntos de extensión previstos
 
 1. **Generación de miniaturas con FFmpeg** — **implementada** en `escanear_videos.py` (`asegurar_miniatura`/`generar_miniatura`): genera como máximo una miniatura nueva por video por escaneo, preservando los archivos existentes.
-2. **Ejecución asíncrona** — **en curso**: el escaneo (`TareaEscaneo`), FFprobe (`TareaFFprobe`), la **lectura del catálogo SQLite** (`TareaLecturaCatalogo`, solo lectura), la **lectura paginada del catálogo SQLite** (`TareaLecturaCatalogoPaginada`, con `LIMIT`/`OFFSET`/`COUNT` en SQL), la **escritura individual SQLite** (`TareaGuardarVideo`, un registro por operación) y la **escritura de colección SQLite** (`TareaGuardarVideos`, colección limitada en una única transacción) ya se ejecutan en segundo plano mediante `tareas.py`. Pendiente: la sincronización completa del catálogo disco ↔ BD (escritura masiva con detección de archivos, FFprobe y eliminación de registros ausentes), el encadenamiento del pipeline Escaneo → SQLite, FFmpeg asíncrono y la integración de la lectura paginada con la ventana.
+2. **Ejecución asíncrona** — **en curso**: el escaneo (`TareaEscaneo`), FFprobe (`TareaFFprobe`), la **lectura del catálogo SQLite** (`TareaLecturaCatalogo`, solo lectura), la **lectura paginada del catálogo SQLite** (`TareaLecturaCatalogoPaginada`, con `LIMIT`/`OFFSET`/`COUNT` en SQL), la **escritura individual SQLite** (`TareaGuardarVideo`, un registro por operación) y la **escritura de colección SQLite** (`TareaGuardarVideos`, colección limitada en una única transacción) ya se ejecutan en segundo plano mediante `tareas.py`. **La integración de la lectura paginada con la ventana está completa**: `visor_videos.py` carga la primera página en segundo plano con estado de carga y manejo de errores. Pendiente: la sincronización completa del catálogo disco ↔ BD (escritura masiva con detección de archivos, FFprobe y eliminación de registros ausentes), el encadenamiento del pipeline Escaneo → SQLite, el escaneo real de carpetas seleccionadas y FFmpeg asíncrono.
 3. **Módulo de configuración** — centralizar rutas (`videos_prueba`, `miniaturas`, `biblioteca.db`), extensiones, tamaños de tarjeta y número de columnas.
 4. **Caché de miniaturas/metadatos** — formalizar la BD como caché de metadatos y evitar re-escaneos.
-5. **Lectura/vistas del catálogo** — sobre `listar_videos()` y `listar_videos_paginado()`, agregar orden/agrupación/filtros adicionales sin tocar la UI. La lectura paginada con búsqueda en SQL está implementada; la integración con la interfaz queda para una etapa posterior.
+5. **Lectura/vistas del catálogo** — sobre `listar_videos()` y `listar_videos_paginado()`, agregar orden/agrupación/filtros adicionales sin tocar la UI. La lectura paginada con búsqueda en SQL está implementada y la primera página ya se integra con la interfaz; la paginación completa (scroll infinito, búsqueda en SQL) queda para etapas posteriores.
 6. **Autenticación de rutas absolutas** — **implementada** en `rutas.py`: `biblioteca.db`, `miniaturas/` y `videos_prueba/` se resuelven desde la ubicación real del módulo, independientemente del directorio de trabajo.
 
 ## 8. Problemas detectados
@@ -221,7 +224,7 @@ Durante un escaneo se genera **como máximo una miniatura nueva por video**, y �
 | 1 | Media | La interfaz (`visor_videos.py`) accedía a SQLite directamente y duplicaba el nombre de BD (`"biblioteca.db"`). **Corregido** en esta etapa. |
 | 2 | Media | Rutas relativas (`miniaturas/`, `videos_prueba/`, `biblioteca.db`) dependían del directorio de trabajo; la app fallaba si se lanzaba desde otra ubicación. **Resuelto** (ver §9, etapa de rutas). |
 | 3 | Media | No existía generación de miniaturas; solo conteo. **Resuelto** (ver §6). |
-| 4 | Media | FFprobe se ejecutaba en el hilo principal con timeout de 30 s por video; el escaneo bloquea. **Resuelto en parte**: FFprobe se movió a segundo plano con `TareaFFprobe`. FFmpeg y la integración de tareas con la ventana continúan pendientes. |
+| 4 | Media | FFprobe se ejecutaba en el hilo principal con timeout de 30 s por video; el escaneo bloquea. **Resuelto en parte**: FFprobe se movió a segundo plano con `TareaFFprobe` y la carga inicial del catálogo se integró con las tareas asíncronas (`visor_videos.py` + `TareaLecturaCatalogoPaginada`). FFmpeg asíncrono y la sincronización completa del catálogo continúan pendientes. |
 | 5 | Baja | `contar_miniaturas`/`miniatura_principal` usan coincidencia por prefijo (`startswith`); un video `video_real.mp4` podría matchear miniaturas de un hipotético `video_realista.mp4`. Pendiente. |
 | 6 | Baja | Los videos vacíos (0 bytes) quedan sin metadatos; comportamiento correcto pero debe documentarse para el usuario. Pendiente. |
 | 7 | Informativa | `main.py`, `operaciones.py`, `prueba_agente.py`, `datos.txt` son artefactos de prueba ajenos al visor. Se preservaron por política de esta etapa. |
@@ -330,11 +333,24 @@ Observación resuelta antes de crear el commit de la etapa de colección. Se ins
 - `prueba_lectura_paginada.py` (nuevo)
   - 32 pruebas con bases SQLite temporales: catálogo vacío, primera/intermedia/última página, desplazamiento posterior al final, límite de un registro, páginas concatenadas ≡ listado completo, ausencia de duplicados, orden determinista, total sin/con filtro, búsqueda parcial y sin coincidencias, caracteres especiales (`'`, `%`) como parámetros SQL, `NULL` conservados, equivalencia síncrona/asíncrona, ejecución en `QThread`, resultado en hilo principal, conexión abierta/cerrada en el hilo de trabajo, única finalización, liberación de hilo/gestor, base inexistente (archivo y directorio padre) sin creación, base corrupta por `error`, `limite`/`desplazamiento`/`texto` inválidos rechazados antes de conectar (0 conexiones), cero escrituras (bytes y hash idénticos), cero escaneo/FFprobe/subprocesos y datos reales intactos.
 
+### Etapa de integración de la lectura paginada con la interfaz (visor_videos.py)
+
+- `visor_videos.py`
+  - **Carga inicial asíncrona**: se eliminó la lectura síncrona del catálogo en el hilo principal (ya no se importa `sqlite3` ni `listar_videos`); `VisorVideos` ahora usa `GestorTareas` y `TareaLecturaCatalogoPaginada` para cargar la primera página en segundo plano. Constantes nuevas `TAMANIO_PAGINA_INICIAL = 100`, `MENSAJE_CARGANDO = "Cargando catálogo…"` y `MENSAJE_ERROR = "No se pudo cargar el catálogo"`.
+  - `VisorVideos(ruta_db=None)` — la ventana se construye **sin consultas SQLite** (verificado por conteo de `sqlite3.connect` durante la construcción = 0); crea `self.gestor = GestorTareas(self)`, conecta `tarea_resultado → _al_resultado` y `tarea_error → _al_error`, y arranca `_iniciar_carga()`. No almacena conexiones y no usa `check_same_thread=False`.
+  - `_iniciar_carga()` — construye `TareaLecturaCatalogoPaginada(TAMANIO_PAGINA_INICIAL, 0, None, self._ruta_db)` y la ejecuta con `gestor.iniciar()`.
+  - `_al_resultado()` / `_al_error()` — estado de carga oculto al recibir el resultado y creación de tarjetas; ante error, texto `MENSAJE_ERROR` visible sin cerrar la ventana. Ambas se resguardan con `_carga_completada` para finalizar una sola vez.
+  - `filtrar()` — filtra **solo las tarjetas ya cargadas** (primera página); la búsqueda en SQL queda para etapas futuras.
+  - `closeEvent()` — apagado ordenado: `self.gestor.cerrar()` (timeout por defecto 5000 ms) y aceptación del evento; sin avisos `QThread: Destroyed while thread is still running`.
+  - `main()` — smoke test adaptado: espera la carga asíncrona (hasta 10 s), imprime visibles/contador inicial y tras la carga, filtra "real" y cierra con `exit 0`.
+- `prueba_interfaz_asincrona.py` (nuevo)
+  - 29 pruebas con ejecución real de Qt y bases SQLite temporales: construcción sin SQLite, lectura vía `TareaLecturaCatalogoPaginada` en el hilo correcto, SQLite abierto/cerrado en el hilo de trabajo (distinto del principal), ausencia de tarjetas antes del resultado, fluidez de la UI durante una lectura bloqueada (`Estado.OCUPADO`), primera página (tamaño, orden, contador, sin tarjetas extra por el total), filtro visual sobre tarjetas cargadas, catálogo vacío, base inexistente/corrupta sin crear archivos ni cerrar la ventana, finalización única, liberación del gestor tras éxito/error, cierre durante una lectura activa sin hilos colgados, ausencia de avisos `QThread: Destroyed`, ausencia de `sqlite3`/llamadas directas a `listar_videos`/`listar_videos_paginado` (AST + monkeypatch), ausencia de escaneo/FFprobe/subprocesos, cero escrituras SQLite (bytes y hash idénticos), datos reales intactos y smoke test real en subproceso con exit 0.
+
 ## 10. Recomendaciones priorizadas
 
 1. **Alta — Configurar rutas absolutas** (`escanear_videos.py`, `visor_videos.py`): resolver `miniaturas/`, `videos_prueba/` y `biblioteca.db` a partir de `os.path.dirname(__file__)` o un módulo de configuración. **Resuelto** — implementado en `rutas.py` (capa de rutas; sin módulo de configuración completo todavía).
 2. **Alta — Limpieza controlada de miniaturas obsoletas**: definir una política segura para archivar o eliminar versiones antiguas y evitar el crecimiento acumulativo de ranuras `_NN`. **Ninguna eliminación, sobrescritura, movimiento o archivado automático puede implementarse sin: una política segura previamente definida, autorización expresa y verificación de que no se perderán datos necesarios.** (La generación con FFmpeg ya está implementada.)
-3. **Media — Trabajos en segundo plano**: **en curso** — infraestructura implementada en `tareas.py` con `TareaFFprobe`, `TareaEscaneo`, la lectura del catálogo (`TareaLecturaCatalogo`), la **escritura individual** (`TareaGuardarVideo`) y la **escritura de colección** (`TareaGuardarVideos`). Pendiente: la sincronización completa del catálogo (escritura masiva con detección de archivos y eliminación de registros ausentes), encadenamiento del pipeline, FFmpeg asíncrono, integración con la ventana y barra de progreso.
+3. **Media — Trabajos en segundo plano**: **en curso** — infraestructura implementada en `tareas.py` con `TareaFFprobe`, `TareaEscaneo`, la lectura del catálogo (`TareaLecturaCatalogo`), la **escritura individual** (`TareaGuardarVideo`) y la **escritura de colección** (`TareaGuardarVideos`). **Integración con la ventana**: la carga inicial asíncrona de la primera página del catálogo ya está integrada en `visor_videos.py`. Pendiente: la sincronización completa del catálogo (escritura masiva con detección de archivos y eliminación de registros ausentes), encadenamiento del pipeline, FFmpeg asíncrono y barra de progreso.
 4. **Media — Módulo de configuración** centralizado (rutas, extensiones, dimensiones, columnas).
 5. **Baja — Robustecer coincidencia de miniaturas**: usar coincidencia de prefijo con delimitador (`prefijo + "_"`) o patrón rígido `<video>_<NN>.jpg`.
 6. **Baja — Reubicación de artefactos de prueba**: Git y `.gitignore` ya están implementados; `biblioteca.db`, `datos.txt`, `miniaturas/`, `__pycache__/` y los archivos `.pyc` ya están ignorados. La recomendación futura se limita a evaluar la reubicación de los artefactos de prueba (`main.py`, `operaciones.py`, `prueba_agente.py`) en una etapa autorizada, sin moverlos ahora.
@@ -386,6 +402,12 @@ Observación resuelta antes de crear el commit de la etapa de colección. Se ins
 | Regresiones (etapa de lectura paginada) | `python prueba_tareas.py`, `python prueba_ffprobe.py`, `python prueba_escaneo.py`, `python prueba_lectura.py`, `python prueba_guardar.py`, `python prueba_guardar_videos.py` | 13/13, 12/12, 12/12, 15/15, 19/19 y 34/34 OK — sin regresiones |
 | Auditoría de evidencia (lectura paginada) | `git diff --check`; script aislado de validación previa con contador de `sqlite3.connect`; captura y cierre de la conexión; semántica de comodines `%`/`_`/`'` | exit 0; 5/5 casos con 0 conexiones; conexión cerrada (ProgrammingError al reutilizarla); comodines documentados (pendiente de decisión como contrato) |
 | Limpieza del diff (etapa de lectura paginada) | `git diff --check` | Sin espacios en blanco en líneas agregadas |
+| Compilación (etapa de integración de la interfaz) | `python -m py_compile visor_videos.py tareas.py tareas_videos.py escanear_videos.py rutas.py prueba_interfaz_asincrona.py` | OK (exit 0) |
+| Pruebas de integración asíncrona de la interfaz | `python prueba_interfaz_asincrona.py` | 29/29 OK (RESULTADO_FINAL=OK, exit 0) |
+| Smoke test GUI (integración asíncrona) | `python visor_videos.py` | `visibles_inicio=[]`, `estado_inicio=Cargando catálogo…`, `visibles_cargados=4 videos`, filtro "real" → `1 video`, exit 0 — **sin bloqueos ni avisos `QThread: Destroyed`** |
+| Regresiones (etapa de integración de la interfaz) | `python prueba_tareas.py`, `python prueba_ffprobe.py`, `python prueba_escaneo.py`, `python prueba_lectura.py`, `python prueba_lectura_paginada.py`, `python prueba_guardar.py`, `python prueba_guardar_videos.py` | 13/13, 12/12, 12/12, 15/15, 32/32, 19/19 y 34/34 OK — sin regresiones |
+| Auditoría de evidencia (integración) | script aislado con lectura bloqueada; estados del gestor en 5 momentos; cierre con tarea activa y timeout | Durante la lectura: `instancias_de_Tarjeta=0`, `self.tarjetas=[]`, 0 widgets en la grilla; gestor `ocupado` → `inactivo` (éxito/error) → `cerrado` (cierre); `cerrar(timeout_ms=300)` retorna `False` si la tarea no termina (la ventana igual cierra); reutilizable tras éxito/error, no tras cerrar |
+| Limpieza del diff (etapa de integración de la interfaz) | `git diff --check` | Sin espacios en blanco en líneas agregadas |
 
 ## 12. Registro de cambios
 
@@ -402,3 +424,4 @@ Observación resuelta antes de crear el commit de la etapa de colección. Se ins
 11. **Escritura de colección transaccional asíncrona** — se agregó `guardar_videos(datos_videos, ruta_db=None)` a `escanear_videos.py` (escritura de una colección en **una única transacción atómica**: validación completa previa con copias superficiales, un solo `connect`, todos los upserts, **un solo** `commit`, `rollback` total ante cualquier fallo, `close` en `finally`; resultado `{"guardados": n, "nombres": [...]}`) y `TareaGuardarVideos` a `tareas_videos.py` (instantánea de la colección y de cada registro; un solo `commit` dentro del hilo de trabajo), más `prueba_guardar_videos.py` (31 pruebas, incluidas atomicidad con consulta real de la base tras el fallo, rollback total con bytes idénticos, ausencia de inserciones parciales y restauración de valores previos). Se extrajeron los internos compartidos `_validar_registro_video` y `_upsert_video` para que `guardar_video` y `guardar_videos` reutilicen la misma validación y el mismo upsert sin duplicación. Sigue sin existir sincronización disco ↔ catálogo, detección de archivos, FFprobe/FFmpeg/miniaturas en la escritura ni **eliminación de registros**; el pipeline y la interfaz no se tocaron.
 12. **Contrato definitivo de `TareaGuardarVideos` ante entradas inválidas** (observación resuelta antes del commit de la etapa de colección) — el constructor **nunca lanza** ante entradas inválidas: amplió la captura a `Exception` al materializar/instantánea, de modo que incluso un generador que lanza `RuntimeError` a mitad de la iteración se conserva como colección inválida y `_trabajo()` lo comunica por `error` (`TypeError` envolviendo la causa) sin abrir SQLite ni modificar la base; los errores de contrato que solo `guardar_videos` detecta al validar (clave obligatoria ausente) también se comunican por `error` durante la ejecución. Se amplió `prueba_guardar_videos.py` de 31 a **34 pruebas** (generador fallido, entradas inválidas detectadas en la construcción con cero conexiones/cero cambios y gestor liberado, y error diferido a la validación con cero conexiones/cero cambios). No se duplicó la validación de `guardar_videos` dentro del constructor.
 13. **Lectura paginada del catálogo** — se agregó `listar_videos_paginado(limite, desplazamiento=0, texto=None, ruta_db=None)` a `escanear_videos.py` (consulta paginada con `LIMIT`/`OFFSET` y `COUNT` con el mismo filtro, ambos en SQL; búsqueda parcial por `LIKE` con parámetros SQL; orden determinista por `nombre`; validación previa a SQL de `limite`, `desplazamiento` y `texto`; base inexistente → `FileNotFoundError` sin crear archivos; resultado `{"videos": [...], "total": n, "limite": n, "desplazamiento": n}` con el mismo formato de fila que `listar_videos()`) y `TareaLecturaCatalogoPaginada` a `tareas_videos.py` (mismos parámetros, instantánea de escalares, invocación síncrona en `_trabajo()`, conexión por hilo de trabajo, errores por señal `error`, sin interfaz/escaneo/FFprobe/FFmpeg/escritura), más `prueba_lectura_paginada.py` (32 pruebas). La operación está preparada para catálogos de decenas de miles de registros pero **no se conecta todavía con la interfaz**; la integración de la primera carga asíncrona paginada en `visor_videos.py` queda para una etapa futura.
+14. **Integración de la lectura paginada con la interfaz (carga inicial asíncrona)** — `visor_videos.py` dejó de leer SQLite en el hilo principal: `VisorVideos` usa `GestorTareas` + `TareaLecturaCatalogoPaginada` para cargar la primera página del catálogo en segundo plano (`TAMANIO_PAGINA_INICIAL = 100`), con estado de carga ("Cargando catálogo…"), manejo de errores visible sin cerrar la ventana ("No se pudo cargar el catálogo"), filtrado sobre las tarjetas ya cargadas y apagado ordenado en `closeEvent` (`gestor.cerrar()`, timeout por defecto 5000 ms). Sin `sqlite3` en la UI, sin conexiones almacenadas, sin `check_same_thread=False` y sin trabajo pesado en el hilo principal. Se agregó `prueba_interfaz_asincrona.py` (29 pruebas, incluida la evidencia de que no existen tarjetas antes del resultado y la fluidez durante una lectura bloqueada). El filtrado sigue siendo visual sobre la primera página; la paginación completa, la búsqueda en SQL y el escaneo real de carpetas quedan para etapas futuras.
