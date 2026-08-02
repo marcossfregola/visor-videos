@@ -32,22 +32,27 @@ arquitectónicas.
     `QFileDialog`; la ruta se normaliza a absoluta, se valida que exista
     y sea un directorio, se muestra y se conserva durante la sesión sin
     escanearla.
+-   Escaneo real y asíncrono de la carpeta seleccionada — **completado**
+    (`visor_videos.py` + `TareaEscaneo` + `GestorTareas`): el botón
+    "Escanear carpeta" escanea la carpeta elegida en segundo plano
+    (mismo gestor de la ventana) y presenta la cantidad de videos
+    detectados, sin tocar SQLite, FFprobe, FFmpeg ni miniaturas, y sin
+    recorrer subcarpetas.
 
 1.  Opción de incluir o excluir subcarpetas — **pendiente** (configurar
     si el escaneo de la carpeta elegida recorre las subcarpetas).
-2.  Escaneo real de la carpeta seleccionada — **pendiente** (conectar la
-    carpeta elegida en la interfaz con `TareaEscaneo` y mostrar el
-    resultado del escaneo).
-3.  Sincronización Escaneo → SQLite — **pendiente** (solo existe la
-    escritura de colecciones preparadas con upsert; la sincronización
-    completa del catálogo —detección de archivos, FFprobe y eliminación
-    de registros ausentes— y la escritura masiva no están implementadas).
+2.  Preparación y escritura de registros detectados — **pendiente**
+    (convertir los archivos detectados por el escaneo en registros
+    básicos y escribirlos con `TareaGuardarVideos`).
+3.  Sincronización completa del catálogo — **pendiente** (detección de
+    archivos, FFprobe y eliminación de registros ausentes; aún no
+    implementada).
 4.  FFprobe — **pendiente** (integrar la ejecución de FFprobe en el
     pipeline Escaneo → SQLite para completar los metadatos).
-5.  Generación asíncrona de miniaturas — **pendiente** (FFmpeg en
-    segundo plano).
-6.  Actualización dinámica de tarjetas — **pendiente** (refrescar la
-    grilla a medida que se sincroniza el catálogo).
+5.  FFmpeg y miniaturas — **pendiente** (generación asíncrona de
+    miniaturas en segundo plano).
+6.  Recarga automática del catálogo tras la escritura — **pendiente**
+    (refrescar la grilla a medida que se sincroniza el catálogo).
 7.  Progreso — **pendiente** (barra de progreso y estado de las tareas
     en curso).
 8.  Persistencia de configuración — **pendiente** (recordar entre

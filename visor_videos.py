@@ -20,8 +20,8 @@ from PySide6.QtWidgets import (
 )
 
 from rutas import ruta_carpeta_miniaturas
-from tareas import GestorTareas
-from tareas_videos import TareaLecturaCatalogoPaginada
+from tareas import Estado, GestorTareas
+from tareas_videos import TareaEscaneo, TareaLecturaCatalogoPaginada
 
 ANCHO_TARJETA = 320
 ALTO_TARJETA = 180
@@ -32,6 +32,9 @@ MENSAJE_CARGANDO = "Cargando catálogo…"
 MENSAJE_ERROR = "No se pudo cargar el catálogo"
 MENSAJE_SIN_CARPETA = "Ninguna carpeta seleccionada"
 MENSAJE_RUTA_INVALIDA = "La ruta no es válida o no es una carpeta"
+MENSAJE_ESCANEANDO = "Escaneando carpeta…"
+MENSAJE_ERROR_ESCANEO = "No se pudo escanear la carpeta"
+MENSAJE_SIN_ESCANEO = "Sin escanear"
 
 
 def formatear_valor(valor):
@@ -112,6 +115,9 @@ class VisorVideos(QMainWindow):
         self._carga_completada = False
         self.tarea_lectura = None
         self.carpeta_seleccionada = None
+        self._escaneo_pendiente = False
+        self.tarea_escaneo = None
+        self.videos_detectados = None
 
         self.busqueda = QLineEdit()
         self.busqueda.setPlaceholderText("Buscar por nombre...")
@@ -123,15 +129,23 @@ class VisorVideos(QMainWindow):
         self.boton_seleccionar_carpeta = QPushButton("Seleccionar carpeta")
         self.boton_seleccionar_carpeta.clicked.connect(self.seleccionar_carpeta)
 
+        self.boton_escanear = QPushButton("Escanear carpeta")
+        self.boton_escanear.setEnabled(False)
+        self.boton_escanear.clicked.connect(self.iniciar_escaneo)
+
         self.etiqueta_carpeta = QLabel(MENSAJE_SIN_CARPETA)
         self.etiqueta_carpeta.setTextInteractionFlags(Qt.TextSelectableByMouse)
+
+        self.estado_escaneo = QLabel(MENSAJE_SIN_ESCANEO)
 
         self.mensaje_carpeta = QLabel()
         self.mensaje_carpeta.setStyleSheet("color: #b00020;")
 
         fila_carpeta = QHBoxLayout()
         fila_carpeta.addWidget(self.boton_seleccionar_carpeta)
+        fila_carpeta.addWidget(self.boton_escanear)
         fila_carpeta.addWidget(self.etiqueta_carpeta, 1)
+        fila_carpeta.addWidget(self.estado_escaneo)
         fila_carpeta.addWidget(self.mensaje_carpeta)
 
         barra = QHBoxLayout()
@@ -159,6 +173,7 @@ class VisorVideos(QMainWindow):
         self.gestor = GestorTareas(self)
         self.gestor.tarea_resultado.connect(self._al_resultado)
         self.gestor.tarea_error.connect(self._al_error)
+        self.gestor.actividad_cambiada.connect(self._al_actividad)
         self._iniciar_carga()
 
     def _iniciar_carga(self):
@@ -172,16 +187,72 @@ class VisorVideos(QMainWindow):
             self, "Seleccionar carpeta de videos", ""
         )
         if not ruta:
+            self._actualizar_botones_carpeta()
             return
         ruta_absoluta = os.path.abspath(ruta)
         if not os.path.isdir(ruta_absoluta):
             self.mensaje_carpeta.setText(MENSAJE_RUTA_INVALIDA)
+            self._actualizar_botones_carpeta()
             return
         self.carpeta_seleccionada = ruta_absoluta
         self.etiqueta_carpeta.setText(ruta_absoluta)
         self.mensaje_carpeta.clear()
+        self._actualizar_botones_carpeta()
+
+    def _actualizar_botones_carpeta(self):
+        carpeta_valida = (
+            self.carpeta_seleccionada is not None
+            and os.path.isdir(self.carpeta_seleccionada)
+        )
+        self.boton_seleccionar_carpeta.setEnabled(not self._escaneo_pendiente)
+        self.boton_escanear.setEnabled(carpeta_valida and not self.gestor.activo)
+
+    def _al_actividad(self, activo):
+        self._actualizar_botones_carpeta()
+
+    def iniciar_escaneo(self):
+        if self.gestor.activo:
+            return
+        carpeta = self.carpeta_seleccionada
+        if not carpeta or not os.path.isdir(carpeta):
+            self.mensaje_carpeta.setText(MENSAJE_RUTA_INVALIDA)
+            self._actualizar_botones_carpeta()
+            return
+        tarea = TareaEscaneo(carpeta)
+        self._escaneo_pendiente = True
+        if not self.gestor.iniciar(tarea):
+            self._escaneo_pendiente = False
+            self._actualizar_botones_carpeta()
+            return
+        self.tarea_escaneo = tarea
+        self.estado_escaneo.setText(MENSAJE_ESCANEANDO)
+        self._actualizar_botones_carpeta()
+
+    def _al_resultado_escaneo(self, videos):
+        self._escaneo_pendiente = False
+        self.videos_detectados = list(videos)
+        self._mostrar_estado_escaneo()
+        self._actualizar_botones_carpeta()
+
+    def _al_error_escaneo(self, mensaje):
+        self._escaneo_pendiente = False
+        self.estado_escaneo.setText(MENSAJE_ERROR_ESCANEO)
+        self._actualizar_botones_carpeta()
+
+    def _mostrar_estado_escaneo(self):
+        if self.videos_detectados is None:
+            self.estado_escaneo.setText(MENSAJE_SIN_ESCANEO)
+            return
+        cantidad = len(self.videos_detectados)
+        if cantidad == 1:
+            self.estado_escaneo.setText("1 video detectado")
+        else:
+            self.estado_escaneo.setText(f"{cantidad} videos detectados")
 
     def _al_resultado(self, resultado):
+        if self._escaneo_pendiente:
+            self._al_resultado_escaneo(resultado)
+            return
         if self._carga_completada:
             return
         self.estado_carga.hide()
@@ -189,6 +260,9 @@ class VisorVideos(QMainWindow):
         self._carga_completada = True
 
     def _al_error(self, mensaje):
+        if self._escaneo_pendiente:
+            self._al_error_escaneo(mensaje)
+            return
         if self._carga_completada:
             return
         self.estado_carga.setText(MENSAJE_ERROR)
@@ -234,33 +308,44 @@ def main():
 
     print(f"carpeta_inicio={ventana.carpeta_seleccionada}")
     print(f"etiqueta_inicio={ventana.etiqueta_carpeta.text()}")
-    print(f"visibles_inicio={ventana.tarjetas_visibles()}")
     print(f"estado_inicio={ventana.estado_carga.text()}")
+    print(f"escanear_boton_inicio={ventana.boton_escanear.isEnabled()}")
+    print(f"estado_escaneo_inicio={ventana.estado_escaneo.text()}")
 
     original_dialogo = QFileDialog.getExistingDirectory
     temp_carpeta = tempfile.TemporaryDirectory()
     try:
-        QFileDialog.getExistingDirectory = (
-            lambda *args, **kwargs: temp_carpeta.name
-        )
+        for nombre in ["peli.mp4", "serie.mkv", "clip.avi", "doc.txt", "nota.log"]:
+            with open(
+                os.path.join(temp_carpeta.name, nombre), "w", encoding="utf-8"
+            ) as f:
+                f.write("contenido")
+
+        QFileDialog.getExistingDirectory = lambda *args, **kwargs: temp_carpeta.name
         ventana.seleccionar_carpeta()
         print(f"carpeta_seleccion={ventana.carpeta_seleccionada}")
         print(f"etiqueta_seleccion={ventana.etiqueta_carpeta.text()}")
+        print(f"escanear_boton_activo={ventana.boton_escanear.isEnabled()}")
 
         QFileDialog.getExistingDirectory = lambda *args, **kwargs: ""
         ventana.seleccionar_carpeta()
         print(f"carpeta_tras_cancelar={ventana.carpeta_seleccionada}")
         print(f"etiqueta_tras_cancelar={ventana.etiqueta_carpeta.text()}")
+        print(f"escanear_boton_tras_cancelar={ventana.boton_escanear.isEnabled()}")
 
-        intentos = {"valor": 0}
+        espera_carga = {"intentos": 0}
+        espera_escaneo = {"intentos": 0}
 
-        def comprobar_carga():
-            if not ventana._carga_completada and intentos["valor"] < 100:
-                intentos["valor"] += 1
-                QTimer.singleShot(100, comprobar_carga)
+        def comprobar_escaneo():
+            if (
+                ventana.gestor.activo or ventana._escaneo_pendiente
+            ) and espera_escaneo["intentos"] < 200:
+                espera_escaneo["intentos"] += 1
+                QTimer.singleShot(25, comprobar_escaneo)
                 return
-            print(f"visibles_cargados={ventana.tarjetas_visibles()}")
-            print(f"contador_cargado={ventana.contador.text()}")
+            print(f"videos_detectados={ventana.videos_detectados}")
+            print(f"estado_escaneo_final={ventana.estado_escaneo.text()}")
+            print(f"escanear_boton_final={ventana.boton_escanear.isEnabled()}")
             ventana.busqueda.setText("real")
 
             def verificar_y_cerrar():
@@ -271,6 +356,22 @@ def main():
                 app.quit()
 
             QTimer.singleShot(1500, verificar_y_cerrar)
+
+        def comprobar_carga():
+            if (
+                not ventana._carga_completada or ventana.gestor.activo
+            ) and espera_carga["intentos"] < 100:
+                espera_carga["intentos"] += 1
+                QTimer.singleShot(100, comprobar_carga)
+                return
+            print(f"visibles_cargados={ventana.tarjetas_visibles()}")
+            print(f"contador_cargado={ventana.contador.text()}")
+            print(f"escanear_boton_habilitado={ventana.boton_escanear.isEnabled()}")
+            ventana.boton_escanear.click()
+            print(f"estado_escaneo_mientras={ventana.estado_escaneo.text()}")
+            print(f"escanear_boton_mientras={ventana.boton_escanear.isEnabled()}")
+            espera_escaneo["intentos"] = 0
+            QTimer.singleShot(0, comprobar_escaneo)
 
         QTimer.singleShot(200, comprobar_carga)
         codigo = app.exec()

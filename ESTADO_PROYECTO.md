@@ -14,53 +14,63 @@ colección asíncrona (`TareaGuardarVideos`), **integración asíncrona de
 la primera carga del catálogo en la interfaz** (`visor_videos.py`
 consume `TareaLecturaCatalogoPaginada` mediante `GestorTareas` para la
 primera página, con estado de carga y manejo de errores sin bloquear la
-ventana) y **selección de carpeta desde la interfaz** (`visor_videos.py`
+ventana), **selección de carpeta desde la interfaz** (`visor_videos.py`
 permite elegir la carpeta de videos con `QFileDialog`, la normaliza a
-ruta absoluta, la valida y la conserva en la sesión sin escanearla)
-aprobadas; pendiente la integración funcional del pipeline asíncrono
-del catálogo (sincronización completa SQLite con detección de archivos
-y eliminación de registros ausentes; el pipeline Escaneo → SQLite aún
-no está encadenado; la selección de carpeta existe pero todavía no
-inicia el escaneo real de la carpeta elegida).
+ruta absoluta, la valida y la conserva en la sesión sin escanearla) y
+**escaneo manual y asíncrono de la carpeta elegida desde la interfaz**
+(`visor_videos.py` escanea la carpeta con `TareaEscaneo` mediante el
+mismo `GestorTareas`, muestra la cantidad de videos detectados y no
+modifica SQLite, no ejecuta FFprobe/FFmpeg ni genera miniaturas)
+aprobadas; pendiente la integración funcional del pipeline asíncrono del
+catálogo: la sincronización completa SQLite (escritura masiva con
+detección de archivos, FFprobe y eliminación de registros ausentes) y el
+encadenamiento del pipeline Escaneo → SQLite con registros básicos a
+partir de los archivos detectados.
 
 ## Último commit aprobado
 
-**Mensaje:** Incorporar selección de carpeta en la interfaz
+**Mensaje:** Escaneo manual y asíncrono de la carpeta seleccionada desde la interfaz
 
-**Etapa aprobada:** Selección de carpeta en la interfaz: `visor_videos.py`
-agrega el botón "Seleccionar carpeta" y una etiqueta de solo lectura con
-la ruta elegida, conservando la carpeta en el atributo de sesión
-`carpeta_seleccionada`. `seleccionar_carpeta()` abre
-`QFileDialog.getExistingDirectory`, normaliza la ruta con
-`os.path.abspath`, valida que exista y sea un directorio con
-`os.path.isdir`, conserva la selección anterior al cancelar y rechaza
-rutas inválidas con un mensaje visible sin cerrar la ventana. La
-selección no es persistente y todavía no inicia el escaneo (no se
-escanea la carpeta, no se abre SQLite, no se ejecuta FFprobe/FFmpeg ni
-se generan miniaturas). Con suite nueva `prueba_seleccion_carpeta.py`
-(26 pruebas).
+**Etapa aprobada:** Escaneo manual y asíncrono de la carpeta elegida
+desde la interfaz: `visor_videos.py` agrega el botón "Escanear carpeta"
+(`boton_escanear`), la etiqueta de estado (`estado_escaneo`), el
+atributo `videos_detectados` y el método `iniciar_escaneo()`. El botón
+queda habilitado solo con una carpeta válida y el gestor inactivo;
+`iniciar_escaneo()` revalida la carpeta con `os.path.isdir`, crea una
+`TareaEscaneo(carpeta)` y la ejecuta con el mismo `GestorTareas` de la
+ventana. El resultado se enruta por `_escaneo_pendiente` y se muestra la
+cantidad de videos detectados ("1 video detectado" / "N videos
+detectados"); ante un error se conserva el último resultado exitoso. El
+escaneo no escribe en SQLite, no ejecuta FFprobe/FFmpeg ni genera
+miniaturas, no crea tarjetas ni recarga el catálogo, y no recorre
+subcarpetas. Con suite nueva `prueba_escaneo_interfaz.py` (36 pruebas).
 
 **SHA definitivo:** debe consultarse con `git log -1` (el SHA no se
 escribe en este documento para evitar autorreferencias al commit).
 
 ## Última etapa aprobada
 
-Selección de carpeta en la interfaz: `visor_videos.py` incorpora el
-botón "Seleccionar carpeta" (`boton_seleccionar_carpeta`), la etiqueta
-de solo lectura con la ruta (`etiqueta_carpeta`) y el atributo de sesión
-`carpeta_seleccionada`. `seleccionar_carpeta()` abre
-`QFileDialog.getExistingDirectory`, normaliza la ruta elegida con
-`os.path.abspath`, valida con `os.path.isdir` que exista y sea un
-directorio, muestra la ruta en la interfaz y la conserva durante la
-sesión; al cancelar conserva la selección anterior y ante una ruta
-inválida rechaza la selección, mantiene la anterior y muestra un mensaje
-visible sin cerrar la ventana. La selección **no es persistente** (vive
-solo en la sesión) y **todavía no inicia el escaneo**: no se escanea la
-carpeta, no se abre SQLite, no se ejecuta FFprobe/FFmpeg ni se generan
-miniaturas. Con suite nueva `prueba_seleccion_carpeta.py` (26 pruebas,
-incluido el smoke test real con selección simulada). Aprobada sin
-observaciones. Conectar la carpeta seleccionada con `TareaEscaneo`
-queda para la próxima etapa.
+Escaneo manual y asíncrono de la carpeta seleccionada desde la interfaz:
+`visor_videos.py` incorpora el botón "Escanear carpeta"
+(`boton_escanear`), la etiqueta de estado (`estado_escaneo`), el
+atributo `videos_detectados` y el método `iniciar_escaneo()`. El botón
+queda habilitado solo con una carpeta válida y el gestor inactivo;
+`iniciar_escaneo()` revalida la carpeta con `os.path.isdir`, crea una
+`TareaEscaneo(carpeta)` y la ejecuta con el **mismo** `GestorTareas` de
+la ventana (reutilizado para la carga inicial y los escaneos sucesivos).
+El resultado se enruta a `_al_resultado_escaneo` mediante el estado
+interno `_escaneo_pendiente` y se muestra el conteo ("1 video
+detectado" / "N videos detectados") sin crear tarjetas ni recargar el
+catálogo; ante un error se muestra "No se pudo escanear la carpeta"
+**preservando el último resultado exitoso**. Los controles quedan
+bloqueados mientras el gestor está ocupado. **Ausencia deliberada**: el
+escaneo solo cuenta los archivos de video de la carpeta elegida (sin
+subcarpetas), no escribe en SQLite, no ejecuta FFprobe/FFmpeg ni genera
+miniaturas. Con suite nueva `prueba_escaneo_interfaz.py` (36 pruebas,
+incluido el smoke test real con escaneo simulado). Aprobada sin
+observaciones. Los archivos detectados todavía no se convierten en
+registros del catálogo; esa conversión y su escritura con
+`TareaGuardarVideos` quedan para la próxima etapa.
 
 ## Estado de la arquitectura
 
@@ -82,23 +92,28 @@ queda para la próxima etapa.
 -   Integración asíncrona de la primera carga del catálogo en la
     interfaz.
 -   Selección de carpeta desde la interfaz.
+-   Escaneo manual y asíncrono de la carpeta elegida desde la interfaz.
 -   Pruebas automatizadas.
 
 ### En desarrollo
 
 Integración funcional del pipeline asíncrono del catálogo: la selección
-de carpeta desde la interfaz ya existe, pero el escaneo real de la
-carpeta elegida y la sincronización completa del catálogo —detección de
-archivos, FFprobe y eliminación de registros ausentes— siguen
-pendientes; el pipeline Escaneo → SQLite aún no está encadenado. La
-carga inicial asíncrona de la primera página del catálogo ya está
-integrada en la interfaz.
+de carpeta y el escaneo manual y asíncrono de la carpeta elegida desde
+la interfaz ya existen (la ventana muestra la cantidad de videos
+detectados), pero los archivos detectados todavía no se convierten en
+registros del catálogo ni se escriben en SQLite; la sincronización
+completa —detección de archivos, preparación de registros, FFprobe y
+eliminación de registros ausentes— y el encadenamiento del pipeline
+Escaneo → SQLite siguen pendientes. La carga inicial asíncrona de la
+primera página del catálogo ya está integrada en la interfaz.
 
 ## Pendientes prioritarios
 
-1.  Conectar la carpeta seleccionada con `TareaEscaneo`: escanear la
-    carpeta elegida y mostrar el resultado del escaneo en la interfaz
-    (próxima etapa limitada).
+1.  Preparar registros básicos a partir de los archivos detectados y
+    escribirlos mediante `TareaGuardarVideos` (próxima etapa limitada:
+    `TareaEscaneo` → preparación de registros básicos →
+    `TareaGuardarVideos`, sin ejecutar todavía FFprobe/FFmpeg ni
+    miniaturas y sin eliminar registros ausentes).
 2.  Sincronización SQLite asíncrona (solo existe escritura de
     colecciones preparadas con upsert; falta la escritura masiva con
     detección de archivos, FFprobe y eliminación de registros ausentes).
@@ -118,12 +133,16 @@ Ver `DOCUMENTO_TECNICO.md`.
 Pendientes principales: - cancelación cooperativa; - integración
 definitiva del ciclo de vida de tareas con la ventana (la carga inicial
 asíncrona ya usa `GestorTareas` y cierra de forma ordenada en
-`closeEvent`); - el escaneo real de carpetas y la sincronización
-completa del catálogo siguen pendientes; - decisión pendiente sobre si
-`%` y `_` como comodines `LIKE` en la búsqueda de
-`listar_videos_paginado` se aceptan como contrato; - FFmpeg continúa
-siendo síncrono; - siguen pendientes progreso y cancelación; - limpieza
-controlada de miniaturas antiguas.
+`closeEvent`, aunque `closeEvent` puede esperar hasta 5 s por una tarea
+activa); - los archivos detectados por el escaneo de la interfaz
+todavía no se convierten en registros del catálogo y la sincronización
+completa sigue pendiente; - el enrutado de resultados del escaneo por
+`_escaneo_pendiente` es suficiente para una única tarea activa y debe
+revisarse si la interfaz incorpora más tipos de tarea; - el escaneo no
+incluye subcarpetas; - decisión pendiente sobre si `%` y `_` como
+comodines `LIKE` en la búsqueda de `listar_videos_paginado` se aceptan
+como contrato; - FFmpeg continúa siendo síncrono; - siguen pendientes
+progreso y cancelación; - limpieza controlada de miniaturas antiguas.
 
 ## Deuda técnica
 
@@ -139,19 +158,14 @@ controlada de miniaturas antiguas.
 
 ## Próxima etapa
 
-Etapa limitada: conectar la carpeta seleccionada desde la interfaz con
-`TareaEscaneo`, mostrando el resultado del escaneo de la carpeta elegida
-**sin modificar todavía SQLite, sin ejecutar FFprobe ni generar
-miniaturas**. Se usará la infraestructura asíncrona existente
-(`TareaEscaneo` y `GestorTareas`); la sincronización completa del
-catálogo (FFprobe, actualización y eliminación de registros ausentes)
-queda para una etapa posterior. Después de esa integración, una etapa de
-infraestructura común de pruebas consolidará los helpers y
-falsificaciones que las suites repiten (`Captura`/`correr`, bases
-SQLite temporales, conectores de conteo de conexiones/hilos y de fallo
-controlado), sin cambiar el comportamiento ni el contrato de los
-módulos probados y manteniendo `escanear_videos.py` como única capa de
-datos. Solo se diseñará; no se implementará todavía.
+Preparar registros básicos a partir de los archivos detectados y
+escribirlos mediante `TareaGuardarVideos`, sin ejecutar todavía FFprobe,
+FFmpeg ni miniaturas y sin eliminar registros ausentes. Es un
+encadenamiento limitado inicial: `TareaEscaneo` → preparación de
+registros básicos → `TareaGuardarVideos`. No constituye todavía la
+sincronización completa del catálogo (que además incluye FFprobe,
+miniaturas y la eliminación de registros ausentes); la integración
+funcional completa del pipeline asíncrono del catálogo sigue pendiente.
 
 ## Documentos del proyecto
 
