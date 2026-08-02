@@ -49,3 +49,16 @@ class TareaFFprobe(TareaBase):
     @staticmethod
     def _resultado(ruta, datos=None, error=None):
         return {"ruta": ruta, "datos": datos, "error": error}
+
+
+class TareaEscaneo(TareaBase):
+    def __init__(self, carpeta, parent=None):
+        super().__init__(parent)
+        self._carpeta = carpeta
+
+    @property
+    def carpeta(self):
+        return self._carpeta
+
+    def _trabajo(self):
+        return escanear_videos(self._carpeta)

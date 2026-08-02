@@ -40,6 +40,11 @@ prueba/
 ├── prueba_agente.py       Artifacto de prueba (ajeno al visor)
 ├── escanear_videos.py     CLI / backend: escaneo + SQLite + FFprobe
 ├── rutas.py               Resolución centralizada de rutas del proyecto (independiente del CWD)
+├── tareas.py              Infraestructura reutilizable de trabajos en segundo plano (QThread)
+├── tareas_videos.py       Tareas de video asíncronas (TareaFFprobe, TareaEscaneo)
+├── prueba_tareas.py       Pruebas automatizadas de la infraestructura de trabajos
+├── prueba_ffprobe.py      Pruebas automatizadas de TareaFFprobe
+├── prueba_escaneo.py      Pruebas automatizadas de TareaEscaneo
 ├── visor_videos.py        Interfaz gráfica (PySide6) + smoke test automático
 ├── DOCUMENTO_TECNICO.md   Este documento
 ├── miniaturas/            Imágenes de miniatura (JPG, generadas automáticamente)
@@ -101,6 +106,16 @@ Diseñado como punto único de extensión para futuras rutas de configuración; 
 - `miniatura_principal(nombre)` — ubica la primera miniatura cuyo prefijo coincide con el video.
 - `main()` — bootstrap de la app + **smoke test automático**: abre la ventana, imprime visibles/contador iniciales, a los 2 s filtra con "real", a los 5 s imprime el resultado final y cierra con `exit 0`.
 
+### `tareas.py` — infraestructura genérica de trabajos en segundo plano
+- `Estado` — estados del ciclo de vida: `inactivo`, `ocupado`, `finalizando`, `cerrado`.
+- `TareaBase(QObject)` — clase base de tareas asíncronas; señales `inicio`, `finalizada`, `error(str)`, `resultado(object)`. `ejecutar()` emite `inicio`, invoca `_trabajo()` y emite `resultado(valor)`; ante una excepción emite `error(f"{Tipo}: {msg}")`; siempre emite `finalizada`. Las subclases implementan `_trabajo()`.
+- `GestorTareas(QObject)` — orquesta cada tarea en un `QThread` propio. Señales `tarea_iniciada`, `tarea_resultado(object)`, `tarea_error(str)`, `tarea_finalizada` y `actividad_cambiada(bool)`. `iniciar(tarea)` valida la tarea, crea el `QThread`, la mueve a él y lo arranca; el hilo termina cuando la tarea emite `finalizada`. `cerrar(timeout_ms)` permite el apagado ordenado.
+
+### `tareas_videos.py` — tareas asíncronas específicas de video
+- `rutas_videos()` — rutas absolutas de los videos de `videos_prueba/` detectados por `escanear_videos`.
+- `TareaFFprobe(TareaBase)` — ejecuta `obtener_datos_ffprobe` sobre una lista de rutas en segundo plano; devuelve un diccionario con `rutas`, `resultados`, `procesados`, `con_datos` y `con_error`. Cada resultado contiene `ruta`, `datos` y `error` por archivo.
+- `TareaEscaneo(TareaBase)` — recibe una carpeta y devuelve la misma lista ordenada de archivos de video que `escanear_videos(carpeta)`. Una carpeta inexistente (`FileNotFoundError`) o una ruta que no es carpeta (`NotADirectoryError`) se propaga mediante la señal `error` de la infraestructura.
+
 ### Módulos ajenos al visor (preservados, no forman parte de la arquitectura)
 - `operaciones.py` — función `sumar`; usado solo por `main.py`.
 - `main.py` — prueba que escribe el resultado en `datos.txt`.
@@ -117,9 +132,11 @@ Diseñado como punto único de extensión para futuras rutas de configuración; 
 | FFprobe | `escanear_videos.obtener_datos_ffprobe` | Metadatos de video. |
 | FFmpeg | `escanear_videos.generar_miniatura` | Extrae un fotograma del video; genera la miniatura automáticamente. |
 | Generación de miniaturas | `escanear_videos.asegurar_miniatura` | Genera o reutiliza; escribe solo en la siguiente ranura libre y preserva los archivos existentes. |
+| Trabajos en segundo plano | `tareas.py` | `TareaBase` + `GestorTareas` (`QThread` por ejecución); señales `tarea_iniciada`, `tarea_resultado`, `tarea_error`, `tarea_finalizada`. |
+| Escaneo asíncrono | `tareas_videos.TareaEscaneo` | Envuelve `escanear_videos` en segundo plano; errores por señal `error`. |
+| FFprobe asíncrono | `tareas_videos.TareaFFprobe` | Metadatos de video en segundo plano; resultado y error por ruta. |
 | Caché | — | **No existe** un módulo de caché; la BD cumple parcialmente ese rol para metadatos. |
 | Configuración | `rutas.py` | Resolución de rutas del proyecto (raíz, BD, miniaturas, videos) centralizada e independiente del CWD. Aún no hay módulo de configuración completo. |
-| Trabajos en segundo plano | — | **Ausente**; FFprobe se ejecuta en el hilo principal y bloquea. |
 
 ## 5. Flujo de ejecución (apertura → tarjetas)
 
@@ -145,6 +162,12 @@ Flujo de datos (respaldo/escritura) — ejecución previa del CLI:
    - elimina de la BD los que ya no están en disco.
 4. `commit()` y cierre.
 
+Flujo de ejecución asíncrona (infraestructura de tareas):
+
+1. `gestor.iniciar(tarea)` valida la tarea (`TareaBase`, sin padre, no ejecutada), crea un `QThread` propio, la mueve a él y lo arranca.
+2. El hilo ejecuta `TareaBase.ejecutar()`: emite `inicio`, corre `_trabajo()` y emite `resultado(valor)`; si `_trabajo()` lanza una excepción, emite `error(f"{Tipo}: {msg}")`. En ambos casos emite `finalizada`.
+3. `GestorTareas` replica las señales al hilo principal (`tarea_iniciada`, `tarea_resultado`, `tarea_error`) y, al terminar el hilo (`hilo.finished`), vuelve a `inactivo` y libera el hilo. `cerrar(timeout_ms)` permite detener el hilo en curso.
+
 ## 6. Flujo de generación de miniaturas
 
 **Estado actual: generación automática implementada.** Durante el escaneo, para cada video no vacío se asegura una miniatura. El flujo por video es:
@@ -159,7 +182,7 @@ Durante un escaneo se genera **como máximo una miniatura nueva por video**, y �
 ## 7. Puntos de extensión previstos
 
 1. **Generación de miniaturas con FFmpeg** — **implementada** en `escanear_videos.py` (`asegurar_miniatura`/`generar_miniatura`): genera como máximo una miniatura nueva por video por escaneo, preservando los archivos existentes.
-2. **Ejecución asíncrona** — mover FFprobe/FFmpeg a trabajos en segundo plano (hilos/`QThread`/procesos) para no bloquear el escaneo ni la UI.
+2. **Ejecución asíncrona** — **en curso**: el escaneo (`TareaEscaneo`) y FFprobe (`TareaFFprobe`) ya se ejecutan en segundo plano mediante `tareas.py`. Pendiente: FFmpeg asíncrono, SQLite asíncrono e integración con la ventana.
 3. **Módulo de configuración** — centralizar rutas (`videos_prueba`, `miniaturas`, `biblioteca.db`), extensiones, tamaños de tarjeta y número de columnas.
 4. **Caché de miniaturas/metadatos** — formalizar la BD como caché de metadatos y evitar re-escaneos.
 5. **Lectura/vistas del catálogo** — sobre `listar_videos()`, agregar orden/agrupación/filtros adicionales sin tocar la UI.
@@ -172,7 +195,7 @@ Durante un escaneo se genera **como máximo una miniatura nueva por video**, y �
 | 1 | Media | La interfaz (`visor_videos.py`) accedía a SQLite directamente y duplicaba el nombre de BD (`"biblioteca.db"`). **Corregido** en esta etapa. |
 | 2 | Media | Rutas relativas (`miniaturas/`, `videos_prueba/`, `biblioteca.db`) dependían del directorio de trabajo; la app fallaba si se lanzaba desde otra ubicación. **Resuelto** (ver §9, etapa de rutas). |
 | 3 | Media | No existía generación de miniaturas; solo conteo. **Resuelto** (ver §6). |
-| 4 | Media | FFprobe se ejecuta en el hilo principal con timeout de 30 s por video; el escaneo bloquea. Pendiente. |
+| 4 | Media | FFprobe se ejecutaba en el hilo principal con timeout de 30 s por video; el escaneo bloquea. **Resuelto en parte**: FFprobe se movió a segundo plano con `TareaFFprobe`. FFmpeg y la integración de tareas con la ventana continúan pendientes. |
 | 5 | Baja | `contar_miniaturas`/`miniatura_principal` usan coincidencia por prefijo (`startswith`); un video `video_real.mp4` podría matchear miniaturas de un hipotético `video_realista.mp4`. Pendiente. |
 | 6 | Baja | Los videos vacíos (0 bytes) quedan sin metadatos; comportamiento correcto pero debe documentarse para el usuario. Pendiente. |
 | 7 | Informativa | `main.py`, `operaciones.py`, `prueba_agente.py`, `datos.txt` son artefactos de prueba ajenos al visor. Se preservaron por política de esta etapa. |
@@ -214,11 +237,32 @@ Mínimos y justificados (etapa de congelamiento, sin funcionalidad nueva):
 - `visor_videos.py`
   - `miniatura_principal()` resuelve `miniaturas/` a través de `rutas.py`. Sin cambios de interfaz.
 
+### Etapa de infraestructura reutilizable de trabajos en segundo plano
+
+- `tareas.py` (nuevo)
+  - `Estado`, `TareaBase` y `GestorTareas`: ejecución de tareas en un `QThread` propio por ejecución, con señales `tarea_iniciada`, `tarea_resultado`, `tarea_error`, `tarea_finalizada` y `actividad_cambiada`. Ciclo de vida `inactivo` → `ocupado` → `inactivo`; `cerrar()` permite el apagado ordenado.
+- `prueba_tareas.py` (nuevo)
+  - Pruebas de la infraestructura: ejecución en hilo, orden de señales, errores, concurrencia de gestores, rechazos y ciclo de vida del hilo.
+
+### Etapa de procesamiento asíncrono de metadatos (TareaFFprobe)
+
+- `tareas_videos.py` (nuevo)
+  - `rutas_videos()` y `TareaFFprobe(TareaBase)`: metadatos FFprobe en segundo plano, con resultado por ruta (`ruta`, `datos`, `error`) y resumen (`procesados`, `con_datos`, `con_error`).
+- `prueba_ffprobe.py` (nuevo)
+  - Pruebas de `TareaFFprobe` mediante `GestorTareas`: video real, archivos vacíos, rutas inexistentes, hilo de trabajo, señales y rechazos.
+
+### Etapa de escaneo asíncrono (TareaEscaneo)
+
+- `tareas_videos.py`
+  - `TareaEscaneo(TareaBase)`: recibe una carpeta y devuelve en segundo plano la misma lista que `escanear_videos(carpeta)`. Los errores de carpeta inexistente o ruta que no es carpeta se propagan mediante la señal `error` de la infraestructura.
+- `prueba_escaneo.py` (nuevo)
+  - Pruebas de `TareaEscaneo` con directorios temporales: equivalencia con la función síncrona, orden, filtrado de extensiones, carpeta vacía, carpeta inexistente, ruta-archivo, fallo controlado por señal, ausencia de SQLite/FFprobe/FFmpeg y ciclo de vida del hilo.
+
 ## 10. Recomendaciones priorizadas
 
 1. **Alta — Configurar rutas absolutas** (`escanear_videos.py`, `visor_videos.py`): resolver `miniaturas/`, `videos_prueba/` y `biblioteca.db` a partir de `os.path.dirname(__file__)` o un módulo de configuración. **Resuelto** — implementado en `rutas.py` (capa de rutas; sin módulo de configuración completo todavía).
 2. **Alta — Limpieza controlada de miniaturas obsoletas**: definir una política segura para archivar o eliminar versiones antiguas y evitar el crecimiento acumulativo de ranuras `_NN`. **Ninguna eliminación, sobrescritura, movimiento o archivado automático puede implementarse sin: una política segura previamente definida, autorización expresa y verificación de que no se perderán datos necesarios.** (La generación con FFmpeg ya está implementada.)
-3. **Media — Trabajos en segundo plano**: mover FFprobe/FFmpeg fuera del hilo principal (hilos o `QThread`), con barras de progreso.
+3. **Media — Trabajos en segundo plano**: **en curso** — infraestructura implementada en `tareas.py` con `TareaFFprobe` y `TareaEscaneo`. Pendiente: FFmpeg asíncrono, SQLite asíncrono, integración con la ventana y barra de progreso.
 4. **Media — Módulo de configuración** centralizado (rutas, extensiones, dimensiones, columnas).
 5. **Baja — Robustecer coincidencia de miniaturas**: usar coincidencia de prefijo con delimitador (`prefijo + "_"`) o patrón rígido `<video>_<NN>.jpg`.
 6. **Baja — Reubicación de artefactos de prueba**: Git y `.gitignore` ya están implementados; `biblioteca.db`, `datos.txt`, `miniaturas/`, `__pycache__/` y los archivos `.pyc` ya están ignorados. La recomendación futura se limita a evaluar la reubicación de los artefactos de prueba (`main.py`, `operaciones.py`, `prueba_agente.py`) en una etapa autorizada, sin moverlos ahora.
@@ -242,6 +286,10 @@ Mínimos y justificados (etapa de congelamiento, sin funcionalidad nueva):
 | Smoke test GUI (etapa de rutas, CWD = proyecto) | `python visor_videos.py` | `4 videos` → filtro `real` → `1 video`, exit 0 — **sin regresiones** |
 | Escaneo desde directorio ajeno al proyecto | `python C:\prueba\escanear_videos.py` (CWD = `%TEMP%\opencode`) | OK (exit 0); `biblioteca.db` y `miniaturas/` actualizados en `C:\prueba`; no se crearon archivos en el CWD |
 | Interfaz desde directorio ajeno al proyecto | `python C:\prueba\visor_videos.py` (CWD = `%TEMP%\opencode`) | Salida idéntica (`4 videos` → `1 video`), exit 0 — rutas independientes del CWD |
+| Pruebas de infraestructura de tareas | `python prueba_tareas.py` | 13/13 OK (RESULTADO_FINAL=OK, exit 0) |
+| Pruebas de TareaFFprobe (regresión) | `python prueba_ffprobe.py` | 12/12 OK (RESULTADO_FINAL=OK, exit 0) |
+| Compilación (etapa de escaneo asíncrono) | `python -m py_compile tareas.py tareas_videos.py escanear_videos.py rutas.py prueba_escaneo.py` | OK (exit 0) |
+| Pruebas de TareaEscaneo | `python prueba_escaneo.py` | 12/12 OK (RESULTADO_FINAL=OK, exit 0) |
 
 ## 12. Registro de cambios
 
@@ -249,3 +297,6 @@ Mínimos y justificados (etapa de congelamiento, sin funcionalidad nueva):
 2. **Incorporación de Git** — se añadió control de versiones al proyecto.
 3. **Primera generación de miniaturas con preservación de archivos** — se implementó la generación automática (como máximo una miniatura nueva por video por escaneo, solo si no existe ninguna vigente) con reutilización por `mtime`; las miniaturas existentes nunca se sobrescriben ni se eliminan automáticamente.
 4. **Rutas independientes del directorio de trabajo** — se creó `rutas.py` como capa centralizada de resolución de rutas y se reemplazaron los literales relativos (`biblioteca.db`, `miniaturas/`, `videos_prueba/`) en `escanear_videos.py` y `visor_videos.py`. La aplicación ahora funciona sin importar desde dónde se ejecute Python.
+5. **Infraestructura reutilizable de trabajos en segundo plano** — se creó `tareas.py` con `Estado`, `TareaBase` y `GestorTareas`, ejecutando cada tarea en un `QThread` propio con señales para resultados y errores; se agregó `prueba_tareas.py`.
+6. **Procesamiento asíncrono de metadatos FFprobe** — se creó `tareas_videos.py` con `rutas_videos()` y `TareaFFprobe`, más `prueba_ffprobe.py`.
+7. **Escaneo asíncrono** — se agregó `TareaEscaneo` a `tareas_videos.py` (reutiliza `escanear_videos`) y `prueba_escaneo.py`.

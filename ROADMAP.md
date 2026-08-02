@@ -11,8 +11,10 @@ arquitectónicas.
 
 # Prioridad inmediata
 
-1.  Pipeline asíncrono completo del catálogo.
-2.  Integración de SQLite con el pipeline.
+-   Escaneo asíncrono — **completado** (`TareaEscaneo`).
+
+1.  Integración asíncrona de SQLite.
+2.  Encadenamiento progresivo del pipeline.
 3.  Actualización asíncrona de la interfaz.
 4.  FFmpeg en segundo plano.
 5.  Generación de múltiples miniaturas por video.
