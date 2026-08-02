@@ -45,6 +45,7 @@ prueba/
 ├── prueba_tareas.py       Pruebas automatizadas de la infraestructura de trabajos
 ├── prueba_ffprobe.py      Pruebas automatizadas de TareaFFprobe
 ├── prueba_escaneo.py      Pruebas automatizadas de TareaEscaneo
+├── prueba_lectura.py      Pruebas automatizadas de TareaLecturaCatalogo
 ├── visor_videos.py        Interfaz gráfica (PySide6) + smoke test automático
 ├── DOCUMENTO_TECNICO.md   Este documento
 ├── miniaturas/            Imágenes de miniatura (JPG, generadas automáticamente)
@@ -85,7 +86,7 @@ prueba/
 - `asegurar_miniatura(video, ruta_video)` — reutiliza una miniatura válida si existe; si no, genera una nueva en la **siguiente ranura libre**. Nunca sobrescribe ni elimina archivos.
 - `contar_miniaturas(video)` — cuenta miniaturas existentes en `miniaturas/` cuyo nombre empieza con el prefijo del video.
 - `insertar_video`, `actualizar_datos`, `sincronizar_bd` — lógica de sincronización disco ↔ BD: inserta nuevos, actualiza metadatos (incluida `cantidad_miniaturas` tras `asegurar_miniatura`), elimina de la BD los que ya no están en disco.
-- `listar_videos()` — **capa de lectura** que consume la interfaz: devuelve las filas del catálogo (nombre, duración, ancho, alto, codec, cantidad de miniaturas) ordenadas por nombre.
+- `listar_videos(ruta_db=None)` — **capa de lectura** que consume la interfaz: devuelve las filas del catálogo (nombre, duración, ancho, alto, codec, cantidad de miniaturas) ordenadas por nombre. Acepta una ruta de base opcional para pruebas; por defecto usa `ruta_biblioteca()`. Abre y cierra su propia conexión en el hilo que la invoca (sin `check_same_thread=False`). **Base inexistente**: valida `os.path.isfile(ruta_db)` antes de conectar; si la base no existe (falta el archivo o el directorio padre), lanza `FileNotFoundError` sin crear archivos. La lectura nunca crea la base; la creación es responsabilidad de `conectar_bd()`/`main()`.
 - `main()` — CLI: sincroniza el catálogo contra `videos_prueba/` (ruta resuelta por `rutas.py`).
 
 ### `rutas.py` — capa centralizada de resolución de rutas
@@ -115,6 +116,7 @@ Diseñado como punto único de extensión para futuras rutas de configuración; 
 - `rutas_videos()` — rutas absolutas de los videos de `videos_prueba/` detectados por `escanear_videos`.
 - `TareaFFprobe(TareaBase)` — ejecuta `obtener_datos_ffprobe` sobre una lista de rutas en segundo plano; devuelve un diccionario con `rutas`, `resultados`, `procesados`, `con_datos` y `con_error`. Cada resultado contiene `ruta`, `datos` y `error` por archivo.
 - `TareaEscaneo(TareaBase)` — recibe una carpeta y devuelve la misma lista ordenada de archivos de video que `escanear_videos(carpeta)`. Una carpeta inexistente (`FileNotFoundError`) o una ruta que no es carpeta (`NotADirectoryError`) se propaga mediante la señal `error` de la infraestructura.
+- `TareaLecturaCatalogo(TareaBase)` — lee el catálogo en segundo plano invocando `listar_videos(ruta_db)`; devuelve la misma estructura que la lectura síncrona. Acepta una ruta de base opcional (para pruebas); por defecto usa `ruta_biblioteca()`. **Regla de conexión SQLite por hilo**: la conexión se abre y se cierra dentro del hilo de trabajo, se usa únicamente en ese hilo, no se almacena como atributo persistente de la tarea, no se comparte con el hilo principal y no se usa `check_same_thread=False`. Los errores de lectura (`FileNotFoundError` si la base no existe, `sqlite3.OperationalError`, `sqlite3.DatabaseError`, etc.) se convierten en la señal `error` gestionada por `TareaBase`. La lectura no crea archivos: si la base no existe, se comunica `FileNotFoundError` sin crear la base.
 
 ### Módulos ajenos al visor (preservados, no forman parte de la arquitectura)
 - `operaciones.py` — función `sumar`; usado solo por `main.py`.
@@ -135,6 +137,8 @@ Diseñado como punto único de extensión para futuras rutas de configuración; 
 | Trabajos en segundo plano | `tareas.py` | `TareaBase` + `GestorTareas` (`QThread` por ejecución); señales `tarea_iniciada`, `tarea_resultado`, `tarea_error`, `tarea_finalizada`. |
 | Escaneo asíncrono | `tareas_videos.TareaEscaneo` | Envuelve `escanear_videos` en segundo plano; errores por señal `error`. |
 | FFprobe asíncrono | `tareas_videos.TareaFFprobe` | Metadatos de video en segundo plano; resultado y error por ruta. |
+| Lectura del catálogo | `escanear_videos.listar_videos` | Capa de lectura SQLite; abre y cierra su propia conexión en el hilo que la invoca. |
+| Lectura asíncrona del catálogo | `tareas_videos.TareaLecturaCatalogo` | Lectura SQLite en segundo plano; errores por señal `error`; conexión por hilo (sin `check_same_thread=False`). |
 | Caché | — | **No existe** un módulo de caché; la BD cumple parcialmente ese rol para metadatos. |
 | Configuración | `rutas.py` | Resolución de rutas del proyecto (raíz, BD, miniaturas, videos) centralizada e independiente del CWD. Aún no hay módulo de configuración completo. |
 
@@ -182,7 +186,7 @@ Durante un escaneo se genera **como máximo una miniatura nueva por video**, y �
 ## 7. Puntos de extensión previstos
 
 1. **Generación de miniaturas con FFmpeg** — **implementada** en `escanear_videos.py` (`asegurar_miniatura`/`generar_miniatura`): genera como máximo una miniatura nueva por video por escaneo, preservando los archivos existentes.
-2. **Ejecución asíncrona** — **en curso**: el escaneo (`TareaEscaneo`) y FFprobe (`TareaFFprobe`) ya se ejecutan en segundo plano mediante `tareas.py`. Pendiente: FFmpeg asíncrono, SQLite asíncrono e integración con la ventana.
+2. **Ejecución asíncrona** — **en curso**: el escaneo (`TareaEscaneo`), FFprobe (`TareaFFprobe`) y la **lectura del catálogo SQLite** (`TareaLecturaCatalogo`, solo lectura) ya se ejecutan en segundo plano mediante `tareas.py`. Pendiente: escritura y sincronización SQLite asíncronas, el encadenamiento del pipeline Escaneo → SQLite, FFmpeg asíncrono e integración con la ventana.
 3. **Módulo de configuración** — centralizar rutas (`videos_prueba`, `miniaturas`, `biblioteca.db`), extensiones, tamaños de tarjeta y número de columnas.
 4. **Caché de miniaturas/metadatos** — formalizar la BD como caché de metadatos y evitar re-escaneos.
 5. **Lectura/vistas del catálogo** — sobre `listar_videos()`, agregar orden/agrupación/filtros adicionales sin tocar la UI.
@@ -258,11 +262,20 @@ Mínimos y justificados (etapa de congelamiento, sin funcionalidad nueva):
 - `prueba_escaneo.py` (nuevo)
   - Pruebas de `TareaEscaneo` con directorios temporales: equivalencia con la función síncrona, orden, filtrado de extensiones, carpeta vacía, carpeta inexistente, ruta-archivo, fallo controlado por señal, ausencia de SQLite/FFprobe/FFmpeg y ciclo de vida del hilo.
 
+### Etapa de lectura asíncrona del catálogo (TareaLecturaCatalogo)
+
+- `escanear_videos.py`
+  - `listar_videos(ruta_db=None)`: parámetro opcional de ruta de base (por defecto `ruta_biblioteca()`) para permitir lecturas con bases temporales en pruebas; comportamiento por defecto sin cambios. Validación previa mínima: si la base no existe (archivo o directorio padre), lanza `FileNotFoundError` antes de conectar y **no crea archivos** (la lectura no crea la base; se evita que `sqlite3.connect` deje un archivo vacío de 0 bytes). Confirmado por diagnóstico aislado: `sqlite3.connect` sobre un archivo inexistente en un directorio existente crea un archivo de 0 bytes y el SELECT falla con `no such table: videos`; con directorio padre inexistente lanza `unable to open database file` sin crear archivo. Con la validación, ambos casos producen `FileNotFoundError` sin efectos secundarios.
+- `tareas_videos.py`
+  - `TareaLecturaCatalogo(TareaBase)`: lee el catálogo en segundo plano vía `listar_videos`; conexión SQLite abierta y cerrada dentro del hilo de trabajo, sin `check_same_thread=False`, sin conexión compartida con el hilo principal. Por heredar la validación de `listar_videos`, la lectura asíncrona tampoco crea archivos y comunica `FileNotFoundError` por la señal `error` cuando la base no existe.
+- `prueba_lectura.py` (nuevo)
+  - Pruebas de `TareaLecturaCatalogo` con bases temporales: equivalencia síncrona/asíncrona, ejecución en `QThread`, conexión abierta/cerrada en el hilo de trabajo, base vacía, varias filas, orden, `NULL`, base inexistente, directorio padre inexistente, base corrupta, única finalización, liberación del hilo, ausencia de escritura, ausencia de escaneo/FFprobe/FFmpeg y **no deja archivos inesperados** (el listado del directorio temporal queda idéntico tras lecturas con base válida, base corrupta y base inexistente).
+
 ## 10. Recomendaciones priorizadas
 
 1. **Alta — Configurar rutas absolutas** (`escanear_videos.py`, `visor_videos.py`): resolver `miniaturas/`, `videos_prueba/` y `biblioteca.db` a partir de `os.path.dirname(__file__)` o un módulo de configuración. **Resuelto** — implementado en `rutas.py` (capa de rutas; sin módulo de configuración completo todavía).
 2. **Alta — Limpieza controlada de miniaturas obsoletas**: definir una política segura para archivar o eliminar versiones antiguas y evitar el crecimiento acumulativo de ranuras `_NN`. **Ninguna eliminación, sobrescritura, movimiento o archivado automático puede implementarse sin: una política segura previamente definida, autorización expresa y verificación de que no se perderán datos necesarios.** (La generación con FFmpeg ya está implementada.)
-3. **Media — Trabajos en segundo plano**: **en curso** — infraestructura implementada en `tareas.py` con `TareaFFprobe` y `TareaEscaneo`. Pendiente: FFmpeg asíncrono, SQLite asíncrono, integración con la ventana y barra de progreso.
+3. **Media — Trabajos en segundo plano**: **en curso** — infraestructura implementada en `tareas.py` con `TareaFFprobe`, `TareaEscaneo` y la lectura del catálogo (`TareaLecturaCatalogo`). Pendiente: escritura/sincronización SQLite asíncronas, encadenamiento del pipeline, FFmpeg asíncrono, integración con la ventana y barra de progreso.
 4. **Media — Módulo de configuración** centralizado (rutas, extensiones, dimensiones, columnas).
 5. **Baja — Robustecer coincidencia de miniaturas**: usar coincidencia de prefijo con delimitador (`prefijo + "_"`) o patrón rígido `<video>_<NN>.jpg`.
 6. **Baja — Reubicación de artefactos de prueba**: Git y `.gitignore` ya están implementados; `biblioteca.db`, `datos.txt`, `miniaturas/`, `__pycache__/` y los archivos `.pyc` ya están ignorados. La recomendación futura se limita a evaluar la reubicación de los artefactos de prueba (`main.py`, `operaciones.py`, `prueba_agente.py`) en una etapa autorizada, sin moverlos ahora.
@@ -290,6 +303,10 @@ Mínimos y justificados (etapa de congelamiento, sin funcionalidad nueva):
 | Pruebas de TareaFFprobe (regresión) | `python prueba_ffprobe.py` | 12/12 OK (RESULTADO_FINAL=OK, exit 0) |
 | Compilación (etapa de escaneo asíncrono) | `python -m py_compile tareas.py tareas_videos.py escanear_videos.py rutas.py prueba_escaneo.py` | OK (exit 0) |
 | Pruebas de TareaEscaneo | `python prueba_escaneo.py` | 12/12 OK (RESULTADO_FINAL=OK, exit 0) |
+| Compilación (etapa de lectura asíncrona) | `python -m py_compile tareas.py tareas_videos.py escanear_videos.py rutas.py visor_videos.py prueba_tareas.py prueba_ffprobe.py prueba_escaneo.py prueba_lectura.py` | OK (exit 0) |
+| Pruebas de TareaLecturaCatalogo | `python prueba_lectura.py` | 15/15 OK (RESULTADO_FINAL=OK, exit 0) |
+| Regresiones (etapa de lectura asíncrona) | `python prueba_tareas.py`, `python prueba_ffprobe.py`, `python prueba_escaneo.py` | 13/13, 12/12 y 12/12 OK — sin regresiones |
+| Lectura por defecto sin regresiones | `python -c "from escanear_videos import listar_videos; print(len(listar_videos()))"` | 4 filas (lectura), exit 0 |
 
 ## 12. Registro de cambios
 
@@ -300,3 +317,4 @@ Mínimos y justificados (etapa de congelamiento, sin funcionalidad nueva):
 5. **Infraestructura reutilizable de trabajos en segundo plano** — se creó `tareas.py` con `Estado`, `TareaBase` y `GestorTareas`, ejecutando cada tarea en un `QThread` propio con señales para resultados y errores; se agregó `prueba_tareas.py`.
 6. **Procesamiento asíncrono de metadatos FFprobe** — se creó `tareas_videos.py` con `rutas_videos()` y `TareaFFprobe`, más `prueba_ffprobe.py`.
 7. **Escaneo asíncrono** — se agregó `TareaEscaneo` a `tareas_videos.py` (reutiliza `escanear_videos`) y `prueba_escaneo.py`.
+8. **Lectura asíncrona del catálogo** — `listar_videos` admite una ruta de base opcional; se agregó `TareaLecturaCatalogo` a `tareas_videos.py` (lectura SQLite en segundo plano con conexión por hilo) y `prueba_lectura.py`. La lectura valida la existencia previa de la base (`os.path.isfile`) antes de conectar: una base inexistente produce `FileNotFoundError` sin crear archivos (comportamiento definido y cubierto por pruebas).

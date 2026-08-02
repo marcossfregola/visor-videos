@@ -186,8 +186,12 @@ def sincronizar_bd(conn, carpeta):
     for nombre in en_bd - en_disco:
         conn.execute("DELETE FROM videos WHERE nombre = ?", (nombre,))
 
-def listar_videos():
-    conn = sqlite3.connect(ruta_biblioteca())
+def listar_videos(ruta_db=None):
+    if ruta_db is None:
+        ruta_db = ruta_biblioteca()
+    if not os.path.isfile(ruta_db):
+        raise FileNotFoundError(f"Base de datos no encontrada: {ruta_db}")
+    conn = sqlite3.connect(ruta_db)
     try:
         return conn.execute(
             """

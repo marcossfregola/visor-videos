@@ -1,6 +1,6 @@
 import os
 
-from escanear_videos import escanear_videos, obtener_datos_ffprobe
+from escanear_videos import escanear_videos, listar_videos, obtener_datos_ffprobe
 from rutas import ruta_carpeta_videos
 from tareas import TareaBase
 
@@ -62,3 +62,16 @@ class TareaEscaneo(TareaBase):
 
     def _trabajo(self):
         return escanear_videos(self._carpeta)
+
+
+class TareaLecturaCatalogo(TareaBase):
+    def __init__(self, ruta_db=None, parent=None):
+        super().__init__(parent)
+        self._ruta_db = ruta_db
+
+    @property
+    def ruta_db(self):
+        return self._ruta_db
+
+    def _trabajo(self):
+        return listar_videos(self._ruta_db)

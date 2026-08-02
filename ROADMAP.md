@@ -12,8 +12,10 @@ arquitectónicas.
 # Prioridad inmediata
 
 -   Escaneo asíncrono — **completado** (`TareaEscaneo`).
+-   Lectura asíncrona del catálogo SQLite — **completado**
+    (`TareaLecturaCatalogo`).
 
-1.  Integración asíncrona de SQLite.
+1.  Escritura/sincronización SQLite asíncrona.
 2.  Encadenamiento progresivo del pipeline.
 3.  Actualización asíncrona de la interfaz.
 4.  FFmpeg en segundo plano.
