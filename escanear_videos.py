@@ -1,10 +1,13 @@
 import os
+import shutil
 import sqlite3
 import subprocess
 from datetime import datetime
 
 NOMBRE_DB = "biblioteca.db"
 EXTENSIONES = {".mp4", ".mkv", ".avi"}
+CARPETA_MINIATURAS = "miniaturas"
+EXTENSION_MINIATURA = ".jpg"
 COLUMNAS_EXTRA = [
     ("duracion_segundos", "REAL"),
     ("ancho", "INTEGER"),
@@ -68,6 +71,55 @@ def obtener_datos_ffprobe(ruta):
     except (OSError, subprocess.SubprocessError, ValueError):
         return None
 
+def ffmpeg_disponible():
+    return shutil.which("ffmpeg") is not None
+
+def ruta_miniatura(video, indice=1):
+    prefijo = os.path.splitext(video)[0]
+    return os.path.join(
+        CARPETA_MINIATURAS,
+        f"{prefijo}_{indice:02d}{EXTENSION_MINIATURA}",
+    )
+
+def calcular_tiempo_miniatura(duracion):
+    if duracion is None or duracion <= 0:
+        return 1.0
+    return max(0.1, min(duracion * 0.1, 10.0))
+
+def miniatura_vigente(ruta_video, ruta_miniatura):
+    if not os.path.isfile(ruta_miniatura):
+        return False
+    return os.path.getmtime(ruta_miniatura) >= os.path.getmtime(ruta_video)
+
+def generar_miniatura(ruta_video, ruta_miniatura):
+    datos = obtener_datos_ffprobe(ruta_video)
+    duracion = datos["duracion_segundos"] if datos else None
+    tiempo = calcular_tiempo_miniatura(duracion)
+    try:
+        resultado = subprocess.run(
+            [
+                "ffmpeg", "-y", "-ss", str(tiempo),
+                "-i", ruta_video,
+                "-frames:v", "1", "-q:v", "3",
+                ruta_miniatura,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        return resultado.returncode == 0 and os.path.isfile(ruta_miniatura)
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+def asegurar_miniatura(video, ruta_video):
+    if not ffmpeg_disponible() or os.path.getsize(ruta_video) == 0:
+        return 0
+    os.makedirs(CARPETA_MINIATURAS, exist_ok=True)
+    ruta = ruta_miniatura(video)
+    if miniatura_vigente(ruta_video, ruta):
+        return 1
+    return 1 if generar_miniatura(ruta_video, ruta) else 0
+
 def contar_miniaturas(video):
     prefijo = os.path.splitext(video)[0]
     if not os.path.isdir("miniaturas"):
@@ -108,6 +160,7 @@ def sincronizar_bd(conn, carpeta):
     for nombre in en_disco:
         insertar_video(conn, carpeta, nombre)
     for nombre in en_disco:
+        asegurar_miniatura(nombre, os.path.join(carpeta, nombre))
         actualizar_datos(conn, carpeta, nombre)
     for nombre in en_bd - en_disco:
         conn.execute("DELETE FROM videos WHERE nombre = ?", (nombre,))
