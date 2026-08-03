@@ -82,6 +82,25 @@ arquitectónicas.
     `None`)/`restantes`. No integrada al pipeline ni a la interfaz, sin
     escaneo/FFprobe/FFmpeg/miniaturas/subprocesos. La integración
     asíncrona de la sincronización completa queda pendiente.
+-   Sincronización asíncrona del catálogo — **completado (etapa de
+    orquestación)** (`TareaSincronizacionCatalogo` en `tareas_videos.py`):
+    encadena en segundo plano (un `QThread` con `TareaBase` +
+    `GestorTareas`) la secuencia exacta `detectar_diferencias` →
+    `preparar_plan_sincronizacion` → `aplicar_incorporaciones` →
+    `eliminar_candidatos`, importando `escanear_videos` como módulo.
+    Constructor con `carpeta` y `ruta_db` opcional (por defecto cada
+    función delega su default `ruta_biblioteca()`) y `parent` compatible
+    con `QObject`; propiedades `carpeta`/`ruta_db` que devuelven
+    directamente los valores actualmente inmutables (`str` o `None`) del
+    constructor. Devuelve `{"diferencias", "plan", "incorporaciones",
+    "eliminaciones", "resumen"}`. Sin SQL, sin abrir SQLite directamente,
+    sin conexiones almacenadas, sin `check_same_thread=False`, sin
+    FFprobe/FFmpeg/miniaturas/subprocesos y sin acceso a la interfaz.
+    Incorporación y eliminación como transacciones independientes (si
+    falla la incorporación no se elimina; si falla la eliminación las
+    incorporaciones confirmadas permanecen). **No integrada todavía con
+    `visor_videos.py`**: la integración con el flujo de la interfaz y la
+    deduplicación de nombres repetidos quedan pendientes.
 
 1.  Opción de incluir o excluir subcarpetas — **pendiente** (configurar
     si el escaneo de la carpeta elegida recorre las subcarpetas).
@@ -94,18 +113,21 @@ arquitectónicas.
     SQLite con el upsert transaccional, conservando los registros
     preexistentes).
 3.  Sincronización completa del catálogo — **en curso (detección,
-    preparación, aplicación de incorporaciones y eliminación controlada
-    completadas)**: la detección no destructiva de diferencias existe
-    (`detectar_diferencias`, por nombre y solo lectura), el plan ya se
-    prepara de forma pura (`preparar_plan_sincronizacion`, con
+    preparación, aplicación de incorporaciones, eliminación controlada y
+    orquestación asíncrona completadas)**: la detección no destructiva de
+    diferencias existe (`detectar_diferencias`, por nombre y solo
+    lectura), el plan ya se prepara de forma pura
+    (`preparar_plan_sincronizacion`, con
     `a_incorporar`/`ya_sincronizados`/`candidatos_a_eliminar` y
     candidatos informativos), las incorporaciones ya se aplican de forma
     no destructiva (`aplicar_incorporaciones`, persistiendo únicamente
-    `a_incorporar` con `guardar_videos`) y los registros ausentes ya se
+    `a_incorporar` con `guardar_videos`), los registros ausentes ya se
     eliminan de forma controlada (`eliminar_candidatos`, transacción
-    atómica y validación previa); quedan pendientes la **integración
-    asíncrona** de la sincronización completa y la deduplicación de
-    nombres repetidos.
+    atómica y validación previa) y la secuencia completa ya se orquesta
+    en segundo plano (`TareaSincronizacionCatalogo` con `QThread` +
+    `GestorTareas`); quedan pendientes la **integración de
+    `TareaSincronizacionCatalogo` con el flujo de la interfaz** y la
+    deduplicación de nombres repetidos.
 4.  FFprobe integrado en el pipeline — **completado** (el pipeline
     escaneo → guardado completa duración, resolución y codec antes de
     escribir o actualizar los registros; `NULL` ante vacíos, incompletos
@@ -118,16 +140,18 @@ arquitectónicas.
     archivos antiguos y recarga automática de la interfaz. La limpieza
     controlada de versiones antiguas sigue pendiente.
 6.  Eliminación de registros ausentes — **completado (aplicación
-    controlada; falta la integración asíncrona)** (sincronizar la
+    controlada; la orquestación asíncrona completa existe; falta la
+    integración con la interfaz)** (sincronizar la
     BD con los archivos que dejaron de existir; la detección de los
     ausentes ya existe de forma no destructiva en `detectar_diferencias`,
     el plan ya los expone como `candidatos_a_eliminar` en
     `preparar_plan_sincronizacion` (únicamente informativos), las
     incorporaciones ya se aplican en `aplicar_incorporaciones` sin tocar
-    a los candidatos y la **aplicación controlada de la eliminación** ya
+    a los candidatos, la **aplicación controlada de la eliminación** ya
     existe en `eliminar_candidatos` (transacción atómica y validación
-    previa); falta su **integración asíncrona** en la sincronización
-    completa).
+    previa) y la **orquestación asíncrona completa** ya existe en
+    `TareaSincronizacionCatalogo`; falta su **integración con el flujo
+    de la interfaz**).
 7.  Recarga automática del catálogo tras la escritura — **pendiente**
     (refrescar la grilla a medida que se sincroniza el catálogo).
 8.  Progreso — **pendiente** (barra de progreso y estado de las tareas

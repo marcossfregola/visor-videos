@@ -145,7 +145,11 @@ def test_02():
         and "preparar_plan_sincronizacion" not in funcs_tareas
         and "preparar_plan_sincronizacion" not in importados_tareas
         and "preparar_plan_sincronizacion" not in importados_visor
-        and not any("Plan" in c or "Sincronizacion" in c for c in clases_tareas)
+        and not any(
+            ("Plan" in c or "Sincronizacion" in c)
+            and c != "TareaSincronizacionCatalogo"
+            for c in clases_tareas
+        )
         and usados_plan is not None
         and prohibidos_presentes == []
     )

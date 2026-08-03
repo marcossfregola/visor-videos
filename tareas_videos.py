@@ -1,5 +1,6 @@
 import os
 
+import escanear_videos as escanear_mod
 from escanear_videos import (
     asegurar_miniaturas,
     combinar_registros_con_ffprobe,
@@ -194,3 +195,37 @@ class TareaGuardarVideos(TareaBase):
         if self._datos_invalidos is not None:
             raise TypeError(f"colección inválida: {self._datos_invalidos}")
         return guardar_videos(self._datos, self._ruta_db)
+
+
+class TareaSincronizacionCatalogo(TareaBase):
+    def __init__(self, carpeta, ruta_db=None, parent=None):
+        super().__init__(parent)
+        self._carpeta = carpeta
+        self._ruta_db = ruta_db
+
+    @property
+    def carpeta(self):
+        return self._carpeta
+
+    @property
+    def ruta_db(self):
+        return self._ruta_db
+
+    def _trabajo(self):
+        diferencias = escanear_mod.detectar_diferencias(self._carpeta, self._ruta_db)
+        plan = escanear_mod.preparar_plan_sincronizacion(diferencias)
+        incorporaciones = escanear_mod.aplicar_incorporaciones(plan, self._ruta_db)
+        eliminaciones = escanear_mod.eliminar_candidatos(plan, self._ruta_db)
+        return {
+            "diferencias": diferencias,
+            "plan": plan,
+            "incorporaciones": incorporaciones,
+            "eliminaciones": eliminaciones,
+            "resumen": {
+                "nuevos": len(diferencias["nuevos"]),
+                "ya_sincronizados": len(plan["ya_sincronizados"]),
+                "incorporados": incorporaciones["incorporados"],
+                "eliminados": eliminaciones["eliminados"],
+                "candidatos_restantes": eliminaciones["restantes"],
+            },
+        }

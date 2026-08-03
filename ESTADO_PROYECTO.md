@@ -58,85 +58,97 @@ una única transacción atómica —`rowcount` por candidato, un solo
 físicos ni miniaturas, no toca `a_incorporar` ni `ya_sincronizados`,
 devuelve `eliminados`/`nombres`/`incorporados` (informativo, derivado
 del plan y puede ser `None`)/`restantes` y no está integrada al pipeline
-ni a la interfaz) aprobadas; pendiente la integración funcional completa
-del catálogo: la **integración asíncrona de la sincronización completa**
-y la deduplicación de nombres repetidos.
+ni a la interfaz) y **sincronización asíncrona del catálogo**
+(`TareaSincronizacionCatalogo` en `tareas_videos.py`: orquesta en un
+`QThread` la secuencia completa `detectar_diferencias` →
+`preparar_plan_sincronizacion` → `aplicar_incorporaciones` →
+`eliminar_candidatos`; las propiedades `carpeta`/`ruta_db` devuelven
+directamente los valores actualmente inmutables (`str` o `None`) del
+constructor; el `parent` es un padre Qt compatible con `QObject`; la
+tarea no contiene SQL, no abre SQLite directamente, no almacena
+conexiones, no usa `check_same_thread=False`, no ejecuta
+FFprobe/FFmpeg/miniaturas/subprocesos ni accede a la interfaz; las
+incorporaciones y la eliminación son transacciones independientes —si
+falla la incorporación no se elimina, y si falla la eliminación las
+incorporaciones confirmadas permanecen—; devuelve
+`{"diferencias", "plan", "incorporaciones", "eliminaciones", "resumen"}`
+y **aún no está integrada con `visor_videos.py`**) aprobadas; pendiente
+la integración funcional completa del catálogo: la **integración de la
+sincronización asíncrona con el flujo de la interfaz** y la
+deduplicación de nombres repetidos.
 
 ## Último commit aprobado
 
-**Mensaje:** Eliminar candidatos ausentes del catálogo
+**Mensaje:** Agregar sincronización asíncrona del catálogo
 
-**Etapa aprobada:** Eliminación controlada de los candidatos ausentes
-del catálogo: nueva función `eliminar_candidatos(plan, ruta_db=None)` en
-`escanear_videos.py` (capa de catálogo, ubicada entre
-`aplicar_incorporaciones` y `listar_videos_paginado`). Recibe el plan
-`{"carpeta", "a_incorporar", "ya_sincronizados",
-"candidatos_a_eliminar"}` y elimina **únicamente** los registros de
-`candidatos_a_eliminar` con el patrón atómico existente: un solo
-`connect`, un `DELETE FROM videos WHERE nombre = ?` por candidato (con
-`cursor.rowcount` para contar solo las eliminaciones reales), un solo
-`commit`, `rollback` total ante fallos y `close` en `finally`.
-**Validación completa previa** antes de abrir SQLite, compartida con
-`aplicar_incorporaciones` (`_validar_plan_sincronizacion`): `plan`
-no-dict → `TypeError`; claves obligatorias faltantes → `ValueError`;
-`carpeta` texto no vacío; `a_incorporar` no texto e iterable;
-`ya_sincronizados`/`candidatos_a_eliminar` como colecciones de nombres
-(`_coleccion_nombres`, que las devuelve **ordenadas**: el orden
-procesado y devuelto es el **orden determinista de la validación
-actual**). **Base inexistente** → `FileNotFoundError` sin crear
-archivos. **Solo registros**: no elimina archivos físicos ni miniaturas,
-no modifica `ya_sincronizados` ni los preexistentes sincronizados y no
-incorpora `a_incorporar`; los candidatos inexistentes no cuentan como
-eliminados y quedan en `restantes`; colección vacía de candidatos válida
-sin modificar la base. Devuelve `{"eliminados", "nombres",
-"incorporados", "restantes"}`; `incorporados` es **informativo y
-derivado del plan** (`len(plan["a_incorporar"])` o `None`) y **no
-representa incorporaciones ejecutadas por la función**. No ejecuta
-escaneo/FFprobe/FFmpeg/miniaturas/subprocesos ni reutiliza
-`conectar_bd`/`guardar_videos`/`sincronizar_bd`. No está integrada al
-pipeline ni a la interfaz. Pendiente: la integración asíncrona de la
-sincronización completa y la deduplicación de nombres repetidos. Con
-suite nueva `prueba_eliminar_candidatos.py` (16 pruebas). Aprobada.
+**Etapa aprobada:** Sincronización asíncrona del catálogo: nueva clase
+`TareaSincronizacionCatalogo(TareaBase)` en `tareas_videos.py`, que en
+segundo plano (con `QThread` mediante `TareaBase` + `GestorTareas`)
+encadena la secuencia exacta `detectar_diferencias` →
+`preparar_plan_sincronizacion` → `aplicar_incorporaciones` →
+`eliminar_candidatos` e importa `escanear_videos as escanear_mod` (el
+módulo, no los nombres de las funciones). El constructor recibe
+`carpeta` y `ruta_db` opcional (por defecto cada función delega su
+default `ruta_biblioteca()`) más `parent` como **padre Qt compatible
+con `QObject`**; las propiedades de solo lectura `carpeta` y `ruta_db`
+**devuelven directamente los valores actualmente inmutables (`str` o
+`None`) recibidos en el constructor**, sin copias generales. `_trabajo()`
+devuelve `{"diferencias", "plan", "incorporaciones", "eliminaciones",
+"resumen"}` (`resumen` = `nuevos`/`ya_sincronizados`/`incorporados`/
+`eliminados`/`candidatos_restantes`); **no se afirma que el resultado
+completo sea inmutable**. **La tarea no contiene SQL, no abre SQLite
+directamente, no almacena conexiones y no usa `check_same_thread=False`**;
+**no ejecuta FFprobe, FFmpeg, miniaturas ni subprocesos** y **no accede a
+la interfaz**. **Atomicidad**: la incorporación y la eliminación son
+**transacciones independientes**, no una única transacción global; si
+falla la incorporación **no se ejecuta la eliminación**; si falla la
+eliminación, las **incorporaciones ya confirmadas permanecen** y la
+eliminación fallida revierte **únicamente su propia transacción**.
+`prueba_plan_sincronizacion.py` se **adaptó con una allowlist exacta**:
+la condición de T02 permite exclusivamente `TareaSincronizacionCatalogo`
+y **rechaza cualquier otra clase** con "Plan"/"Sincronizacion". Se
+agregó `prueba_sincronizacion_asincrona.py` (27 pruebas). Regresiones
+completas 321/321 OK. **No está integrada todavía con
+`visor_videos.py`**; la integración con el flujo de la interfaz y la
+deduplicación de nombres repetidos quedan pendientes. Aprobada con
+observaciones.
 
 **SHA definitivo:** debe consultarse con `git log -1` (el SHA no se
 escribe en este documento para evitar autorreferencias al commit).
 
 ## Última etapa aprobada
 
-Eliminación controlada de los candidatos ausentes del catálogo:
-`eliminar_candidatos(plan, ruta_db=None)` en `escanear_videos.py` (capa
-de catálogo, ubicada entre `aplicar_incorporaciones` y
-`listar_videos_paginado`). Recibe el plan `{"carpeta", "a_incorporar",
-"ya_sincronizados", "candidatos_a_eliminar"}` y elimina **únicamente**
-los registros de `candidatos_a_eliminar`, con el mismo patrón atómico de
-escritura: **una sola conexión**, un `DELETE FROM videos WHERE nombre =
-?` por candidato (el `cursor.rowcount` decide qué candidato se eliminó
-de verdad), **un solo `commit`**, `rollback` total ante cualquier fallo
-y `close` en `finally`. **Validación completa previa** antes de abrir
-SQLite, compartida con `aplicar_incorporaciones` mediante
-`_validar_plan_sincronizacion`: `plan` no-dict → `TypeError`; claves
-obligatorias faltantes (`carpeta`, `a_incorporar`, `ya_sincronizados`,
-`candidatos_a_eliminar`) → `ValueError`; `carpeta` texto no vacío →
-`ValueError`; `a_incorporar` no texto e iterable → `TypeError`;
-`ya_sincronizados`/`candidatos_a_eliminar` como colecciones de nombres
-(`_coleccion_nombres`, que las devuelve **ordenadas**; por eso el orden
-procesado y devuelto es el **orden determinista de la validación
-actual**). **Base inexistente**: `os.path.isfile` antes de conectar →
-`FileNotFoundError` sin crear archivos. **Solo registros**: no elimina
-archivos físicos ni miniaturas, no modifica `ya_sincronizados` ni los
-preexistentes sincronizados y no incorpora `a_incorporar`; los
-candidatos inexistentes en la base no cuentan como eliminados y quedan
-en `restantes`; colección vacía de candidatos válida sin modificar la
-base. Devuelve `{"eliminados", "nombres", "incorporados", "restantes"}`;
-`incorporados` es **informativo y derivado del plan** (`len(plan[
-"a_incorporar"])` o `None` si no puede medirse) y **no representa
-incorporaciones ejecutadas por la función**. No ejecuta
-escaneo/FFprobe/FFmpeg/miniaturas/subprocesos y **no reutiliza**
-`conectar_bd`/`guardar_videos`/`sincronizar_bd`. **No está integrada
-todavía al pipeline ni a la interfaz**. **Ausencia deliberada**: la
-integración asíncrona de la sincronización completa y la deduplicación
-de nombres repetidos continúan pendientes. Con suite nueva
-`prueba_eliminar_candidatos.py` (16 pruebas). Aprobada.
+Sincronización asíncrona del catálogo: `TareaSincronizacionCatalogo`
+en `tareas_videos.py` (capa de tareas asíncronas sobre `TareaBase` +
+`GestorTareas`). En segundo plano (un `QThread` propio) encadena la
+secuencia exacta `detectar_diferencias` → `preparar_plan_sincronizacion`
+→ `aplicar_incorporaciones` → `eliminar_candidatos`, importando
+`escanear_videos as escanear_mod` (el módulo, no los nombres de las
+funciones). El constructor recibe `carpeta` y `ruta_db` opcional (por
+defecto cada función delega su default `ruta_biblioteca()`) más `parent`
+como **padre Qt compatible con `QObject`**; las propiedades de solo
+lectura `carpeta` y `ruta_db` **devuelven directamente los valores
+actualmente inmutables (`str` o `None`) recibidos en el constructor**,
+sin copias generales. `_trabajo()` devuelve `{"diferencias", "plan",
+"incorporaciones", "eliminaciones", "resumen"}` (`resumen` =
+`nuevos`/`ya_sincronizados`/`incorporados`/`eliminados`/
+`candidatos_restantes`); **no se afirma que el resultado completo sea
+inmutable**. **La tarea no contiene SQL, no abre SQLite directamente, no
+almacena conexiones y no usa `check_same_thread=False`**; **no ejecuta
+FFprobe, FFmpeg, miniaturas ni subprocesos** y **no accede a la
+interfaz**. **Atomicidad**: la incorporación y la eliminación son
+**transacciones independientes**, no una única transacción global; si
+falla la incorporación **no se ejecuta la eliminación**; si falla la
+eliminación, las **incorporaciones ya confirmadas permanecen** y la
+eliminación fallida revierte **únicamente su propia transacción**.
+**No está integrada todavía con `visor_videos.py`**. **Ausencia
+deliberada**: la integración con el flujo de la interfaz y la
+deduplicación de nombres repetidos continúan pendientes. `prueba_plan_
+sincronizacion.py` se adaptó con una allowlist exacta (solo
+`TareaSincronizacionCatalogo` permitida en T02; cualquier otra clase con
+"Plan"/"Sincronizacion" rechazada). Con suite nueva
+`prueba_sincronizacion_asincrona.py` (27 pruebas). Aprobada con
+observaciones.
 
 ## Estado de la arquitectura
 
@@ -190,6 +202,18 @@ de nombres repetidos continúan pendientes. Con suite nueva
     `None`)/`restantes`; sin pipeline/interfaz/escaneo/FFprobe/FFmpeg/
     `conectar_bd`/`guardar_videos`; la integración asíncrona queda
     pendiente).
+-   Sincronización asíncrona del catálogo (`TareaSincronizacionCatalogo`
+    en `tareas_videos.py`; encadena en un `QThread` la secuencia
+    `detectar_diferencias` → `preparar_plan_sincronizacion` →
+    `aplicar_incorporaciones` → `eliminar_candidatos` importando
+    `escanear_videos` como módulo; `parent` compatible con `QObject`;
+    propiedades `carpeta`/`ruta_db` que devuelven directamente los
+    valores actualmente inmutables del constructor; sin SQL, sin abrir
+    SQLite directamente, sin conexiones almacenadas, sin
+    `check_same_thread=False`, sin FFprobe/FFmpeg/miniaturas/
+    subprocesos/interfaz; incorporación y eliminación como transacciones
+    independientes; devuelve `{"diferencias", "plan", "incorporaciones",
+    "eliminaciones", "resumen"}`; sin integración con `visor_videos.py`).
 -   Pruebas automatizadas.
 
 ### En desarrollo
@@ -205,26 +229,31 @@ BD ya existe de forma no destructiva (`detectar_diferencias`), el
 (`preparar_plan_sincronizacion`, sin efectos ni integración), la
 **aplicación de las incorporaciones** ya existe de forma no destructiva
 (`aplicar_incorporaciones`: valida el plan antes de abrir SQLite y
-persiste únicamente `a_incorporar` reutilizando `guardar_videos`) y la
+persiste únicamente `a_incorporar` reutilizando `guardar_videos`), la
 **eliminación controlada de los candidatos ausentes** ya existe
 (`eliminar_candidatos`: valida el plan antes de abrir SQLite y elimina
 únicamente los registros de `candidatos_a_eliminar` con una transacción
-atómica), pero la **integración asíncrona de la sincronización
-completa** y la **deduplicación de nombres repetidos** siguen pendientes.
-La carga inicial asíncrona de la primera página del catálogo ya está
-integrada en la interfaz.
+atómica) y la **sincronización asíncrona del catálogo** ya orquesta la
+secuencia completa en segundo plano (`TareaSincronizacionCatalogo` con
+`QThread` + `GestorTareas`), pero la **integración de esa tarea con el
+flujo de la interfaz** (`visor_videos.py`) y la **deduplicación de
+nombres repetidos** siguen pendientes. La carga inicial asíncrona de la
+primera página del catálogo ya está integrada en la interfaz.
 
 ## Pendientes prioritarios
 
-1.  Sincronización completa SQLite asíncrona (la detección de diferencias
-    ya existe en `detectar_diferencias` —solo lectura, por nombre—, el
-    plan ya se prepara en `preparar_plan_sincronizacion` —puro, sin
-    efectos—, las incorporaciones ya se aplican en
-    `aplicar_incorporaciones` —no destructivo, reutilizando
-    `guardar_videos`— y la eliminación controlada de los registros
-    ausentes ya existe en `eliminar_candidatos` —validación previa y
-    transacción atómica—; falta la **integración asíncrona de la
-    sincronización completa** y la deduplicación de nombres repetidos).
+1.  Integración de la sincronización asíncrona del catálogo con el
+    flujo de la interfaz (la detección de diferencias ya existe en
+    `detectar_diferencias` —solo lectura, por nombre—, el plan ya se
+    prepara en `preparar_plan_sincronizacion` —puro, sin efectos—, las
+    incorporaciones ya se aplican en `aplicar_incorporaciones`
+    —no destructivo, reutilizando `guardar_videos`—, la eliminación
+    controlada de los registros ausentes ya existe en
+    `eliminar_candidatos` —validación previa y transacción atómica— y la
+    **orquestación asíncrona completa** ya existe en
+    `TareaSincronizacionCatalogo` —`QThread` + `GestorTareas`—; falta la
+    **integración de `TareaSincronizacionCatalogo` con `visor_videos.py`**
+    y la deduplicación de nombres repetidos).
 2.  Integración SQLite asíncrona en el pipeline (encadenado).
 3.  Actualización asíncrona de la interfaz (tarjetas dinámicas).
 4.  FFmpeg asíncrono.
@@ -250,9 +279,11 @@ con `candidatos_a_eliminar` únicamente informativos), la aplicación
 no destructiva de las incorporaciones (`aplicar_incorporaciones`, que
 persiste solo `a_incorporar` reutilizando `guardar_videos`) y la
 eliminación controlada de los registros ausentes (`eliminar_candidatos`,
-con validación previa y transacción atómica), pero la sincronización
-completa sigue pendiente (su integración asíncrona, junto con la
-deduplicación de nombres repetidos); - `detectar_diferencias` compara
+con validación previa y transacción atómica) y la orquestación asíncrona
+completa (`TareaSincronizacionCatalogo`, que encadena la secuencia en un
+`QThread`), pero la **integración de `TareaSincronizacionCatalogo` con
+`visor_videos.py`** (junto con la deduplicación de nombres repetidos)
+sigue pendiente); - `detectar_diferencias` compara
 por nombre y no detecta movimientos ni renombrados (queda para etapas
 futuras); - **no existe todavía deduplicación de nombres repetidos** en
 el plan de sincronización; - el enrutado de resultados por
@@ -281,17 +312,18 @@ limpieza controlada de miniaturas antiguas.
 
 ## Próxima etapa
 
-**Integración asíncrona de la sincronización completa del catálogo**
-(encadenar en segundo plano la aplicación del plan completo:
-`aplicar_incorporaciones` + `eliminar_candidatos`, con su deduplicación
-de nombres repetidos). Las etapas anteriores (detección no destructiva
-de diferencias con `detectar_diferencias`, preparación del plan con
+**Integración de la sincronización asíncrona del catálogo con el flujo
+de la interfaz** (`TareaSincronizacionCatalogo` consumida desde
+`visor_videos.py` mediante el `GestorTareas`, con su deduplicación de
+nombres repetidos). Las etapas anteriores (detección no destructiva de
+diferencias con `detectar_diferencias`, preparación del plan con
 `preparar_plan_sincronizacion`, aplicación no destructiva de las
-incorporaciones con `aplicar_incorporaciones` y eliminación controlada
-de los registros ausentes con `eliminar_candidatos`) quedaron aprobadas
-y commiteadas; la **integración asíncrona de la sincronización completa**
-y la deduplicación de nombres repetidos siguen pendientes y se abordarán
-como próxima etapa, manteniendo el alcance limitado: sin selección
+incorporaciones con `aplicar_incorporaciones`, eliminación controlada de
+los registros ausentes con `eliminar_candidatos` y la orquestación
+asíncrona con `TareaSincronizacionCatalogo`) quedaron aprobadas y
+commiteadas; la **integración con el flujo de la interfaz** y la
+deduplicación de nombres repetidos siguen pendientes y se abordarán como
+próxima etapa, manteniendo el alcance limitado: sin selección
 inteligente, sin múltiples miniaturas, sin eliminación de archivos
 antiguos y sin recarga automática de la interfaz.
 
