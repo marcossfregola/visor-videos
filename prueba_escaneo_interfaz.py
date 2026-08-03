@@ -1,6 +1,5 @@
 import ast
 import contextlib
-import hashlib
 import os
 import py_compile
 import sqlite3
@@ -725,21 +724,31 @@ def test_19():
     try:
         ventana = VisorVideos(ruta_db=ruta_db)
         _esperar(lambda v=ventana: v._carga_completada and v.gestor.hilo is None)
-
-        def _snap():
-            with open(ruta_db, "rb") as f:
-                return hashlib.sha256(f.read()).hexdigest()
-
-        h1 = _snap()
         with _dialogo_falso(carpeta.name):
             ventana.seleccionar_carpeta()
         ventana.boton_escanear.click()
         _esperar(lambda v=ventana: _escanear_terminado(v))
-        h2 = _snap()
+        conn = sqlite3.connect(ruta_db)
+        try:
+            filas = conn.execute(
+                "SELECT nombre, ruta, extension, fecha_importacion FROM videos"
+            ).fetchall()
+        finally:
+            conn.close()
+        guardado = ventana.registros_guardados
+        tipo = type(ventana.tarea_guardado).__name__
         ventana.close()
         _limpiar(ventana)
-        ok = h1 == h2
-        return ok, f"bytes_iguales={h1 == h2}"
+        ok = (
+            len(filas) == 1
+            and filas[0][0] == "x.mp4"
+            and filas[0][1] == os.path.join(os.path.abspath(carpeta.name), "x.mp4")
+            and filas[0][2] == ".mp4"
+            and filas[0][3]
+            and guardado == 1
+            and tipo == "TareaGuardarVideos"
+        )
+        return ok, f"filas={filas} guardado={guardado} tarea={tipo}"
     finally:
         carpeta.cleanup()
         temp.cleanup()
@@ -751,15 +760,10 @@ def test_20():
     try:
         ventana = VisorVideos(ruta_db=ruta_db)
         _esperar(lambda v=ventana: v._carga_completada and v.gestor.hilo is None)
-        llamadas = {"sqlite": 0, "subprocess": 0, "ffprobe": 0}
-        orig_sqlite = sqlite3.connect
+        llamadas = {"subprocess": 0, "ffprobe": 0}
         orig_run = escanear_mod.subprocess.run
         orig_ff_tv = tv.obtener_datos_ffprobe
         orig_ff_mod = escanear_mod.obtener_datos_ffprobe
-
-        def _conectar(*a, **k):
-            llamadas["sqlite"] += 1
-            raise AssertionError("sqlite no debe invocarse")
 
         def _run(*a, **k):
             llamadas["subprocess"] += 1
@@ -769,7 +773,6 @@ def test_20():
             llamadas["ffprobe"] += 1
             raise AssertionError("ffprobe no debe invocarse")
 
-        sqlite3.connect = _conectar
         escanear_mod.subprocess.run = _run
         tv.obtener_datos_ffprobe = _ff
         escanear_mod.obtener_datos_ffprobe = _ff
@@ -779,24 +782,30 @@ def test_20():
             ventana.boton_escanear.click()
             _esperar(lambda v=ventana: _escanear_terminado(v))
         finally:
-            sqlite3.connect = orig_sqlite
             escanear_mod.subprocess.run = orig_run
             tv.obtener_datos_ffprobe = orig_ff_tv
             escanear_mod.obtener_datos_ffprobe = orig_ff_mod
         detectados = ventana.videos_detectados
+        conn = sqlite3.connect(ruta_db)
+        try:
+            filas = [f[0] for f in conn.execute("SELECT nombre FROM videos")]
+        finally:
+            conn.close()
         ventana.close()
         _limpiar(ventana)
         ok = (
-            llamadas == {"sqlite": 0, "subprocess": 0, "ffprobe": 0}
+            llamadas == {"subprocess": 0, "ffprobe": 0}
             and detectados == ["x.mp4"]
+            and filas == ["x.mp4"]
         )
-        return ok, f"llamadas={llamadas} detectados={detectados}"
+        return ok, f"llamadas={llamadas} detectados={detectados} filas={filas}"
     finally:
         carpeta.cleanup()
         temp.cleanup()
 
 
 def test_21():
+    temp, ruta_db = _crear_bd([])
     carpeta = _carpeta_con(["x.mp4"])
     try:
         def estado_real():
@@ -812,7 +821,7 @@ def test_21():
             )
 
         antes = estado_real()
-        ventana = VisorVideos()
+        ventana = VisorVideos(ruta_db=ruta_db)
         _esperar(lambda v=ventana: v._carga_completada and v.gestor.hilo is None)
         with _dialogo_falso(carpeta.name):
             ventana.seleccionar_carpeta()
@@ -821,10 +830,16 @@ def test_21():
         ventana.close()
         _limpiar(ventana)
         despues = estado_real()
-        ok = antes == despues
-        return ok, f"reales_intactos={antes == despues}"
+        conn = sqlite3.connect(ruta_db)
+        try:
+            filas = [f[0] for f in conn.execute("SELECT nombre FROM videos")]
+        finally:
+            conn.close()
+        ok = antes == despues and filas == ["x.mp4"]
+        return ok, f"reales_intactos={antes == despues} filas={filas}"
     finally:
         carpeta.cleanup()
+        temp.cleanup()
 
 
 def test_22():
@@ -1001,7 +1016,7 @@ def test_26():
         ventana.close()
         _limpiar(ventana)
         ok = (
-            conteo["fin"] == 1
+            conteo["fin"] == 2
             and estado_gestor == Estado.INACTIVO
             and hilo is None
             and tarea is None
@@ -1235,6 +1250,8 @@ def test_34():
         and "estado_escaneo_mientras=Escaneando carpeta" in salida
         and "estado_escaneo_final=3 videos detectados" in salida
         and "videos_detectados=['clip.avi'" in salida
+        and "escanear_boton_final=True" in salida
+        and "guardado_total=3" in salida
         and "visibles_cargados=" in salida
         and "contador_cargado=" in salida
         and "visibles_filtro=" in salida
@@ -1246,6 +1263,7 @@ def test_34():
         ok,
         f"exit={resultado.returncode} "
         f"escaneo_ok={'estado_escaneo_final=3 videos detectados' in salida} "
+        f"guardado_ok={'guardado_total=3' in salida} "
         f"avisos={('Destroyed while thread' in salida)}",
     )
 

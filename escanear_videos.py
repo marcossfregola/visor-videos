@@ -22,8 +22,32 @@ def escanear_videos(carpeta):
         if os.path.splitext(nombre)[1].lower() in EXTENSIONES
     )
 
-def conectar_bd():
-    conn = sqlite3.connect(ruta_biblioteca())
+def preparar_registros_basicos(videos, carpeta):
+    if isinstance(videos, (str, bytes, bytearray)):
+        raise TypeError("videos debe ser una colección de nombres, no texto")
+    try:
+        lista = list(videos)
+    except TypeError:
+        raise TypeError("videos debe ser una colección iterable") from None
+    if not isinstance(carpeta, str) or not carpeta:
+        raise ValueError("carpeta debe ser una ruta de texto no vacía")
+    fecha = datetime.now().isoformat()
+    registros = []
+    for nombre in lista:
+        registros.append(
+            {
+                "nombre": nombre,
+                "ruta": os.path.join(carpeta, nombre),
+                "extension": os.path.splitext(nombre)[1].lower(),
+                "fecha_importacion": fecha,
+            }
+        )
+    return registros
+
+def conectar_bd(ruta_db=None):
+    if ruta_db is None:
+        ruta_db = ruta_biblioteca()
+    conn = sqlite3.connect(ruta_db)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS videos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,

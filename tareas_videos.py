@@ -1,12 +1,14 @@
 import os
 
 from escanear_videos import (
+    conectar_bd,
     escanear_videos,
     guardar_video,
     guardar_videos,
     listar_videos,
     listar_videos_paginado,
     obtener_datos_ffprobe,
+    preparar_registros_basicos,
 )
 from rutas import ruta_carpeta_videos
 from tareas import TareaBase

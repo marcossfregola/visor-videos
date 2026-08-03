@@ -41,24 +41,29 @@ arquitectónicas.
 
 1.  Opción de incluir o excluir subcarpetas — **pendiente** (configurar
     si el escaneo de la carpeta elegida recorre las subcarpetas).
-2.  Preparación y escritura de registros detectados — **pendiente**
-    (convertir los archivos detectados por el escaneo en registros
-    básicos y escribirlos con `TareaGuardarVideos`).
+2.  Preparación y escritura de registros detectados — **completado**
+    (el pipeline limitado `TareaEscaneo` → `preparar_registros_basicos`
+    → `TareaGuardarVideos`, encadenado desde la interfaz, convierte los
+    archivos detectados en registros básicos y los escribe en SQLite con
+    el upsert transaccional, conservando los registros preexistentes).
 3.  Sincronización completa del catálogo — **pendiente** (detección de
     archivos, FFprobe y eliminación de registros ausentes; aún no
     implementada).
-4.  FFprobe — **pendiente** (integrar la ejecución de FFprobe en el
-    pipeline Escaneo → SQLite para completar los metadatos).
+4.  FFprobe integrado en el pipeline — **pendiente** (completar
+    duración, resolución y codec antes de escribir o actualizar los
+    registros).
 5.  FFmpeg y miniaturas — **pendiente** (generación asíncrona de
     miniaturas en segundo plano).
-6.  Recarga automática del catálogo tras la escritura — **pendiente**
+6.  Eliminación de registros ausentes — **pendiente** (sincronizar la
+    BD con los archivos que dejaron de existir).
+7.  Recarga automática del catálogo tras la escritura — **pendiente**
     (refrescar la grilla a medida que se sincroniza el catálogo).
-7.  Progreso — **pendiente** (barra de progreso y estado de las tareas
+8.  Progreso — **pendiente** (barra de progreso y estado de las tareas
     en curso).
-8.  Persistencia de configuración — **pendiente** (recordar entre
+9.  Persistencia de configuración — **pendiente** (recordar entre
     sesiones la carpeta seleccionada y las preferencias; hoy la
     selección vive solo en la sesión).
-9.  Beta funcional — **pendiente** (aplicación utilizable de punta a
+10. Beta funcional — **pendiente** (aplicación utilizable de punta a
     punta con las funcionalidades anteriores integradas).
 
 ------------------------------------------------------------------------
