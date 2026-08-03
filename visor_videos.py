@@ -27,6 +27,7 @@ from tareas_videos import (
     TareaGuardarVideos,
     TareaLecturaCatalogoPaginada,
     TareaMiniaturas,
+    TareaSincronizacionCatalogo,
     combinar_registros_con_ffprobe,
     combinar_registros_con_miniaturas,
     conectar_bd,
@@ -46,7 +47,21 @@ MENSAJE_ERROR_ESCANEO = "No se pudo escanear la carpeta"
 MENSAJE_ERROR_FFPROBE = "No se pudieron obtener los metadatos"
 MENSAJE_ERROR_MINIATURAS = "No se pudieron generar las miniaturas"
 MENSAJE_ERROR_GUARDADO = "No se pudieron guardar los videos"
+MENSAJE_SINCRONIZANDO = "Sincronizando catálogo…"
+MENSAJE_ERROR_SINCRONIZACION = "No se pudo sincronizar el catálogo"
 MENSAJE_SIN_ESCANEO = "Sin escanear"
+
+
+def texto_resumen_sincronizacion(resumen):
+    if resumen is None:
+        resumen = {}
+    incorporados = resumen.get("incorporados", 0)
+    eliminados = resumen.get("eliminados", 0)
+    restantes = resumen.get("candidatos_restantes", 0)
+    return (
+        f"Sincronización completa: {incorporados} incorporados, "
+        f"{eliminados} eliminados, {restantes} candidatos restantes"
+    )
 
 
 def formatear_valor(valor):
@@ -139,6 +154,9 @@ class VisorVideos(QMainWindow):
         self.resultado_miniaturas = None
         self.videos_detectados = None
         self.registros_guardados = None
+        self._sincronizacion_pendiente = False
+        self.tarea_sincronizacion = None
+        self.resultado_sincronizacion = None
 
         self.busqueda = QLineEdit()
         self.busqueda.setPlaceholderText("Buscar por nombre...")
@@ -231,6 +249,7 @@ class VisorVideos(QMainWindow):
             or self._ffprobe_pendiente
             or self._miniaturas_pendiente
             or self._guardado_pendiente
+            or self._sincronizacion_pendiente
         )
         self.boton_seleccionar_carpeta.setEnabled(not cadena_activa)
         self.boton_escanear.setEnabled(
@@ -253,11 +272,14 @@ class VisorVideos(QMainWindow):
         self._ffprobe_pendiente = False
         self._miniaturas_pendiente = False
         self._guardado_pendiente = False
+        self._sincronizacion_pendiente = False
         self.registros_guardados = None
+        self.resultado_sincronizacion = None
         self.tarea_escaneo = None
         self.tarea_ffprobe = None
         self.tarea_miniaturas = None
         self.tarea_guardado = None
+        self.tarea_sincronizacion = None
         self.resultado_ffprobe = None
         self.resultado_miniaturas = None
         if not self.gestor.iniciar(tarea):
@@ -273,10 +295,12 @@ class VisorVideos(QMainWindow):
         self._ffprobe_pendiente = False
         self._miniaturas_pendiente = False
         self._guardado_pendiente = False
+        self._sincronizacion_pendiente = False
         self.tarea_escaneo = None
         self.tarea_ffprobe = None
         self.tarea_miniaturas = None
         self.tarea_guardado = None
+        self.tarea_sincronizacion = None
         self.resultado_ffprobe = None
         self.resultado_miniaturas = None
 
@@ -314,6 +338,9 @@ class VisorVideos(QMainWindow):
             return
         if self._guardado_pendiente:
             self._al_resultado_guardado(resultado)
+            return
+        if self._sincronizacion_pendiente:
+            self._al_resultado_sincronizacion(resultado)
             return
         if self._carga_completada:
             return
@@ -409,6 +436,38 @@ class VisorVideos(QMainWindow):
         if self._guardado_pendiente:
             self._iniciar_guardado()
             return
+        if self._sincronizacion_pendiente:
+            self._iniciar_sincronizacion()
+            return
+
+    def _iniciar_sincronizacion(self):
+        carpeta = self.carpeta_seleccionada
+        if not carpeta or not os.path.isdir(carpeta):
+            self._limpiar_cadena()
+            self._actualizar_botones_carpeta()
+            return
+        tarea = TareaSincronizacionCatalogo(carpeta, self._ruta_db)
+        if not self.gestor.iniciar(tarea):
+            self._limpiar_cadena()
+            self._actualizar_botones_carpeta()
+            return
+        self.tarea_sincronizacion = tarea
+        self.estado_escaneo.setText(MENSAJE_SINCRONIZANDO)
+        self._actualizar_botones_carpeta()
+
+    def _al_resultado_sincronizacion(self, resultado):
+        self._sincronizacion_pendiente = False
+        self.tarea_sincronizacion = None
+        self.resultado_sincronizacion = resultado
+        self.estado_escaneo.setText(
+            texto_resumen_sincronizacion(resultado.get("resumen"))
+        )
+        self._actualizar_botones_carpeta()
+
+    def _al_error_sincronizacion(self, mensaje):
+        self._limpiar_cadena()
+        self.estado_escaneo.setText(MENSAJE_ERROR_SINCRONIZACION)
+        self._actualizar_botones_carpeta()
 
     def _al_resultado_guardado(self, resultado):
         self._guardado_pendiente = False
@@ -416,6 +475,7 @@ class VisorVideos(QMainWindow):
         self.resultado_ffprobe = None
         self.resultado_miniaturas = None
         self.registros_guardados = resultado.get("guardados")
+        self._sincronizacion_pendiente = True
         self._actualizar_botones_carpeta()
 
     def _al_error(self, mensaje):
@@ -430,6 +490,9 @@ class VisorVideos(QMainWindow):
             return
         if self._guardado_pendiente:
             self._al_error_guardado(mensaje)
+            return
+        if self._sincronizacion_pendiente:
+            self._al_error_sincronizacion(mensaje)
             return
         if self._carga_completada:
             return
@@ -521,6 +584,7 @@ def main():
                 or ventana._ffprobe_pendiente
                 or ventana._miniaturas_pendiente
                 or ventana._guardado_pendiente
+                or ventana._sincronizacion_pendiente
             ) and espera_escaneo["intentos"] < 200:
                 espera_escaneo["intentos"] += 1
                 QTimer.singleShot(25, comprobar_escaneo)
@@ -529,6 +593,13 @@ def main():
             print(f"estado_escaneo_final={ventana.estado_escaneo.text()}")
             print(f"escanear_boton_final={ventana.boton_escanear.isEnabled()}")
             print(f"guardado_total={ventana.registros_guardados}")
+            if ventana.resultado_sincronizacion is not None:
+                print(
+                    "resumen_sincronizacion="
+                    + texto_resumen_sincronizacion(
+                        ventana.resultado_sincronizacion.get("resumen")
+                    )
+                )
             ventana.busqueda.setText("real")
 
             def verificar_y_cerrar():

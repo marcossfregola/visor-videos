@@ -24,6 +24,7 @@ from visor_videos import (
     MENSAJE_ERROR_MINIATURAS,
     MENSAJE_SIN_ESCANEO,
     VisorVideos,
+    texto_resumen_sincronizacion,
 )
 
 QT_MENSAJES = []
@@ -132,6 +133,7 @@ def _cadena_terminada(ventana):
         and not ventana._ffprobe_pendiente
         and not ventana._miniaturas_pendiente
         and not ventana._guardado_pendiente
+        and not ventana._sincronizacion_pendiente
     )
 
 
@@ -173,6 +175,7 @@ def test_01():
         "tareas.py",
         "rutas.py",
         "prueba_escaneo_guardado.py",
+        "prueba_sincronizacion_interfaz.py",
     ]
     for nombre in modulos:
         py_compile.compile(nombre, doraise=True)
@@ -284,6 +287,7 @@ def test_06():
         detectados = ventana.videos_detectados
         pendiente_final = ventana._guardado_pendiente
         tarea_guardado_final = ventana.tarea_guardado
+        resultado_sincronizacion = ventana.resultado_sincronizacion
         ventana.close()
         _limpiar(ventana)
         rutas_ok = all(
@@ -292,6 +296,9 @@ def test_06():
             for f in filas
         )
         fechas_ok = all(f[3] for f in filas)
+        resumen_esperado = texto_resumen_sincronizacion(
+            {"incorporados": 0, "eliminados": 0, "candidatos_restantes": 0}
+        )
         ok = (
             tipos
             == [
@@ -299,9 +306,13 @@ def test_06():
                 "TareaFFprobe",
                 "TareaMiniaturas",
                 "TareaGuardarVideos",
+                "TareaSincronizacionCatalogo",
             ]
             and guardado == 3
-            and estado == "3 videos detectados"
+            and estado == resumen_esperado
+            and resultado_sincronizacion is not None
+            and resultado_sincronizacion["resumen"]["nuevos"] == 0
+            and resultado_sincronizacion["resumen"]["ya_sincronizados"] == 3
             and detectados == ["a.mp4", "b.mkv", "c.avi"]
             and [f[0] for f in filas] == ["a.mp4", "b.mkv", "c.avi"]
             and [f[2] for f in filas] == [".mp4", ".mkv", ".avi"]
@@ -431,6 +442,7 @@ def test_09():
                 "TareaFFprobe",
                 "TareaMiniaturas",
                 "TareaGuardarVideos",
+                "TareaSincronizacionCatalogo",
             ]
             and [f[0] for f in filas] == ["a.mp4", "b.mkv"]
         )
@@ -576,20 +588,20 @@ def test_12():
         ventana.boton_escanear.click()
         _esperar(lambda v=ventana: _cadena_terminada(v))
         filas = _filas_de(ruta_db)
-        conn = sqlite3.connect(ruta_db)
-        try:
-            viejo = conn.execute(
-                "SELECT duracion_segundos, codec_video FROM videos WHERE nombre = 'viejo.mp4'"
-            ).fetchone()
-        finally:
-            conn.close()
+        resumen = ventana.resultado_sincronizacion["resumen"]
         ventana.close()
         _limpiar(ventana)
         ok = (
-            [f[0] for f in filas] == ["nuevo.mp4", "viejo.mp4"]
-            and viejo == (1.0, "h264")
+            [f[0] for f in filas] == ["nuevo.mp4"]
+            and resumen["nuevos"] == 0
+            and resumen["ya_sincronizados"] == 1
+            and resumen["incorporados"] == 0
+            and resumen["eliminados"] == 1
         )
-        return ok, f"filas={[f[0] for f in filas]} viejo={viejo}"
+        return (
+            ok,
+            f"filas={[f[0] for f in filas]} resumen={resumen}",
+        )
     finally:
         carpeta.cleanup()
         temp.cleanup()
@@ -642,6 +654,8 @@ def test_14():
         estado_tras_error = ventana.estado_escaneo.text()
         guardado_error = ventana.registros_guardados
         pendiente_error = ventana._guardado_pendiente
+        sincronizacion_pendiente_error = ventana._sincronizacion_pendiente
+        resultado_sincronizacion_error = ventana.resultado_sincronizacion
         gestor_error = ventana.gestor.estado
         hab_tras_error = ventana.boton_escanear.isEnabled()
         ventana.boton_escanear.click()
@@ -654,6 +668,8 @@ def test_14():
             estado_tras_error == MENSAJE_ERROR_GUARDADO
             and guardado_error is None
             and not pendiente_error
+            and not sincronizacion_pendiente_error
+            and resultado_sincronizacion_error is None
             and gestor_error == Estado.INACTIVO
             and hab_tras_error
             and guardado_final == 1
@@ -662,6 +678,7 @@ def test_14():
         return (
             ok,
             f"estado_error={estado_tras_error!r} pendiente={pendiente_error} "
+            f"sincro_pendiente={sincronizacion_pendiente_error} "
             f"gestor={gestor_error} hab={hab_tras_error} "
             f"final={guardado_final} filas={[f[0] for f in filas]}",
         )
@@ -699,7 +716,7 @@ def test_15():
         ok = (
             llamadas == {"lectura": 0}
             and tarjetas_despues == tarjetas_antes
-            and [f[0] for f in filas] == ["a.mp4", "x.mp4"]
+            and [f[0] for f in filas] == ["x.mp4"]
         )
         return (
             ok,
@@ -879,9 +896,12 @@ def test_18():
         real = por_nombre["video_real.mp4"]
         vacio1 = por_nombre["vacio1.mp4"]
         vacio2 = por_nombre["vacio2.avi"]
+        resumen_esperado = texto_resumen_sincronizacion(
+            {"incorporados": 0, "eliminados": 0, "candidatos_restantes": 0}
+        )
         ok = (
             guardado == 3
-            and estado == "3 videos detectados"
+            and estado == resumen_esperado
             and len(filas) == 3
             and real == (5.0, 640, 360, "h264", 1)
             and vacio1 == (None, None, None, None, 0)

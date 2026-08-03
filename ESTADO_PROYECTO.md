@@ -71,83 +71,92 @@ FFprobe/FFmpeg/miniaturas/subprocesos ni accede a la interfaz; las
 incorporaciones y la eliminación son transacciones independientes —si
 falla la incorporación no se elimina, y si falla la eliminación las
 incorporaciones confirmadas permanecen—; devuelve
-`{"diferencias", "plan", "incorporaciones", "eliminaciones", "resumen"}`
-y **aún no está integrada con `visor_videos.py`**) aprobadas; pendiente
-la integración funcional completa del catálogo: la **integración de la
-sincronización asíncrona con el flujo de la interfaz** y la
-deduplicación de nombres repetidos.
+`{"diferencias", "plan", "incorporaciones", "eliminaciones", "resumen"}`)
+y **la integración de la sincronización completa en la interfaz**
+(`visor_videos.py` lanza `TareaSincronizacionCatalogo` con el mismo
+`GestorTareas` **tras el guardado exitoso** del pipeline escaneo → FFprobe
+→ miniaturas → guardado: `_sincronizacion_pendiente`/`tarea_sincronizacion`/
+`resultado_sincronizacion`, mensajes `MENSAJE_SINCRONIZANDO`/
+`MENSAJE_ERROR_SINCRONIZACION` y resumen final "Sincronización completa: N
+incorporados, M eliminados, K candidatos restantes"; los registros ausentes
+del disco se eliminan de SQLite y los presentes conservan intactos sus
+metadatos FFprobe y `cantidad_miniaturas`; no se eliminan archivos físicos
+ni miniaturas, no se recargan ni reconstruyen tarjetas y la GUI no abre
+SQLite ni ejecuta SQL; la sincronización no se inicia si falla una fase
+anterior y la interfaz queda recuperable tras éxito o error) aprobadas;
+pendiente la **recarga asíncrona del catálogo con la actualización de
+tarjetas tras una sincronización exitosa** (las tarjetas siguen mostrando
+la carga inicial) y la deduplicación de nombres repetidos.
 
 ## Último commit aprobado
 
-**Mensaje:** Agregar sincronización asíncrona del catálogo
+**Mensaje:** Integrar sincronización completa en la interfaz
 
-**Etapa aprobada:** Sincronización asíncrona del catálogo: nueva clase
-`TareaSincronizacionCatalogo(TareaBase)` en `tareas_videos.py`, que en
-segundo plano (con `QThread` mediante `TareaBase` + `GestorTareas`)
-encadena la secuencia exacta `detectar_diferencias` →
-`preparar_plan_sincronizacion` → `aplicar_incorporaciones` →
-`eliminar_candidatos` e importa `escanear_videos as escanear_mod` (el
-módulo, no los nombres de las funciones). El constructor recibe
-`carpeta` y `ruta_db` opcional (por defecto cada función delega su
-default `ruta_biblioteca()`) más `parent` como **padre Qt compatible
-con `QObject`**; las propiedades de solo lectura `carpeta` y `ruta_db`
-**devuelven directamente los valores actualmente inmutables (`str` o
-`None`) recibidos en el constructor**, sin copias generales. `_trabajo()`
-devuelve `{"diferencias", "plan", "incorporaciones", "eliminaciones",
-"resumen"}` (`resumen` = `nuevos`/`ya_sincronizados`/`incorporados`/
-`eliminados`/`candidatos_restantes`); **no se afirma que el resultado
-completo sea inmutable**. **La tarea no contiene SQL, no abre SQLite
-directamente, no almacena conexiones y no usa `check_same_thread=False`**;
-**no ejecuta FFprobe, FFmpeg, miniaturas ni subprocesos** y **no accede a
-la interfaz**. **Atomicidad**: la incorporación y la eliminación son
-**transacciones independientes**, no una única transacción global; si
-falla la incorporación **no se ejecuta la eliminación**; si falla la
-eliminación, las **incorporaciones ya confirmadas permanecen** y la
-eliminación fallida revierte **únicamente su propia transacción**.
-`prueba_plan_sincronizacion.py` se **adaptó con una allowlist exacta**:
-la condición de T02 permite exclusivamente `TareaSincronizacionCatalogo`
-y **rechaza cualquier otra clase** con "Plan"/"Sincronizacion". Se
-agregó `prueba_sincronizacion_asincrona.py` (27 pruebas). Regresiones
-completas 321/321 OK. **No está integrada todavía con
-`visor_videos.py`**; la integración con el flujo de la interfaz y la
-deduplicación de nombres repetidos quedan pendientes. Aprobada con
-observaciones.
+**Etapa aprobada:** Integración de la sincronización completa en la
+interfaz: `visor_videos.py` lanza `TareaSincronizacionCatalogo` con el
+mismo `GestorTareas` **tras el guardado exitoso** del pipeline escaneo →
+FFprobe → miniaturas → guardado (`TareaEscaneo` → `TareaFFprobe` →
+`TareaMiniaturas` → `TareaGuardarVideos` → `TareaSincronizacionCatalogo`).
+`_al_resultado_guardado` marca `_sincronizacion_pendiente = True` y
+`_al_tarea_finalizada` (gestor `inactivo`) inicia la sincronización con
+`_iniciar_sincronizacion()` (revalida la carpeta con `os.path.isdir` y
+crea `TareaSincronizacionCatalogo(carpeta_seleccionada, ruta_db)`). Se
+incorporan los atributos `_sincronizacion_pendiente`/`tarea_sincronizacion`/
+`resultado_sincronizacion`, los handlers `_al_resultado_sincronizacion`/
+`_al_error_sincronizacion`, las constantes `MENSAJE_SINCRONIZANDO`/
+`MENSAJE_ERROR_SINCRONIZACION` y la función `texto_resumen_sincronizacion()`
+(estado final "Sincronización completa: N incorporados, M eliminados, K
+candidatos restantes"). Al terminar, los registros ausentes del disco se
+eliminan de SQLite (`eliminar_candidatos` dentro de la tarea) y los
+presentes **conservan intactos** sus metadatos FFprobe y
+`cantidad_miniaturas`; **no se eliminan archivos físicos ni miniaturas**;
+**no se recargan ni reconstruyen tarjetas** (siguen mostrando la carga
+inicial); la GUI **no abre SQLite ni ejecuta SQL** (AST: sin `sqlite3`/
+`connect` y sin las funciones de sincronización en la interfaz). La
+sincronización **solo se lanza tras un guardado exitoso** (no se inicia si
+falla cualquier fase anterior) y, ante un error de sincronización, la
+interfaz queda recuperable con `MENSAJE_ERROR_SINCRONIZACION` y un nuevo
+escaneo posible. Se agregó `prueba_sincronizacion_interfaz.py` (18
+pruebas) y se actualizaron `prueba_escaneo_guardado.py` (24) y
+`prueba_escaneo_interfaz.py` (36) a la cadena de 5 tareas. Regresiones
+completas 355/355 OK. **Alcance**: la recarga asíncrona del catálogo con
+la actualización de tarjetas tras la sincronización y la deduplicación de
+nombres repetidos quedan pendientes. Aprobada con observaciones.
 
 **SHA definitivo:** debe consultarse con `git log -1` (el SHA no se
 escribe en este documento para evitar autorreferencias al commit).
 
 ## Última etapa aprobada
 
-Sincronización asíncrona del catálogo: `TareaSincronizacionCatalogo`
-en `tareas_videos.py` (capa de tareas asíncronas sobre `TareaBase` +
-`GestorTareas`). En segundo plano (un `QThread` propio) encadena la
-secuencia exacta `detectar_diferencias` → `preparar_plan_sincronizacion`
-→ `aplicar_incorporaciones` → `eliminar_candidatos`, importando
-`escanear_videos as escanear_mod` (el módulo, no los nombres de las
-funciones). El constructor recibe `carpeta` y `ruta_db` opcional (por
-defecto cada función delega su default `ruta_biblioteca()`) más `parent`
-como **padre Qt compatible con `QObject`**; las propiedades de solo
-lectura `carpeta` y `ruta_db` **devuelven directamente los valores
-actualmente inmutables (`str` o `None`) recibidos en el constructor**,
-sin copias generales. `_trabajo()` devuelve `{"diferencias", "plan",
-"incorporaciones", "eliminaciones", "resumen"}` (`resumen` =
-`nuevos`/`ya_sincronizados`/`incorporados`/`eliminados`/
-`candidatos_restantes`); **no se afirma que el resultado completo sea
-inmutable**. **La tarea no contiene SQL, no abre SQLite directamente, no
-almacena conexiones y no usa `check_same_thread=False`**; **no ejecuta
-FFprobe, FFmpeg, miniaturas ni subprocesos** y **no accede a la
-interfaz**. **Atomicidad**: la incorporación y la eliminación son
-**transacciones independientes**, no una única transacción global; si
-falla la incorporación **no se ejecuta la eliminación**; si falla la
-eliminación, las **incorporaciones ya confirmadas permanecen** y la
-eliminación fallida revierte **únicamente su propia transacción**.
-**No está integrada todavía con `visor_videos.py`**. **Ausencia
-deliberada**: la integración con el flujo de la interfaz y la
-deduplicación de nombres repetidos continúan pendientes. `prueba_plan_
-sincronizacion.py` se adaptó con una allowlist exacta (solo
-`TareaSincronizacionCatalogo` permitida en T02; cualquier otra clase con
-"Plan"/"Sincronizacion" rechazada). Con suite nueva
-`prueba_sincronizacion_asincrona.py` (27 pruebas). Aprobada con
+Integración de la sincronización completa en la interfaz: `visor_videos.py`
+lanza `TareaSincronizacionCatalogo` con el **mismo** `GestorTareas`
+**tras el guardado exitoso** del pipeline escaneo → FFprobe → miniaturas →
+guardado (`TareaEscaneo` → `TareaFFprobe` → `TareaMiniaturas` →
+`TareaGuardarVideos` → `TareaSincronizacionCatalogo`). `_al_resultado_guardado`
+marca `_sincronizacion_pendiente = True` y `_al_tarea_finalizada` (gestor
+`inactivo`) inicia la sincronización con `_iniciar_sincronizacion()`
+(revalida la carpeta con `os.path.isdir` y crea la tarea con
+`carpeta_seleccionada` y `ruta_db`). Estados nuevos
+`_sincronizacion_pendiente`/`tarea_sincronizacion`/`resultado_sincronizacion`,
+handlers `_al_resultado_sincronizacion` (conserva el resultado completo
+`{"diferencias", "plan", "incorporaciones", "eliminaciones", "resumen"}`
+y muestra el resumen final) y `_al_error_sincronizacion` (muestra
+`MENSAJE_ERROR_SINCRONIZACION`, gestor `inactivo`, interfaz recuperable),
+constantes `MENSAJE_SINCRONIZANDO`/`MENSAJE_ERROR_SINCRONIZACION` y la
+función `texto_resumen_sincronizacion()` (estado final "Sincronización
+completa: N incorporados, M eliminados, K candidatos restantes"). Al
+terminar, los registros ausentes del disco se eliminan de SQLite y los
+presentes **conservan intactos** sus metadatos FFprobe y
+`cantidad_miniaturas`; **no se eliminan archivos físicos ni miniaturas**;
+**no se recargan ni reconstruyen tarjetas** (siguen mostrando la carga
+inicial); la GUI **no abre SQLite ni ejecuta SQL** (AST). La sincronización
+**solo se lanza tras un guardado exitoso** (no se inicia si falla cualquier
+fase anterior). **Ausencia deliberada**: la recarga asíncrona del catálogo
+con la actualización de tarjetas tras una sincronización exitosa y la
+deduplicación de nombres repetidos continúan pendientes. Con suite nueva
+`prueba_sincronizacion_interfaz.py` (18 pruebas) y suites actualizadas
+`prueba_escaneo_guardado.py` (24) y `prueba_escaneo_interfaz.py` (36) a la
+cadena de 5 tareas. Regresiones completas 355/355 OK. Aprobada con
 observaciones.
 
 ## Estado de la arquitectura
@@ -213,47 +222,52 @@ observaciones.
     `check_same_thread=False`, sin FFprobe/FFmpeg/miniaturas/
     subprocesos/interfaz; incorporación y eliminación como transacciones
     independientes; devuelve `{"diferencias", "plan", "incorporaciones",
-    "eliminaciones", "resumen"}`; sin integración con `visor_videos.py`).
+    "eliminaciones", "resumen"}`).
+-   Integración de la sincronización completa en la interfaz
+    (`visor_videos.py` lanza `TareaSincronizacionCatalogo` con el mismo
+    `GestorTareas` **tras el guardado exitoso** del pipeline escaneo →
+    FFprobe → miniaturas → guardado; estados
+    `_sincronizacion_pendiente`/`tarea_sincronizacion`/
+    `resultado_sincronizacion`, handlers `_al_resultado_sincronizacion`/
+    `_al_error_sincronizacion`, constantes `MENSAJE_SINCRONIZANDO`/
+    `MENSAJE_ERROR_SINCRONIZACION` y `texto_resumen_sincronizacion()`;
+    al terminar elimina de SQLite los registros ausentes del disco,
+    conserva intactos los metadatos FFprobe y `cantidad_miniaturas` de
+    los presentes, **no elimina archivos físicos ni miniaturas**, **no
+    recarga ni reconstruye tarjetas** y **no abre SQLite ni ejecuta SQL**
+    desde la GUI; la sincronización solo se lanza tras un guardado
+    exitoso y la interfaz queda recuperable tras éxito o error).
 -   Pruebas automatizadas.
 
 ### En desarrollo
 
-Integración funcional completa del catálogo: el pipeline (`TareaEscaneo`
-→ `TareaFFprobe` → `combinar_registros_con_ffprobe` → `TareaMiniaturas`
-→ `combinar_registros_con_miniaturas` → `TareaGuardarVideos`) ya
-convierte los archivos detectados por la interfaz en registros con
+La sincronización completa del catálogo ya está integrada en la interfaz:
+el pipeline (`TareaEscaneo` → `TareaFFprobe` → `TareaMiniaturas` →
+`TareaGuardarVideos`) convierte los archivos detectados en registros con
 metadatos FFprobe y cantidad de miniaturas y los escribe en SQLite
-conservando los preexistentes, la **detección de diferencias** disco ↔
-BD ya existe de forma no destructiva (`detectar_diferencias`), el
-**plan de sincronización** ya se prepara de forma pura
-(`preparar_plan_sincronizacion`, sin efectos ni integración), la
-**aplicación de las incorporaciones** ya existe de forma no destructiva
-(`aplicar_incorporaciones`: valida el plan antes de abrir SQLite y
-persiste únicamente `a_incorporar` reutilizando `guardar_videos`), la
-**eliminación controlada de los candidatos ausentes** ya existe
-(`eliminar_candidatos`: valida el plan antes de abrir SQLite y elimina
-únicamente los registros de `candidatos_a_eliminar` con una transacción
-atómica) y la **sincronización asíncrona del catálogo** ya orquesta la
-secuencia completa en segundo plano (`TareaSincronizacionCatalogo` con
-`QThread` + `GestorTareas`), pero la **integración de esa tarea con el
-flujo de la interfaz** (`visor_videos.py`) y la **deduplicación de
-nombres repetidos** siguen pendientes. La carga inicial asíncrona de la
-primera página del catálogo ya está integrada en la interfaz.
+conservando los preexistentes, y tras el guardado exitoso se lanza
+`TareaSincronizacionCatalogo` (detección de diferencias
+`detectar_diferencias`, preparación del plan
+`preparar_plan_sincronizacion`, aplicación de incorporaciones
+`aplicar_incorporaciones` y eliminación controlada de ausentes
+`eliminar_candidatos`) con el mismo `GestorTareas`, que elimina de SQLite
+los registros ausentes y conserva los presentes. Queda pendiente la
+**recarga asíncrona del catálogo con la actualización de tarjetas tras una
+sincronización exitosa** (las tarjetas siguen mostrando la carga inicial)
+y la **deduplicación de nombres repetidos**. La carga inicial asíncrona de
+la primera página del catálogo ya está integrada en la interfaz.
 
 ## Pendientes prioritarios
 
-1.  Integración de la sincronización asíncrona del catálogo con el
-    flujo de la interfaz (la detección de diferencias ya existe en
-    `detectar_diferencias` —solo lectura, por nombre—, el plan ya se
-    prepara en `preparar_plan_sincronizacion` —puro, sin efectos—, las
-    incorporaciones ya se aplican en `aplicar_incorporaciones`
-    —no destructivo, reutilizando `guardar_videos`—, la eliminación
-    controlada de los registros ausentes ya existe en
-    `eliminar_candidatos` —validación previa y transacción atómica— y la
-    **orquestación asíncrona completa** ya existe en
-    `TareaSincronizacionCatalogo` —`QThread` + `GestorTareas`—; falta la
-    **integración de `TareaSincronizacionCatalogo` con `visor_videos.py`**
-    y la deduplicación de nombres repetidos).
+1.  Recarga asíncrona del catálogo con la actualización de tarjetas tras
+    una sincronización exitosa (la sincronización completa ya está
+    integrada en la interfaz: `visor_videos.py` lanza
+    `TareaSincronizacionCatalogo` con el mismo `GestorTareas` tras el
+    guardado exitoso del pipeline, eliminando de SQLite los registros
+    ausentes y conservando los presentes, pero las **tarjetas siguen
+    mostrando la carga inicial**; falta recargar el catálogo en segundo
+    plano y reconstruir/actualizar las tarjetas tras la sincronización,
+    junto con la deduplicación de nombres repetidos).
 2.  Integración SQLite asíncrona en el pipeline (encadenado).
 3.  Actualización asíncrona de la interfaz (tarjetas dinámicas).
 4.  FFmpeg asíncrono.
@@ -272,24 +286,26 @@ definitiva del ciclo de vida de tareas con la ventana (la carga inicial
 asíncrona ya usa `GestorTareas` y cierra de forma ordenada en
 `closeEvent`, aunque `closeEvent` puede esperar hasta 5 s por una tarea
 activa); - el pipeline ya convierte los archivos detectados en registros
-con metadatos FFprobe y miniaturas y los escribe, y existen la detección
-no destructiva de diferencias (`detectar_diferencias`), el plan de
-sincronización preparado de forma pura (`preparar_plan_sincronizacion`,
-con `candidatos_a_eliminar` únicamente informativos), la aplicación
-no destructiva de las incorporaciones (`aplicar_incorporaciones`, que
-persiste solo `a_incorporar` reutilizando `guardar_videos`) y la
-eliminación controlada de los registros ausentes (`eliminar_candidatos`,
-con validación previa y transacción atómica) y la orquestación asíncrona
-completa (`TareaSincronizacionCatalogo`, que encadena la secuencia en un
-`QThread`), pero la **integración de `TareaSincronizacionCatalogo` con
-`visor_videos.py`** (junto con la deduplicación de nombres repetidos)
-sigue pendiente); - `detectar_diferencias` compara
+con metadatos FFprobe y miniaturas y los escribe, y la **sincronización
+completa ya está integrada en la interfaz** (`visor_videos.py` lanza
+`TareaSincronizacionCatalogo` tras el guardado exitoso, que encadena en
+un `QThread` la detección no destructiva de diferencias
+(`detectar_diferencias`), el plan preparado de forma pura
+(`preparar_plan_sincronizacion`, con `candidatos_a_eliminar`
+únicamente informativos), la aplicación no destructiva de las
+incorporaciones (`aplicar_incorporaciones`, que persiste solo
+`a_incorporar` reutilizando `guardar_videos`) y la eliminación
+controlada de los registros ausentes (`eliminar_candidatos`, con
+validación previa y transacción atómica)), pero las **tarjetas siguen
+mostrando la carga inicial**: falta la recarga asíncrona del catálogo
+con la actualización de tarjetas tras una sincronización exitosa (junto
+con la deduplicación de nombres repetidos); - `detectar_diferencias` compara
 por nombre y no detecta movimientos ni renombrados (queda para etapas
 futuras); - **no existe todavía deduplicación de nombres repetidos** en
 el plan de sincronización; - el enrutado de resultados por
 `_escaneo_pendiente`/`_ffprobe_pendiente`/`_miniaturas_pendiente`/
-`_guardado_pendiente` es suficiente para una única tarea activa y debe
-revisarse si la interfaz incorpora más tipos de tarea; - el escaneo no
+`_guardado_pendiente`/`_sincronizacion_pendiente` es suficiente para una
+única tarea activa y debe revisarse si la interfaz incorpora más tipos de tarea; - el escaneo no
 incluye subcarpetas; - decisión pendiente sobre si `%` y `_` como
 comodines `LIKE` en la búsqueda de `listar_videos_paginado` se aceptan
 como contrato; - la generación de miniaturas corre en segundo plano
@@ -312,20 +328,23 @@ limpieza controlada de miniaturas antiguas.
 
 ## Próxima etapa
 
-**Integración de la sincronización asíncrona del catálogo con el flujo
-de la interfaz** (`TareaSincronizacionCatalogo` consumida desde
-`visor_videos.py` mediante el `GestorTareas`, con su deduplicación de
-nombres repetidos). Las etapas anteriores (detección no destructiva de
-diferencias con `detectar_diferencias`, preparación del plan con
+**Recarga asíncrona del catálogo con la actualización de tarjetas tras
+una sincronización exitosa** (recargar el catálogo en segundo plano y
+reconstruir/actualizar las tarjetas cuando `TareaSincronizacionCatalogo`
+termina correctamente, con su deduplicación de nombres repetidos). Las
+etapas anteriores (detección no destructiva de diferencias con
+`detectar_diferencias`, preparación del plan con
 `preparar_plan_sincronizacion`, aplicación no destructiva de las
 incorporaciones con `aplicar_incorporaciones`, eliminación controlada de
-los registros ausentes con `eliminar_candidatos` y la orquestación
-asíncrona con `TareaSincronizacionCatalogo`) quedaron aprobadas y
-commiteadas; la **integración con el flujo de la interfaz** y la
-deduplicación de nombres repetidos siguen pendientes y se abordarán como
-próxima etapa, manteniendo el alcance limitado: sin selección
-inteligente, sin múltiples miniaturas, sin eliminación de archivos
-antiguos y sin recarga automática de la interfaz.
+los registros ausentes con `eliminar_candidatos`, la orquestación
+asíncrona con `TareaSincronizacionCatalogo` y la integración de la
+sincronización completa en la interfaz) quedaron aprobadas y
+commiteadas; la **recarga asíncrona del catálogo con la actualización de
+tarjetas tras la sincronización** y la deduplicación de nombres repetidos
+siguen pendientes y se abordarán como próxima etapa, manteniendo el
+alcance limitado: sin selección inteligente, sin múltiples miniaturas,
+sin eliminación de archivos antiguos y sin recarga automática
+inmediata más allá de la sincronización completada.
 
 ## Documentos del proyecto
 

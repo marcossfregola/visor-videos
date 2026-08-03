@@ -31,6 +31,7 @@ from visor_videos import (
     MENSAJE_SIN_ESCANEO,
     TAMANIO_PAGINA_INICIAL,
     VisorVideos,
+    texto_resumen_sincronizacion,
 )
 
 QT_MENSAJES = []
@@ -41,6 +42,8 @@ def _mensaje_qt(tipo, contexto, texto):
 
 
 qInstallMessageHandler(_mensaje_qt)
+
+RESUMEN_VACIO = "Sincronización completa: 0 incorporados, 0 eliminados, 0 candidatos restantes"
 
 
 def _filas(nombres):
@@ -141,6 +144,7 @@ def _escanear_terminado(ventana):
         and not ventana._ffprobe_pendiente
         and not ventana._miniaturas_pendiente
         and not ventana._guardado_pendiente
+        and not ventana._sincronizacion_pendiente
     )
 
 
@@ -244,6 +248,7 @@ def test_01():
         "escanear_videos.py",
         "rutas.py",
         "prueba_escaneo_interfaz.py",
+        "prueba_sincronizacion_interfaz.py",
     ]
     for nombre in modulos:
         py_compile.compile(nombre, doraise=True)
@@ -561,7 +566,7 @@ def test_12():
         _limpiar(ventana)
         ok = (
             detectados == []
-            and estado == "0 videos detectados"
+            and estado == RESUMEN_VACIO
             and hab_escanear
             and hab_seleccionar
             and ventana.gestor.hilo is None
@@ -583,20 +588,34 @@ def test_13():
         )
         ventana = VisorVideos(ruta_db=ruta_db)
         _esperar(lambda v=ventana: v._carga_completada and v.gestor.hilo is None)
-        with _dialogo_falso(carpeta.name):
-            ventana.seleccionar_carpeta()
-        ventana.boton_escanear.click()
-        _esperar(lambda v=ventana: _escanear_terminado(v))
-        detectados = ventana.videos_detectados
-        estado = ventana.estado_escaneo.text()
+        control_guardado = _Control(tv.guardar_videos)
+        original_guardado = tv.guardar_videos
+        tv.guardar_videos = control_guardado
+        try:
+            with _dialogo_falso(carpeta.name):
+                ventana.seleccionar_carpeta()
+            ventana.boton_escanear.click()
+            _esperar(lambda: control_guardado.empezada.is_set(), timeout_ms=15000)
+            detectados = ventana.videos_detectados
+            estado_durante = ventana.estado_escaneo.text()
+            control_guardado.soltar.set()
+            _esperar(lambda v=ventana: _escanear_terminado(v))
+        finally:
+            tv.guardar_videos = original_guardado
+        estado_final = ventana.estado_escaneo.text()
         ventana.close()
         _limpiar(ventana)
         ok = (
             detectados == esperado
             and detectados == sorted(esperado)
-            and estado == f"{len(esperado)} videos detectados"
+            and estado_durante == f"{len(esperado)} videos detectados"
+            and estado_final == RESUMEN_VACIO
         )
-        return ok, f"detectados={detectados} esperado={esperado} estado={estado!r}"
+        return (
+            ok,
+            f"detectados={detectados} esperado={esperado} "
+            f"durante={estado_durante!r} final={estado_final!r}",
+        )
     finally:
         carpeta.cleanup()
         temp.cleanup()
@@ -617,7 +636,7 @@ def test_14():
         estado = ventana.estado_escaneo.text()
         ventana.close()
         _limpiar(ventana)
-        ok = detectados == [] and estado == "0 videos detectados"
+        ok = detectados == [] and estado == RESUMEN_VACIO
         return ok, f"detectados={detectados} estado={estado!r}"
     finally:
         carpeta.cleanup()
@@ -638,7 +657,7 @@ def test_15():
         estado = ventana.estado_escaneo.text()
         ventana.close()
         _limpiar(ventana)
-        ok = detectados == ["unico.mp4"] and estado == "1 video detectado"
+        ok = detectados == ["unico.mp4"] and estado == RESUMEN_VACIO
         return ok, f"detectados={detectados} estado={estado!r}"
     finally:
         carpeta.cleanup()
@@ -780,6 +799,7 @@ def test_19():
                 "TareaFFprobe",
                 "TareaMiniaturas",
                 "TareaGuardarVideos",
+                "TareaSincronizacionCatalogo",
             ]
         )
         return ok, f"filas={filas} guardado={guardado} tipos={tipos}"
@@ -991,7 +1011,7 @@ def test_24():
         _limpiar(ventana)
         ok = (
             previo == ["exito.mp4"]
-            and estado_previo == "1 video detectado"
+            and estado_previo == RESUMEN_VACIO
             and detectados == previo
             and estado == MENSAJE_ERROR_ESCANEO
         )
@@ -1026,7 +1046,7 @@ def test_25():
         estado = ventana.estado_escaneo.text()
         ventana.close()
         _limpiar(ventana)
-        ok = detectados == ["exito.mp4"] and estado == "1 video detectado"
+        ok = detectados == ["exito.mp4"] and estado == RESUMEN_VACIO
         return ok, f"detectados={detectados} estado={estado!r}"
     finally:
         carpeta.cleanup()
@@ -1051,16 +1071,19 @@ def test_26():
         control_ffprobe = _Control(tv.obtener_datos_ffprobe)
         control_miniaturas = _Control(tv.asegurar_miniaturas)
         control_guardado = _Control(tv.guardar_videos)
+        control_sincronizacion = _Control(escanear_mod.detectar_diferencias)
         originales = (
             tv.escanear_videos,
             tv.obtener_datos_ffprobe,
             tv.asegurar_miniaturas,
             tv.guardar_videos,
+            escanear_mod.detectar_diferencias,
         )
         tv.escanear_videos = control_escaneo
         tv.obtener_datos_ffprobe = control_ffprobe
         tv.asegurar_miniaturas = control_miniaturas
         tv.guardar_videos = control_guardado
+        escanear_mod.detectar_diferencias = control_sincronizacion
         try:
             with _dialogo_falso(carpeta.name):
                 ventana.seleccionar_carpeta()
@@ -1098,6 +1121,14 @@ def test_26():
             paso_cuatro_b = list(secuencia)
 
             control_guardado.soltar.set()
+            control_sincronizacion.empezada.wait(5)
+            _procesar(300)
+            paso_cinco = list(secuencia)
+            estado_cinco = ventana.gestor.estado
+            _procesar(300)
+            paso_cinco_b = list(secuencia)
+
+            control_sincronizacion.soltar.set()
             _esperar(lambda v=ventana: _escanear_terminado(v))
         finally:
             (
@@ -1105,6 +1136,7 @@ def test_26():
                 tv.obtener_datos_ffprobe,
                 tv.asegurar_miniaturas,
                 tv.guardar_videos,
+                escanear_mod.detectar_diferencias,
             ) = originales
         ventana.close()
         _limpiar(ventana)
@@ -1127,21 +1159,34 @@ def test_26():
             ]
             and paso_cuatro_b == paso_cuatro
             and estado_cuatro == Estado.OCUPADO
-            and len(tareas_vistas) == 4
-            and len(set(tareas_vistas)) == 4
+            and paso_cinco
+            == [
+                "TareaEscaneo",
+                "TareaFFprobe",
+                "TareaMiniaturas",
+                "TareaGuardarVideos",
+                "TareaSincronizacionCatalogo",
+            ]
+            and paso_cinco_b == paso_cinco
+            and estado_cinco == Estado.OCUPADO
+            and len(tareas_vistas) == 5
+            and len(set(tareas_vistas)) == 5
             and control_ffprobe.principal is False
             and control_miniaturas.principal is False
             and control_guardado.principal is False
+            and control_sincronizacion.principal is False
             and ventana.gestor.hilo is None
             and len(_GESTORES_ACTIVOS) == 0
         )
         return (
             ok,
             f"secuencia={secuencia} "
-            f"estados={estado_uno},{estado_dos},{estado_tres},{estado_cuatro} "
+            f"estados={estado_uno},{estado_dos},{estado_tres},"
+            f"{estado_cuatro},{estado_cinco} "
             f"ffprobe_principal={control_ffprobe.principal} "
             f"miniaturas_principal={control_miniaturas.principal} "
             f"guardado_principal={control_guardado.principal} "
+            f"sincronizacion_principal={control_sincronizacion.principal} "
             f"gestores={len(_GESTORES_ACTIVOS)}",
         )
     finally:
@@ -1172,9 +1217,10 @@ def test_27():
         _limpiar(ventana)
         ok = (
             primero == ["a1.mp4", "a2.avi"]
-            and estado_uno == "2 videos detectados"
+            and estado_uno == RESUMEN_VACIO
             and segundo == ["b1.mkv"]
-            and estado_dos == "1 video detectado"
+            and estado_dos
+            == "Sincronización completa: 0 incorporados, 2 eliminados, 0 candidatos restantes"
         )
         return (
             ok,
@@ -1305,24 +1351,38 @@ def test_32():
 
         def _mod(*a, **k):
             llamadas["mod"] += 1
-            raise AssertionError("no debe llamarse escanear_videos directamente")
+            raise AssertionError("no debe llamarse escanear_videos durante el escaneo")
 
+        control_guardado = _Control(tv.guardar_videos)
+        original_guardado = tv.guardar_videos
         ventana = VisorVideos(ruta_db=ruta_db)
         _esperar(lambda v=ventana: v._carga_completada and v.gestor.hilo is None)
         escanear_mod.escanear_videos = _mod
+        tv.guardar_videos = control_guardado
         try:
             with _dialogo_falso(carpeta.name):
                 ventana.seleccionar_carpeta()
             ventana.boton_escanear.click()
+            _esperar(lambda: control_guardado.empezada.is_set(), timeout_ms=15000)
+            detectados = ventana.videos_detectados
+            tipo = type(ventana.tarea_escaneo).__name__
+            llamadas_durante = dict(llamadas)
+            control_guardado.soltar.set()
             _esperar(lambda v=ventana: _escanear_terminado(v))
         finally:
+            tv.guardar_videos = original_guardado
             escanear_mod.escanear_videos = orig_mod
-        detectados = ventana.videos_detectados
-        tipo = type(ventana.tarea_escaneo).__name__
         ventana.close()
         _limpiar(ventana)
-        ok = llamadas == {"mod": 0} and detectados == ["x.mp4"] and tipo == "TareaEscaneo"
-        return ok, f"llamadas={llamadas} tipo={tipo} detectados={detectados}"
+        ok = (
+            llamadas_durante == {"mod": 0}
+            and detectados == ["x.mp4"]
+            and tipo == "TareaEscaneo"
+        )
+        return (
+            ok,
+            f"llamadas_durante={llamadas_durante} tipo={tipo} detectados={detectados}",
+        )
     finally:
         carpeta.cleanup()
         temp.cleanup()
@@ -1373,7 +1433,9 @@ def test_34():
         and "escanear_boton_inicio=False" in salida
         and "escanear_boton_habilitado=True" in salida
         and "estado_escaneo_mientras=Escaneando carpeta" in salida
-        and "estado_escaneo_final=3 videos detectados" in salida
+        and "estado_escaneo_final=" in salida
+        and "0 incorporados, 0 eliminados, 0 candidatos restantes" in salida
+        and "resumen_sincronizacion=" in salida
         and "videos_detectados=['clip.avi'" in salida
         and "escanear_boton_final=True" in salida
         and "guardado_total=3" in salida
@@ -1383,11 +1445,12 @@ def test_34():
         and "contador_final=" in salida
         and "Destroyed while thread" not in salida
         and "No se pudo cargar el catálogo" not in salida
+        and "No se pudo sincronizar el catálogo" not in salida
     )
     return (
         ok,
         f"exit={resultado.returncode} "
-        f"escaneo_ok={'estado_escaneo_final=3 videos detectados' in salida} "
+        f"resumen_ok={'0 incorporados, 0 eliminados, 0 candidatos restantes' in salida} "
         f"guardado_ok={'guardado_total=3' in salida} "
         f"avisos={('Destroyed while thread' in salida)}",
     )

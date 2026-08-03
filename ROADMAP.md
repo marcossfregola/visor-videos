@@ -98,9 +98,9 @@ arquitectónicas.
     FFprobe/FFmpeg/miniaturas/subprocesos y sin acceso a la interfaz.
     Incorporación y eliminación como transacciones independientes (si
     falla la incorporación no se elimina; si falla la eliminación las
-    incorporaciones confirmadas permanecen). **No integrada todavía con
-    `visor_videos.py`**: la integración con el flujo de la interfaz y la
-    deduplicación de nombres repetidos quedan pendientes.
+    incorporaciones confirmadas permanecen). **Integrada con el flujo de
+    la interfaz en la siguiente etapa** (ver "Sincronización completa del
+    catálogo"); la deduplicación de nombres repetidos queda pendiente.
 
 1.  Opción de incluir o excluir subcarpetas — **pendiente** (configurar
     si el escaneo de la carpeta elegida recorre las subcarpetas).
@@ -112,22 +112,27 @@ arquitectónicas.
     con metadatos FFprobe y cantidad de miniaturas y los escribe en
     SQLite con el upsert transaccional, conservando los registros
     preexistentes).
-3.  Sincronización completa del catálogo — **en curso (detección,
-    preparación, aplicación de incorporaciones, eliminación controlada y
-    orquestación asíncrona completadas)**: la detección no destructiva de
-    diferencias existe (`detectar_diferencias`, por nombre y solo
-    lectura), el plan ya se prepara de forma pura
+3.  Sincronización completa del catálogo — **completado (detección,
+    preparación, aplicación de incorporaciones, eliminación controlada,
+    orquestación asíncrona e integración con la interfaz)**: la detección
+    no destructiva de diferencias existe (`detectar_diferencias`, por
+    nombre y solo lectura), el plan ya se prepara de forma pura
     (`preparar_plan_sincronizacion`, con
     `a_incorporar`/`ya_sincronizados`/`candidatos_a_eliminar` y
     candidatos informativos), las incorporaciones ya se aplican de forma
     no destructiva (`aplicar_incorporaciones`, persistiendo únicamente
     `a_incorporar` con `guardar_videos`), los registros ausentes ya se
     eliminan de forma controlada (`eliminar_candidatos`, transacción
-    atómica y validación previa) y la secuencia completa ya se orquesta
+    atómica y validación previa), la secuencia completa ya se orquesta
     en segundo plano (`TareaSincronizacionCatalogo` con `QThread` +
-    `GestorTareas`); quedan pendientes la **integración de
-    `TareaSincronizacionCatalogo` con el flujo de la interfaz** y la
-    deduplicación de nombres repetidos.
+    `GestorTareas`) y `visor_videos.py` ya lanza la tarea tras el
+    guardado exitoso del pipeline (estado final con incorporados/
+    eliminados/candidatos restantes; ausentes eliminados de SQLite,
+    presentes conservados, sin borrado de archivos físicos ni
+    miniaturas y sin recarga de tarjetas); quedan pendientes la
+    **recarga asíncrona del catálogo con la actualización de tarjetas
+    tras una sincronización exitosa** y la deduplicación de nombres
+    repetidos.
 4.  FFprobe integrado en el pipeline — **completado** (el pipeline
     escaneo → guardado completa duración, resolución y codec antes de
     escribir o actualizar los registros; `NULL` ante vacíos, incompletos
@@ -140,8 +145,8 @@ arquitectónicas.
     archivos antiguos y recarga automática de la interfaz. La limpieza
     controlada de versiones antiguas sigue pendiente.
 6.  Eliminación de registros ausentes — **completado (aplicación
-    controlada; la orquestación asíncrona completa existe; falta la
-    integración con la interfaz)** (sincronizar la
+    controlada, orquestación asíncrona e integración con la interfaz)**
+    (sincronizar la
     BD con los archivos que dejaron de existir; la detección de los
     ausentes ya existe de forma no destructiva en `detectar_diferencias`,
     el plan ya los expone como `candidatos_a_eliminar` en
@@ -149,11 +154,15 @@ arquitectónicas.
     incorporaciones ya se aplican en `aplicar_incorporaciones` sin tocar
     a los candidatos, la **aplicación controlada de la eliminación** ya
     existe en `eliminar_candidatos` (transacción atómica y validación
-    previa) y la **orquestación asíncrona completa** ya existe en
-    `TareaSincronizacionCatalogo`; falta su **integración con el flujo
-    de la interfaz**).
-7.  Recarga automática del catálogo tras la escritura — **pendiente**
-    (refrescar la grilla a medida que se sincroniza el catálogo).
+    previa), la **orquestación asíncrona completa** ya existe en
+    `TareaSincronizacionCatalogo` y la interfaz ya la lanza tras el
+    guardado exitoso del pipeline, eliminando de SQLite los registros
+    ausentes y conservando los presentes).
+7.  Recarga automática del catálogo tras la sincronización — **pendiente
+    (próxima etapa)** (recargar el catálogo en segundo plano y
+    reconstruir/actualizar las tarjetas cuando
+    `TareaSincronizacionCatalogo` termina correctamente; hoy las tarjetas
+    siguen mostrando la carga inicial).
 8.  Progreso — **pendiente** (barra de progreso y estado de las tareas
     en curso).
 9.  Persistencia de configuración — **pendiente** (recordar entre
