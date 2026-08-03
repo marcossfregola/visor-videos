@@ -311,6 +311,29 @@ def listar_videos(ruta_db=None):
         conn.close()
 
 
+def detectar_diferencias(carpeta, ruta_db=None):
+    if not isinstance(carpeta, str) or not carpeta:
+        raise ValueError("carpeta debe ser una ruta de texto no vacía")
+    if not os.path.isdir(carpeta):
+        raise FileNotFoundError(f"Carpeta no encontrada: {carpeta}")
+    if ruta_db is None:
+        ruta_db = ruta_biblioteca()
+    if not os.path.isfile(ruta_db):
+        raise FileNotFoundError(f"Base de datos no encontrada: {ruta_db}")
+    en_disco = set(escanear_videos(carpeta))
+    conn = sqlite3.connect(ruta_db)
+    try:
+        en_bd = {fila[0] for fila in conn.execute("SELECT nombre FROM videos")}
+    finally:
+        conn.close()
+    return {
+        "carpeta": carpeta,
+        "presentes_en_ambos": sorted(en_disco & en_bd),
+        "nuevos": sorted(en_disco - en_bd),
+        "ausentes_del_disco": sorted(en_bd - en_disco),
+    }
+
+
 def listar_videos_paginado(limite, desplazamiento=0, texto=None, ruta_db=None):
     if isinstance(limite, bool) or not isinstance(limite, int):
         raise TypeError("limite debe ser un entero")

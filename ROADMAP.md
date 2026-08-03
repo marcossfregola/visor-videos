@@ -38,6 +38,14 @@ arquitectónicas.
     (mismo gestor de la ventana) y presenta la cantidad de videos
     detectados, sin tocar SQLite, FFprobe, FFmpeg ni miniaturas, y sin
     recorrer subcarpetas.
+-   Detección de diferencias entre la carpeta y el catálogo — **completado
+    (etapa no destructiva)** (`detectar_diferencias` en `escanear_videos.py`):
+    compara por nombre los archivos de video de la carpeta con los
+    registros de la base y devuelve `presentes_en_ambos`/`nuevos`/
+    `ausentes_del_disco`. Solo lectura (no inserta, actualiza ni elimina),
+    no integrada al pipeline ni a la interfaz, no detecta movimientos/
+    renombrados y no recorre subcarpetas. La eliminación de registros
+    ausentes y la integración asíncrona quedan pendientes.
 
 1.  Opción de incluir o excluir subcarpetas — **pendiente** (configurar
     si el escaneo de la carpeta elegida recorre las subcarpetas).
@@ -49,10 +57,11 @@ arquitectónicas.
     con metadatos FFprobe y cantidad de miniaturas y los escribe en
     SQLite con el upsert transaccional, conservando los registros
     preexistentes).
-3.  Sincronización completa del catálogo — **pendiente** (detección de
-    archivos y eliminación de registros ausentes; el FFprobe en el
-    pipeline ya está implementado, pero la escritura masiva con detección
-    de archivos y la eliminación de registros ausentes siguen pendientes).
+3.  Sincronización completa del catálogo — **en curso (etapa de
+    detección completada)**: la detección no destructiva de diferencias
+    existe (`detectar_diferencias`, por nombre y solo lectura); quedan
+    pendientes la eliminación controlada de registros ausentes y la
+    escritura masiva con integración asíncrona.
 4.  FFprobe integrado en el pipeline — **completado** (el pipeline
     escaneo → guardado completa duración, resolución y codec antes de
     escribir o actualizar los registros; `NULL` ante vacíos, incompletos
@@ -65,7 +74,9 @@ arquitectónicas.
     archivos antiguos y recarga automática de la interfaz. La limpieza
     controlada de versiones antiguas sigue pendiente.
 6.  Eliminación de registros ausentes — **pendiente** (sincronizar la
-    BD con los archivos que dejaron de existir).
+    BD con los archivos que dejaron de existir; la detección de los
+    ausentes ya existe de forma no destructiva en `detectar_diferencias`,
+    falta la eliminación controlada y su integración asíncrona).
 7.  Recarga automática del catálogo tras la escritura — **pendiente**
     (refrescar la grilla a medida que se sincroniza el catálogo).
 8.  Progreso — **pendiente** (barra de progreso y estado de las tareas

@@ -28,82 +28,68 @@ desde la interfaz con el mismo gestor; los archivos detectados se
 guardan en SQLite con metadatos FFprobe (duración, resolución, codec;
 `NULL` ante vacíos/incompletos/fallos individuales) y cantidad de
 miniaturas por video mediante el upsert transaccional existente,
-conservando los registros preexistentes) aprobadas; pendiente la
-integración funcional completa del catálogo: la sincronización completa
-SQLite (escritura masiva con detección de archivos y eliminación de
-registros ausentes).
+conservando los registros preexistentes) y **detección no destructiva de
+diferencias entre la carpeta y el catálogo SQLite** (`detectar_diferencias`
+en `escanear_videos.py`: compara por nombre lo que hay en disco con lo que
+hay en la base y devuelve `presentes_en_ambos`/`nuevos`/`ausentes_del_disco`;
+solo lectura, no inserta, actualiza ni elimina, no está integrada al
+pipeline ni a la interfaz, no detecta movimientos ni renombrados y no
+recorre subcarpetas) aprobadas; pendiente la integración funcional completa
+del catálogo: la sincronización completa SQLite (escritura masiva con
+detección de archivos y la eliminación controlada de registros ausentes,
+y su integración asíncrona).
 
 ## Último commit aprobado
 
-**Mensaje:** Integrar generación de miniaturas en el pipeline del catálogo
+**Mensaje:** Detectar diferencias entre el catálogo y el disco
 
-**Etapa aprobada:** Pipeline escaneo → FFprobe → miniaturas → guardado:
-la interfaz encadena `TareaEscaneo` → `TareaFFprobe` → `TareaMiniaturas`
-→ combinación de registros (`combinar_registros_con_ffprobe` +
-`combinar_registros_con_miniaturas` en `escanear_videos.py`) →
-`TareaGuardarVideos` como tareas sucesivas con el mismo `GestorTareas`
-(el paso siguiente se lanza al recibir `tarea_finalizada` de la tarea
-anterior). Los registros se preparan con las claves básicas `{nombre,
-ruta, extension, fecha_importacion}` (ruta absoluta), los metadatos
-FFprobe `{duracion_segundos, ancho, alto, codec_video}` (`NULL` ante
-vacíos, incompletos o fallos individuales) y `cantidad_miniaturas`
-(asignada por ruta normalizada desde el resultado de `TareaMiniaturas`) y
-se escriben en SQLite mediante el upsert transaccional existente,
-conservando los registros preexistentes. La generación de miniaturas
-ocurre en la capa de catálogo (`asegurar_miniaturas`) y corre en segundo
-plano dentro de `TareaMiniaturas`; la interfaz no ejecuta FFmpeg. Ante un
-error de cualquier etapa el gestor queda `inactivo` y un nuevo escaneo es
-posible. Alcance limitado: sin selección inteligente, sin múltiples
-miniaturas, sin limpieza de miniaturas antiguas, sin eliminación de
-registros ausentes, sin recarga del catálogo y sin subcarpetas; no es la
-sincronización completa. Con suite `prueba_escaneo_guardado.py` ampliada
-a 24 pruebas y `prueba_escaneo_interfaz.py` actualizada (36 pruebas).
-Aprobada con observaciones.
+**Etapa aprobada:** Detección no destructiva de diferencias entre la
+carpeta de videos y el catálogo SQLite: nueva función
+`detectar_diferencias(carpeta, ruta_db=None)` en `escanear_videos.py`
+(capa de catálogo). Compara **por nombre** los archivos de video de la
+carpeta (`escanear_videos`) con los registros de la base (`SELECT nombre
+FROM videos`) y devuelve el dict `{"carpeta", "presentes_en_ambos",
+"nuevos", "ausentes_del_disco"}` con listas ordenadas. **Solo lectura**:
+no inserta, no actualiza ni elimina registros y no modifica
+miniaturas. Validaciones: `carpeta` debe ser una ruta de texto no vacía
+(`ValueError`); carpeta inexistente o base inexistente → `FileNotFoundError`
+sin crear archivos. **No integrada**: no forma parte del pipeline ni de la
+interfaz, no detecta movimientos ni renombrados y no recorre subcarpetas.
+Pendiente para la sincronización completa: la eliminación controlada de
+registros ausentes y su integración asíncrona. Con suite nueva
+`prueba_detectar.py` (15 pruebas). Aprobada con observaciones.
 
 **SHA definitivo:** debe consultarse con `git log -1` (el SHA no se
 escribe en este documento para evitar autorreferencias al commit).
 
 ## Última etapa aprobada
 
-Pipeline `TareaEscaneo` → `TareaFFprobe` → `TareaMiniaturas` →
-`combinar_registros_con_ffprobe` + `combinar_registros_con_miniaturas` →
-`TareaGuardarVideos`, encadenado desde `visor_videos.py` con el **mismo**
-`GestorTareas` de la ventana. `_al_resultado_escaneo` copia los archivos
-detectados en `videos_detectados` y marca `_ffprobe_pendiente = True`;
-al terminar el escaneo (gestor de vuelta a `inactivo`), `_al_tarea_finalizada`
-inicia `TareaFFprobe` sobre las rutas absolutas de los videos detectados;
-`_al_resultado_ffprobe` guarda el resultado y marca `_miniaturas_pendiente = True`;
-al terminar FFprobe se inicia `TareaMiniaturas` sobre `videos_detectados`;
-`_al_resultado_miniaturas` guarda el resumen y marca `_guardado_pendiente = True`;
-al terminar, `_iniciar_guardado()` combina los registros con
-`combinar_registros_con_ffprobe` (claves básicas `{nombre, ruta,
-extension, fecha_importacion}` con ruta absoluta en la carpeta escaneada
-+ metadatos FFprobe `{duracion_segundos, ancho, alto, codec_video}`;
-`NULL` si el video no tiene `datos`) y luego con
-`combinar_registros_con_miniaturas` (`cantidad_miniaturas` por ruta
-normalizada desde el resultado de `TareaMiniaturas`) y los persiste con
-`TareaGuardarVideos`. La generación de miniaturas vive en
-`asegurar_miniaturas` (`escanear_videos.py`, capa de catálogo) y corre en
-segundo plano dentro de la tarea; la interfaz no ejecuta FFmpeg. La
-escritura real usa el upsert transaccional existente (`guardar_videos`),
-conserva los registros preexistentes, no elimina registros ausentes y no
-recarga tarjetas; ante un error de guardado se muestra "No se pudieron
-guardar los videos", ante un error global de FFprobe "No se pudieron
-obtener los metadatos" y ante un error de miniaturas "No se pudieron
-generar las miniaturas"; en todos los casos la interfaz queda recuperable
-con un nuevo escaneo posible. La combinación de registros y la generación
-de miniaturas viven en `escanear_videos.py` (capa de catálogo);
-`tareas_videos.py` re-exporta `asegurar_miniaturas` y
-`combinar_registros_con_miniaturas`. `_limpiar_cadena()` limpia la cadena
-sin borrar `videos_detectados` (se conserva el último escaneo exitoso
-aunque falle cualquier etapa). **Ausencia deliberada**: sin selección
-inteligente, sin múltiples miniaturas, sin limpieza de miniaturas
-antiguas, sin eliminación de ausentes, sin recarga automática de la
-interfaz y sin subcarpetas; **no es la sincronización completa del
-catálogo**. Con suite `prueba_escaneo_guardado.py` ampliada a 24 pruebas
-y `prueba_escaneo_interfaz.py` (36 pruebas, incluido el smoke test real
-con base SQLite temporal creada por `conectar_bd(ruta_db)` y FFmpeg real
-con carpeta temporal de miniaturas). Aprobada con observaciones.
+Detección no destructiva de diferencias entre la carpeta de videos y el
+catálogo SQLite: `detectar_diferencias(carpeta, ruta_db=None)` en
+`escanear_videos.py` (capa de catálogo, ubicada entre `listar_videos` y
+`listar_videos_paginado`). Valida `carpeta` (texto no vacío; `ValueError`
+en caso contrario) y la existencia de la carpeta y de la base
+(`FileNotFoundError` "Carpeta no encontrada: ..." / "Base de datos no
+encontrada: ...", sin crear archivos). Lista los archivos de video de la
+carpeta con `escanear_videos` (solo `.mp4`/`.mkv`/`.avi`, extensión en
+minúsculas) y los registros de la base con un único `SELECT nombre FROM
+videos` sobre una conexión propia abierta y cerrada en `finally`;
+devuelve `{"carpeta", "presentes_en_ambos", "nuevos", "ausentes_del_disco"}`
+con listas ordenadas (determinista). **Solo lectura**: no inserta,
+actualiza ni elimina registros, no modifica miniaturas y no llama a
+FFprobe/FFmpeg/`asegurar_miniaturas`/`contar_miniaturas`/
+`sincronizar_bd`. **Ausencia deliberada**: no está integrada al pipeline
+ni a la interfaz (no se lanza desde el encadenamiento ni desde la ventana),
+compara por **nombre** (no detecta movimientos ni renombrados, no usa
+ruta/hash) y **no recorre subcarpetas**. Pendiente para la sincronización
+completa: la eliminación controlada de registros ausentes y la
+integración asíncrona. Con suite nueva `prueba_detectar.py` (15 pruebas:
+compilación, AST de separación, ambos vacíos, nuevos, ausentes,
+coincidencia, mixto, base/carpeta intactas y bytes idénticos, orden
+determinista, validaciones con base no creada, cero llamadas a
+FFprobe/FFmpeg/subprocess/asegurar/contar/generar/sincronizar, datos
+reales intactos, consistencia matemática y filtrado por extensión).
+Aprobada con observaciones.
 
 ## Estado de la arquitectura
 
@@ -131,6 +117,9 @@ con carpeta temporal de miniaturas). Aprobada con observaciones.
 -   Generación asíncrona de miniaturas integrada en el pipeline
     (escaneo → FFprobe → miniaturas → guardado; `TareaMiniaturas` en
     segundo plano con el mismo gestor; `cantidad_miniaturas` persistida).
+-   Detección no destructiva de diferencias entre la carpeta y el
+    catálogo SQLite (`detectar_diferencias`; compara por nombre, solo
+    lectura, sin integración al pipeline ni a la interfaz).
 -   Pruebas automatizadas.
 
 ### En desarrollo
@@ -140,17 +129,19 @@ Integración funcional completa del catálogo: el pipeline (`TareaEscaneo`
 → `combinar_registros_con_miniaturas` → `TareaGuardarVideos`) ya
 convierte los archivos detectados por la interfaz en registros con
 metadatos FFprobe y cantidad de miniaturas y los escribe en SQLite
-conservando los preexistentes, pero la **sincronización completa** —la
-escritura masiva con detección de archivos y la eliminación de registros
-ausentes— sigue pendiente. La carga inicial asíncrona de la primera
-página del catálogo ya está integrada en la interfaz.
+conservando los preexistentes, y la **detección de diferencias** disco ↔
+BD ya existe de forma no destructiva (`detectar_diferencias`), pero la
+**sincronización completa** —la escritura masiva con detección de
+archivos y la **eliminación controlada de registros ausentes** con su
+integración asíncrona— sigue pendiente. La carga inicial asíncrona de la
+primera página del catálogo ya está integrada en la interfaz.
 
 ## Pendientes prioritarios
 
-1.  Sincronización completa SQLite asíncrona (el pipeline ya escribe
-    registros con metadatos FFprobe y miniaturas mediante el upsert
-    existente; falta la escritura masiva con detección de archivos y la
-    eliminación de registros ausentes).
+1.  Sincronización completa SQLite asíncrona (la detección de diferencias
+    ya existe en `detectar_diferencias` —solo lectura, por nombre—; falta
+    la escritura masiva con detección de archivos, la eliminación
+    controlada de registros ausentes y su integración asíncrona).
 2.  Integración SQLite asíncrona en el pipeline (encadenado).
 3.  Actualización asíncrona de la interfaz (tarjetas dinámicas).
 4.  FFmpeg asíncrono.
@@ -169,9 +160,13 @@ definitiva del ciclo de vida de tareas con la ventana (la carga inicial
 asíncrona ya usa `GestorTareas` y cierra de forma ordenada en
 `closeEvent`, aunque `closeEvent` puede esperar hasta 5 s por una tarea
 activa); - el pipeline ya convierte los archivos detectados en registros
-con metadatos FFprobe y miniaturas y los escribe, pero la sincronización
-completa sigue pendiente (escritura masiva con detección de archivos y
-eliminación de registros ausentes); - el enrutado de resultados por
+con metadatos FFprobe y miniaturas y los escribe, y existe la detección
+no destructiva de diferencias (`detectar_diferencias`), pero la
+sincronización completa sigue pendiente (escritura masiva con detección
+de archivos y eliminación controlada de registros ausentes, con su
+integración asíncrona); - `detectar_diferencias` compara por nombre y no
+detecta movimientos ni renombrados (queda para etapas futuras); - el
+enrutado de resultados por
 `_escaneo_pendiente`/`_ffprobe_pendiente`/`_miniaturas_pendiente`/
 `_guardado_pendiente` es suficiente para una única tarea activa y debe
 revisarse si la interfaz incorpora más tipos de tarea; - el escaneo no
@@ -198,10 +193,11 @@ limpieza controlada de miniaturas antiguas.
 ## Próxima etapa
 
 **Sincronización completa del catálogo** (escritura masiva con detección
-de archivos y eliminación de registros ausentes). La etapa anterior
-(escaneo → FFprobe → miniaturas → guardado, encadenado desde la
-interfaz) quedó aprobada y commiteada; la sincronización completa sigue
-pendiente y se abordará como próxima etapa, manteniendo el alcance
+de archivos y **eliminación controlada de registros ausentes**, con su
+integración asíncrona). La etapa anterior (detección no destructiva de
+diferencias con `detectar_diferencias`) quedó aprobada y commiteada; la
+eliminación de registros ausentes y la integración asíncrona siguen
+pendientes y se abordarán como próxima etapa, manteniendo el alcance
 limitado: sin selección inteligente, sin múltiples miniaturas, sin
 eliminación de archivos antiguos y sin recarga automática de la
 interfaz.
