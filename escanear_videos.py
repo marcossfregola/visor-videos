@@ -363,7 +363,7 @@ def preparar_plan_sincronizacion(diferencias):
     }
 
 
-def aplicar_incorporaciones(plan, ruta_db=None):
+def _validar_plan_sincronizacion(plan):
     if not isinstance(plan, dict):
         raise TypeError("plan debe ser un diccionario")
     for clave in ("carpeta", "a_incorporar", "ya_sincronizados", "candidatos_a_eliminar"):
@@ -379,12 +379,47 @@ def aplicar_incorporaciones(plan, ruta_db=None):
     except TypeError:
         raise TypeError("a_incorporar debe ser una colección iterable") from None
     _coleccion_nombres(plan["ya_sincronizados"], "ya_sincronizados")
-    candidatos = _coleccion_nombres(plan["candidatos_a_eliminar"], "candidatos_a_eliminar")
+    return _coleccion_nombres(plan["candidatos_a_eliminar"], "candidatos_a_eliminar")
+
+
+def aplicar_incorporaciones(plan, ruta_db=None):
+    candidatos = _validar_plan_sincronizacion(plan)
     resultado = guardar_videos(plan["a_incorporar"], ruta_db)
     return {
         "incorporados": resultado["guardados"],
         "nombres": resultado["nombres"],
         "pendientes_eliminacion": len(candidatos),
+    }
+
+
+def eliminar_candidatos(plan, ruta_db=None):
+    candidatos = _validar_plan_sincronizacion(plan)
+    try:
+        incorporados = len(plan["a_incorporar"])
+    except TypeError:
+        incorporados = None
+    if ruta_db is None:
+        ruta_db = ruta_biblioteca()
+    if not os.path.isfile(ruta_db):
+        raise FileNotFoundError(f"Base de datos no encontrada: {ruta_db}")
+    conn = sqlite3.connect(ruta_db)
+    try:
+        eliminados = []
+        for nombre in candidatos:
+            cursor = conn.execute("DELETE FROM videos WHERE nombre = ?", (nombre,))
+            if cursor.rowcount:
+                eliminados.append(nombre)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    return {
+        "eliminados": len(eliminados),
+        "nombres": eliminados,
+        "incorporados": incorporados,
+        "restantes": len(candidatos) - len(eliminados),
     }
 
 

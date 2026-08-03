@@ -67,9 +67,21 @@ arquitectónicas.
     `candidatos_a_eliminar`, no modifica `ya_sincronizados` ni los
     preexistentes sincronizados; devuelve `incorporados`/`nombres`/
     `pendientes_eliminacion`. No integrada al pipeline ni a la interfaz,
-    sin escaneo/FFprobe/FFmpeg/miniaturas/subprocesos. La eliminación
-    controlada de registros ausentes y su integración asíncrona quedan
-    pendientes.
+    sin escaneo/FFprobe/FFmpeg/miniaturas/subprocesos.
+-   Eliminación controlada de registros ausentes — **completado (etapa
+    controlada)** (`eliminar_candidatos` en `escanear_videos.py`):
+    recibe el plan `{"carpeta", "a_incorporar", "ya_sincronizados",
+    "candidatos_a_eliminar"}` y elimina únicamente los registros de
+    `candidatos_a_eliminar` con una transacción atómica (un solo
+    `commit`, `rollback` total ante fallos y `close` en `finally`; el
+    `rowcount` por candidato cuenta solo las eliminaciones reales).
+    Valida el plan completo antes de abrir SQLite (validación compartida
+    con `aplicar_incorporaciones`); no elimina archivos físicos ni
+    miniaturas, no toca `a_incorporar`/`ya_sincronizados`; devuelve
+    `eliminados`/`nombres`/`incorporados` (informativo, puede ser
+    `None`)/`restantes`. No integrada al pipeline ni a la interfaz, sin
+    escaneo/FFprobe/FFmpeg/miniaturas/subprocesos. La integración
+    asíncrona de la sincronización completa queda pendiente.
 
 1.  Opción de incluir o excluir subcarpetas — **pendiente** (configurar
     si el escaneo de la carpeta elegida recorre las subcarpetas).
@@ -82,15 +94,18 @@ arquitectónicas.
     SQLite con el upsert transaccional, conservando los registros
     preexistentes).
 3.  Sincronización completa del catálogo — **en curso (detección,
-    preparación y aplicación de incorporaciones completadas)**: la
-    detección no destructiva de diferencias existe (`detectar_diferencias`,
-    por nombre y solo lectura), el plan ya se prepara de forma pura
-    (`preparar_plan_sincronizacion`, con `a_incorporar`/`ya_sincronizados`/
-    `candidatos_a_eliminar` y candidatos informativos) y las
-    incorporaciones ya se aplican de forma no destructiva
-    (`aplicar_incorporaciones`, persistiendo únicamente `a_incorporar` con
-    `guardar_videos`); quedan pendientes la **eliminación controlada de
-    los registros ausentes** y su integración asíncrona.
+    preparación, aplicación de incorporaciones y eliminación controlada
+    completadas)**: la detección no destructiva de diferencias existe
+    (`detectar_diferencias`, por nombre y solo lectura), el plan ya se
+    prepara de forma pura (`preparar_plan_sincronizacion`, con
+    `a_incorporar`/`ya_sincronizados`/`candidatos_a_eliminar` y
+    candidatos informativos), las incorporaciones ya se aplican de forma
+    no destructiva (`aplicar_incorporaciones`, persistiendo únicamente
+    `a_incorporar` con `guardar_videos`) y los registros ausentes ya se
+    eliminan de forma controlada (`eliminar_candidatos`, transacción
+    atómica y validación previa); quedan pendientes la **integración
+    asíncrona** de la sincronización completa y la deduplicación de
+    nombres repetidos.
 4.  FFprobe integrado en el pipeline — **completado** (el pipeline
     escaneo → guardado completa duración, resolución y codec antes de
     escribir o actualizar los registros; `NULL` ante vacíos, incompletos
@@ -102,14 +117,17 @@ arquitectónicas.
     alcance: selección inteligente, múltiples miniaturas, eliminación de
     archivos antiguos y recarga automática de la interfaz. La limpieza
     controlada de versiones antiguas sigue pendiente.
-6.  Eliminación de registros ausentes — **pendiente** (sincronizar la
+6.  Eliminación de registros ausentes — **completado (aplicación
+    controlada; falta la integración asíncrona)** (sincronizar la
     BD con los archivos que dejaron de existir; la detección de los
     ausentes ya existe de forma no destructiva en `detectar_diferencias`,
     el plan ya los expone como `candidatos_a_eliminar` en
-    `preparar_plan_sincronizacion` (únicamente informativos) y las
+    `preparar_plan_sincronizacion` (únicamente informativos), las
     incorporaciones ya se aplican en `aplicar_incorporaciones` sin tocar
-    a los candidatos; falta la **aplicación controlada de la eliminación**
-    y su integración asíncrona).
+    a los candidatos y la **aplicación controlada de la eliminación** ya
+    existe en `eliminar_candidatos` (transacción atómica y validación
+    previa); falta su **integración asíncrona** en la sincronización
+    completa).
 7.  Recarga automática del catálogo tras la escritura — **pendiente**
     (refrescar la grilla a medida que se sincroniza el catálogo).
 8.  Progreso — **pendiente** (barra de progreso y estado de las tareas

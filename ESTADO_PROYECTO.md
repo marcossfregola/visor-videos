@@ -49,67 +49,94 @@ valida el plan completo antes de abrir SQLite, persiste únicamente
 no elimina `candidatos_a_eliminar`, no modifica `ya_sincronizados` ni
 los registros preexistentes sincronizados y devuelve `incorporados`/
 `nombres`/`pendientes_eliminacion`; no está integrada al pipeline ni a
-la interfaz) aprobadas; pendiente la integración funcional completa del
-catálogo: la **eliminación controlada de los registros ausentes**
-(`candidatos_a_eliminar`) y su integración asíncrona.
+la interfaz) y **eliminación controlada de los candidatos ausentes del
+catálogo** (`eliminar_candidatos(plan, ruta_db=None)` en
+`escanear_videos.py`: recibe el plan completo, valida antes de abrir
+SQLite, elimina únicamente los registros de `candidatos_a_eliminar` con
+una única transacción atómica —`rowcount` por candidato, un solo
+`commit`, rollback total, `close` en `finally`—, no elimina archivos
+físicos ni miniaturas, no toca `a_incorporar` ni `ya_sincronizados`,
+devuelve `eliminados`/`nombres`/`incorporados` (informativo, derivado
+del plan y puede ser `None`)/`restantes` y no está integrada al pipeline
+ni a la interfaz) aprobadas; pendiente la integración funcional completa
+del catálogo: la **integración asíncrona de la sincronización completa**
+y la deduplicación de nombres repetidos.
 
 ## Último commit aprobado
 
-**Mensaje:** Aplicar incorporaciones del plan de sincronización
+**Mensaje:** Eliminar candidatos ausentes del catálogo
 
-**Etapa aprobada:** Aplicación de incorporaciones del plan de
-sincronización: nueva función `aplicar_incorporaciones(plan,
-ruta_db=None)` en `escanear_videos.py` (capa de catálogo, ubicada entre
-`preparar_plan_sincronizacion` y `listar_videos_paginado`). Recibe el
-plan `{"carpeta", "a_incorporar", "ya_sincronizados",
-"candidatos_a_eliminar"}` y persiste **únicamente** `a_incorporar`,
-reutilizando `guardar_videos` (misma transacción atómica: un solo
-`connect`, todos los upserts, un solo `commit`, `rollback` total ante
-fallos y `close` en `finally`). **Validación completa previa** antes de
-abrir SQLite: `plan` no-dict → `TypeError`; claves obligatorias
-faltantes → `ValueError`; `carpeta` texto no vacío; `a_incorporar` no
-texto e iterable; `ya_sincronizados`/`candidatos_a_eliminar` como
-colecciones de nombres (`_coleccion_nombres`); los registros se validan
-también dentro de `guardar_videos` antes de SQLite. **No destructivo**:
-no elimina registros, no modifica `ya_sincronizados` ni los
-preexistentes sincronizados y no aplica `candidatos_a_eliminar` (solo
-informa su cantidad). Devuelve `{"incorporados", "nombres",
-"pendientes_eliminacion"}`. No está integrada al pipeline ni a la
-interfaz y no ejecuta escaneo/FFprobe/FFmpeg/miniaturas/subprocesos.
-Pendiente: la eliminación controlada de `candidatos_a_eliminar`, su
-integración asíncrona y la deduplicación de nombres repetidos. Con suite
-nueva `prueba_aplicar_incorporaciones.py` (15 pruebas). Aprobada.
+**Etapa aprobada:** Eliminación controlada de los candidatos ausentes
+del catálogo: nueva función `eliminar_candidatos(plan, ruta_db=None)` en
+`escanear_videos.py` (capa de catálogo, ubicada entre
+`aplicar_incorporaciones` y `listar_videos_paginado`). Recibe el plan
+`{"carpeta", "a_incorporar", "ya_sincronizados",
+"candidatos_a_eliminar"}` y elimina **únicamente** los registros de
+`candidatos_a_eliminar` con el patrón atómico existente: un solo
+`connect`, un `DELETE FROM videos WHERE nombre = ?` por candidato (con
+`cursor.rowcount` para contar solo las eliminaciones reales), un solo
+`commit`, `rollback` total ante fallos y `close` en `finally`.
+**Validación completa previa** antes de abrir SQLite, compartida con
+`aplicar_incorporaciones` (`_validar_plan_sincronizacion`): `plan`
+no-dict → `TypeError`; claves obligatorias faltantes → `ValueError`;
+`carpeta` texto no vacío; `a_incorporar` no texto e iterable;
+`ya_sincronizados`/`candidatos_a_eliminar` como colecciones de nombres
+(`_coleccion_nombres`, que las devuelve **ordenadas**: el orden
+procesado y devuelto es el **orden determinista de la validación
+actual**). **Base inexistente** → `FileNotFoundError` sin crear
+archivos. **Solo registros**: no elimina archivos físicos ni miniaturas,
+no modifica `ya_sincronizados` ni los preexistentes sincronizados y no
+incorpora `a_incorporar`; los candidatos inexistentes no cuentan como
+eliminados y quedan en `restantes`; colección vacía de candidatos válida
+sin modificar la base. Devuelve `{"eliminados", "nombres",
+"incorporados", "restantes"}`; `incorporados` es **informativo y
+derivado del plan** (`len(plan["a_incorporar"])` o `None`) y **no
+representa incorporaciones ejecutadas por la función**. No ejecuta
+escaneo/FFprobe/FFmpeg/miniaturas/subprocesos ni reutiliza
+`conectar_bd`/`guardar_videos`/`sincronizar_bd`. No está integrada al
+pipeline ni a la interfaz. Pendiente: la integración asíncrona de la
+sincronización completa y la deduplicación de nombres repetidos. Con
+suite nueva `prueba_eliminar_candidatos.py` (16 pruebas). Aprobada.
 
 **SHA definitivo:** debe consultarse con `git log -1` (el SHA no se
 escribe en este documento para evitar autorreferencias al commit).
 
 ## Última etapa aprobada
 
-Aplicación de incorporaciones del plan de sincronización:
-`aplicar_incorporaciones(plan, ruta_db=None)` en `escanear_videos.py`
-(capa de catálogo, ubicada entre `preparar_plan_sincronizacion` y
+Eliminación controlada de los candidatos ausentes del catálogo:
+`eliminar_candidatos(plan, ruta_db=None)` en `escanear_videos.py` (capa
+de catálogo, ubicada entre `aplicar_incorporaciones` y
 `listar_videos_paginado`). Recibe el plan `{"carpeta", "a_incorporar",
-"ya_sincronizados", "candidatos_a_eliminar"}` y persiste **únicamente**
-`a_incorporar`, delegando en `guardar_videos` (misma transacción
-atómica: un solo `connect`, todos los upserts, un solo `commit`,
-`rollback` total ante fallos y `close` en `finally`). **Validación
-completa previa** antes de abrir SQLite: `plan` no-dict → `TypeError`;
-claves obligatorias faltantes (`carpeta`, `a_incorporar`,
-`ya_sincronizados`, `candidatos_a_eliminar`) → `ValueError`; `carpeta`
-texto no vacío → `ValueError`; `a_incorporar` no texto e iterable →
-`TypeError`; `ya_sincronizados`/`candidatos_a_eliminar` como colecciones
-de nombres (`_coleccion_nombres`); los registros de `a_incorporar` se
-validan también dentro de `guardar_videos` (`_validar_registro_video`)
-antes de SQLite. **No destructivo**: no elimina registros, no modifica
-`ya_sincronizados` ni los preexistentes sincronizados y **no aplica
-`candidatos_a_eliminar`** (solo informa su cantidad). Devuelve el
-resultado simple y estable `{"incorporados", "nombres",
-"pendientes_eliminacion"}`. No ejecuta escaneo/FFprobe/FFmpeg/
-miniaturas/subprocesos y **no está integrada todavía al pipeline ni a la
-interfaz**. **Ausencia deliberada**: la eliminación controlada de
-`candidatos_a_eliminar` y la deduplicación de nombres repetidos
-continúan pendientes. Con suite nueva `prueba_aplicar_incorporaciones.py`
-(15 pruebas). Aprobada.
+"ya_sincronizados", "candidatos_a_eliminar"}` y elimina **únicamente**
+los registros de `candidatos_a_eliminar`, con el mismo patrón atómico de
+escritura: **una sola conexión**, un `DELETE FROM videos WHERE nombre =
+?` por candidato (el `cursor.rowcount` decide qué candidato se eliminó
+de verdad), **un solo `commit`**, `rollback` total ante cualquier fallo
+y `close` en `finally`. **Validación completa previa** antes de abrir
+SQLite, compartida con `aplicar_incorporaciones` mediante
+`_validar_plan_sincronizacion`: `plan` no-dict → `TypeError`; claves
+obligatorias faltantes (`carpeta`, `a_incorporar`, `ya_sincronizados`,
+`candidatos_a_eliminar`) → `ValueError`; `carpeta` texto no vacío →
+`ValueError`; `a_incorporar` no texto e iterable → `TypeError`;
+`ya_sincronizados`/`candidatos_a_eliminar` como colecciones de nombres
+(`_coleccion_nombres`, que las devuelve **ordenadas**; por eso el orden
+procesado y devuelto es el **orden determinista de la validación
+actual**). **Base inexistente**: `os.path.isfile` antes de conectar →
+`FileNotFoundError` sin crear archivos. **Solo registros**: no elimina
+archivos físicos ni miniaturas, no modifica `ya_sincronizados` ni los
+preexistentes sincronizados y no incorpora `a_incorporar`; los
+candidatos inexistentes en la base no cuentan como eliminados y quedan
+en `restantes`; colección vacía de candidatos válida sin modificar la
+base. Devuelve `{"eliminados", "nombres", "incorporados", "restantes"}`;
+`incorporados` es **informativo y derivado del plan** (`len(plan[
+"a_incorporar"])` o `None` si no puede medirse) y **no representa
+incorporaciones ejecutadas por la función**. No ejecuta
+escaneo/FFprobe/FFmpeg/miniaturas/subprocesos y **no reutiliza**
+`conectar_bd`/`guardar_videos`/`sincronizar_bd`. **No está integrada
+todavía al pipeline ni a la interfaz**. **Ausencia deliberada**: la
+integración asíncrona de la sincronización completa y la deduplicación
+de nombres repetidos continúan pendientes. Con suite nueva
+`prueba_eliminar_candidatos.py` (16 pruebas). Aprobada.
 
 ## Estado de la arquitectura
 
@@ -150,7 +177,18 @@ continúan pendientes. Con suite nueva `prueba_aplicar_incorporaciones.py`
     `guardar_videos` con su atomicidad existente, no elimina
     `candidatos_a_eliminar`, no modifica `ya_sincronizados`; devuelve
     `incorporados`/`nombres`/`pendientes_eliminacion`; sin pipeline/
-    interfaz/escaneo/FFprobe/FFmpeg; la eliminación controlada queda
+    interfaz/escaneo/FFprobe/FFmpeg).
+-   Eliminación controlada de candidatos ausentes del plan de
+    sincronización (`eliminar_candidatos`; recibe el plan completo,
+    valida antes de abrir SQLite con `_validar_plan_sincronizacion`
+    (compartida con `aplicar_incorporaciones`), elimina únicamente los
+    registros de `candidatos_a_eliminar` con una única transacción
+    atómica (`rowcount` por candidato, un solo `commit`, rollback total,
+    `close` en `finally`), no elimina archivos físicos ni miniaturas ni
+    toca `a_incorporar`/`ya_sincronizados`; devuelve
+    `eliminados`/`nombres`/`incorporados` (informativo, puede ser
+    `None`)/`restantes`; sin pipeline/interfaz/escaneo/FFprobe/FFmpeg/
+    `conectar_bd`/`guardar_videos`; la integración asíncrona queda
     pendiente).
 -   Pruebas automatizadas.
 
@@ -164,24 +202,29 @@ metadatos FFprobe y cantidad de miniaturas y los escribe en SQLite
 conservando los preexistentes, la **detección de diferencias** disco ↔
 BD ya existe de forma no destructiva (`detectar_diferencias`), el
 **plan de sincronización** ya se prepara de forma pura
-(`preparar_plan_sincronizacion`, sin efectos ni integración) y la
+(`preparar_plan_sincronizacion`, sin efectos ni integración), la
 **aplicación de las incorporaciones** ya existe de forma no destructiva
 (`aplicar_incorporaciones`: valida el plan antes de abrir SQLite y
-persiste únicamente `a_incorporar` reutilizando `guardar_videos`), pero
-la **sincronización completa** —la **eliminación controlada de los
-registros ausentes** (`candidatos_a_eliminar`) y su integración
-asíncrona— sigue pendiente. La carga inicial asíncrona de la primera
-página del catálogo ya está integrada en la interfaz.
+persiste únicamente `a_incorporar` reutilizando `guardar_videos`) y la
+**eliminación controlada de los candidatos ausentes** ya existe
+(`eliminar_candidatos`: valida el plan antes de abrir SQLite y elimina
+únicamente los registros de `candidatos_a_eliminar` con una transacción
+atómica), pero la **integración asíncrona de la sincronización
+completa** y la **deduplicación de nombres repetidos** siguen pendientes.
+La carga inicial asíncrona de la primera página del catálogo ya está
+integrada en la interfaz.
 
 ## Pendientes prioritarios
 
 1.  Sincronización completa SQLite asíncrona (la detección de diferencias
     ya existe en `detectar_diferencias` —solo lectura, por nombre—, el
     plan ya se prepara en `preparar_plan_sincronizacion` —puro, sin
-    efectos— y las incorporaciones ya se aplican en
+    efectos—, las incorporaciones ya se aplican en
     `aplicar_incorporaciones` —no destructivo, reutilizando
-    `guardar_videos`—; falta la **eliminación controlada de los registros
-    ausentes** (`candidatos_a_eliminar`) y su integración asíncrona).
+    `guardar_videos`— y la eliminación controlada de los registros
+    ausentes ya existe en `eliminar_candidatos` —validación previa y
+    transacción atómica—; falta la **integración asíncrona de la
+    sincronización completa** y la deduplicación de nombres repetidos).
 2.  Integración SQLite asíncrona en el pipeline (encadenado).
 3.  Actualización asíncrona de la interfaz (tarjetas dinámicas).
 4.  FFmpeg asíncrono.
@@ -203,11 +246,13 @@ activa); - el pipeline ya convierte los archivos detectados en registros
 con metadatos FFprobe y miniaturas y los escribe, y existen la detección
 no destructiva de diferencias (`detectar_diferencias`), el plan de
 sincronización preparado de forma pura (`preparar_plan_sincronizacion`,
-con `candidatos_a_eliminar` únicamente informativos) y la aplicación
+con `candidatos_a_eliminar` únicamente informativos), la aplicación
 no destructiva de las incorporaciones (`aplicar_incorporaciones`, que
-persiste solo `a_incorporar` reutilizando `guardar_videos`), pero la
-sincronización completa sigue pendiente (eliminación controlada de
-registros ausentes, con su integración asíncrona); - `detectar_diferencias` compara
+persiste solo `a_incorporar` reutilizando `guardar_videos`) y la
+eliminación controlada de los registros ausentes (`eliminar_candidatos`,
+con validación previa y transacción atómica), pero la sincronización
+completa sigue pendiente (su integración asíncrona, junto con la
+deduplicación de nombres repetidos); - `detectar_diferencias` compara
 por nombre y no detecta movimientos ni renombrados (queda para etapas
 futuras); - **no existe todavía deduplicación de nombres repetidos** en
 el plan de sincronización; - el enrutado de resultados por
@@ -236,17 +281,19 @@ limpieza controlada de miniaturas antiguas.
 
 ## Próxima etapa
 
-**Eliminación controlada de registros ausentes** (aplicar de forma
-controlada los `candidatos_a_eliminar` del plan de sincronización, con
-su integración asíncrona). Las etapas anteriores (detección no
-destructiva de diferencias con `detectar_diferencias`, preparación del
-plan con `preparar_plan_sincronizacion` y aplicación no destructiva de
-las incorporaciones con `aplicar_incorporaciones`) quedaron aprobadas y
-commiteadas; la **eliminación controlada de los registros ausentes**
-(`candidatos_a_eliminar`, con su integración asíncrona) sigue pendiente
-y se abordará como próxima etapa, manteniendo el alcance limitado: sin
-selección inteligente, sin múltiples miniaturas, sin eliminación de
-archivos antiguos y sin recarga automática de la interfaz.
+**Integración asíncrona de la sincronización completa del catálogo**
+(encadenar en segundo plano la aplicación del plan completo:
+`aplicar_incorporaciones` + `eliminar_candidatos`, con su deduplicación
+de nombres repetidos). Las etapas anteriores (detección no destructiva
+de diferencias con `detectar_diferencias`, preparación del plan con
+`preparar_plan_sincronizacion`, aplicación no destructiva de las
+incorporaciones con `aplicar_incorporaciones` y eliminación controlada
+de los registros ausentes con `eliminar_candidatos`) quedaron aprobadas
+y commiteadas; la **integración asíncrona de la sincronización completa**
+y la deduplicación de nombres repetidos siguen pendientes y se abordarán
+como próxima etapa, manteniendo el alcance limitado: sin selección
+inteligente, sin múltiples miniaturas, sin eliminación de archivos
+antiguos y sin recarga automática de la interfaz.
 
 ## Documentos del proyecto
 
