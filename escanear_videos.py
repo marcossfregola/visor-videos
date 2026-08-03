@@ -363,6 +363,31 @@ def preparar_plan_sincronizacion(diferencias):
     }
 
 
+def aplicar_incorporaciones(plan, ruta_db=None):
+    if not isinstance(plan, dict):
+        raise TypeError("plan debe ser un diccionario")
+    for clave in ("carpeta", "a_incorporar", "ya_sincronizados", "candidatos_a_eliminar"):
+        if clave not in plan:
+            raise ValueError(f"falta la clave obligatoria: {clave}")
+    carpeta = plan["carpeta"]
+    if not isinstance(carpeta, str) or not carpeta:
+        raise ValueError("carpeta debe ser una ruta de texto no vacía")
+    if isinstance(plan["a_incorporar"], (str, bytes, bytearray)):
+        raise TypeError("a_incorporar debe ser una colección, no texto")
+    try:
+        iter(plan["a_incorporar"])
+    except TypeError:
+        raise TypeError("a_incorporar debe ser una colección iterable") from None
+    _coleccion_nombres(plan["ya_sincronizados"], "ya_sincronizados")
+    candidatos = _coleccion_nombres(plan["candidatos_a_eliminar"], "candidatos_a_eliminar")
+    resultado = guardar_videos(plan["a_incorporar"], ruta_db)
+    return {
+        "incorporados": resultado["guardados"],
+        "nombres": resultado["nombres"],
+        "pendientes_eliminacion": len(candidatos),
+    }
+
+
 def listar_videos_paginado(limite, desplazamiento=0, texto=None, ruta_db=None):
     if isinstance(limite, bool) or not isinstance(limite, int):
         raise TypeError("limite debe ser un entero")
