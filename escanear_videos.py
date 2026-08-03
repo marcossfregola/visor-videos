@@ -71,6 +71,29 @@ def combinar_registros_con_ffprobe(videos, carpeta, resultado_ffprobe):
     return registros
 
 
+def combinar_registros_con_miniaturas(registros, resultado_miniaturas):
+    if isinstance(registros, (str, bytes, bytearray)):
+        raise TypeError("registros debe ser una colección, no texto")
+    try:
+        lista = [dict(r) for r in list(registros)]
+    except TypeError:
+        raise TypeError("registros debe ser una colección iterable") from None
+    por_ruta = {}
+    for item in ((resultado_miniaturas or {}).get("resultados") or []):
+        if not isinstance(item, dict):
+            continue
+        ruta = _normalizar_ruta(item.get("ruta"))
+        if ruta is None:
+            continue
+        cantidad = item.get("cantidad_miniaturas")
+        por_ruta[ruta] = cantidad if isinstance(cantidad, int) else None
+    for registro in lista:
+        registro["cantidad_miniaturas"] = por_ruta.get(
+            _normalizar_ruta(registro.get("ruta"))
+        )
+    return lista
+
+
 def conectar_bd(ruta_db=None):
     if ruta_db is None:
         ruta_db = ruta_biblioteca()
@@ -190,6 +213,39 @@ def asegurar_miniatura(video, ruta_video):
     if os.path.isfile(ruta):
         return 0
     return 1 if generar_miniatura(ruta_video, ruta) else 0
+
+def asegurar_miniaturas(videos, carpeta):
+    if isinstance(videos, (str, bytes, bytearray)):
+        raise TypeError("videos debe ser una colección de nombres, no texto")
+    try:
+        lista = list(videos)
+    except TypeError:
+        raise TypeError("videos debe ser una colección iterable") from None
+    if not isinstance(carpeta, str) or not carpeta:
+        raise ValueError("carpeta debe ser una ruta de texto no vacía")
+    resultados = []
+    for nombre in lista:
+        ruta_video = os.path.join(carpeta, nombre)
+        if not os.path.isfile(ruta_video):
+            resultados.append(
+                {"ruta": ruta_video, "asegurada": 0, "cantidad_miniaturas": 0}
+            )
+            continue
+        asegurada = asegurar_miniatura(nombre, ruta_video)
+        resultados.append(
+            {
+                "ruta": ruta_video,
+                "asegurada": asegurada,
+                "cantidad_miniaturas": contar_miniaturas(nombre),
+            }
+        )
+    return {
+        "rutas": [r["ruta"] for r in resultados],
+        "resultados": resultados,
+        "procesados": len(resultados),
+        "con_miniatura": sum(1 for r in resultados if r["cantidad_miniaturas"] > 0),
+        "sin_miniatura": sum(1 for r in resultados if r["cantidad_miniaturas"] == 0),
+    }
 
 def contar_miniaturas(video):
     prefijo = os.path.splitext(video)[0]

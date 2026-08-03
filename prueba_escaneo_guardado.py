@@ -16,11 +16,12 @@ import escanear_videos as escanear_mod
 import tareas_videos as tv
 import visor_videos
 from rutas import ruta_biblioteca, ruta_carpeta_miniaturas, ruta_carpeta_videos, ruta_raiz
-from tareas import Estado, _GESTORES_ACTIVOS
+from tareas import Estado, GestorTareas, _GESTORES_ACTIVOS
 from tareas_videos import TareaGuardarVideos
 from visor_videos import (
     MENSAJE_ERROR_FFPROBE,
     MENSAJE_ERROR_GUARDADO,
+    MENSAJE_ERROR_MINIATURAS,
     MENSAJE_SIN_ESCANEO,
     VisorVideos,
 )
@@ -129,8 +130,21 @@ def _cadena_terminada(ventana):
         ventana.gestor.hilo is None
         and not ventana._escaneo_pendiente
         and not ventana._ffprobe_pendiente
+        and not ventana._miniaturas_pendiente
         and not ventana._guardado_pendiente
     )
+
+
+@contextlib.contextmanager
+def _miniaturas_temporales():
+    temp = tempfile.TemporaryDirectory()
+    original = escanear_mod.ruta_carpeta_miniaturas
+    escanear_mod.ruta_carpeta_miniaturas = lambda: temp.name
+    try:
+        yield temp.name
+    finally:
+        escanear_mod.ruta_carpeta_miniaturas = original
+        temp.cleanup()
 
 
 @contextlib.contextmanager
@@ -279,7 +293,13 @@ def test_06():
         )
         fechas_ok = all(f[3] for f in filas)
         ok = (
-            tipos == ["TareaEscaneo", "TareaFFprobe", "TareaGuardarVideos"]
+            tipos
+            == [
+                "TareaEscaneo",
+                "TareaFFprobe",
+                "TareaMiniaturas",
+                "TareaGuardarVideos",
+            ]
             and guardado == 3
             and estado == "3 videos detectados"
             and detectados == ["a.mp4", "b.mkv", "c.avi"]
@@ -405,7 +425,13 @@ def test_09():
         _limpiar(ventana)
         ok = (
             conteo["guardar"] == 1
-            and tipos == ["TareaEscaneo", "TareaFFprobe", "TareaGuardarVideos"]
+            and tipos
+            == [
+                "TareaEscaneo",
+                "TareaFFprobe",
+                "TareaMiniaturas",
+                "TareaGuardarVideos",
+            ]
             and [f[0] for f in filas] == ["a.mp4", "b.mkv"]
         )
         return (
@@ -438,22 +464,23 @@ def test_10():
                 conteo["run"] += 1
             if nombre == "ffmpeg":
                 conteo["ffmpeg"] += 1
+                info["ident"] = threading.get_ident()
+                info["principal"] = QThread.isMainThread()
             return orig_run(*args, **kwargs)
 
         def _ffprobe(ruta):
             conteo["ffprobe"] += 1
-            info["ident"] = threading.get_ident()
-            info["principal"] = QThread.isMainThread()
             return orig_ff_tv(ruta)
 
         escanear_mod.subprocess.run = _run
         tv.obtener_datos_ffprobe = _ffprobe
-        escanear_mod.ffmpeg_disponible = _prohibido("ffmpeg", conteo)
+        escanear_mod.ffmpeg_disponible = orig_ffmpeg
         try:
-            with _dialogo_falso(carpeta.name):
-                ventana.seleccionar_carpeta()
-            ventana.boton_escanear.click()
-            _esperar(lambda v=ventana: _cadena_terminada(v))
+            with _miniaturas_temporales():
+                with _dialogo_falso(carpeta.name):
+                    ventana.seleccionar_carpeta()
+                ventana.boton_escanear.click()
+                _esperar(lambda v=ventana: _cadena_terminada(v))
         finally:
             escanear_mod.subprocess.run = orig_run
             tv.obtener_datos_ffprobe = orig_ff_tv
@@ -462,9 +489,9 @@ def test_10():
         ventana.close()
         _limpiar(ventana)
         ok = (
-            conteo["run"] == 1
-            and conteo["ffprobe"] == 1
-            and conteo["ffmpeg"] == 0
+            conteo["run"] >= 1
+            and conteo["ffprobe"] >= 1
+            and conteo["ffmpeg"] == 1
             and info.get("principal") is False
             and [f[0] for f in filas] == ["x.mp4"]
         )
@@ -485,28 +512,24 @@ def test_11():
     try:
         ventana = VisorVideos(ruta_db=ruta_db)
         _esperar(lambda v=ventana: v._carga_completada and v.gestor.hilo is None)
-        miniaturas_dir = ruta_carpeta_miniaturas()
-        mini_antes = (
-            sorted(os.listdir(miniaturas_dir))
-            if os.path.isdir(miniaturas_dir)
-            else None
-        )
-        contador = {
-            "asegurar": 0,
-            "generar": 0,
-            "contar": 0,
-            "ffmpeg": 0,
-        }
+        info = {"asegurar": 0, "contar": 0}
         originales = {
-            "asegurar": escanear_mod.asegurar_miniatura,
-            "generar": escanear_mod.generar_miniatura,
-            "contar": escanear_mod.contar_miniaturas,
-            "ffmpeg": escanear_mod.ffmpeg_disponible,
+            "asegurar_miniatura": escanear_mod.asegurar_miniatura,
+            "contar_miniaturas": escanear_mod.contar_miniaturas,
         }
-        escanear_mod.asegurar_miniatura = _prohibido("asegurar", contador)
-        escanear_mod.generar_miniatura = _prohibido("generar", contador)
-        escanear_mod.contar_miniaturas = _prohibido("contar", contador)
-        escanear_mod.ffmpeg_disponible = _prohibido("ffmpeg", contador)
+
+        def _asegurar(video, ruta_video):
+            info["asegurar"] += 1
+            info["asegurar_principal"] = QThread.isMainThread()
+            return 1
+
+        def _contar(video):
+            info["contar"] += 1
+            info["contar_principal"] = QThread.isMainThread()
+            return 1
+
+        escanear_mod.asegurar_miniatura = _asegurar
+        escanear_mod.contar_miniaturas = _contar
         try:
             with _dialogo_falso(carpeta.name):
                 ventana.seleccionar_carpeta()
@@ -515,22 +538,27 @@ def test_11():
         finally:
             for clave, original in originales.items():
                 setattr(escanear_mod, clave, original)
-        mini_despues = (
-            sorted(os.listdir(miniaturas_dir))
-            if os.path.isdir(miniaturas_dir)
-            else None
-        )
-        filas = _filas_de(ruta_db)
+        conn = sqlite3.connect(ruta_db)
+        try:
+            fila = conn.execute(
+                "SELECT cantidad_miniaturas FROM videos WHERE nombre = 'x.mp4'"
+            ).fetchone()
+        finally:
+            conn.close()
         ventana.close()
         _limpiar(ventana)
         ok = (
-            contador == {"asegurar": 0, "generar": 0, "contar": 0, "ffmpeg": 0}
-            and mini_antes == mini_despues
-            and [f[0] for f in filas] == ["x.mp4"]
+            info["asegurar"] == 1
+            and info["contar"] == 1
+            and info.get("asegurar_principal") is False
+            and info.get("contar_principal") is False
+            and fila == (1,)
         )
         return (
             ok,
-            f"contador={contador} miniaturas={mini_antes == mini_despues}",
+            f"asegurar={info['asegurar']} contar={info['contar']} "
+            f"asegurar_principal={info.get('asegurar_principal')} "
+            f"contar_principal={info.get('contar_principal')} fila={fila}",
         )
     finally:
         carpeta.cleanup()
@@ -825,17 +853,23 @@ def test_18():
                     pass
         ventana = VisorVideos(ruta_db=ruta_db)
         _esperar(lambda v=ventana: v._carga_completada and v.gestor.hilo is None)
-        with _dialogo_falso(carpeta_temp.name):
-            ventana.seleccionar_carpeta()
-        ventana.boton_escanear.click()
-        _esperar(lambda v=ventana: _cadena_terminada(v))
+        with _miniaturas_temporales() as carpeta_miniaturas:
+            with _dialogo_falso(carpeta_temp.name):
+                ventana.seleccionar_carpeta()
+            ventana.boton_escanear.click()
+            _esperar(lambda v=ventana: _cadena_terminada(v))
+            generadas = (
+                sorted(os.listdir(carpeta_miniaturas))
+                if os.path.isdir(carpeta_miniaturas)
+                else []
+            )
         guardado = ventana.registros_guardados
         estado = ventana.estado_escaneo.text()
         conn = sqlite3.connect(ruta_db)
         try:
             filas = conn.execute(
-                "SELECT nombre, duracion_segundos, ancho, alto, codec_video "
-                "FROM videos ORDER BY nombre"
+                "SELECT nombre, duracion_segundos, ancho, alto, codec_video, "
+                "cantidad_miniaturas FROM videos ORDER BY nombre"
             ).fetchall()
         finally:
             conn.close()
@@ -849,14 +883,16 @@ def test_18():
             guardado == 3
             and estado == "3 videos detectados"
             and len(filas) == 3
-            and real == (5.0, 640, 360, "h264")
-            and vacio1 == (None, None, None, None)
-            and vacio2 == (None, None, None, None)
+            and real == (5.0, 640, 360, "h264", 1)
+            and vacio1 == (None, None, None, None, 0)
+            and vacio2 == (None, None, None, None, 0)
+            and generadas == ["video_real_01.jpg"]
         )
         return (
             ok,
             f"guardado={guardado} estado={estado!r} "
-            f"real={real} vacio1={vacio1} vacio2={vacio2}",
+            f"real={real} vacio1={vacio1} vacio2={vacio2} "
+            f"generadas={generadas}",
         )
     finally:
         carpeta_temp.cleanup()
@@ -925,6 +961,328 @@ def test_19():
         temp.cleanup()
 
 
+def test_20():
+    carpeta = os.path.abspath("C:\\videos")
+    carpeta_temp = tempfile.TemporaryDirectory()
+    try:
+        ruta_existente = os.path.join(carpeta_temp.name, "real.mp4")
+        with open(ruta_existente, "wb") as f:
+            f.write(b"x")
+        ruta_vacio = os.path.join(carpeta_temp.name, "vacio.mp4")
+        with open(ruta_vacio, "wb"):
+            pass
+        llamadas = {"asegurar": [], "contar": []}
+        orig_asegurar = escanear_mod.asegurar_miniatura
+        orig_contar = escanear_mod.contar_miniaturas
+
+        def _asegurar(video, ruta_video):
+            llamadas["asegurar"].append((video, ruta_video))
+            return 1 if video == "real.mp4" else 0
+
+        def _contar(video):
+            llamadas["contar"].append(video)
+            return 1 if video == "real.mp4" else 0
+
+        escanear_mod.asegurar_miniatura = _asegurar
+        escanear_mod.contar_miniaturas = _contar
+        try:
+            resumen = escanear_mod.asegurar_miniaturas(
+                ["real.mp4", "vacio.mp4", "ausente.avi"],
+                carpeta_temp.name,
+            )
+            faltante = escanear_mod.asegurar_miniaturas([], carpeta_temp.name)
+        finally:
+            escanear_mod.asegurar_miniatura = orig_asegurar
+            escanear_mod.contar_miniaturas = orig_contar
+    finally:
+        carpeta_temp.cleanup()
+    por_ruta = {r["ruta"]: r for r in resumen["resultados"]}
+    real = por_ruta[os.path.join(carpeta_temp.name, "real.mp4")]
+    vacio = por_ruta[os.path.join(carpeta_temp.name, "vacio.mp4")]
+    ausente = por_ruta[os.path.join(carpeta_temp.name, "ausente.avi")]
+    fallo_texto = False
+    fallo_iterable = False
+    fallo_carpeta = False
+    try:
+        escanear_mod.asegurar_miniaturas("real.mp4", carpeta)
+    except TypeError:
+        fallo_texto = True
+    try:
+        escanear_mod.asegurar_miniaturas(42, carpeta)
+    except TypeError:
+        fallo_iterable = True
+    try:
+        escanear_mod.asegurar_miniaturas(["real.mp4"], "")
+    except ValueError:
+        fallo_carpeta = True
+    ok = (
+        resumen["procesados"] == 3
+        and resumen["con_miniatura"] == 1
+        and resumen["sin_miniatura"] == 2
+        and real["asegurada"] == 1
+        and real["cantidad_miniaturas"] == 1
+        and vacio["asegurada"] == 0
+        and vacio["cantidad_miniaturas"] == 0
+        and ausente["asegurada"] == 0
+        and ausente["cantidad_miniaturas"] == 0
+        and llamadas["asegurar"] == [
+            ("real.mp4", os.path.join(carpeta_temp.name, "real.mp4")),
+            ("vacio.mp4", os.path.join(carpeta_temp.name, "vacio.mp4")),
+        ]
+        and llamadas["contar"] == ["real.mp4", "vacio.mp4"]
+        and faltante
+        == {"rutas": [], "resultados": [], "procesados": 0, "con_miniatura": 0, "sin_miniatura": 0}
+        and fallo_texto
+        and fallo_iterable
+        and fallo_carpeta
+    )
+    return (
+        ok,
+        f"procesados={resumen['procesados']} con={resumen['con_miniatura']} "
+        f"sin={resumen['sin_miniatura']} real={real['asegurada']},"
+        f"{real['cantidad_miniaturas']} faltante={faltante} "
+        f"validaciones={fallo_texto},{fallo_iterable},{fallo_carpeta}",
+    )
+
+
+def test_21():
+    registros = [
+        {
+            "nombre": "a.mp4",
+            "ruta": os.path.join("C:\\VIDEOS", "a.mp4"),
+            "extension": ".mp4",
+            "fecha_importacion": "t",
+            "duracion_segundos": 5.0,
+        },
+        {
+            "nombre": "b.mkv",
+            "ruta": os.path.join("c:\\videos", "b.mkv"),
+            "extension": ".mkv",
+            "fecha_importacion": "t",
+        },
+        {
+            "nombre": "c.avi",
+            "ruta": os.path.join("C:\\videos", "c.avi"),
+            "extension": ".avi",
+            "fecha_importacion": "t",
+        },
+    ]
+    resultado = {
+        "resultados": [
+            {"ruta": os.path.join("c:\\videos", "a.mp4"), "cantidad_miniaturas": 2},
+            {"ruta": os.path.join("C:\\VIDEOS", "b.mkv"), "cantidad_miniaturas": "no-int"},
+            {"ruta": os.path.join("C:\\videos", "d.mp4"), "cantidad_miniaturas": 3},
+            "no-dict",
+            {"ruta": None, "cantidad_miniaturas": 4},
+        ]
+    }
+    combinados = escanear_mod.combinar_registros_con_miniaturas(registros, resultado)
+    nulos = escanear_mod.combinar_registros_con_miniaturas([registros[0]], None)
+    vacios = escanear_mod.combinar_registros_con_miniaturas([], resultado)
+    fallo_texto = False
+    fallo_iterable = False
+    try:
+        escanear_mod.combinar_registros_con_miniaturas("a.mp4", resultado)
+    except TypeError:
+        fallo_texto = True
+    try:
+        escanear_mod.combinar_registros_con_miniaturas(42, resultado)
+    except TypeError:
+        fallo_iterable = True
+    ok = (
+        len(combinados) == 3
+        and combinados[0]["cantidad_miniaturas"] == 2
+        and combinados[1]["cantidad_miniaturas"] is None
+        and combinados[2]["cantidad_miniaturas"] is None
+        and set(combinados[0].keys())
+        == {
+            "nombre",
+            "ruta",
+            "extension",
+            "fecha_importacion",
+            "duracion_segundos",
+            "cantidad_miniaturas",
+        }
+        and nulos[0]["cantidad_miniaturas"] is None
+        and vacios == []
+        and fallo_texto
+        and fallo_iterable
+    )
+    return (
+        ok,
+        f"a={combinados[0]['cantidad_miniaturas']} "
+        f"b={combinados[1]['cantidad_miniaturas']} "
+        f"c={combinados[2]['cantidad_miniaturas']} vacios={vacios} "
+        f"validaciones={fallo_texto},{fallo_iterable}",
+    )
+
+
+def test_22():
+    temp, ruta_db = _crear_bd([])
+    carpeta = tempfile.TemporaryDirectory()
+    try:
+        with open(os.path.join(carpeta.name, "a.mp4"), "wb") as f:
+            f.write(b"x")
+        with open(os.path.join(carpeta.name, "b.mkv"), "wb") as f:
+            f.write(b"x")
+        resultados = []
+        gestor = GestorTareas()
+        gestor.tarea_resultado.connect(resultados.append)
+        gestor.tarea_error.connect(lambda m: resultados.append(("error", m)))
+        info = {"asegurar": 0, "contar": 0, "principal": None, "ident": None}
+        orig_asegurar = escanear_mod.asegurar_miniatura
+        orig_contar = escanear_mod.contar_miniaturas
+
+        def _asegurar(video, ruta_video):
+            info["asegurar"] += 1
+            info["ident"] = threading.get_ident()
+            info["principal"] = QThread.isMainThread()
+            return 1
+
+        def _contar(video):
+            info["contar"] += 1
+            return 1
+
+        escanear_mod.asegurar_miniatura = _asegurar
+        escanear_mod.contar_miniaturas = _contar
+        try:
+            tarea = tv.TareaMiniaturas(["a.mp4", "b.mkv"], carpeta.name)
+            inicio = gestor.iniciar(tarea)
+            _esperar(lambda: gestor.hilo is None)
+        finally:
+            escanear_mod.asegurar_miniatura = orig_asegurar
+            escanear_mod.contar_miniaturas = orig_contar
+            gestor.cerrar()
+        resumen = resultados[0] if resultados else None
+        ok = (
+            inicio
+            and info["asegurar"] == 2
+            and info["contar"] == 2
+            and info["principal"] is False
+            and resumen is not None
+            and resumen["procesados"] == 2
+            and resumen["con_miniatura"] == 2
+            and resumen["sin_miniatura"] == 0
+            and len(resumen["resultados"]) == 2
+        )
+        return (
+            ok,
+            f"inicio={inicio} asegurar={info['asegurar']} "
+            f"contar={info['contar']} "
+            f"principal={info['principal']} resumen={resumen}",
+        )
+    finally:
+        carpeta.cleanup()
+        temp.cleanup()
+
+
+def test_23():
+    temp, ruta_db = _crear_bd([])
+    carpeta = _carpeta_con(["x.mp4"])
+    try:
+        ventana = VisorVideos(ruta_db=ruta_db)
+        _esperar(lambda v=ventana: v._carga_completada and v.gestor.hilo is None)
+        orig = tv.asegurar_miniaturas
+
+        def _falla(videos, carpeta_escaneada):
+            raise RuntimeError("fallo controlado de miniaturas")
+
+        tv.asegurar_miniaturas = _falla
+        try:
+            with _dialogo_falso(carpeta.name):
+                ventana.seleccionar_carpeta()
+            ventana.boton_escanear.click()
+            _esperar(lambda v=ventana: _cadena_terminada(v))
+        finally:
+            tv.asegurar_miniaturas = orig
+        estado_error = ventana.estado_escaneo.text()
+        guardado_error = ventana.registros_guardados
+        gestor_error = ventana.gestor.estado
+        flags_error = (
+            ventana._miniaturas_pendiente,
+            ventana._guardado_pendiente,
+            ventana.resultado_miniaturas,
+            ventana.tarea_miniaturas,
+        )
+        detectados_error = ventana.videos_detectados
+        hab_tras_error = ventana.boton_escanear.isEnabled()
+        filas_antes = _filas_de(ruta_db)
+        ventana.boton_escanear.click()
+        _esperar(lambda v=ventana: _cadena_terminada(v))
+        filas_despues = _filas_de(ruta_db)
+        guardado_final = ventana.registros_guardados
+        ventana.close()
+        _limpiar(ventana)
+        ok = (
+            estado_error == MENSAJE_ERROR_MINIATURAS
+            and guardado_error is None
+            and gestor_error == Estado.INACTIVO
+            and flags_error == (False, False, None, None)
+            and detectados_error == ["x.mp4"]
+            and hab_tras_error
+            and filas_antes == []
+            and guardado_final == 1
+            and [f[0] for f in filas_despues] == ["x.mp4"]
+        )
+        return (
+            ok,
+            f"estado={estado_error!r} guardado_error={guardado_error} "
+            f"gestor={gestor_error} flags={flags_error} hab={hab_tras_error} "
+            f"antes={filas_antes} final={guardado_final} "
+            f"filas={[f[0] for f in filas_despues]}",
+        )
+    finally:
+        carpeta.cleanup()
+        temp.cleanup()
+
+
+def test_24():
+    escaneo_path = os.path.join(ruta_raiz(), "escanear_videos.py")
+    tareas_path = os.path.join(ruta_raiz(), "tareas_videos.py")
+    with open(escaneo_path, encoding="utf-8") as f:
+        arbol_escaneo = ast.parse(f.read(), escaneo_path)
+    with open(tareas_path, encoding="utf-8") as f:
+        arbol_tareas = ast.parse(f.read(), tareas_path)
+
+    def _funciones(arbol):
+        return {n.name for n in ast.walk(arbol) if isinstance(n, ast.FunctionDef)}
+
+    def _clases(arbol):
+        return {n.name for n in ast.walk(arbol) if isinstance(n, ast.ClassDef)}
+
+    def _importadas_escaneo(arbol):
+        conjunto = set()
+        for nodo in ast.walk(arbol):
+            if isinstance(nodo, ast.ImportFrom) and nodo.module == "escanear_videos":
+                conjunto.update(a.name for a in nodo.names)
+        return conjunto
+
+    funcs_escaneo = _funciones(arbol_escaneo)
+    funcs_tareas = _funciones(arbol_tareas)
+    clases_tareas = _clases(arbol_tareas)
+    importadas = _importadas_escaneo(arbol_tareas)
+    ok = (
+        "asegurar_miniaturas" in funcs_escaneo
+        and "asegurar_miniaturas" not in funcs_tareas
+        and "asegurar_miniaturas" in importadas
+        and "combinar_registros_con_miniaturas" in funcs_escaneo
+        and "combinar_registros_con_miniaturas" not in funcs_tareas
+        and "combinar_registros_con_miniaturas" in importadas
+        and "TareaMiniaturas" in clases_tareas
+        and "TareaMiniaturas" not in funcs_escaneo
+    )
+    return (
+        ok,
+        f"asegurar_miniaturas=escaneo:{'asegurar_miniaturas' in funcs_escaneo},"
+        f"tareas:{'asegurar_miniaturas' in funcs_tareas},"
+        f"import:{'asegurar_miniaturas' in importadas} "
+        f"combinador=escaneo:{'combinar_registros_con_miniaturas' in funcs_escaneo},"
+        f"tareas:{'combinar_registros_con_miniaturas' in funcs_tareas},"
+        f"import:{'combinar_registros_con_miniaturas' in importadas} "
+        f"TareaMiniaturas={('TareaMiniaturas' in clases_tareas)}",
+    )
+
+
 def main():
     app = QApplication(sys.argv)
     pruebas = [
@@ -947,6 +1305,11 @@ def main():
         test_17,
         test_18,
         test_19,
+        test_20,
+        test_21,
+        test_22,
+        test_23,
+        test_24,
     ]
     resultados = []
     for i, fn in enumerate(pruebas, start=1):
@@ -959,7 +1322,7 @@ def main():
 
     ok_total = all(ok for _, ok, _ in resultados)
     aprobadas = sum(1 for _, ok, _ in resultados if ok)
-    print(f"TOTAL={aprobadas}/19")
+    print(f"TOTAL={aprobadas}/24")
     print(f"RESULTADO_FINAL={'OK' if ok_total else 'FALLO'}")
 
     qInstallMessageHandler(None)

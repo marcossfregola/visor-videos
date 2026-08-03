@@ -1,7 +1,9 @@
 import os
 
 from escanear_videos import (
+    asegurar_miniaturas,
     combinar_registros_con_ffprobe,
+    combinar_registros_con_miniaturas,
     conectar_bd,
     escanear_videos,
     guardar_video,
@@ -72,6 +74,28 @@ class TareaEscaneo(TareaBase):
 
     def _trabajo(self):
         return escanear_videos(self._carpeta)
+
+
+class TareaMiniaturas(TareaBase):
+    def __init__(self, videos, carpeta, parent=None):
+        super().__init__(parent)
+        if videos is None:
+            videos = []
+        if isinstance(videos, str):
+            videos = [videos]
+        self._videos = list(videos)
+        self._carpeta = carpeta
+
+    @property
+    def videos(self):
+        return list(self._videos)
+
+    @property
+    def carpeta(self):
+        return self._carpeta
+
+    def _trabajo(self):
+        return asegurar_miniaturas(self._videos, self._carpeta)
 
 
 class TareaLecturaCatalogo(TareaBase):

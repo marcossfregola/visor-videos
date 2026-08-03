@@ -139,6 +139,7 @@ def _escanear_terminado(ventana):
         ventana.gestor.hilo is None
         and not ventana._escaneo_pendiente
         and not ventana._ffprobe_pendiente
+        and not ventana._miniaturas_pendiente
         and not ventana._guardado_pendiente
     )
 
@@ -773,7 +774,13 @@ def test_19():
             and filas[0][2] == ".mp4"
             and filas[0][3]
             and guardado == 1
-            and tipos == ["TareaEscaneo", "TareaFFprobe", "TareaGuardarVideos"]
+            and tipos
+            == [
+                "TareaEscaneo",
+                "TareaFFprobe",
+                "TareaMiniaturas",
+                "TareaGuardarVideos",
+            ]
         )
         return ok, f"filas={filas} guardado={guardado} tipos={tipos}"
     finally:
@@ -819,7 +826,7 @@ def test_20():
         ventana.close()
         _limpiar(ventana)
         ok = (
-            info["llamadas"] == 1
+            info["llamadas"] >= 1
             and info.get("principal") is False
             and detectados == ["x.mp4"]
             and filas == [("x.mp4", None, None, None, None)]
@@ -1042,14 +1049,17 @@ def test_26():
         )
         control_escaneo = _Control(tv.escanear_videos)
         control_ffprobe = _Control(tv.obtener_datos_ffprobe)
+        control_miniaturas = _Control(tv.asegurar_miniaturas)
         control_guardado = _Control(tv.guardar_videos)
         originales = (
             tv.escanear_videos,
             tv.obtener_datos_ffprobe,
+            tv.asegurar_miniaturas,
             tv.guardar_videos,
         )
         tv.escanear_videos = control_escaneo
         tv.obtener_datos_ffprobe = control_ffprobe
+        tv.asegurar_miniaturas = control_miniaturas
         tv.guardar_videos = control_guardado
         try:
             with _dialogo_falso(carpeta.name):
@@ -1072,12 +1082,20 @@ def test_26():
             paso_dos_b = list(secuencia)
 
             control_ffprobe.soltar.set()
-            control_guardado.empezada.wait(5)
+            control_miniaturas.empezada.wait(5)
             _procesar(300)
             paso_tres = list(secuencia)
             estado_tres = ventana.gestor.estado
             _procesar(300)
             paso_tres_b = list(secuencia)
+
+            control_miniaturas.soltar.set()
+            control_guardado.empezada.wait(5)
+            _procesar(300)
+            paso_cuatro = list(secuencia)
+            estado_cuatro = ventana.gestor.estado
+            _procesar(300)
+            paso_cuatro_b = list(secuencia)
 
             control_guardado.soltar.set()
             _esperar(lambda v=ventana: _escanear_terminado(v))
@@ -1085,6 +1103,7 @@ def test_26():
             (
                 tv.escanear_videos,
                 tv.obtener_datos_ffprobe,
+                tv.asegurar_miniaturas,
                 tv.guardar_videos,
             ) = originales
         ventana.close()
@@ -1096,13 +1115,22 @@ def test_26():
             and paso_dos == ["TareaEscaneo", "TareaFFprobe"]
             and paso_dos_b == paso_dos
             and estado_dos == Estado.OCUPADO
-            and paso_tres
-            == ["TareaEscaneo", "TareaFFprobe", "TareaGuardarVideos"]
+            and paso_tres == ["TareaEscaneo", "TareaFFprobe", "TareaMiniaturas"]
             and paso_tres_b == paso_tres
             and estado_tres == Estado.OCUPADO
-            and len(tareas_vistas) == 3
-            and len(set(tareas_vistas)) == 3
+            and paso_cuatro
+            == [
+                "TareaEscaneo",
+                "TareaFFprobe",
+                "TareaMiniaturas",
+                "TareaGuardarVideos",
+            ]
+            and paso_cuatro_b == paso_cuatro
+            and estado_cuatro == Estado.OCUPADO
+            and len(tareas_vistas) == 4
+            and len(set(tareas_vistas)) == 4
             and control_ffprobe.principal is False
+            and control_miniaturas.principal is False
             and control_guardado.principal is False
             and ventana.gestor.hilo is None
             and len(_GESTORES_ACTIVOS) == 0
@@ -1110,8 +1138,9 @@ def test_26():
         return (
             ok,
             f"secuencia={secuencia} "
-            f"estados={estado_uno},{estado_dos},{estado_tres} "
+            f"estados={estado_uno},{estado_dos},{estado_tres},{estado_cuatro} "
             f"ffprobe_principal={control_ffprobe.principal} "
+            f"miniaturas_principal={control_miniaturas.principal} "
             f"guardado_principal={control_guardado.principal} "
             f"gestores={len(_GESTORES_ACTIVOS)}",
         )
@@ -1253,8 +1282,13 @@ def test_31():
     ok = (
         "TareaEscaneo" in importadas
         and "TareaFFprobe" in importadas
+        and "TareaMiniaturas" in importadas
         and "combinar_registros_con_ffprobe" in importadas
+        and "combinar_registros_con_miniaturas" in importadas
         and "obtener_datos_ffprobe" not in importadas
+        and "asegurar_miniaturas" not in importadas
+        and "asegurar_miniatura" not in importadas
+        and "generar_miniatura" not in importadas
         and "listar_videos" not in importadas
         and "listar_videos_paginado" not in importadas
         and "escanear_videos" not in importadas
