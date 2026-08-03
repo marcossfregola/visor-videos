@@ -334,6 +334,35 @@ def detectar_diferencias(carpeta, ruta_db=None):
     }
 
 
+def _coleccion_nombres(valor, clave):
+    if isinstance(valor, (str, bytes, bytearray)):
+        raise TypeError(f"{clave} debe ser una colección de nombres, no texto")
+    try:
+        return sorted(valor)
+    except TypeError:
+        raise TypeError(f"{clave} debe ser una colección iterable") from None
+
+
+def preparar_plan_sincronizacion(diferencias):
+    if not isinstance(diferencias, dict):
+        raise TypeError("diferencias debe ser un diccionario")
+    for clave in ("carpeta", "presentes_en_ambos", "nuevos", "ausentes_del_disco"):
+        if clave not in diferencias:
+            raise ValueError(f"falta la clave obligatoria: {clave}")
+    carpeta = diferencias["carpeta"]
+    if not isinstance(carpeta, str) or not carpeta:
+        raise ValueError("carpeta debe ser una ruta de texto no vacía")
+    nuevos = _coleccion_nombres(diferencias["nuevos"], "nuevos")
+    presentes = _coleccion_nombres(diferencias["presentes_en_ambos"], "presentes_en_ambos")
+    ausentes = _coleccion_nombres(diferencias["ausentes_del_disco"], "ausentes_del_disco")
+    return {
+        "carpeta": carpeta,
+        "a_incorporar": preparar_registros_basicos(nuevos, carpeta),
+        "ya_sincronizados": presentes,
+        "candidatos_a_eliminar": ausentes,
+    }
+
+
 def listar_videos_paginado(limite, desplazamiento=0, texto=None, ruta_db=None):
     if isinstance(limite, bool) or not isinstance(limite, int):
         raise TypeError("limite debe ser un entero")

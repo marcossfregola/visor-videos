@@ -28,68 +28,74 @@ desde la interfaz con el mismo gestor; los archivos detectados se
 guardan en SQLite con metadatos FFprobe (duración, resolución, codec;
 `NULL` ante vacíos/incompletos/fallos individuales) y cantidad de
 miniaturas por video mediante el upsert transaccional existente,
-conservando los registros preexistentes) y **detección no destructiva de
+conservando los registros preexistentes), **detección no destructiva de
 diferencias entre la carpeta y el catálogo SQLite** (`detectar_diferencias`
 en `escanear_videos.py`: compara por nombre lo que hay en disco con lo que
 hay en la base y devuelve `presentes_en_ambos`/`nuevos`/`ausentes_del_disco`;
 solo lectura, no inserta, actualiza ni elimina, no está integrada al
 pipeline ni a la interfaz, no detecta movimientos ni renombrados y no
-recorre subcarpetas) aprobadas; pendiente la integración funcional completa
+recorre subcarpetas) y **preparación del plan de sincronización**
+(`preparar_plan_sincronizacion` en `escanear_videos.py`: operación pura
+que recibe el resultado de `detectar_diferencias` y devuelve
+`a_incorporar` (registros básicos con `preparar_registros_basicos`; la
+`fecha_importacion` se genera en la preparación, no durante la
+detección)/`ya_sincronizados`/`candidatos_a_eliminar` (informativos); no
+inserta, actualiza ni elimina, no accede a SQLite, no ejecuta
+FFprobe/FFmpeg y no está integrada al pipeline ni a la interfaz)
+aprobadas; pendiente la integración funcional completa
 del catálogo: la sincronización completa SQLite (escritura masiva con
 detección de archivos y la eliminación controlada de registros ausentes,
 y su integración asíncrona).
 
 ## Último commit aprobado
 
-**Mensaje:** Detectar diferencias entre el catálogo y el disco
+**Mensaje:** Preparar el plan de sincronización del catálogo
 
-**Etapa aprobada:** Detección no destructiva de diferencias entre la
-carpeta de videos y el catálogo SQLite: nueva función
-`detectar_diferencias(carpeta, ruta_db=None)` en `escanear_videos.py`
-(capa de catálogo). Compara **por nombre** los archivos de video de la
-carpeta (`escanear_videos`) con los registros de la base (`SELECT nombre
-FROM videos`) y devuelve el dict `{"carpeta", "presentes_en_ambos",
-"nuevos", "ausentes_del_disco"}` con listas ordenadas. **Solo lectura**:
-no inserta, no actualiza ni elimina registros y no modifica
-miniaturas. Validaciones: `carpeta` debe ser una ruta de texto no vacía
-(`ValueError`); carpeta inexistente o base inexistente → `FileNotFoundError`
-sin crear archivos. **No integrada**: no forma parte del pipeline ni de la
-interfaz, no detecta movimientos ni renombrados y no recorre subcarpetas.
-Pendiente para la sincronización completa: la eliminación controlada de
-registros ausentes y su integración asíncrona. Con suite nueva
-`prueba_detectar.py` (15 pruebas). Aprobada con observaciones.
+**Etapa aprobada:** Preparación del plan de sincronización del catálogo:
+nueva función `preparar_plan_sincronizacion(diferencias)` en
+`escanear_videos.py` (capa de catálogo). Recibe el resultado de
+`detectar_diferencias()` y devuelve el plan `{"carpeta",
+"a_incorporar", "ya_sincronizados", "candidatos_a_eliminar"}`.
+`a_incorporar` son los registros básicos de los videos nuevos preparados
+con `preparar_registros_basicos` (claves `{nombre, ruta, extension,
+fecha_importacion}`); **`fecha_importacion` se genera al preparar esos
+registros, no durante `detectar_diferencias`**. `ya_sincronizados` y
+`candidatos_a_eliminar` son listas ordenadas de nombres; los candidatos
+a eliminación son **únicamente informativos**. **Sin efectos**: el plan
+no inserta, actualiza ni elimina registros, **no accede a SQLite**, no
+ejecuta FFprobe ni FFmpeg y no está integrado al pipeline ni a la
+interfaz. Pendiente: la aplicación real del plan y la deduplicación de
+nombres repetidos. Con suite nueva `prueba_plan_sincronizacion.py` (12
+pruebas). Aprobada con observaciones.
 
 **SHA definitivo:** debe consultarse con `git log -1` (el SHA no se
 escribe en este documento para evitar autorreferencias al commit).
 
 ## Última etapa aprobada
 
-Detección no destructiva de diferencias entre la carpeta de videos y el
-catálogo SQLite: `detectar_diferencias(carpeta, ruta_db=None)` en
-`escanear_videos.py` (capa de catálogo, ubicada entre `listar_videos` y
-`listar_videos_paginado`). Valida `carpeta` (texto no vacío; `ValueError`
-en caso contrario) y la existencia de la carpeta y de la base
-(`FileNotFoundError` "Carpeta no encontrada: ..." / "Base de datos no
-encontrada: ...", sin crear archivos). Lista los archivos de video de la
-carpeta con `escanear_videos` (solo `.mp4`/`.mkv`/`.avi`, extensión en
-minúsculas) y los registros de la base con un único `SELECT nombre FROM
-videos` sobre una conexión propia abierta y cerrada en `finally`;
-devuelve `{"carpeta", "presentes_en_ambos", "nuevos", "ausentes_del_disco"}`
-con listas ordenadas (determinista). **Solo lectura**: no inserta,
-actualiza ni elimina registros, no modifica miniaturas y no llama a
-FFprobe/FFmpeg/`asegurar_miniaturas`/`contar_miniaturas`/
-`sincronizar_bd`. **Ausencia deliberada**: no está integrada al pipeline
-ni a la interfaz (no se lanza desde el encadenamiento ni desde la ventana),
-compara por **nombre** (no detecta movimientos ni renombrados, no usa
-ruta/hash) y **no recorre subcarpetas**. Pendiente para la sincronización
-completa: la eliminación controlada de registros ausentes y la
-integración asíncrona. Con suite nueva `prueba_detectar.py` (15 pruebas:
-compilación, AST de separación, ambos vacíos, nuevos, ausentes,
-coincidencia, mixto, base/carpeta intactas y bytes idénticos, orden
-determinista, validaciones con base no creada, cero llamadas a
-FFprobe/FFmpeg/subprocess/asegurar/contar/generar/sincronizar, datos
-reales intactos, consistencia matemática y filtrado por extensión).
-Aprobada con observaciones.
+Preparación del plan de sincronización del catálogo:
+`preparar_plan_sincronizacion(diferencias)` en `escanear_videos.py`
+(capa de catálogo, ubicada entre `detectar_diferencias` y
+`listar_videos_paginado`). Operación **pura** que recibe el resultado de
+`detectar_diferencias()` y devuelve el plan `{"carpeta",
+"a_incorporar", "ya_sincronizados", "candidatos_a_eliminar"}`.
+`a_incorporar` son los registros básicos de los videos nuevos preparados
+con `preparar_registros_basicos(nuevos, carpeta)` (claves `{nombre,
+ruta, extension, fecha_importacion}`); **`fecha_importacion` se genera
+al preparar esos registros, no durante `detectar_diferencias`**.
+`ya_sincronizados` y `candidatos_a_eliminar` son listas ordenadas de
+nombres; los candidatos a eliminación son **únicamente informativos**.
+Validaciones: `diferencias` no-dict → `TypeError`; claves obligatorias
+faltantes (`carpeta`, `presentes_en_ambos`, `nuevos`,
+`ausentes_del_disco`) → `ValueError`; `carpeta` no texto no vacío →
+`ValueError`; colecciones de nombres de texto o no iterables →
+`TypeError` (helper interno `_coleccion_nombres`); claves extra
+ignoradas. **Sin efectos**: el plan no inserta, actualiza ni elimina
+registros, **no accede a SQLite**, no ejecuta FFprobe ni FFmpeg y no
+está integrado al pipeline ni a la interfaz. **Ausencia deliberada**: la
+aplicación real del plan continúa pendiente y **no existe todavía
+deduplicación de nombres repetidos**. Con suite nueva
+`prueba_plan_sincronizacion.py` (12 pruebas). Aprobada con observaciones.
 
 ## Estado de la arquitectura
 
@@ -120,6 +126,11 @@ Aprobada con observaciones.
 -   Detección no destructiva de diferencias entre la carpeta y el
     catálogo SQLite (`detectar_diferencias`; compara por nombre, solo
     lectura, sin integración al pipeline ni a la interfaz).
+-   Preparación del plan de sincronización del catálogo
+    (`preparar_plan_sincronizacion`; pura, sin SQLite/FFprobe/FFmpeg/
+    pipeline/interfaz; candidatos a eliminación informativos; la
+    aplicación del plan y la deduplicación de nombres repetidos quedan
+    pendientes).
 -   Pruebas automatizadas.
 
 ### En desarrollo
@@ -130,7 +141,9 @@ Integración funcional completa del catálogo: el pipeline (`TareaEscaneo`
 convierte los archivos detectados por la interfaz en registros con
 metadatos FFprobe y cantidad de miniaturas y los escribe en SQLite
 conservando los preexistentes, y la **detección de diferencias** disco ↔
-BD ya existe de forma no destructiva (`detectar_diferencias`), pero la
+BD ya existe de forma no destructiva (`detectar_diferencias`) con su
+**plan de sincronización** ya preparado de forma pura
+(`preparar_plan_sincronizacion`, sin efectos ni integración), pero la
 **sincronización completa** —la escritura masiva con detección de
 archivos y la **eliminación controlada de registros ausentes** con su
 integración asíncrona— sigue pendiente. La carga inicial asíncrona de la
@@ -139,9 +152,11 @@ primera página del catálogo ya está integrada en la interfaz.
 ## Pendientes prioritarios
 
 1.  Sincronización completa SQLite asíncrona (la detección de diferencias
-    ya existe en `detectar_diferencias` —solo lectura, por nombre—; falta
-    la escritura masiva con detección de archivos, la eliminación
-    controlada de registros ausentes y su integración asíncrona).
+    ya existe en `detectar_diferencias` —solo lectura, por nombre— y el
+    plan ya se prepara en `preparar_plan_sincronizacion` —puro, sin
+    efectos—; falta la **aplicación del plan** (escritura masiva con
+    detección de archivos y eliminación controlada de registros ausentes)
+    y su integración asíncrona).
 2.  Integración SQLite asíncrona en el pipeline (encadenado).
 3.  Actualización asíncrona de la interfaz (tarjetas dinámicas).
 4.  FFmpeg asíncrono.
@@ -160,13 +175,16 @@ definitiva del ciclo de vida de tareas con la ventana (la carga inicial
 asíncrona ya usa `GestorTareas` y cierra de forma ordenada en
 `closeEvent`, aunque `closeEvent` puede esperar hasta 5 s por una tarea
 activa); - el pipeline ya convierte los archivos detectados en registros
-con metadatos FFprobe y miniaturas y los escribe, y existe la detección
-no destructiva de diferencias (`detectar_diferencias`), pero la
-sincronización completa sigue pendiente (escritura masiva con detección
-de archivos y eliminación controlada de registros ausentes, con su
-integración asíncrona); - `detectar_diferencias` compara por nombre y no
-detecta movimientos ni renombrados (queda para etapas futuras); - el
-enrutado de resultados por
+con metadatos FFprobe y miniaturas y los escribe, y existen la detección
+no destructiva de diferencias (`detectar_diferencias`) y el plan de
+sincronización preparado de forma pura (`preparar_plan_sincronizacion`,
+con `candidatos_a_eliminar` únicamente informativos), pero la
+sincronización completa sigue pendiente (aplicación del plan: escritura
+masiva con detección de archivos y eliminación controlada de registros
+ausentes, con su integración asíncrona); - `detectar_diferencias` compara
+por nombre y no detecta movimientos ni renombrados (queda para etapas
+futuras); - **no existe todavía deduplicación de nombres repetidos** en
+el plan de sincronización; - el enrutado de resultados por
 `_escaneo_pendiente`/`_ffprobe_pendiente`/`_miniaturas_pendiente`/
 `_guardado_pendiente` es suficiente para una única tarea activa y debe
 revisarse si la interfaz incorpora más tipos de tarea; - el escaneo no
@@ -194,13 +212,15 @@ limpieza controlada de miniaturas antiguas.
 
 **Sincronización completa del catálogo** (escritura masiva con detección
 de archivos y **eliminación controlada de registros ausentes**, con su
-integración asíncrona). La etapa anterior (detección no destructiva de
-diferencias con `detectar_diferencias`) quedó aprobada y commiteada; la
-eliminación de registros ausentes y la integración asíncrona siguen
-pendientes y se abordarán como próxima etapa, manteniendo el alcance
-limitado: sin selección inteligente, sin múltiples miniaturas, sin
-eliminación de archivos antiguos y sin recarga automática de la
-interfaz.
+integración asíncrona). Las etapas anteriores (detección no destructiva
+de diferencias con `detectar_diferencias` y preparación del plan con
+`preparar_plan_sincronizacion`) quedaron aprobadas y commiteadas; la
+**aplicación del plan** (insertar/actualizar `a_incorporar` y eliminar
+de forma controlada los registros de `candidatos_a_eliminar`, con su
+integración asíncrona) sigue pendiente y se abordará como próxima etapa,
+manteniendo el alcance limitado: sin selección inteligente, sin
+múltiples miniaturas, sin eliminación de archivos antiguos y sin recarga
+automática de la interfaz.
 
 ## Documentos del proyecto
 

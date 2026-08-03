@@ -46,6 +46,16 @@ arquitectónicas.
     no integrada al pipeline ni a la interfaz, no detecta movimientos/
     renombrados y no recorre subcarpetas. La eliminación de registros
     ausentes y la integración asíncrona quedan pendientes.
+-   Preparación del plan de sincronización — **completado (etapa de
+    preparación)** (`preparar_plan_sincronizacion` en `escanear_videos.py`):
+    recibe el resultado de `detectar_diferencias` y devuelve
+    `a_incorporar` (registros básicos con `preparar_registros_basicos`; la
+    `fecha_importacion` se genera en la preparación, no durante la
+    detección)/`ya_sincronizados`/`candidatos_a_eliminar` (informativos).
+    Operación pura: no inserta, actualiza ni elimina, no accede a SQLite,
+    no ejecuta FFprobe/FFmpeg y no está integrada al pipeline ni a la
+    interfaz. La aplicación del plan y la deduplicación de nombres
+    repetidos quedan pendientes.
 
 1.  Opción de incluir o excluir subcarpetas — **pendiente** (configurar
     si el escaneo de la carpeta elegida recorre las subcarpetas).
@@ -57,11 +67,14 @@ arquitectónicas.
     con metadatos FFprobe y cantidad de miniaturas y los escribe en
     SQLite con el upsert transaccional, conservando los registros
     preexistentes).
-3.  Sincronización completa del catálogo — **en curso (etapa de
-    detección completada)**: la detección no destructiva de diferencias
-    existe (`detectar_diferencias`, por nombre y solo lectura); quedan
-    pendientes la eliminación controlada de registros ausentes y la
-    escritura masiva con integración asíncrona.
+3.  Sincronización completa del catálogo — **en curso (detección y
+    preparación del plan completadas)**: la detección no destructiva de
+    diferencias existe (`detectar_diferencias`, por nombre y solo lectura)
+    y el plan ya se prepara de forma pura (`preparar_plan_sincronizacion`,
+    con `a_incorporar`/`ya_sincronizados`/`candidatos_a_eliminar` y
+    candidatos informativos); quedan pendientes la **aplicación del plan**
+    (escritura masiva con detección de archivos y eliminación controlada
+    de registros ausentes) y su integración asíncrona.
 4.  FFprobe integrado en el pipeline — **completado** (el pipeline
     escaneo → guardado completa duración, resolución y codec antes de
     escribir o actualizar los registros; `NULL` ante vacíos, incompletos
@@ -75,8 +88,11 @@ arquitectónicas.
     controlada de versiones antiguas sigue pendiente.
 6.  Eliminación de registros ausentes — **pendiente** (sincronizar la
     BD con los archivos que dejaron de existir; la detección de los
-    ausentes ya existe de forma no destructiva en `detectar_diferencias`,
-    falta la eliminación controlada y su integración asíncrona).
+    ausentes ya existe de forma no destructiva en `detectar_diferencias`
+    y el plan ya los expone como `candidatos_a_eliminar` en
+    `preparar_plan_sincronizacion` (únicamente informativos); falta la
+    **aplicación controlada de la eliminación** y su integración
+    asíncrona).
 7.  Recarga automática del catálogo tras la escritura — **pendiente**
     (refrescar la grilla a medida que se sincroniza el catálogo).
 8.  Progreso — **pendiente** (barra de progreso y estado de las tareas
