@@ -20,60 +20,72 @@ ruta absoluta, la valida y la conserva en la sesión sin escanearla),
 **escaneo manual y asíncrono de la carpeta elegida desde la interfaz**
 (`visor_videos.py` escanea la carpeta con `TareaEscaneo` mediante el
 mismo `GestorTareas`, muestra la cantidad de videos detectados y no
-ejecuta FFprobe/FFmpeg ni genera miniaturas) y **pipeline limitado
-escaneo → guardado** (`TareaEscaneo` → `preparar_registros_basicos` →
-`TareaGuardarVideos`, encadenado desde la interfaz con el mismo gestor;
-los archivos detectados se preparan en registros básicos y se escriben
-en SQLite mediante el upsert transaccional existente, conservando los
-registros preexistentes) aprobadas; pendiente la integración funcional
-completa del catálogo: la sincronización completa SQLite (escritura
-masiva con **FFprobe en el pipeline** y eliminación de registros
+ejecuta FFmpeg ni genera miniaturas) y **pipeline escaneo → FFprobe →
+guardado** (`TareaEscaneo` → `TareaFFprobe` → `combinar_registros_con_ffprobe`
+→ `TareaGuardarVideos`, encadenado desde la interfaz con el mismo gestor;
+los archivos detectados se guardan en SQLite con metadatos FFprobe
+(duración, resolución, codec; `NULL` ante vacíos/incompletos/fallos
+individuales) mediante el upsert transaccional existente, conservando
+los registros preexistentes) aprobadas; pendiente la integración
+funcional completa del catálogo: la sincronización completa SQLite
+(escritura masiva con detección de archivos y eliminación de registros
 ausentes).
 
 ## Último commit aprobado
 
-**Mensaje:** Integrar escaneo y guardado básico del catálogo
+**Mensaje:** Integrar FFprobe en el pipeline del catálogo
 
-**Etapa aprobada:** Pipeline limitado escaneo → guardado: la interfaz
-encadena `TareaEscaneo` → preparación de registros básicos
-(`preparar_registros_basicos` en `escanear_videos.py`) →
+**Etapa aprobada:** Pipeline escaneo → FFprobe → guardado: la interfaz
+encadena `TareaEscaneo` → `TareaFFprobe` → combinación de registros
+(`combinar_registros_con_ffprobe` en `escanear_videos.py`) →
 `TareaGuardarVideos` como tareas sucesivas con el mismo `GestorTareas`
-(el guardado se lanza al recibir `tarea_finalizada` del escaneo). Los
-registros se preparan con las claves `{nombre, ruta, extension,
-fecha_importacion}` (ruta absoluta) y se escriben en SQLite mediante el
-upsert transaccional existente, conservando los registros preexistentes;
-ante un error de guardado el gestor queda `inactivo` y un nuevo escaneo
-es posible. No se ejecuta FFprobe/FFmpeg, no se generan miniaturas, no
-se eliminan registros ausentes, no se recarga el catálogo y no se
-recorren subcarpetas; no es la sincronización completa. Con suite nueva
-`prueba_escaneo_guardado.py` (16 pruebas) y `prueba_escaneo_interfaz.py`
-reforzada (36 pruebas). Aprobada con observaciones.
+(el paso siguiente se lanza al recibir `tarea_finalizada` de la tarea
+anterior). Los registros se preparan con las claves básicas `{nombre,
+ruta, extension, fecha_importacion}` (ruta absoluta) más los metadatos
+FFprobe `{duracion_segundos, ancho, alto, codec_video}` (`NULL` ante
+vacíos, incompletos o fallos individuales) y se escriben en SQLite
+mediante el upsert transaccional existente, conservando los registros
+preexistentes; ante un error de guardado o de FFprobe el gestor queda
+`inactivo` y un nuevo escaneo es posible. No se ejecuta FFmpeg, no se
+generan miniaturas, no se eliminan registros ausentes, no se recarga el
+catálogo y no se recorren subcarpetas; no es la sincronización completa.
+Con suite `prueba_escaneo_guardado.py` ampliada a 19 pruebas y
+`prueba_escaneo_interfaz.py` reforzada (36 pruebas). Aprobada con
+observaciones.
 
 **SHA definitivo:** debe consultarse con `git log -1` (el SHA no se
 escribe en este documento para evitar autorreferencias al commit).
 
 ## Última etapa aprobada
 
-Pipeline limitado `TareaEscaneo` → `preparar_registros_basicos` →
-`TareaGuardarVideos`, encadenado desde `visor_videos.py` con el **mismo**
+Pipeline `TareaEscaneo` → `TareaFFprobe` → `combinar_registros_con_ffprobe`
+→ `TareaGuardarVideos`, encadenado desde `visor_videos.py` con el **mismo**
 `GestorTareas` de la ventana. `_al_resultado_escaneo` copia los archivos
-detectados en `videos_detectados` y marca `_guardado_pendiente = True`;
+detectados en `videos_detectados` y marca `_ffprobe_pendiente = True`;
 al terminar el escaneo (gestor de vuelta a `inactivo`), `_al_tarea_finalizada`
-prepara los registros básicos (claves `{nombre, ruta, extension,
-fecha_importacion}` con ruta absoluta en la carpeta escaneada) y los
-persiste con `TareaGuardarVideos`. La escritura real usa el upsert
-transaccional existente (`guardar_videos`), conserva los registros
-preexistentes, no elimina registros ausentes y no recarga tarjetas; ante
-un error de guardado se muestra "No se pudieron guardar los videos" y la
-interfaz queda recuperable con un nuevo escaneo posible. La preparación
-de registros básicos vive en `escanear_videos.py` (capa de catálogo);
-`tareas_videos.py` la re-exporta. **Ausencia deliberada**: sin FFprobe
-en el pipeline, sin FFmpeg/miniaturas, sin eliminación de ausentes, sin
-recarga automática de la interfaz y sin subcarpetas; **no es la
-sincronización completa del catálogo**. Con suite nueva
-`prueba_escaneo_guardado.py` (16 pruebas) y `prueba_escaneo_interfaz.py`
-(36 pruebas, incluido el smoke test real con base SQLite temporal creada
-por `conectar_bd(ruta_db)`). Aprobada con observaciones.
+inicia `TareaFFprobe` sobre las rutas absolutas de los videos detectados;
+`_al_resultado_ffprobe` guarda el resultado y marca `_guardado_pendiente = True`;
+al terminar FFprobe, `_iniciar_guardado()` combina los registros con
+`combinar_registros_con_ffprobe` (claves básicas `{nombre, ruta,
+extension, fecha_importacion}` con ruta absoluta en la carpeta escaneada
++ metadatos FFprobe `{duracion_segundos, ancho, alto, codec_video}`;
+`NULL` si el video no tiene `datos`) y los persiste con
+`TareaGuardarVideos`. La escritura real usa el upsert transaccional
+existente (`guardar_videos`), conserva los registros preexistentes, no
+elimina registros ausentes y no recarga tarjetas; ante un error de
+guardado se muestra "No se pudieron guardar los videos" y ante un error
+global de FFprobe "No se pudieron obtener los metadatos"; en ambos casos
+la interfaz queda recuperable con un nuevo escaneo posible. La
+combinación de registros vive en `escanear_videos.py` (capa de
+catálogo); `tareas_videos.py` la re-exporta. `_limpiar_cadena()` limpia
+la cadena sin borrar `videos_detectados` (se conserva el último escaneo
+exitoso aunque falle FFprobe o el guardado). **Ausencia deliberada**: sin
+FFmpeg/miniaturas, sin eliminación de ausentes, sin recarga automática
+de la interfaz y sin subcarpetas; **no es la sincronización completa del
+catálogo**. Con suite `prueba_escaneo_guardado.py` ampliada a 19
+pruebas y `prueba_escaneo_interfaz.py` (36 pruebas, incluido el smoke
+test real con base SQLite temporal creada por `conectar_bd(ruta_db)`).
+Aprobada con observaciones.
 
 ## Estado de la arquitectura
 
@@ -96,31 +108,31 @@ por `conectar_bd(ruta_db)`). Aprobada con observaciones.
     interfaz.
 -   Selección de carpeta desde la interfaz.
 -   Escaneo manual y asíncrono de la carpeta elegida desde la interfaz.
--   Pipeline limitado escaneo → registros básicos → guardado (encadenado
-    desde la interfaz con el mismo gestor).
+-   Pipeline escaneo → FFprobe → guardado (encadenado desde la interfaz
+    con el mismo gestor; los registros se guardan con metadatos FFprobe).
 -   Pruebas automatizadas.
 
 ### En desarrollo
 
-Integración funcional completa del catálogo: el pipeline limitado
-(`TareaEscaneo` → `preparar_registros_basicos` → `TareaGuardarVideos`)
-ya convierte los archivos detectados por la interfaz en registros
-básicos y los escribe en SQLite conservando los preexistentes, pero la
-**sincronización completa** —FFprobe en el pipeline para completar
-duración, resolución y codec antes de escribir o actualizar los
-registros, y eliminación de registros ausentes— sigue pendiente. La
-carga inicial asíncrona de la primera página del catálogo ya está
-integrada en la interfaz.
+Integración funcional completa del catálogo: el pipeline (`TareaEscaneo`
+→ `TareaFFprobe` → `combinar_registros_con_ffprobe` →
+`TareaGuardarVideos`) ya convierte los archivos detectados por la
+interfaz en registros con metadatos FFprobe y los escribe en SQLite
+conservando los preexistentes, pero la **sincronización completa** —la
+escritura masiva con detección de archivos y la eliminación de registros
+ausentes— sigue pendiente. La carga inicial asíncrona de la primera
+página del catálogo ya está integrada en la interfaz.
 
 ## Pendientes prioritarios
 
-1.  Integrar FFprobe en el pipeline escaneo → guardado para completar
-    duración, resolución y codec antes de escribir o actualizar los
-    registros (próxima etapa limitada; sin FFmpeg, miniaturas,
-    eliminación de ausentes ni recarga automática).
-2.  Sincronización completa SQLite asíncrona (el pipeline limitado ya
-    escribe registros básicos con upsert; falta la escritura masiva con
-    FFprobe y la eliminación de registros ausentes).
+1.  Sincronización completa SQLite asíncrona (el pipeline ya escribe
+    registros con metadatos FFprobe mediante el upsert existente; falta
+    la escritura masiva con detección de archivos y la eliminación de
+    registros ausentes).
+2.  Generación asíncrona de una miniatura básica por video e integración
+    con el pipeline (próxima etapa limitada; sin selección inteligente,
+    sin múltiples miniaturas, sin eliminación de archivos antiguos y sin
+    recarga automática de la interfaz).
 3.  Integración SQLite asíncrona en el pipeline (encadenado).
 4.  Actualización asíncrona de la interfaz (tarjetas dinámicas).
 5.  FFmpeg asíncrono.
@@ -138,17 +150,17 @@ Pendientes principales: - cancelación cooperativa; - integración
 definitiva del ciclo de vida de tareas con la ventana (la carga inicial
 asíncrona ya usa `GestorTareas` y cierra de forma ordenada en
 `closeEvent`, aunque `closeEvent` puede esperar hasta 5 s por una tarea
-activa); - el pipeline limitado ya convierte los archivos detectados en
-registros básicos y los escribe, pero los registros quedan **sin
-metadatos** (duración, resolución, codec) porque FFprobe aún no está
-integrado en el pipeline y la sincronización completa sigue pendiente;
-- el enrutado de resultados por `_escaneo_pendiente`/`_guardado_pendiente`
-es suficiente para una única tarea activa y debe revisarse si la
-interfaz incorpora más tipos de tarea; - el escaneo no incluye
-subcarpetas; - decisión pendiente sobre si `%` y `_` como comodines
-`LIKE` en la búsqueda de `listar_videos_paginado` se aceptan como
-contrato; - FFmpeg continúa siendo síncrono; - siguen pendientes progreso
-y cancelación; - limpieza controlada de miniaturas antiguas.
+activa); - el pipeline ya convierte los archivos detectados en registros
+con metadatos FFprobe y los escribe, pero la sincronización completa
+sigue pendiente (escritura masiva con detección de archivos y
+eliminación de registros ausentes); - el enrutado de resultados por
+`_escaneo_pendiente`/`_ffprobe_pendiente`/`_guardado_pendiente` es
+suficiente para una única tarea activa y debe revisarse si la interfaz
+incorpora más tipos de tarea; - el escaneo no incluye subcarpetas; -
+decisión pendiente sobre si `%` y `_` como comodines `LIKE` en la
+búsqueda de `listar_videos_paginado` se aceptan como contrato; - FFmpeg
+continúa siendo síncrono; - siguen pendientes progreso y cancelación; -
+limpieza controlada de miniaturas antiguas.
 
 ## Deuda técnica
 
@@ -164,15 +176,14 @@ y cancelación; - limpieza controlada de miniaturas antiguas.
 
 ## Próxima etapa
 
-Integrar **FFprobe en el pipeline** escaneo → guardado para completar
-duración, resolución y codec **antes** de escribir o actualizar los
-registros del catálogo. La próxima etapa queda **limitada** a esa
-integración: no incluye todavía FFmpeg, miniaturas, eliminación de
-registros ausentes ni recarga automática de la interfaz. El
-encadenamiento `TareaEscaneo` → preparación de registros →
-`TareaGuardarVideos` ya existe como pipeline limitado; la sincronización
-completa del catálogo (que además incluye la eliminación de registros
-ausentes) sigue pendiente.
+**Generación asíncrona de una miniatura básica por video e integración
+con el pipeline.** La próxima etapa queda **limitada** a esa
+integración: sin selección inteligente, sin múltiples miniaturas, sin
+eliminación de archivos antiguos y sin recarga automática de la
+interfaz. El encadenamiento `TareaEscaneo` → `TareaFFprobe` →
+`combinar_registros_con_ffprobe` → `TareaGuardarVideos` ya existe como
+pipeline; la sincronización completa del catálogo (que además incluye la
+eliminación de registros ausentes) sigue pendiente.
 
 ## Documentos del proyecto
 

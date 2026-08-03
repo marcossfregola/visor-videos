@@ -44,6 +44,33 @@ def preparar_registros_basicos(videos, carpeta):
         )
     return registros
 
+CLAVES_METADATOS_FFPROBE = ("duracion_segundos", "ancho", "alto", "codec_video")
+
+
+def _normalizar_ruta(ruta):
+    if ruta is None:
+        return None
+    return os.path.normcase(os.path.normpath(ruta))
+
+
+def combinar_registros_con_ffprobe(videos, carpeta, resultado_ffprobe):
+    registros = preparar_registros_basicos(videos, carpeta)
+    por_ruta = {}
+    for item in ((resultado_ffprobe or {}).get("resultados") or []):
+        if not isinstance(item, dict):
+            continue
+        ruta = _normalizar_ruta(item.get("ruta"))
+        if ruta is None:
+            continue
+        datos = item.get("datos")
+        por_ruta[ruta] = datos if isinstance(datos, dict) else None
+    for registro in registros:
+        datos = por_ruta.get(_normalizar_ruta(registro["ruta"]))
+        for clave in CLAVES_METADATOS_FFPROBE:
+            registro[clave] = datos.get(clave) if datos is not None else None
+    return registros
+
+
 def conectar_bd(ruta_db=None):
     if ruta_db is None:
         ruta_db = ruta_biblioteca()

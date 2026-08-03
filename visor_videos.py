@@ -23,10 +23,11 @@ from rutas import ruta_carpeta_miniaturas
 from tareas import Estado, GestorTareas
 from tareas_videos import (
     TareaEscaneo,
+    TareaFFprobe,
     TareaGuardarVideos,
     TareaLecturaCatalogoPaginada,
+    combinar_registros_con_ffprobe,
     conectar_bd,
-    preparar_registros_basicos,
 )
 
 ANCHO_TARJETA = 320
@@ -40,6 +41,7 @@ MENSAJE_SIN_CARPETA = "Ninguna carpeta seleccionada"
 MENSAJE_RUTA_INVALIDA = "La ruta no es válida o no es una carpeta"
 MENSAJE_ESCANEANDO = "Escaneando carpeta…"
 MENSAJE_ERROR_ESCANEO = "No se pudo escanear la carpeta"
+MENSAJE_ERROR_FFPROBE = "No se pudieron obtener los metadatos"
 MENSAJE_ERROR_GUARDADO = "No se pudieron guardar los videos"
 MENSAJE_SIN_ESCANEO = "Sin escanear"
 
@@ -123,9 +125,12 @@ class VisorVideos(QMainWindow):
         self.tarea_lectura = None
         self.carpeta_seleccionada = None
         self._escaneo_pendiente = False
+        self._ffprobe_pendiente = False
         self._guardado_pendiente = False
         self.tarea_escaneo = None
+        self.tarea_ffprobe = None
         self.tarea_guardado = None
+        self.resultado_ffprobe = None
         self.videos_detectados = None
         self.registros_guardados = None
 
@@ -215,8 +220,15 @@ class VisorVideos(QMainWindow):
             self.carpeta_seleccionada is not None
             and os.path.isdir(self.carpeta_seleccionada)
         )
-        self.boton_seleccionar_carpeta.setEnabled(not self._escaneo_pendiente)
-        self.boton_escanear.setEnabled(carpeta_valida and not self.gestor.activo)
+        cadena_activa = (
+            self._escaneo_pendiente
+            or self._ffprobe_pendiente
+            or self._guardado_pendiente
+        )
+        self.boton_seleccionar_carpeta.setEnabled(not cadena_activa)
+        self.boton_escanear.setEnabled(
+            carpeta_valida and not self.gestor.activo and not cadena_activa
+        )
 
     def _al_actividad(self, activo):
         self._actualizar_botones_carpeta()
@@ -231,9 +243,13 @@ class VisorVideos(QMainWindow):
             return
         tarea = TareaEscaneo(carpeta)
         self._escaneo_pendiente = True
+        self._ffprobe_pendiente = False
         self._guardado_pendiente = False
         self.registros_guardados = None
+        self.tarea_escaneo = None
+        self.tarea_ffprobe = None
         self.tarea_guardado = None
+        self.resultado_ffprobe = None
         if not self.gestor.iniciar(tarea):
             self._escaneo_pendiente = False
             self._actualizar_botones_carpeta()
@@ -242,16 +258,24 @@ class VisorVideos(QMainWindow):
         self.estado_escaneo.setText(MENSAJE_ESCANEANDO)
         self._actualizar_botones_carpeta()
 
+    def _limpiar_cadena(self):
+        self._escaneo_pendiente = False
+        self._ffprobe_pendiente = False
+        self._guardado_pendiente = False
+        self.tarea_escaneo = None
+        self.tarea_ffprobe = None
+        self.tarea_guardado = None
+        self.resultado_ffprobe = None
+
     def _al_resultado_escaneo(self, videos):
         self._escaneo_pendiente = False
-        self._guardado_pendiente = True
+        self._ffprobe_pendiente = True
         self.videos_detectados = list(videos)
         self._mostrar_estado_escaneo()
         self._actualizar_botones_carpeta()
 
     def _al_error_escaneo(self, mensaje):
-        self._escaneo_pendiente = False
-        self._guardado_pendiente = False
+        self._limpiar_cadena()
         self.estado_escaneo.setText(MENSAJE_ERROR_ESCANEO)
         self._actualizar_botones_carpeta()
 
@@ -269,6 +293,9 @@ class VisorVideos(QMainWindow):
         if self._escaneo_pendiente:
             self._al_resultado_escaneo(resultado)
             return
+        if self._ffprobe_pendiente:
+            self._al_resultado_ffprobe(resultado)
+            return
         if self._guardado_pendiente:
             self._al_resultado_guardado(resultado)
             return
@@ -278,33 +305,77 @@ class VisorVideos(QMainWindow):
         self._crear_tarjetas(resultado.get("videos", []))
         self._carga_completada = True
 
-    def _al_tarea_finalizada(self):
-        if not self._guardado_pendiente:
-            return
-        if self.gestor.estado != Estado.INACTIVO:
-            self._guardado_pendiente = False
-            return
+    def _iniciar_ffprobe(self):
         if self.tarea_escaneo is None or self.videos_detectados is None:
-            self._guardado_pendiente = False
+            self._limpiar_cadena()
+            self._actualizar_botones_carpeta()
             return
-        registros = preparar_registros_basicos(
-            self.videos_detectados, self.tarea_escaneo.carpeta
+        carpeta = self.tarea_escaneo.carpeta
+        rutas = [os.path.join(carpeta, nombre) for nombre in self.videos_detectados]
+        tarea = TareaFFprobe(rutas)
+        if not self.gestor.iniciar(tarea):
+            self._limpiar_cadena()
+            self._actualizar_botones_carpeta()
+            return
+        self.tarea_ffprobe = tarea
+
+    def _al_resultado_ffprobe(self, resultado):
+        self._ffprobe_pendiente = False
+        self._guardado_pendiente = True
+        self.tarea_ffprobe = None
+        self.resultado_ffprobe = resultado
+        self._actualizar_botones_carpeta()
+
+    def _al_error_ffprobe(self, mensaje):
+        self._limpiar_cadena()
+        self.estado_escaneo.setText(MENSAJE_ERROR_FFPROBE)
+        self._actualizar_botones_carpeta()
+
+    def _iniciar_guardado(self):
+        if (
+            self.tarea_escaneo is None
+            or self.videos_detectados is None
+            or self.resultado_ffprobe is None
+        ):
+            self._limpiar_cadena()
+            self._actualizar_botones_carpeta()
+            return
+        registros = combinar_registros_con_ffprobe(
+            self.videos_detectados, self.tarea_escaneo.carpeta, self.resultado_ffprobe
         )
         tarea = TareaGuardarVideos(registros, self._ruta_db)
         if not self.gestor.iniciar(tarea):
-            self._guardado_pendiente = False
+            self._limpiar_cadena()
             self._actualizar_botones_carpeta()
             return
         self.tarea_guardado = tarea
 
+    def _al_tarea_finalizada(self):
+        if self.gestor.estado != Estado.INACTIVO:
+            self._limpiar_cadena()
+            return
+        if self._escaneo_pendiente:
+            return
+        if self._ffprobe_pendiente:
+            self._iniciar_ffprobe()
+            return
+        if self._guardado_pendiente:
+            self._iniciar_guardado()
+            return
+
     def _al_resultado_guardado(self, resultado):
         self._guardado_pendiente = False
+        self.tarea_guardado = None
+        self.resultado_ffprobe = None
         self.registros_guardados = resultado.get("guardados")
         self._actualizar_botones_carpeta()
 
     def _al_error(self, mensaje):
         if self._escaneo_pendiente:
             self._al_error_escaneo(mensaje)
+            return
+        if self._ffprobe_pendiente:
+            self._al_error_ffprobe(mensaje)
             return
         if self._guardado_pendiente:
             self._al_error_guardado(mensaje)
@@ -315,7 +386,7 @@ class VisorVideos(QMainWindow):
         self._carga_completada = True
 
     def _al_error_guardado(self, mensaje):
-        self._guardado_pendiente = False
+        self._limpiar_cadena()
         self.estado_escaneo.setText(MENSAJE_ERROR_GUARDADO)
         self._actualizar_botones_carpeta()
 

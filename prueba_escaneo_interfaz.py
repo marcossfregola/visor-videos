@@ -9,7 +9,7 @@ import tempfile
 import threading
 import time
 
-from PySide6.QtCore import QEventLoop, QTimer, qInstallMessageHandler
+from PySide6.QtCore import QEventLoop, QThread, QTimer, qInstallMessageHandler
 from PySide6.QtWidgets import QApplication, QPushButton
 
 import escanear_videos as escanear_mod
@@ -26,6 +26,7 @@ from tareas_videos import TareaEscaneo
 from visor_videos import (
     MENSAJE_ESCANEANDO,
     MENSAJE_ERROR_ESCANEO,
+    MENSAJE_ERROR_FFPROBE,
     MENSAJE_RUTA_INVALIDA,
     MENSAJE_SIN_ESCANEO,
     TAMANIO_PAGINA_INICIAL,
@@ -134,7 +135,12 @@ def _limpiar(ventana):
 
 
 def _escanear_terminado(ventana):
-    return ventana.gestor.hilo is None and not ventana._escaneo_pendiente
+    return (
+        ventana.gestor.hilo is None
+        and not ventana._escaneo_pendiente
+        and not ventana._ffprobe_pendiente
+        and not ventana._guardado_pendiente
+    )
 
 
 @contextlib.contextmanager
@@ -201,6 +207,24 @@ def _escaneo_controlado(resultado):
     finally:
         control.soltar.set()
         tv.escanear_videos = original
+
+
+class _Control:
+    def __init__(self, fn):
+        self.fn = fn
+        self.llamadas = 0
+        self.empezada = threading.Event()
+        self.soltar = threading.Event()
+        self.ident = None
+        self.principal = None
+
+    def __call__(self, *args, **kwargs):
+        self.llamadas += 1
+        self.ident = threading.get_ident()
+        self.principal = QThread.isMainThread()
+        self.empezada.set()
+        self.soltar.wait(10)
+        return self.fn(*args, **kwargs)
 
 
 def _carpeta_con(nombres):
@@ -724,6 +748,10 @@ def test_19():
     try:
         ventana = VisorVideos(ruta_db=ruta_db)
         _esperar(lambda v=ventana: v._carga_completada and v.gestor.hilo is None)
+        tipos = []
+        ventana.gestor.tarea_iniciada.connect(
+            lambda: tipos.append(type(ventana.gestor.tarea).__name__)
+        )
         with _dialogo_falso(carpeta.name):
             ventana.seleccionar_carpeta()
         ventana.boton_escanear.click()
@@ -736,7 +764,6 @@ def test_19():
         finally:
             conn.close()
         guardado = ventana.registros_guardados
-        tipo = type(ventana.tarea_guardado).__name__
         ventana.close()
         _limpiar(ventana)
         ok = (
@@ -746,9 +773,9 @@ def test_19():
             and filas[0][2] == ".mp4"
             and filas[0][3]
             and guardado == 1
-            and tipo == "TareaGuardarVideos"
+            and tipos == ["TareaEscaneo", "TareaFFprobe", "TareaGuardarVideos"]
         )
-        return ok, f"filas={filas} guardado={guardado} tarea={tipo}"
+        return ok, f"filas={filas} guardado={guardado} tipos={tipos}"
     finally:
         carpeta.cleanup()
         temp.cleanup()
@@ -760,20 +787,16 @@ def test_20():
     try:
         ventana = VisorVideos(ruta_db=ruta_db)
         _esperar(lambda v=ventana: v._carga_completada and v.gestor.hilo is None)
-        llamadas = {"subprocess": 0, "ffprobe": 0}
-        orig_run = escanear_mod.subprocess.run
+        info = {"llamadas": 0}
         orig_ff_tv = tv.obtener_datos_ffprobe
         orig_ff_mod = escanear_mod.obtener_datos_ffprobe
 
-        def _run(*a, **k):
-            llamadas["subprocess"] += 1
-            raise AssertionError("no debe ejecutarse subproceso")
+        def _ff(ruta):
+            info["llamadas"] += 1
+            info["ident"] = threading.get_ident()
+            info["principal"] = QThread.isMainThread()
+            return orig_ff_tv(ruta)
 
-        def _ff(*a, **k):
-            llamadas["ffprobe"] += 1
-            raise AssertionError("ffprobe no debe invocarse")
-
-        escanear_mod.subprocess.run = _run
         tv.obtener_datos_ffprobe = _ff
         escanear_mod.obtener_datos_ffprobe = _ff
         try:
@@ -782,23 +805,30 @@ def test_20():
             ventana.boton_escanear.click()
             _esperar(lambda v=ventana: _escanear_terminado(v))
         finally:
-            escanear_mod.subprocess.run = orig_run
             tv.obtener_datos_ffprobe = orig_ff_tv
             escanear_mod.obtener_datos_ffprobe = orig_ff_mod
         detectados = ventana.videos_detectados
         conn = sqlite3.connect(ruta_db)
         try:
-            filas = [f[0] for f in conn.execute("SELECT nombre FROM videos")]
+            filas = conn.execute(
+                "SELECT nombre, duracion_segundos, ancho, alto, codec_video "
+                "FROM videos"
+            ).fetchall()
         finally:
             conn.close()
         ventana.close()
         _limpiar(ventana)
         ok = (
-            llamadas == {"subprocess": 0, "ffprobe": 0}
+            info["llamadas"] == 1
+            and info.get("principal") is False
             and detectados == ["x.mp4"]
-            and filas == ["x.mp4"]
+            and filas == [("x.mp4", None, None, None, None)]
         )
-        return ok, f"llamadas={llamadas} detectados={detectados} filas={filas}"
+        return (
+            ok,
+            f"ffprobe={info.get('llamadas')} principal={info.get('principal')} "
+            f"filas={filas}",
+        )
     finally:
         carpeta.cleanup()
         temp.cleanup()
@@ -1002,29 +1032,87 @@ def test_26():
     try:
         ventana = VisorVideos(ruta_db=ruta_db)
         _esperar(lambda v=ventana: v._carga_completada and v.gestor.hilo is None)
-        conteo = {"fin": 0}
-        ventana.gestor.tarea_finalizada.connect(
-            lambda: conteo.__setitem__("fin", conteo["fin"] + 1)
+        secuencia = []
+        tareas_vistas = []
+        ventana.gestor.tarea_iniciada.connect(
+            lambda: secuencia.append(type(ventana.gestor.tarea).__name__)
         )
-        with _dialogo_falso(carpeta.name):
-            ventana.seleccionar_carpeta()
-        ventana.boton_escanear.click()
-        _esperar(lambda v=ventana: _escanear_terminado(v))
-        estado_gestor = ventana.gestor.estado
-        hilo = ventana.gestor.hilo
-        tarea = ventana.gestor.tarea
+        ventana.gestor.tarea_iniciada.connect(
+            lambda: tareas_vistas.append(ventana.gestor.tarea)
+        )
+        control_escaneo = _Control(tv.escanear_videos)
+        control_ffprobe = _Control(tv.obtener_datos_ffprobe)
+        control_guardado = _Control(tv.guardar_videos)
+        originales = (
+            tv.escanear_videos,
+            tv.obtener_datos_ffprobe,
+            tv.guardar_videos,
+        )
+        tv.escanear_videos = control_escaneo
+        tv.obtener_datos_ffprobe = control_ffprobe
+        tv.guardar_videos = control_guardado
+        try:
+            with _dialogo_falso(carpeta.name):
+                ventana.seleccionar_carpeta()
+            ventana.boton_escanear.click()
+
+            control_escaneo.empezada.wait(5)
+            _procesar(300)
+            paso_uno = list(secuencia)
+            estado_uno = ventana.gestor.estado
+            _procesar(300)
+            paso_uno_b = list(secuencia)
+
+            control_escaneo.soltar.set()
+            control_ffprobe.empezada.wait(5)
+            _procesar(300)
+            paso_dos = list(secuencia)
+            estado_dos = ventana.gestor.estado
+            _procesar(300)
+            paso_dos_b = list(secuencia)
+
+            control_ffprobe.soltar.set()
+            control_guardado.empezada.wait(5)
+            _procesar(300)
+            paso_tres = list(secuencia)
+            estado_tres = ventana.gestor.estado
+            _procesar(300)
+            paso_tres_b = list(secuencia)
+
+            control_guardado.soltar.set()
+            _esperar(lambda v=ventana: _escanear_terminado(v))
+        finally:
+            (
+                tv.escanear_videos,
+                tv.obtener_datos_ffprobe,
+                tv.guardar_videos,
+            ) = originales
         ventana.close()
         _limpiar(ventana)
         ok = (
-            conteo["fin"] == 2
-            and estado_gestor == Estado.INACTIVO
-            and hilo is None
-            and tarea is None
+            paso_uno == ["TareaEscaneo"]
+            and paso_uno_b == paso_uno
+            and estado_uno == Estado.OCUPADO
+            and paso_dos == ["TareaEscaneo", "TareaFFprobe"]
+            and paso_dos_b == paso_dos
+            and estado_dos == Estado.OCUPADO
+            and paso_tres
+            == ["TareaEscaneo", "TareaFFprobe", "TareaGuardarVideos"]
+            and paso_tres_b == paso_tres
+            and estado_tres == Estado.OCUPADO
+            and len(tareas_vistas) == 3
+            and len(set(tareas_vistas)) == 3
+            and control_ffprobe.principal is False
+            and control_guardado.principal is False
+            and ventana.gestor.hilo is None
             and len(_GESTORES_ACTIVOS) == 0
         )
         return (
             ok,
-            f"finalizadas={conteo['fin']} estado={estado_gestor} "
+            f"secuencia={secuencia} "
+            f"estados={estado_uno},{estado_dos},{estado_tres} "
+            f"ffprobe_principal={control_ffprobe.principal} "
+            f"guardado_principal={control_guardado.principal} "
             f"gestores={len(_GESTORES_ACTIVOS)}",
         )
     finally:
@@ -1164,6 +1252,9 @@ def test_31():
                     importadas.add(alias.name)
     ok = (
         "TareaEscaneo" in importadas
+        and "TareaFFprobe" in importadas
+        and "combinar_registros_con_ffprobe" in importadas
+        and "obtener_datos_ffprobe" not in importadas
         and "listar_videos" not in importadas
         and "listar_videos_paginado" not in importadas
         and "escanear_videos" not in importadas

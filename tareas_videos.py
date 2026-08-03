@@ -1,6 +1,7 @@
 import os
 
 from escanear_videos import (
+    combinar_registros_con_ffprobe,
     conectar_bd,
     escanear_videos,
     guardar_video,

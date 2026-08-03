@@ -42,18 +42,24 @@ arquitectónicas.
 1.  Opción de incluir o excluir subcarpetas — **pendiente** (configurar
     si el escaneo de la carpeta elegida recorre las subcarpetas).
 2.  Preparación y escritura de registros detectados — **completado**
-    (el pipeline limitado `TareaEscaneo` → `preparar_registros_basicos`
-    → `TareaGuardarVideos`, encadenado desde la interfaz, convierte los
-    archivos detectados en registros básicos y los escribe en SQLite con
-    el upsert transaccional, conservando los registros preexistentes).
+    (el pipeline `TareaEscaneo` → `TareaFFprobe` →
+    `combinar_registros_con_ffprobe` → `TareaGuardarVideos`, encadenado
+    desde la interfaz, convierte los archivos detectados en registros
+    con metadatos FFprobe y los escribe en SQLite con el upsert
+    transaccional, conservando los registros preexistentes).
 3.  Sincronización completa del catálogo — **pendiente** (detección de
-    archivos, FFprobe y eliminación de registros ausentes; aún no
-    implementada).
-4.  FFprobe integrado en el pipeline — **pendiente** (completar
-    duración, resolución y codec antes de escribir o actualizar los
-    registros).
-5.  FFmpeg y miniaturas — **pendiente** (generación asíncrona de
-    miniaturas en segundo plano).
+    archivos y eliminación de registros ausentes; el FFprobe en el
+    pipeline ya está implementado, pero la escritura masiva con detección
+    de archivos y la eliminación de registros ausentes siguen pendientes).
+4.  FFprobe integrado en el pipeline — **completado** (el pipeline
+    escaneo → guardado completa duración, resolución y codec antes de
+    escribir o actualizar los registros; `NULL` ante vacíos, incompletos
+    o fallos individuales).
+5.  FFmpeg y miniaturas — **pendiente** (próxima etapa limitada:
+    generación asíncrona de una miniatura básica por video e integración
+    con el pipeline; sin selección inteligente, sin múltiples
+    miniaturas, sin eliminación de archivos antiguos y sin recarga
+    automática de la interfaz).
 6.  Eliminación de registros ausentes — **pendiente** (sincronizar la
     BD con los archivos que dejaron de existir).
 7.  Recarga automática del catálogo tras la escritura — **pendiente**
