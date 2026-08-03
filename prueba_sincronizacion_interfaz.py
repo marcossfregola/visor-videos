@@ -144,6 +144,7 @@ def _cadena_terminada(ventana):
         and not ventana._miniaturas_pendiente
         and not ventana._guardado_pendiente
         and not ventana._sincronizacion_pendiente
+        and not ventana._recarga_catalogo_pendiente
     )
 
 
@@ -240,6 +241,7 @@ def test_02():
                 "TareaMiniaturas",
                 "TareaGuardarVideos",
                 "TareaSincronizacionCatalogo",
+                "TareaLecturaCatalogoPaginada",
             ]
             and mismo_gestor
             and gestor_activo
@@ -645,13 +647,12 @@ def test_13():
     try:
         ventana = VisorVideos(ruta_db=ruta_db)
         _esperar(lambda v=ventana: v._carga_completada and v.gestor.hilo is None)
-        antes = [nombre for nombre, _ in ventana.tarjetas]
         llamadas = {"lectura": 0}
         orig = tv.listar_videos_paginado
 
         def _lectura(*a, **k):
             llamadas["lectura"] += 1
-            raise AssertionError("la sincronizacion no debe recargar el catalogo")
+            return orig(*a, **k)
 
         tv.listar_videos_paginado = _lectura
         try:
@@ -664,8 +665,8 @@ def test_13():
         despues = [nombre for nombre, _ in ventana.tarjetas]
         ventana.close()
         _limpiar(ventana)
-        ok = llamadas == {"lectura": 0} and despues == antes
-        return ok, f"llamadas={llamadas} tarjetas={antes}->{despues}"
+        ok = llamadas == {"lectura": 1} and despues == ["x.mp4"]
+        return ok, f"llamadas={llamadas} tarjetas={despues}"
     finally:
         carpeta.cleanup()
         temp.cleanup()

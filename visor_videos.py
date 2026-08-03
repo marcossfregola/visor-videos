@@ -49,6 +49,7 @@ MENSAJE_ERROR_MINIATURAS = "No se pudieron generar las miniaturas"
 MENSAJE_ERROR_GUARDADO = "No se pudieron guardar los videos"
 MENSAJE_SINCRONIZANDO = "Sincronizando catálogo…"
 MENSAJE_ERROR_SINCRONIZACION = "No se pudo sincronizar el catálogo"
+MENSAJE_ERROR_RECARGA = "No se pudo actualizar el catálogo"
 MENSAJE_SIN_ESCANEO = "Sin escanear"
 
 
@@ -157,6 +158,8 @@ class VisorVideos(QMainWindow):
         self._sincronizacion_pendiente = False
         self.tarea_sincronizacion = None
         self.resultado_sincronizacion = None
+        self._recarga_catalogo_pendiente = False
+        self.tarea_recarga_catalogo = None
 
         self.busqueda = QLineEdit()
         self.busqueda.setPlaceholderText("Buscar por nombre...")
@@ -217,10 +220,13 @@ class VisorVideos(QMainWindow):
         self._iniciar_carga()
 
     def _iniciar_carga(self):
-        self.tarea_lectura = TareaLecturaCatalogoPaginada(
+        self.tarea_lectura = self._crear_tarea_lectura()
+        self.gestor.iniciar(self.tarea_lectura)
+
+    def _crear_tarea_lectura(self):
+        return TareaLecturaCatalogoPaginada(
             TAMANIO_PAGINA_INICIAL, 0, None, self._ruta_db
         )
-        self.gestor.iniciar(self.tarea_lectura)
 
     def seleccionar_carpeta(self):
         ruta = QFileDialog.getExistingDirectory(
@@ -250,6 +256,7 @@ class VisorVideos(QMainWindow):
             or self._miniaturas_pendiente
             or self._guardado_pendiente
             or self._sincronizacion_pendiente
+            or self._recarga_catalogo_pendiente
         )
         self.boton_seleccionar_carpeta.setEnabled(not cadena_activa)
         self.boton_escanear.setEnabled(
@@ -273,6 +280,7 @@ class VisorVideos(QMainWindow):
         self._miniaturas_pendiente = False
         self._guardado_pendiente = False
         self._sincronizacion_pendiente = False
+        self._recarga_catalogo_pendiente = False
         self.registros_guardados = None
         self.resultado_sincronizacion = None
         self.tarea_escaneo = None
@@ -280,6 +288,7 @@ class VisorVideos(QMainWindow):
         self.tarea_miniaturas = None
         self.tarea_guardado = None
         self.tarea_sincronizacion = None
+        self.tarea_recarga_catalogo = None
         self.resultado_ffprobe = None
         self.resultado_miniaturas = None
         if not self.gestor.iniciar(tarea):
@@ -296,11 +305,13 @@ class VisorVideos(QMainWindow):
         self._miniaturas_pendiente = False
         self._guardado_pendiente = False
         self._sincronizacion_pendiente = False
+        self._recarga_catalogo_pendiente = False
         self.tarea_escaneo = None
         self.tarea_ffprobe = None
         self.tarea_miniaturas = None
         self.tarea_guardado = None
         self.tarea_sincronizacion = None
+        self.tarea_recarga_catalogo = None
         self.resultado_ffprobe = None
         self.resultado_miniaturas = None
 
@@ -341,6 +352,9 @@ class VisorVideos(QMainWindow):
             return
         if self._sincronizacion_pendiente:
             self._al_resultado_sincronizacion(resultado)
+            return
+        if self._recarga_catalogo_pendiente:
+            self._al_resultado_recarga(resultado)
             return
         if self._carga_completada:
             return
@@ -439,6 +453,9 @@ class VisorVideos(QMainWindow):
         if self._sincronizacion_pendiente:
             self._iniciar_sincronizacion()
             return
+        if self._recarga_catalogo_pendiente:
+            self._iniciar_recarga_catalogo()
+            return
 
     def _iniciar_sincronizacion(self):
         carpeta = self.carpeta_seleccionada
@@ -462,12 +479,41 @@ class VisorVideos(QMainWindow):
         self.estado_escaneo.setText(
             texto_resumen_sincronizacion(resultado.get("resumen"))
         )
+        self._recarga_catalogo_pendiente = True
         self._actualizar_botones_carpeta()
 
     def _al_error_sincronizacion(self, mensaje):
         self._limpiar_cadena()
         self.estado_escaneo.setText(MENSAJE_ERROR_SINCRONIZACION)
         self._actualizar_botones_carpeta()
+
+    def _iniciar_recarga_catalogo(self):
+        tarea = self._crear_tarea_lectura()
+        if not self.gestor.iniciar(tarea):
+            self._limpiar_cadena()
+            self.estado_escaneo.setText(MENSAJE_ERROR_RECARGA)
+            self._actualizar_botones_carpeta()
+            return
+        self.tarea_recarga_catalogo = tarea
+
+    def _al_resultado_recarga(self, resultado):
+        self._recarga_catalogo_pendiente = False
+        self.tarea_recarga_catalogo = None
+        self._reemplazar_tarjetas(resultado.get("videos", []))
+        self._actualizar_botones_carpeta()
+
+    def _al_error_recarga(self, mensaje):
+        self._limpiar_cadena()
+        self.estado_escaneo.setText(MENSAJE_ERROR_RECARGA)
+        self._actualizar_botones_carpeta()
+
+    def _reemplazar_tarjetas(self, filas):
+        for nombre, tarjeta in self.tarjetas:
+            self.cuadricula.removeWidget(tarjeta)
+            tarjeta.deleteLater()
+        self.tarjetas = []
+        self.visibles = []
+        self._crear_tarjetas(filas)
 
     def _al_resultado_guardado(self, resultado):
         self._guardado_pendiente = False
@@ -493,6 +539,9 @@ class VisorVideos(QMainWindow):
             return
         if self._sincronizacion_pendiente:
             self._al_error_sincronizacion(mensaje)
+            return
+        if self._recarga_catalogo_pendiente:
+            self._al_error_recarga(mensaje)
             return
         if self._carga_completada:
             return
@@ -585,6 +634,7 @@ def main():
                 or ventana._miniaturas_pendiente
                 or ventana._guardado_pendiente
                 or ventana._sincronizacion_pendiente
+                or ventana._recarga_catalogo_pendiente
             ) and espera_escaneo["intentos"] < 200:
                 espera_escaneo["intentos"] += 1
                 QTimer.singleShot(25, comprobar_escaneo)
@@ -600,6 +650,10 @@ def main():
                         ventana.resultado_sincronizacion.get("resumen")
                     )
                 )
+            print(
+                "tarjetas_finales="
+                + str([nombre for nombre, _ in ventana.tarjetas])
+            )
             ventana.busqueda.setText("real")
 
             def verificar_y_cerrar():

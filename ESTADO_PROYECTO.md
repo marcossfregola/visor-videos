@@ -81,83 +81,109 @@ y **la integración de la sincronización completa en la interfaz**
 incorporados, M eliminados, K candidatos restantes"; los registros ausentes
 del disco se eliminan de SQLite y los presentes conservan intactos sus
 metadatos FFprobe y `cantidad_miniaturas`; no se eliminan archivos físicos
-ni miniaturas, no se recargan ni reconstruyen tarjetas y la GUI no abre
-SQLite ni ejecuta SQL; la sincronización no se inicia si falla una fase
-anterior y la interfaz queda recuperable tras éxito o error) aprobadas;
-pendiente la **recarga asíncrona del catálogo con la actualización de
-tarjetas tras una sincronización exitosa** (las tarjetas siguen mostrando
-la carga inicial) y la deduplicación de nombres repetidos.
+ni miniaturas y la GUI no abre SQLite ni ejecuta SQL; la sincronización no
+se inicia si falla una fase anterior y la interfaz queda recuperable tras
+éxito o error) y **la recarga asíncrona del catálogo tras la
+sincronización** (`visor_videos.py` recarga la primera página del catálogo
+con la **misma** `TareaLecturaCatalogoPaginada`/`GestorTareas` **solo tras
+una sincronización exitosa** y reemplaza las tarjetas con
+`_reemplazar_tarjetas` —libera las tarjetas viejas (`removeWidget` +
+`deleteLater`), vacía `self.tarjetas`, crea las nuevas en la misma grilla y
+reaplica el filtro, conservando `resultado_sincronizacion`; ante un error
+de recarga conserva las tarjetas viejas, muestra `MENSAJE_ERROR_RECARGA` y
+no revierte la sincronización ya confirmada; sin FFprobe/FFmpeg/miniaturas
+y sin SQL en la GUI—) aprobadas; quedan pendientes la **deduplicación de
+nombres repetidos** y la **paginación completa** (scroll infinito, búsqueda
+en SQL desde la interfaz y ordenamiento configurable), que todavía no
+existen.
 
 ## Último commit aprobado
 
-**Mensaje:** Integrar sincronización completa en la interfaz
+**Mensaje:** Recargar el catálogo después de sincronizar
 
-**Etapa aprobada:** Integración de la sincronización completa en la
-interfaz: `visor_videos.py` lanza `TareaSincronizacionCatalogo` con el
-mismo `GestorTareas` **tras el guardado exitoso** del pipeline escaneo →
-FFprobe → miniaturas → guardado (`TareaEscaneo` → `TareaFFprobe` →
-`TareaMiniaturas` → `TareaGuardarVideos` → `TareaSincronizacionCatalogo`).
-`_al_resultado_guardado` marca `_sincronizacion_pendiente = True` y
-`_al_tarea_finalizada` (gestor `inactivo`) inicia la sincronización con
-`_iniciar_sincronizacion()` (revalida la carpeta con `os.path.isdir` y
-crea `TareaSincronizacionCatalogo(carpeta_seleccionada, ruta_db)`). Se
-incorporan los atributos `_sincronizacion_pendiente`/`tarea_sincronizacion`/
-`resultado_sincronizacion`, los handlers `_al_resultado_sincronizacion`/
-`_al_error_sincronizacion`, las constantes `MENSAJE_SINCRONIZANDO`/
-`MENSAJE_ERROR_SINCRONIZACION` y la función `texto_resumen_sincronizacion()`
-(estado final "Sincronización completa: N incorporados, M eliminados, K
-candidatos restantes"). Al terminar, los registros ausentes del disco se
-eliminan de SQLite (`eliminar_candidatos` dentro de la tarea) y los
-presentes **conservan intactos** sus metadatos FFprobe y
-`cantidad_miniaturas`; **no se eliminan archivos físicos ni miniaturas**;
-**no se recargan ni reconstruyen tarjetas** (siguen mostrando la carga
-inicial); la GUI **no abre SQLite ni ejecuta SQL** (AST: sin `sqlite3`/
-`connect` y sin las funciones de sincronización en la interfaz). La
-sincronización **solo se lanza tras un guardado exitoso** (no se inicia si
-falla cualquier fase anterior) y, ante un error de sincronización, la
-interfaz queda recuperable con `MENSAJE_ERROR_SINCRONIZACION` y un nuevo
-escaneo posible. Se agregó `prueba_sincronizacion_interfaz.py` (18
-pruebas) y se actualizaron `prueba_escaneo_guardado.py` (24) y
-`prueba_escaneo_interfaz.py` (36) a la cadena de 5 tareas. Regresiones
-completas 355/355 OK. **Alcance**: la recarga asíncrona del catálogo con
-la actualización de tarjetas tras la sincronización y la deduplicación de
-nombres repetidos quedan pendientes. Aprobada con observaciones.
+**Etapa aprobada:** Recarga asíncrona del catálogo tras la sincronización:
+`visor_videos.py` recarga el catálogo en segundo plano **solo tras una
+sincronización exitosa** y **reemplaza las tarjetas** por las de la primera
+página actualizada, extendiendo la cadena a **6 tareas** (`TareaEscaneo` →
+`TareaFFprobe` → `TareaMiniaturas` → `TareaGuardarVideos` →
+`TareaSincronizacionCatalogo` → `TareaLecturaCatalogoPaginada`) con el
+mismo `GestorTareas`. `_al_resultado_sincronizacion` marca
+`_recarga_catalogo_pendiente = True` y `_al_tarea_finalizada` (gestor
+`inactivo`) inicia la recarga con `_iniciar_recarga_catalogo()`, que usa la
+misma factoría `_crear_tarea_lectura()` (misma
+`TareaLecturaCatalogoPaginada(TAMANIO_PAGINA_INICIAL, 0, None, ruta_db)`,
+primera página). Se incorporan los atributos `_recarga_catalogo_pendiente`/
+`tarea_recarga_catalogo`, los handlers `_al_resultado_recarga`/
+`_al_error_recarga`, la constante `MENSAJE_ERROR_RECARGA` ("No se pudo
+actualizar el catálogo") y `_reemplazar_tarjetas(filas)`: **las tarjetas
+viejas se conservan hasta que llega el resultado válido y completo**; al
+llegar, se quitan de la grilla (`removeWidget` + `deleteLater`, liberando
+los widgets Qt), se vacía `self.tarjetas`, se crean las tarjetas nuevas en
+la **misma `QGridLayout` y el mismo `QScrollArea` reutilizados** y se
+reaplica el filtro (que actualiza el contador) — **sin tarjetas ocultas
+obsoletas**—; `resultado_sincronizacion` se conserva. Ante un **fallo de
+recarga**, `_al_error_recarga` **conserva las tarjetas viejas**, muestra
+`MENSAJE_ERROR_RECARGA`, el gestor queda `INACTIVO`, el botón de escaneo se
+rehabilita y un nuevo escaneo es posible; la recarga fallida **no revierte
+la sincronización ya confirmada en SQLite**. La recarga es de **solo
+lectura** de la primera página: **no ejecuta FFprobe/FFmpeg/miniaturas**, la
+GUI sigue sin SQLite ni SQL y **no llama a `listar_videos_paginado`
+directamente**. **No existen todavía** páginas posteriores, scroll
+infinito, búsqueda en SQL desde la interfaz ni ordenamiento configurable.
+Se agregó `prueba_recarga_catalogo.py` (**20 pruebas**) y se actualizaron
+`prueba_escaneo_guardado.py` (24), `prueba_escaneo_interfaz.py` (36) y
+`prueba_sincronizacion_interfaz.py` (18) a la cadena de 6 tareas. Smoke
+test `visor_videos.py` con `tarjetas_finales=['clip.avi', 'peli.mp4',
+'serie.mkv']` (recarga tras la sincronización) y `resumen_sincronizacion`
+conservado, exit 0. Regresiones parciales 82/82 OK (suites ajenas no
+reejecutadas). **Alcance**: la recarga muestra únicamente la primera página;
+la paginación completa (scroll infinito), la búsqueda en SQL desde la
+interfaz, el ordenamiento configurable y la deduplicación de nombres
+repetidos quedan pendientes. Aprobada con observaciones.
 
 **SHA definitivo:** debe consultarse con `git log -1` (el SHA no se
 escribe en este documento para evitar autorreferencias al commit).
 
 ## Última etapa aprobada
 
-Integración de la sincronización completa en la interfaz: `visor_videos.py`
-lanza `TareaSincronizacionCatalogo` con el **mismo** `GestorTareas`
-**tras el guardado exitoso** del pipeline escaneo → FFprobe → miniaturas →
-guardado (`TareaEscaneo` → `TareaFFprobe` → `TareaMiniaturas` →
-`TareaGuardarVideos` → `TareaSincronizacionCatalogo`). `_al_resultado_guardado`
-marca `_sincronizacion_pendiente = True` y `_al_tarea_finalizada` (gestor
-`inactivo`) inicia la sincronización con `_iniciar_sincronizacion()`
-(revalida la carpeta con `os.path.isdir` y crea la tarea con
-`carpeta_seleccionada` y `ruta_db`). Estados nuevos
-`_sincronizacion_pendiente`/`tarea_sincronizacion`/`resultado_sincronizacion`,
-handlers `_al_resultado_sincronizacion` (conserva el resultado completo
-`{"diferencias", "plan", "incorporaciones", "eliminaciones", "resumen"}`
-y muestra el resumen final) y `_al_error_sincronizacion` (muestra
-`MENSAJE_ERROR_SINCRONIZACION`, gestor `inactivo`, interfaz recuperable),
-constantes `MENSAJE_SINCRONIZANDO`/`MENSAJE_ERROR_SINCRONIZACION` y la
-función `texto_resumen_sincronizacion()` (estado final "Sincronización
-completa: N incorporados, M eliminados, K candidatos restantes"). Al
-terminar, los registros ausentes del disco se eliminan de SQLite y los
-presentes **conservan intactos** sus metadatos FFprobe y
-`cantidad_miniaturas`; **no se eliminan archivos físicos ni miniaturas**;
-**no se recargan ni reconstruyen tarjetas** (siguen mostrando la carga
-inicial); la GUI **no abre SQLite ni ejecuta SQL** (AST). La sincronización
-**solo se lanza tras un guardado exitoso** (no se inicia si falla cualquier
-fase anterior). **Ausencia deliberada**: la recarga asíncrona del catálogo
-con la actualización de tarjetas tras una sincronización exitosa y la
-deduplicación de nombres repetidos continúan pendientes. Con suite nueva
-`prueba_sincronizacion_interfaz.py` (18 pruebas) y suites actualizadas
-`prueba_escaneo_guardado.py` (24) y `prueba_escaneo_interfaz.py` (36) a la
-cadena de 5 tareas. Regresiones completas 355/355 OK. Aprobada con
-observaciones.
+Recarga asíncrona del catálogo tras la sincronización: `visor_videos.py`
+recarga el catálogo en segundo plano **solo tras una sincronización
+exitosa** y **reemplaza las tarjetas** por las de la primera página
+actualizada, extendiendo la cadena a **6 tareas** (`TareaEscaneo` →
+`TareaFFprobe` → `TareaMiniaturas` → `TareaGuardarVideos` →
+`TareaSincronizacionCatalogo` → `TareaLecturaCatalogoPaginada`) con el
+**mismo** `GestorTareas`. `_al_resultado_sincronizacion` marca
+`_recarga_catalogo_pendiente = True` y `_al_tarea_finalizada` (gestor
+`inactivo`) inicia la recarga con `_iniciar_recarga_catalogo()`, que usa la
+misma factoría `_crear_tarea_lectura()` (misma
+`TareaLecturaCatalogoPaginada(TAMANIO_PAGINA_INICIAL, 0, None, ruta_db)`,
+primera página). Estados nuevos `_recarga_catalogo_pendiente`/
+`tarea_recarga_catalogo`, handlers `_al_resultado_recarga` (reemplaza las
+tarjetas con `_reemplazar_tarjetas`) y `_al_error_recarga` (muestra
+`MENSAJE_ERROR_RECARGA`, gestor `INACTIVO`, interfaz recuperable),
+constante `MENSAJE_ERROR_RECARGA` ("No se pudo actualizar el catálogo") y
+`_reemplazar_tarjetas(filas)`: **las tarjetas viejas se conservan hasta que
+llega el resultado válido y completo**; al llegar se quitan de la grilla
+(`removeWidget` + `deleteLater`, liberando los widgets Qt), se vacía
+`self.tarjetas`, se crean las tarjetas nuevas en la **misma `QGridLayout` y
+el mismo `QScrollArea` reutilizados** y se reaplica el filtro (que actualiza
+el contador) — **sin tarjetas ocultas obsoletas** —; `resultado_sincronizacion`
+se conserva. Ante un **fallo de recarga** se **conservan las tarjetas
+viejas**, se muestra `MENSAJE_ERROR_RECARGA`, el gestor queda `INACTIVO`,
+el botón de escaneo se rehabilita y un nuevo escaneo es posible; la recarga
+fallida **no revierte la sincronización ya confirmada en SQLite**. La
+recarga es de **solo lectura** de la primera página: **no ejecuta
+FFprobe/FFmpeg/miniaturas**, la GUI sigue sin SQLite ni SQL y **no llama a
+`listar_videos_paginado` directamente**. La sincronización **solo se lanza
+tras un guardado exitoso** (no se inicia si falla cualquier fase anterior).
+**Ausencia deliberada**: la recarga muestra únicamente la primera página;
+la paginación completa (scroll infinito), la búsqueda en SQL desde la
+interfaz, el ordenamiento configurable y la deduplicación de nombres
+repetidos continúan pendientes. Con suite nueva `prueba_recarga_catalogo.py`
+(20 pruebas) y suites actualizadas `prueba_escaneo_guardado.py` (24),
+`prueba_escaneo_interfaz.py` (36) y `prueba_sincronizacion_interfaz.py`
+(18) a la cadena de 6 tareas. Regresiones parciales 82/82 OK (suites ajenas
+no reejecutadas). Aprobada con observaciones.
 
 ## Estado de la arquitectura
 
@@ -237,6 +263,23 @@ observaciones.
     recarga ni reconstruye tarjetas** y **no abre SQLite ni ejecuta SQL**
     desde la GUI; la sincronización solo se lanza tras un guardado
     exitoso y la interfaz queda recuperable tras éxito o error).
+-   Recarga asíncrona del catálogo tras la sincronización
+    (`visor_videos.py` recarga la primera página con la **misma**
+    `TareaLecturaCatalogoPaginada`/`GestorTareas` **solo tras una
+    sincronización exitosa** y reemplaza las tarjetas con
+    `_reemplazar_tarjetas`: estados `_recarga_catalogo_pendiente`/
+    `tarea_recarga_catalogo`, handlers `_al_resultado_recarga`/
+    `_al_error_recarga`, constante `MENSAJE_ERROR_RECARGA` y factoría
+    `_crear_tarea_lectura`; las tarjetas viejas se conservan hasta el
+    resultado válido y completo, luego se liberan (`removeWidget` +
+    `deleteLater`), se vacía `self.tarjetas`, se crean las nuevas en la
+    **misma grilla y el mismo `QScrollArea` reutilizados** y se reaplica
+    el filtro — sin tarjetas ocultas obsoletas —; `resultado_sincronizacion`
+    se conserva; ante un error de recarga se conservan las tarjetas viejas,
+    se muestra `MENSAJE_ERROR_RECARGA`, el gestor queda `INACTIVO`, el botón
+    de escaneo se rehabilita y **no se revierte la sincronización ya
+    confirmada en SQLite**; fase de solo lectura de la primera página sin
+    FFprobe/FFmpeg/miniaturas y sin SQL en la GUI).
 -   Pruebas automatizadas.
 
 ### En desarrollo
@@ -245,37 +288,41 @@ La sincronización completa del catálogo ya está integrada en la interfaz:
 el pipeline (`TareaEscaneo` → `TareaFFprobe` → `TareaMiniaturas` →
 `TareaGuardarVideos`) convierte los archivos detectados en registros con
 metadatos FFprobe y cantidad de miniaturas y los escribe en SQLite
-conservando los preexistentes, y tras el guardado exitoso se lanza
+conservando los preexistentes, tras el guardado exitoso se lanza
 `TareaSincronizacionCatalogo` (detección de diferencias
 `detectar_diferencias`, preparación del plan
 `preparar_plan_sincronizacion`, aplicación de incorporaciones
 `aplicar_incorporaciones` y eliminación controlada de ausentes
 `eliminar_candidatos`) con el mismo `GestorTareas`, que elimina de SQLite
-los registros ausentes y conserva los presentes. Queda pendiente la
-**recarga asíncrona del catálogo con la actualización de tarjetas tras una
-sincronización exitosa** (las tarjetas siguen mostrando la carga inicial)
-y la **deduplicación de nombres repetidos**. La carga inicial asíncrona de
-la primera página del catálogo ya está integrada en la interfaz.
+los registros ausentes y conserva los presentes, y **tras una
+sincronización exitosa se recarga el catálogo en segundo plano**
+(`TareaLecturaCatalogoPaginada` con el mismo gestor) y se **reemplazan las
+tarjetas** con la primera página actualizada (`_reemplazar_tarjetas`).
+Quedan pendientes la **deduplicación de nombres repetidos** y la
+**paginación completa** del catálogo (páginas posteriores, scroll
+infinito, búsqueda en SQL desde la interfaz y ordenamiento configurable,
+que todavía no existen): la carga inicial y la recarga muestran únicamente
+la primera página.
 
 ## Pendientes prioritarios
 
-1.  Recarga asíncrona del catálogo con la actualización de tarjetas tras
-    una sincronización exitosa (la sincronización completa ya está
-    integrada en la interfaz: `visor_videos.py` lanza
-    `TareaSincronizacionCatalogo` con el mismo `GestorTareas` tras el
-    guardado exitoso del pipeline, eliminando de SQLite los registros
-    ausentes y conservando los presentes, pero las **tarjetas siguen
-    mostrando la carga inicial**; falta recargar el catálogo en segundo
-    plano y reconstruir/actualizar las tarjetas tras la sincronización,
-    junto con la deduplicación de nombres repetidos).
-2.  Integración SQLite asíncrona en el pipeline (encadenado).
-3.  Actualización asíncrona de la interfaz (tarjetas dinámicas).
-4.  FFmpeg asíncrono.
-5.  Varias miniaturas por video.
-6.  Selección inteligente de miniaturas.
-7.  Barra de progreso.
-8.  Caché avanzada.
-9.  Optimización para miles de videos.
+1.  Paginación completa del catálogo en la interfaz (páginas posteriores,
+    scroll infinito, búsqueda en SQL desde la interfaz y ordenamiento
+    configurable). **No existen todavía**: la carga inicial y la recarga
+    tras la sincronización muestran únicamente la primera página
+    (`TAMANIO_PAGINA_INICIAL = 100`); la recarga tras una sincronización
+    exitosa ya está implementada (`visor_videos.py` relee la primera página
+    con la misma `TareaLecturaCatalogoPaginada`/`GestorTareas` y reemplaza
+    las tarjetas con `_reemplazar_tarjetas`).
+2.  Deduplicación de nombres repetidos en el plan de sincronización.
+3.  Integración SQLite asíncrona en el pipeline (encadenado).
+4.  Actualización asíncrona de la interfaz (tarjetas dinámicas).
+5.  FFmpeg asíncrono.
+6.  Varias miniaturas por video.
+7.  Selección inteligente de miniaturas.
+8.  Barra de progreso.
+9.  Caché avanzada.
+10. Optimización para miles de videos.
 
 ## Problemas abiertos
 
@@ -296,15 +343,20 @@ un `QThread` la detección no destructiva de diferencias
 incorporaciones (`aplicar_incorporaciones`, que persiste solo
 `a_incorporar` reutilizando `guardar_videos`) y la eliminación
 controlada de los registros ausentes (`eliminar_candidatos`, con
-validación previa y transacción atómica)), pero las **tarjetas siguen
-mostrando la carga inicial**: falta la recarga asíncrona del catálogo
-con la actualización de tarjetas tras una sincronización exitosa (junto
-con la deduplicación de nombres repetidos); - `detectar_diferencias` compara
+validación previa y transacción atómica)), **tras una sincronización
+exitosa se recarga el catálogo en segundo plano** (`visor_videos.py`
+relee la primera página con `TareaLecturaCatalogoPaginada` y reemplaza
+las tarjetas con `_reemplazar_tarjetas`, liberando las viejas y creando
+las nuevas en la misma grilla); quedan pendientes la **paginación
+completa** (páginas posteriores, scroll infinito, búsqueda en SQL desde
+la interfaz y ordenamiento configurable — no existen todavía) y la
+deduplicación de nombres repetidos; - `detectar_diferencias` compara
 por nombre y no detecta movimientos ni renombrados (queda para etapas
 futuras); - **no existe todavía deduplicación de nombres repetidos** en
 el plan de sincronización; - el enrutado de resultados por
 `_escaneo_pendiente`/`_ffprobe_pendiente`/`_miniaturas_pendiente`/
-`_guardado_pendiente`/`_sincronizacion_pendiente` es suficiente para una
+`_guardado_pendiente`/`_sincronizacion_pendiente`/
+`_recarga_catalogo_pendiente` es suficiente para una
 única tarea activa y debe revisarse si la interfaz incorpora más tipos de tarea; - el escaneo no
 incluye subcarpetas; - decisión pendiente sobre si `%` y `_` como
 comodines `LIKE` en la búsqueda de `listar_videos_paginado` se aceptan
@@ -328,23 +380,18 @@ limpieza controlada de miniaturas antiguas.
 
 ## Próxima etapa
 
-**Recarga asíncrona del catálogo con la actualización de tarjetas tras
-una sincronización exitosa** (recargar el catálogo en segundo plano y
-reconstruir/actualizar las tarjetas cuando `TareaSincronizacionCatalogo`
-termina correctamente, con su deduplicación de nombres repetidos). Las
-etapas anteriores (detección no destructiva de diferencias con
-`detectar_diferencias`, preparación del plan con
-`preparar_plan_sincronizacion`, aplicación no destructiva de las
-incorporaciones con `aplicar_incorporaciones`, eliminación controlada de
-los registros ausentes con `eliminar_candidatos`, la orquestación
-asíncrona con `TareaSincronizacionCatalogo` y la integración de la
-sincronización completa en la interfaz) quedaron aprobadas y
-commiteadas; la **recarga asíncrona del catálogo con la actualización de
-tarjetas tras la sincronización** y la deduplicación de nombres repetidos
-siguen pendientes y se abordarán como próxima etapa, manteniendo el
-alcance limitado: sin selección inteligente, sin múltiples miniaturas,
-sin eliminación de archivos antiguos y sin recarga automática
-inmediata más allá de la sincronización completada.
+**Aún no definida**: la recarga asíncrona del catálogo con la
+actualización de tarjetas tras una sincronización exitosa ya quedó
+aprobada y commiteada ("Recargar el catálogo después de sincronizar"), por
+lo que no se inicia ninguna etapa nueva en esta entrega. Los siguientes
+candidatos (todavía no definidos ni iniciados) son la **paginación
+completa del catálogo en la interfaz** (páginas posteriores, scroll
+infinito, búsqueda en SQL desde la interfaz y ordenamiento configurable —
+hoy la carga inicial y la recarga muestran únicamente la primera página) y
+la **deduplicación de nombres repetidos** en el plan de sincronización,
+manteniendo el alcance limitado: sin selección inteligente, sin múltiples
+miniaturas, sin eliminación de archivos antiguos y sin paginación más allá
+de la primera página.
 
 ## Documentos del proyecto
 

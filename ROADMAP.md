@@ -99,8 +99,11 @@ arquitectónicas.
     Incorporación y eliminación como transacciones independientes (si
     falla la incorporación no se elimina; si falla la eliminación las
     incorporaciones confirmadas permanecen). **Integrada con el flujo de
-    la interfaz en la siguiente etapa** (ver "Sincronización completa del
-    catálogo"); la deduplicación de nombres repetidos queda pendiente.
+    la interfaz**: se lanza tras el guardado exitoso del pipeline (ver
+    "Sincronización completa del catálogo") y, al terminar, dispara la
+    **recarga asíncrona del catálogo** (ver "Recarga automática del
+    catálogo tras la sincronización"); la deduplicación de nombres
+    repetidos queda pendiente.
 
 1.  Opción de incluir o excluir subcarpetas — **pendiente** (configurar
     si el escaneo de la carpeta elegida recorre las subcarpetas).
@@ -129,10 +132,13 @@ arquitectónicas.
     guardado exitoso del pipeline (estado final con incorporados/
     eliminados/candidatos restantes; ausentes eliminados de SQLite,
     presentes conservados, sin borrado de archivos físicos ni
-    miniaturas y sin recarga de tarjetas); quedan pendientes la
-    **recarga asíncrona del catálogo con la actualización de tarjetas
-    tras una sincronización exitosa** y la deduplicación de nombres
-    repetidos.
+    miniaturas); **tras una sincronización exitosa se recarga el
+    catálogo en segundo plano** (`visor_videos.py` relee la primera
+    página con `TareaLecturaCatalogoPaginada` y reemplaza las tarjetas
+    con `_reemplazar_tarjetas`); quedan pendientes la **paginación
+    completa** (páginas posteriores, scroll infinito, búsqueda en SQL
+    desde la interfaz y ordenamiento configurable — no existen todavía)
+    y la deduplicación de nombres repetidos.
 4.  FFprobe integrado en el pipeline — **completado** (el pipeline
     escaneo → guardado completa duración, resolución y codec antes de
     escribir o actualizar los registros; `NULL` ante vacíos, incompletos
@@ -141,8 +147,10 @@ arquitectónicas.
     integrada en el pipeline (`TareaMiniaturas` con el mismo
     `GestorTareas`, reutilizando `asegurar_miniatura`/`contar_miniaturas`
     existentes; `cantidad_miniaturas` persistida). Quedan fuera del
-    alcance: selección inteligente, múltiples miniaturas, eliminación de
-    archivos antiguos y recarga automática de la interfaz. La limpieza
+    alcance: selección inteligente, múltiples miniaturas y eliminación de
+    archivos antiguos. La recarga automática de la interfaz tras la
+    sincronización ya está implementada (ver "Recarga automática del
+    catálogo tras la sincronización"). La limpieza
     controlada de versiones antiguas sigue pendiente.
 6.  Eliminación de registros ausentes — **completado (aplicación
     controlada, orquestación asíncrona e integración con la interfaz)**
@@ -158,11 +166,19 @@ arquitectónicas.
     `TareaSincronizacionCatalogo` y la interfaz ya la lanza tras el
     guardado exitoso del pipeline, eliminando de SQLite los registros
     ausentes y conservando los presentes).
-7.  Recarga automática del catálogo tras la sincronización — **pendiente
-    (próxima etapa)** (recargar el catálogo en segundo plano y
-    reconstruir/actualizar las tarjetas cuando
-    `TareaSincronizacionCatalogo` termina correctamente; hoy las tarjetas
-    siguen mostrando la carga inicial).
+7.  Recarga automática del catálogo tras la sincronización — **completado**
+    (`visor_videos.py` recarga el catálogo en segundo plano **solo tras
+    una sincronización exitosa** con la misma
+    `TareaLecturaCatalogoPaginada`/`GestorTareas` y **reemplaza las
+    tarjetas** con `_reemplazar_tarjetas`: las tarjetas viejas se
+    conservan hasta el resultado válido y completo, luego se liberan
+    (`removeWidget` + `deleteLater`), se vacía `self.tarjetas`, se crean
+    las nuevas en la misma grilla y se reaplica el filtro, conservando
+    `resultado_sincronizacion`; ante un error de recarga se conservan las
+    tarjetas viejas y no se revierte la sincronización ya confirmada en
+    SQLite. La recarga muestra únicamente la primera página; la
+    paginación completa, la búsqueda en SQL desde la interfaz y el
+    ordenamiento configurable siguen pendientes).
 8.  Progreso — **pendiente** (barra de progreso y estado de las tareas
     en curso).
 9.  Persistencia de configuración — **pendiente** (recordar entre

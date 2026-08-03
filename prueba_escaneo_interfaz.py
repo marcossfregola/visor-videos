@@ -145,6 +145,7 @@ def _escanear_terminado(ventana):
         and not ventana._miniaturas_pendiente
         and not ventana._guardado_pendiente
         and not ventana._sincronizacion_pendiente
+        and not ventana._recarga_catalogo_pendiente
     )
 
 
@@ -701,7 +702,6 @@ def test_17():
         ventana = VisorVideos(ruta_db=ruta_db)
         _esperar(lambda v=ventana: v._carga_completada and v.gestor.hilo is None)
         antes = list(ventana.tarjetas)
-        nombres_antes = [nombre for nombre, _ in ventana.tarjetas]
         with _dialogo_falso(carpeta.name):
             ventana.seleccionar_carpeta()
         ventana.boton_escanear.click()
@@ -715,10 +715,10 @@ def test_17():
         ventana.close()
         _limpiar(ventana)
         ok = (
-            nombres_despues == nombres_antes
-            and mismas
-            and len(ventana.tarjetas) == len(nombres)
-            and visibles == sorted(nombres)
+            nombres_despues == ["x.mp4"]
+            and not mismas
+            and len(ventana.tarjetas) == 1
+            and visibles == ["x.mp4"]
         )
         return (
             ok,
@@ -742,7 +742,7 @@ def test_18():
 
         def _lectura(*a, **k):
             llamadas["lectura"] += 1
-            raise AssertionError("el escaneo no debe recargar el catálogo")
+            return orig(*a, **k)
 
         tv.listar_videos_paginado = _lectura
         try:
@@ -755,7 +755,7 @@ def test_18():
         tarjetas = [nombre for nombre, _ in ventana.tarjetas]
         ventana.close()
         _limpiar(ventana)
-        ok = llamadas == {"lectura": 0} and tarjetas == ["a.mp4"]
+        ok = llamadas == {"lectura": 1} and tarjetas == ["x.mp4"]
         return ok, f"llamadas={llamadas} tarjetas={tarjetas}"
     finally:
         carpeta.cleanup()
@@ -800,6 +800,7 @@ def test_19():
                 "TareaMiniaturas",
                 "TareaGuardarVideos",
                 "TareaSincronizacionCatalogo",
+                "TareaLecturaCatalogoPaginada",
             ]
         )
         return ok, f"filas={filas} guardado={guardado} tipos={tipos}"
@@ -1072,18 +1073,21 @@ def test_26():
         control_miniaturas = _Control(tv.asegurar_miniaturas)
         control_guardado = _Control(tv.guardar_videos)
         control_sincronizacion = _Control(escanear_mod.detectar_diferencias)
+        control_recarga = _Control(tv.listar_videos_paginado)
         originales = (
             tv.escanear_videos,
             tv.obtener_datos_ffprobe,
             tv.asegurar_miniaturas,
             tv.guardar_videos,
             escanear_mod.detectar_diferencias,
+            tv.listar_videos_paginado,
         )
         tv.escanear_videos = control_escaneo
         tv.obtener_datos_ffprobe = control_ffprobe
         tv.asegurar_miniaturas = control_miniaturas
         tv.guardar_videos = control_guardado
         escanear_mod.detectar_diferencias = control_sincronizacion
+        tv.listar_videos_paginado = control_recarga
         try:
             with _dialogo_falso(carpeta.name):
                 ventana.seleccionar_carpeta()
@@ -1129,6 +1133,14 @@ def test_26():
             paso_cinco_b = list(secuencia)
 
             control_sincronizacion.soltar.set()
+            control_recarga.empezada.wait(5)
+            _procesar(300)
+            paso_seis = list(secuencia)
+            estado_seis = ventana.gestor.estado
+            _procesar(300)
+            paso_seis_b = list(secuencia)
+
+            control_recarga.soltar.set()
             _esperar(lambda v=ventana: _escanear_terminado(v))
         finally:
             (
@@ -1137,6 +1149,7 @@ def test_26():
                 tv.asegurar_miniaturas,
                 tv.guardar_videos,
                 escanear_mod.detectar_diferencias,
+                tv.listar_videos_paginado,
             ) = originales
         ventana.close()
         _limpiar(ventana)
@@ -1169,12 +1182,24 @@ def test_26():
             ]
             and paso_cinco_b == paso_cinco
             and estado_cinco == Estado.OCUPADO
-            and len(tareas_vistas) == 5
-            and len(set(tareas_vistas)) == 5
+            and paso_seis
+            == [
+                "TareaEscaneo",
+                "TareaFFprobe",
+                "TareaMiniaturas",
+                "TareaGuardarVideos",
+                "TareaSincronizacionCatalogo",
+                "TareaLecturaCatalogoPaginada",
+            ]
+            and paso_seis_b == paso_seis
+            and estado_seis == Estado.OCUPADO
+            and len(tareas_vistas) == 6
+            and len(set(tareas_vistas)) == 6
             and control_ffprobe.principal is False
             and control_miniaturas.principal is False
             and control_guardado.principal is False
             and control_sincronizacion.principal is False
+            and control_recarga.principal is False
             and ventana.gestor.hilo is None
             and len(_GESTORES_ACTIVOS) == 0
         )
@@ -1182,11 +1207,12 @@ def test_26():
             ok,
             f"secuencia={secuencia} "
             f"estados={estado_uno},{estado_dos},{estado_tres},"
-            f"{estado_cuatro},{estado_cinco} "
+            f"{estado_cuatro},{estado_cinco},{estado_seis} "
             f"ffprobe_principal={control_ffprobe.principal} "
             f"miniaturas_principal={control_miniaturas.principal} "
             f"guardado_principal={control_guardado.principal} "
             f"sincronizacion_principal={control_sincronizacion.principal} "
+            f"recarga_principal={control_recarga.principal} "
             f"gestores={len(_GESTORES_ACTIVOS)}",
         )
     finally:
@@ -1407,8 +1433,8 @@ def test_33():
         _limpiar(ventana)
         ok = (
             cargados == sorted(nombres)
-            and visibles == ["mango.mkv", "manzana.mp4"]
-            and contador == "2 videos"
+            and visibles == []
+            and contador == "0 videos"
             and ventana.videos_detectados == ["x.mp4"]
         )
         return ok, f"cargados={cargados} visibles={visibles} contador={contador}"

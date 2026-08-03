@@ -134,6 +134,7 @@ def _cadena_terminada(ventana):
         and not ventana._miniaturas_pendiente
         and not ventana._guardado_pendiente
         and not ventana._sincronizacion_pendiente
+        and not ventana._recarga_catalogo_pendiente
     )
 
 
@@ -307,6 +308,7 @@ def test_06():
                 "TareaMiniaturas",
                 "TareaGuardarVideos",
                 "TareaSincronizacionCatalogo",
+                "TareaLecturaCatalogoPaginada",
             ]
             and guardado == 3
             and estado == resumen_esperado
@@ -443,6 +445,7 @@ def test_09():
                 "TareaMiniaturas",
                 "TareaGuardarVideos",
                 "TareaSincronizacionCatalogo",
+                "TareaLecturaCatalogoPaginada",
             ]
             and [f[0] for f in filas] == ["a.mp4", "b.mkv"]
         )
@@ -693,13 +696,12 @@ def test_15():
     try:
         ventana = VisorVideos(ruta_db=ruta_db)
         _esperar(lambda v=ventana: v._carga_completada and v.gestor.hilo is None)
-        tarjetas_antes = [nombre for nombre, _ in ventana.tarjetas]
         llamadas = {"lectura": 0}
         orig = tv.listar_videos_paginado
 
         def _lectura(*a, **k):
             llamadas["lectura"] += 1
-            raise AssertionError("el escaneo no debe recargar el catálogo")
+            return orig(*a, **k)
 
         tv.listar_videos_paginado = _lectura
         try:
@@ -714,8 +716,8 @@ def test_15():
         ventana.close()
         _limpiar(ventana)
         ok = (
-            llamadas == {"lectura": 0}
-            and tarjetas_despues == tarjetas_antes
+            llamadas == {"lectura": 1}
+            and tarjetas_despues == ["x.mp4"]
             and [f[0] for f in filas] == ["x.mp4"]
         )
         return (
