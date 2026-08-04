@@ -36,6 +36,19 @@ arquitectónicas.
     terminada, tarjetas por cargar y gestor inactivo sin cadena activa.
     La paginación automática (scroll infinito), la búsqueda en SQL desde
     la interfaz y el ordenamiento configurable siguen pendientes.
+-   Presentación del catálogo en filas horizontales — **completado**
+    (`visor_videos.py` muestra una **tarjeta horizontal por video** en una
+    única columna, una fila por video): cada `Tarjeta` usa `QHBoxLayout`
+    con la miniatura (o el recuadro "Sin miniatura") a la izquierda y los
+    cinco campos (nombre, duración, resolución, codec, miniaturas) a la
+    derecha (`columna_campos = QVBoxLayout()`, `addLayout(..., 1)`); se
+    elimina la grilla de 2 columnas y la constante `COLUMNAS`.
+    **Aclaración de alcance**: sí se muestra la primera miniatura por
+    video, pero **no** hay 4/6 imágenes por video, **no** hay generación
+    progresiva de miniaturas, **no** se muestra el tamaño de archivo,
+    **no** hay apertura por doble clic y **no** se recuerda la última
+    carpeta seleccionada (la persistencia de configuración sigue
+    pendiente).
 -   Escritura individual asíncrona — **completado** (`TareaGuardarVideo`).
 -   Escritura de colección asíncrona — **completado**
     (`TareaGuardarVideos`): persiste colecciones de registros preparados

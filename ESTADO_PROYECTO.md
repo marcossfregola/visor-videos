@@ -99,77 +99,80 @@ más" —`boton_cargar_mas`/`cargar_mas`— con la **misma**
 **agregando** tarjetas nuevas debajo de las existentes sin reemplazarlas
 ni duplicarlas, actualizando `_total_catalogo` y rearmando el botón según
 las tarjetas por cargar; ante un error de página conserva las tarjetas ya
-cargadas y muestra `MENSAJE_ERROR_PAGINA`; sin SQL en la GUI—) aprobadas;
+cargadas y muestra `MENSAJE_ERROR_PAGINA`; sin SQL en la GUI—) y **la
+presentación del catálogo en filas horizontales** (`visor_videos.py` muestra
+una **tarjeta horizontal por video** —miniatura a la izquierda y cinco campos
+de texto a la derecha— dispuesta **una por fila en una única columna** dentro
+del `QScrollArea`; se elimina la grilla de 2 columnas, la constante
+`COLUMNAS` y `setColumnStretch(1, 1)`; `_crear_tarjetas`/`_agregar_tarjetas`
+colocan cada tarjeta en la fila siguiente con columna 0; **solo se muestra la
+primera miniatura por video**, sin 4/6 miniaturas por video, sin generación
+progresiva de miniaturas, sin tamaño de archivo, sin doble clic y sin última
+carpeta recordada) aprobadas;
 quedan pendientes la **deduplicación de nombres repetidos** y la
 **paginación completa** (scroll infinito, búsqueda en SQL desde la
 interfaz y ordenamiento configurable), que todavía no existen.
 
 ## Último commit aprobado
 
-**Mensaje:** Incorporar carga manual de páginas del catálogo
+**Mensaje:** Presentar el catálogo en filas horizontales
 
-**Etapa aprobada:** Carga manual de una página adicional del catálogo:
-`visor_videos.py` incorpora el botón "Cargar más" (`boton_cargar_mas`) en
-la barra de búsqueda para **agregar** manualmente una página adicional del
-catálogo **debajo de las tarjetas ya cargadas, sin reemplazarlas y sin
-duplicados**. `_crear_tarea_lectura(desplazamiento=0)` se parametrizó con
-el `OFFSET`: la carga inicial (0), la recarga tras la sincronización (0) y
-la página adicional (`desplazamiento = len(self.tarjetas)`) usan la
-**misma** `TareaLecturaCatalogoPaginada` y el **mismo** `GestorTareas`.
-`cargar_mas()` calcula el offset como la cantidad de tarjetas ya cargadas,
-marca `_pagina_pendiente = True` y guarda la tarea en `tarea_pagina`;
-`_al_resultado_pagina` actualiza `_total_catalogo` y agrega las tarjetas
-nuevas con `_agregar_tarjetas` (misma `QGridLayout`, posiciones
-siguientes, sin liberar las existentes), **descartando filas cuyo
-`nombre` ya está cargado** (deduplicación por nombre); `_al_error_pagina`
-conserva las tarjetas ya cargadas, muestra `MENSAJE_ERROR_PAGINA` ("No se
-pudo cargar la página"), deja el gestor `INACTIVO` y rearma el botón para
-reintentar. El botón se habilita solo con carga inicial terminada,
-`_total_catalogo` conocido, tarjetas por cargar (`len(self.tarjetas) <
-self._total_catalogo`), gestor `inactivo` y sin cadena activa
-(`_actualizar_botones_carpeta`). La GUI **sigue sin SQLite ni SQL** y **no
-llama a `listar_videos_paginado` directamente**; la recarga tras la
-sincronización **sigue siendo el único camino que reemplaza tarjetas**.
-**No existen todavía** paginación automática, scroll infinito, búsqueda en
-SQL desde la interfaz ni ordenamiento configurable. Se agregó
-`prueba_pagina_siguiente.py` (**20 pruebas**) y se amplió el smoke test de
-`main()` con una fase de paginación (150 registros → `primera_pagina=100`,
-`cargar_mas_habilitado=True`, tras "Cargar más" `total_tras_cargar_mas=150`,
-`duplicados_tras_cargar_mas=0`, `primeras_conservadas=True`). Regresiones
-de las 4 suites de interfaz 98/98 OK (24/24, 36/36, 18/18 y 20/20).
-Aprobada.
+**Etapa aprobada:** Presentación del catálogo en filas horizontales:
+`visor_videos.py` cambia la presentación de la grilla de 2 columnas a **una
+tarjeta horizontal por video, una fila por video en una única columna**. Se
+elimina la constante `COLUMNAS = 2`; `Tarjeta` usa `QHBoxLayout` con la
+miniatura (o el recuadro "Sin miniatura") a la izquierda y una columna
+derecha `columna_campos = QVBoxLayout()` con los cinco campos (nombre,
+duración, resolución, codec, miniaturas) agregada con
+`layout.addLayout(columna_campos, 1)`; `_crear_tarjetas` y
+`_agregar_tarjetas` agregan cada tarjeta en la fila siguiente (columna 0) y
+se elimina `setColumnStretch(1, 1)`. `_reemplazar_tarjetas` conserva su
+semántica (libera las anteriores y reconstruye; la recarga sigue siendo la
+única vía que reemplaza tarjetas). **Ausencia deliberada**: solo se muestra
+la primera miniatura (no 4/6 imágenes por video), sin generación progresiva
+de miniaturas, sin tamaño de archivo, sin doble clic y sin última carpeta
+recordada. Se agregó `prueba_filas_horizontales.py` (**16 pruebas**: una
+fila por video, posiciones reales en la ventana —misma columna, `y`
+crecientes, sin segunda columna—, captura real de un PNG en
+`TemporaryDirectory`, campos de texto, filtrado, página adicional,
+reemplazo, redimensionado, AST sin `sqlite3`, ausencia de
+subprocess/FFmpeg, datos reales intactos). Regresiones de
+`prueba_pagina_siguiente.py` y `prueba_recarga_catalogo.py` 20/20 y 20/20
+OK. **Sin cambios en los datos reales** (`biblioteca.db`, `miniaturas/` y
+`videos_prueba/` intactos) y sin avisos `QThread: Destroyed`. Aprobada.
 
 **SHA definitivo:** debe consultarse con `git log -1` (el SHA no se
 escribe en este documento para evitar autorreferencias al commit).
 
 ## Última etapa aprobada
 
-Carga manual de una página adicional del catálogo: `visor_videos.py`
-agrega manualmente una página más del catálogo con el botón "Cargar más"
-(`boton_cargar_mas`), usando la **misma** `TareaLecturaCatalogoPaginada`/
-`GestorTareas` con `OFFSET = len(self.tarjetas)`. `_crear_tarea_lectura
-(desplazamiento=0)` se parametrizó con el offset (carga inicial y recarga
-en 0; página adicional en la cantidad de tarjetas ya cargadas). Estados
-nuevos `_pagina_pendiente`/`tarea_pagina` y `_total_catalogo`; handlers
-`_al_resultado_pagina` (actualiza `_total_catalogo` y **agrega** las
-tarjetas con `_agregar_tarjetas` en la misma grilla, sin liberar las
-existentes y **descartando nombres ya cargados** —sin duplicados—) y
-`_al_error_pagina` (muestra `MENSAJE_ERROR_PAGINA` "No se pudo cargar la
-página", gestor `INACTIVO`, conserva las tarjetas ya cargadas y rearma el
-botón para reintentar), constante `MENSAJE_ERROR_PAGINA`. El botón se
-habilita solo con carga inicial terminada, `_total_catalogo` conocido,
-tarjetas por cargar (`len(self.tarjetas) < self._total_catalogo`), gestor
-`inactivo` y sin cadena activa. La GUI sigue sin SQLite ni SQL y **no
-llama a `listar_videos_paginado` directamente**; **el reemplazo de
-tarjetas sigue siendo exclusivo de la recarga tras la sincronización**.
-**Ausencia deliberada**: sin paginación automática, sin scroll infinito,
-sin búsqueda en SQL desde la interfaz y sin ordenamiento configurable.
-Con suite nueva `prueba_pagina_siguiente.py` (**20 pruebas**) y smoke test
-ampliado con una fase de paginación (150 registros → `primera_pagina=100`,
-`cargar_mas_habilitado=True`, `total_tras_cargar_mas=150`,
-`duplicados_tras_cargar_mas=0`, `primeras_conservadas=True`). Regresiones
-de las 4 suites de interfaz 98/98 OK (24/24, 36/36, 18/18 y 20/20).
-Aprobada.
+Presentación del catálogo en filas horizontales: `visor_videos.py` presenta
+el catálogo con **una tarjeta horizontal por video, una fila por video en
+una única columna** dentro del `QScrollArea`. Se elimina la constante
+`COLUMNAS = 2` y `setColumnStretch(1, 1)`; `Tarjeta` usa `QHBoxLayout` con
+la miniatura (o el recuadro "Sin miniatura", tamaño fijo
+`ANCHO_TARJETA`×`ALTO_TARJETA`) a la izquierda y una columna derecha
+(`columna_campos = QVBoxLayout()`) con los cinco campos (nombre, duración,
+resolución, codec, miniaturas) agregada con `layout.addLayout(columna_campos, 1)`;
+`_crear_tarjetas`/`_agregar_tarjetas` colocan cada tarjeta en la fila
+siguiente con columna 0 (`addWidget(tarjeta, posicion/indice, 0)`);
+`_reemplazar_tarjetas` libera las tarjetas anteriores (`removeWidget` +
+`deleteLater`) y reconstruye, conservando la recarga como la única vía que
+reemplaza tarjetas. **Ausencia deliberada**: solo se muestra la primera
+miniatura (no 4/6 imágenes por video), sin generación progresiva de
+miniaturas, sin tamaño de archivo, sin doble clic y sin última carpeta
+recordada. Con suite nueva `prueba_filas_horizontales.py` (**16 pruebas**:
+una fila por video; posiciones reales en la ventana —misma columna `x`, `y`
+crecientes, alto fijo, sin segunda columna, ancho de fila y del contenedor—;
+guardado real de un PNG en `TemporaryDirectory`; campos de texto; filtrado;
+página adicional debajo; reemplazo con liberación; fase de paginación (150
+registros → `primera_pagina=100`, `total_tras_cargar_mas=150`,
+`duplicados_tras_cargar_mas=0`); redimensionado y scrolleado; AST sin
+`sqlite3`/`connect`; ausencia de literales binarios/subprocess/Popen/
+`QProcess`/`os.system`; datos reales intactos). Regresiones de
+`prueba_pagina_siguiente.py` y `prueba_recarga_catalogo.py` 20/20 y 20/20
+OK. **Sin cambios en los datos reales** (`biblioteca.db`, `miniaturas/` y
+`videos_prueba/` intactos) y sin avisos `QThread: Destroyed`. Aprobada.
 
 ## Estado de la arquitectura
 
@@ -280,6 +283,22 @@ Aprobada.
     cargar y gestor inactivo sin cadena activa; sin SQL en la GUI; el
     reemplazo de tarjetas sigue siendo exclusivo de la recarga tras la
     sincronización).
+-   Presentación del catálogo en filas horizontales (`visor_videos.py`
+    muestra una **tarjeta horizontal por video** —`Tarjeta` con
+    `QHBoxLayout`, miniatura o recuadro "Sin miniatura" a la izquierda y
+    columna derecha `columna_campos = QVBoxLayout()` con los cinco campos
+    (nombre, duración, resolución, codec, miniaturas) vía
+    `layout.addLayout(columna_campos, 1)`— dispuesta **una por fila en una
+    única columna**; se elimina la constante `COLUMNAS = 2` y
+    `setColumnStretch(1, 1)`; `_crear_tarjetas`/`_agregar_tarjetas`
+    agregan cada tarjeta en la fila siguiente con columna 0;
+    `_reemplazar_tarjetas` libera las anteriores (`removeWidget` +
+    `deleteLater`) y reconstruye; la recarga sigue siendo la única vía que
+    reemplaza tarjetas; **solo se muestra la primera miniatura por video**,
+    sin 4/6 miniaturas por video, sin generación progresiva de miniaturas,
+    sin tamaño de archivo, sin doble clic y sin última carpeta recordada;
+    suite `prueba_filas_horizontales.py` con 16 pruebas; datos reales
+    intactos).
 -   Pruebas automatizadas.
 
 ### En desarrollo
@@ -304,7 +323,9 @@ en SQL desde la interfaz y ordenamiento configurable, que todavía no
 existen): la carga inicial y la recarga muestran únicamente la primera
 página, y **ya existe la carga manual de una página adicional** con el
 botón "Cargar más" (se agregan tarjetas debajo de las existentes sin
-reemplazarlas).
+reemplazarlas). El catálogo se presenta con **una tarjeta horizontal por
+video, una fila por video en una única columna** (presentación aprobada en
+la última etapa).
 
 ## Pendientes prioritarios
 
@@ -388,15 +409,15 @@ limpieza controlada de miniaturas antiguas.
 
 ## Próxima etapa
 
-**Aún no definida**: la carga manual de una página adicional del catálogo
-("Cargar más") ya quedó aprobada y commiteada ("Incorporar carga manual de
-páginas del catálogo"), por lo que no se inicia ninguna etapa nueva en
-esta entrega. Los siguientes candidatos (todavía no definidos ni
-iniciados) son la **paginación completa automática del catálogo en la
-interfaz** (scroll infinito, búsqueda en SQL desde la interfaz y
-ordenamiento configurable — hoy la carga inicial y la recarga muestran
-únicamente la primera página y existe la carga manual con "Cargar más") y
-la **deduplicación de nombres repetidos** en el plan de sincronización,
+**Aún no definida**: la presentación del catálogo en filas horizontales ya
+quedó aprobada y commiteada ("Presentar el catálogo en filas horizontales"),
+por lo que no se inicia ninguna etapa nueva en esta entrega. Los siguientes
+candidatos (todavía no definidos ni iniciados) son la **paginación completa
+automática del catálogo en la interfaz** (scroll infinito, búsqueda en SQL
+desde la interfaz y ordenamiento configurable — hoy la carga inicial y la
+recarga muestran únicamente la primera página, existe la carga manual con
+"Cargar más" y el catálogo se presenta en filas horizontales) y la
+**deduplicación de nombres repetidos** en el plan de sincronización,
 manteniendo el alcance limitado: sin selección inteligente, sin múltiples
 miniaturas, sin eliminación de archivos antiguos y sin paginación
 automática.

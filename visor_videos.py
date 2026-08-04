@@ -37,7 +37,6 @@ from tareas_videos import (
 
 ANCHO_TARJETA = 320
 ALTO_TARJETA = 180
-COLUMNAS = 2
 TAMANIO_PAGINA_INICIAL = 100
 
 MENSAJE_CARGANDO = "Cargando catálogo…"
@@ -93,7 +92,7 @@ class Tarjeta(QFrame):
         super().__init__(parent)
         self.setFrameShape(QFrame.StyledPanel)
         self.setFrameShadow(QFrame.Raised)
-        layout = QVBoxLayout(self)
+        layout = QHBoxLayout(self)
 
         nombre, duracion, ancho, alto, codec, miniaturas = fila
 
@@ -130,10 +129,13 @@ class Tarjeta(QFrame):
             ("Codec", formatear_valor(codec)),
             ("Miniaturas", formatear_valor(miniaturas)),
         ]
+        columna_campos = QVBoxLayout()
         for etiqueta, valor in campos:
             campo = QLabel(f"<b>{etiqueta}:</b> {valor}")
             campo.setWordWrap(True)
-            layout.addWidget(campo)
+            columna_campos.addWidget(campo)
+        columna_campos.addStretch()
+        layout.addLayout(columna_campos, 1)
 
 
 class VisorVideos(QMainWindow):
@@ -209,7 +211,6 @@ class VisorVideos(QMainWindow):
         self.contenedor = QWidget()
         self.cuadricula = QGridLayout(self.contenedor)
         self.cuadricula.setColumnStretch(0, 1)
-        self.cuadricula.setColumnStretch(1, 1)
         self.actualizar_contador()
 
         self.area = QScrollArea()
@@ -581,9 +582,7 @@ class VisorVideos(QMainWindow):
             tarjeta = Tarjeta(fila)
             self.tarjetas.append((fila[0], tarjeta))
             self.visibles.append(fila[0])
-            self.cuadricula.addWidget(
-                tarjeta, posicion // COLUMNAS, posicion % COLUMNAS
-            )
+            self.cuadricula.addWidget(tarjeta, posicion, 0)
         self.filtrar(self.busqueda.text())
 
     def _al_resultado_guardado(self, resultado):
@@ -632,7 +631,7 @@ class VisorVideos(QMainWindow):
             tarjeta = Tarjeta(fila)
             self.tarjetas.append((fila[0], tarjeta))
             self.visibles.append(fila[0])
-            self.cuadricula.addWidget(tarjeta, indice // COLUMNAS, indice % COLUMNAS)
+            self.cuadricula.addWidget(tarjeta, indice, 0)
         self.filtrar(self.busqueda.text())
 
     def filtrar(self, texto):
