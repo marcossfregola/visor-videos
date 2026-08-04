@@ -75,7 +75,8 @@ def _crear_bd(filas):
                 ancho INTEGER,
                 alto INTEGER,
                 codec_video TEXT,
-                cantidad_miniaturas INTEGER
+                cantidad_miniaturas INTEGER,
+                tamano_bytes INTEGER
             )
             """
         )
@@ -140,6 +141,7 @@ def _cadena_terminada(ventana):
     return (
         ventana.gestor.hilo is None
         and not ventana._escaneo_pendiente
+        and not ventana._tamanos_pendiente
         and not ventana._ffprobe_pendiente
         and not ventana._miniaturas_pendiente
         and not ventana._guardado_pendiente
@@ -237,6 +239,7 @@ def test_02():
             tipos
             == [
                 "TareaEscaneo",
+                "TareaTamanosArchivos",
                 "TareaFFprobe",
                 "TareaMiniaturas",
                 "TareaGuardarVideos",

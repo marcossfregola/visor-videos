@@ -29,8 +29,10 @@ from tareas_videos import (
     TareaLecturaCatalogoPaginada,
     TareaMiniaturas,
     TareaSincronizacionCatalogo,
+    TareaTamanosArchivos,
     combinar_registros_con_ffprobe,
     combinar_registros_con_miniaturas,
+    combinar_registros_con_tamanos,
     conectar_bd,
     guardar_videos,
 )
@@ -46,6 +48,7 @@ MENSAJE_RUTA_INVALIDA = "La ruta no es válida o no es una carpeta"
 MENSAJE_ESCANEANDO = "Escaneando carpeta…"
 MENSAJE_ERROR_ESCANEO = "No se pudo escanear la carpeta"
 MENSAJE_ERROR_FFPROBE = "No se pudieron obtener los metadatos"
+MENSAJE_ERROR_TAMANOS = "No se pudieron obtener los tamaños de los archivos"
 MENSAJE_ERROR_MINIATURAS = "No se pudieron generar las miniaturas"
 MENSAJE_ERROR_GUARDADO = "No se pudieron guardar los videos"
 MENSAJE_SINCRONIZANDO = "Sincronizando catálogo…"
@@ -75,6 +78,20 @@ def formatear_valor(valor):
     return str(valor)
 
 
+def formatear_tamano(valor):
+    if not isinstance(valor, int) or isinstance(valor, bool):
+        return "Desconocido"
+    if valor < 0:
+        return "Desconocido"
+    if valor < 1024:
+        return f"{valor} B"
+    if valor < 1024 * 1024:
+        return f"{valor / 1024:.1f} KB"
+    if valor < 1024 * 1024 * 1024:
+        return f"{valor / (1024 * 1024):.1f} MB"
+    return f"{valor / (1024 * 1024 * 1024):.1f} GB"
+
+
 def miniatura_principal(nombre):
     prefijo = os.path.splitext(nombre)[0]
     carpeta = ruta_carpeta_miniaturas()
@@ -94,7 +111,7 @@ class Tarjeta(QFrame):
         self.setFrameShadow(QFrame.Raised)
         layout = QHBoxLayout(self)
 
-        nombre, duracion, ancho, alto, codec, miniaturas = fila
+        nombre, duracion, ancho, alto, codec, miniaturas, tamano = fila
 
         ruta_miniatura = miniatura_principal(nombre)
         if ruta_miniatura is not None:
@@ -128,6 +145,7 @@ class Tarjeta(QFrame):
             ("Resolución", resolucion),
             ("Codec", formatear_valor(codec)),
             ("Miniaturas", formatear_valor(miniaturas)),
+            ("Tamaño", formatear_tamano(tamano)),
         ]
         columna_campos = QVBoxLayout()
         for etiqueta, valor in campos:
@@ -149,13 +167,16 @@ class VisorVideos(QMainWindow):
         self.tarea_lectura = None
         self.carpeta_seleccionada = None
         self._escaneo_pendiente = False
+        self._tamanos_pendiente = False
         self._ffprobe_pendiente = False
         self._miniaturas_pendiente = False
         self._guardado_pendiente = False
         self.tarea_escaneo = None
+        self.tarea_tamanos = None
         self.tarea_ffprobe = None
         self.tarea_miniaturas = None
         self.tarea_guardado = None
+        self.resultado_tamanos = None
         self.resultado_ffprobe = None
         self.resultado_miniaturas = None
         self.videos_detectados = None
@@ -264,6 +285,7 @@ class VisorVideos(QMainWindow):
         )
         cadena_activa = (
             self._escaneo_pendiente
+            or self._tamanos_pendiente
             or self._ffprobe_pendiente
             or self._miniaturas_pendiente
             or self._guardado_pendiente
@@ -297,6 +319,7 @@ class VisorVideos(QMainWindow):
             return
         tarea = TareaEscaneo(carpeta)
         self._escaneo_pendiente = True
+        self._tamanos_pendiente = False
         self._ffprobe_pendiente = False
         self._miniaturas_pendiente = False
         self._guardado_pendiente = False
@@ -306,12 +329,14 @@ class VisorVideos(QMainWindow):
         self.registros_guardados = None
         self.resultado_sincronizacion = None
         self.tarea_escaneo = None
+        self.tarea_tamanos = None
         self.tarea_ffprobe = None
         self.tarea_miniaturas = None
         self.tarea_guardado = None
         self.tarea_sincronizacion = None
         self.tarea_recarga_catalogo = None
         self.tarea_pagina = None
+        self.resultado_tamanos = None
         self.resultado_ffprobe = None
         self.resultado_miniaturas = None
         if not self.gestor.iniciar(tarea):
@@ -324,6 +349,7 @@ class VisorVideos(QMainWindow):
 
     def _limpiar_cadena(self):
         self._escaneo_pendiente = False
+        self._tamanos_pendiente = False
         self._ffprobe_pendiente = False
         self._miniaturas_pendiente = False
         self._guardado_pendiente = False
@@ -331,18 +357,20 @@ class VisorVideos(QMainWindow):
         self._recarga_catalogo_pendiente = False
         self._pagina_pendiente = False
         self.tarea_escaneo = None
+        self.tarea_tamanos = None
         self.tarea_ffprobe = None
         self.tarea_miniaturas = None
         self.tarea_guardado = None
         self.tarea_sincronizacion = None
         self.tarea_recarga_catalogo = None
         self.tarea_pagina = None
+        self.resultado_tamanos = None
         self.resultado_ffprobe = None
         self.resultado_miniaturas = None
 
     def _al_resultado_escaneo(self, videos):
         self._escaneo_pendiente = False
-        self._ffprobe_pendiente = True
+        self._tamanos_pendiente = True
         self.videos_detectados = list(videos)
         self._mostrar_estado_escaneo()
         self._actualizar_botones_carpeta()
@@ -365,6 +393,9 @@ class VisorVideos(QMainWindow):
     def _al_resultado(self, resultado):
         if self._escaneo_pendiente:
             self._al_resultado_escaneo(resultado)
+            return
+        if self._tamanos_pendiente:
+            self._al_resultado_tamanos(resultado)
             return
         if self._ffprobe_pendiente:
             self._al_resultado_ffprobe(resultado)
@@ -390,6 +421,32 @@ class VisorVideos(QMainWindow):
         self._total_catalogo = resultado.get("total")
         self._crear_tarjetas(resultado.get("videos", []))
         self._carga_completada = True
+
+    def _iniciar_tamanos(self):
+        if self.tarea_escaneo is None or self.videos_detectados is None:
+            self._limpiar_cadena()
+            self._actualizar_botones_carpeta()
+            return
+        tarea = TareaTamanosArchivos(
+            self.videos_detectados, self.tarea_escaneo.carpeta
+        )
+        if not self.gestor.iniciar(tarea):
+            self._limpiar_cadena()
+            self._actualizar_botones_carpeta()
+            return
+        self.tarea_tamanos = tarea
+
+    def _al_resultado_tamanos(self, resultado):
+        self._tamanos_pendiente = False
+        self._ffprobe_pendiente = True
+        self.tarea_tamanos = None
+        self.resultado_tamanos = resultado
+        self._actualizar_botones_carpeta()
+
+    def _al_error_tamanos(self, mensaje):
+        self._limpiar_cadena()
+        self.estado_escaneo.setText(MENSAJE_ERROR_TAMANOS)
+        self._actualizar_botones_carpeta()
 
     def _iniciar_ffprobe(self):
         if self.tarea_escaneo is None or self.videos_detectados is None:
@@ -445,6 +502,7 @@ class VisorVideos(QMainWindow):
         if (
             self.tarea_escaneo is None
             or self.videos_detectados is None
+            or self.resultado_tamanos is None
             or self.resultado_ffprobe is None
             or self.resultado_miniaturas is None
         ):
@@ -456,6 +514,9 @@ class VisorVideos(QMainWindow):
         )
         registros = combinar_registros_con_miniaturas(
             registros, self.resultado_miniaturas
+        )
+        registros = combinar_registros_con_tamanos(
+            registros, self.resultado_tamanos
         )
         tarea = TareaGuardarVideos(registros, self._ruta_db)
         if not self.gestor.iniciar(tarea):
@@ -469,6 +530,9 @@ class VisorVideos(QMainWindow):
             self._limpiar_cadena()
             return
         if self._escaneo_pendiente:
+            return
+        if self._tamanos_pendiente:
+            self._iniciar_tamanos()
             return
         if self._ffprobe_pendiente:
             self._iniciar_ffprobe()
@@ -588,6 +652,7 @@ class VisorVideos(QMainWindow):
     def _al_resultado_guardado(self, resultado):
         self._guardado_pendiente = False
         self.tarea_guardado = None
+        self.resultado_tamanos = None
         self.resultado_ffprobe = None
         self.resultado_miniaturas = None
         self.registros_guardados = resultado.get("guardados")
@@ -597,6 +662,9 @@ class VisorVideos(QMainWindow):
     def _al_error(self, mensaje):
         if self._escaneo_pendiente:
             self._al_error_escaneo(mensaje)
+            return
+        if self._tamanos_pendiente:
+            self._al_error_tamanos(mensaje)
             return
         if self._ffprobe_pendiente:
             self._al_error_ffprobe(mensaje)
@@ -759,6 +827,7 @@ def main():
             if (
                 ventana.gestor.activo
                 or ventana._escaneo_pendiente
+                or ventana._tamanos_pendiente
                 or ventana._ffprobe_pendiente
                 or ventana._miniaturas_pendiente
                 or ventana._guardado_pendiente

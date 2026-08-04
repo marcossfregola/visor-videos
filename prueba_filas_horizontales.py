@@ -60,6 +60,7 @@ def _filas_resultado(nombres):
             i,
             "h264",
             i % 3,
+            None,
         )
         for i, nombre in enumerate(nombres, start=1)
     ]
@@ -82,7 +83,8 @@ def _crear_bd(filas):
                 ancho INTEGER,
                 alto INTEGER,
                 codec_video TEXT,
-                cantidad_miniaturas INTEGER
+                cantidad_miniaturas INTEGER,
+                tamano_bytes INTEGER
             )
             """
         )

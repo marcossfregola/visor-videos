@@ -2,6 +2,7 @@ import ast
 import copy
 import os
 import py_compile
+import shutil
 import sqlite3
 import sys
 import tempfile
@@ -27,7 +28,8 @@ def _crear_bd(filas):
                 ancho INTEGER,
                 alto INTEGER,
                 codec_video TEXT,
-                cantidad_miniaturas INTEGER
+                cantidad_miniaturas INTEGER,
+                tamano_bytes INTEGER
             )
             """
         )
@@ -562,7 +564,6 @@ def test_15():
     bd = ruta_biblioteca()
     miniaturas = ruta_carpeta_miniaturas()
     videos = ruta_carpeta_videos()
-    carpeta_bd = os.path.dirname(bd)
 
     def estado_archivos():
         return (
@@ -576,50 +577,75 @@ def test_15():
         with open(bd, "rb") as f:
             return f.read()
 
+    def columnas_bd(ruta_db):
+        conn = sqlite3.connect(ruta_db)
+        try:
+            return {fila[1] for fila in conn.execute("PRAGMA table_info(videos)")}
+        finally:
+            conn.close()
+
     antes = estado_archivos()
     bytes_antes = bytes_bd()
     dump_antes = _dump_bd(bd)
 
-    diferencias = escanear_mod.detectar_diferencias(videos, bd)
-    plan = escanear_mod.preparar_plan_sincronizacion(diferencias)
-    resultado = escanear_mod.aplicar_incorporaciones(plan, bd)
+    temp = tempfile.TemporaryDirectory()
+    try:
+        copia = os.path.join(temp.name, "copia_biblioteca.db")
+        shutil.copy2(bd, copia)
+        conn = escanear_mod.conectar_bd(copia)
+        conn.commit()
+        conn.close()
+
+        diferencias = escanear_mod.detectar_diferencias(videos, copia)
+        plan = escanear_mod.preparar_plan_sincronizacion(diferencias)
+        resultado = escanear_mod.aplicar_incorporaciones(plan, copia)
+
+        dump_despues = _dump_bd(copia)
+        por_nombre = {fila[1]: fila for fila in dump_despues}
+        nombres_antes = {fila[1] for fila in dump_antes}
+        nombres_actuales = set(por_nombre)
+        nombres_incorporados = [r["nombre"] for r in plan["a_incorporar"]]
+        candidatos = plan["candidatos_a_eliminar"]
+        tiene_tamano = "tamano_bytes" in columnas_bd(copia)
+        preexistentes_ok = all(
+            fila[1] in por_nombre
+            and por_nombre[fila[1]][:10] == fila
+            and por_nombre[fila[1]][10] is None
+            for fila in dump_antes
+        )
+        candidatos_presentes = {
+            nombre for nombre in candidatos
+            if por_nombre.get(nombre) is not None
+        }
+    finally:
+        temp.cleanup()
 
     despues = estado_archivos()
     bytes_despues = bytes_bd()
-    dump_despues = _dump_bd(bd)
-
-    conn = sqlite3.connect(bd)
-    try:
-        nombres_actuales = {fila[0] for fila in conn.execute("SELECT nombre FROM videos")}
-        candidatos_presentes = {
-            nombre for nombre in plan["candidatos_a_eliminar"]
-            if conn.execute("SELECT 1 FROM videos WHERE nombre = ?", (nombre,)).fetchone() is not None
-        }
-    finally:
-        conn.close()
-
-    incorporados = resultado["incorporados"]
-    nombres_incorporados = resultado["nombres"]
-    pendientes = resultado["pendientes_eliminacion"]
-    nombres_antes = {fila[1] for fila in dump_antes}
+    dump_real_despues = _dump_bd(bd)
 
     ok = (
-        resultado["incorporados"] == len(plan["a_incorporar"])
-        and resultado["nombres"] == [r["nombre"] for r in plan["a_incorporar"]]
-        and resultado["pendientes_eliminacion"] == len(plan["candidatos_a_eliminar"])
+        resultado == {
+            "incorporados": len(plan["a_incorporar"]),
+            "nombres": nombres_incorporados,
+            "pendientes_eliminacion": len(candidatos),
+        }
+        and set(nombres_incorporados) <= nombres_actuales
         and nombres_antes.issubset(nombres_actuales)
-        and candidatos_presentes == set(plan["candidatos_a_eliminar"])
-        and dump_antes == [f for f in dump_despues if f[1] in nombres_antes]
+        and nombres_actuales == nombres_antes | set(nombres_incorporados)
+        and preexistentes_ok
+        and candidatos_presentes == set(candidatos)
+        and tiene_tamano
         and antes == despues
-        and (plan["a_incorporar"] == [] or True)
+        and bytes_antes == bytes_bd()
+        and dump_antes == dump_real_despues
     )
-    sin_escritura = plan["a_incorporar"] == [] and bytes_despues == bytes_antes
     return (
         ok,
-        f"incorporados={incorporados} nombres={nombres_incorporados} "
-        f"pendientes={pendientes} nada_eliminado={nombres_antes.issubset(nombres_actuales)} "
-        f"candidatos_presentes={candidatos_presentes} estado_real_igual={antes == despues} "
-        f"noop_bytes_iguales={sin_escritura}",
+        f"incorporados={resultado['incorporados']} nombres={nombres_incorporados} "
+        f"preexistentes_conservadas={preexistentes_ok} candidatos_presentes={candidatos_presentes} "
+        f"tamano_bytes_en_copia={tiene_tamano} estado_real_igual={antes == despues} "
+        f"real_sin_cambios={bytes_antes == bytes_bd() and dump_antes == dump_real_despues}",
     )
 
 

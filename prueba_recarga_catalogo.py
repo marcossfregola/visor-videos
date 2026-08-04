@@ -79,7 +79,8 @@ def _crear_bd(filas):
                 ancho INTEGER,
                 alto INTEGER,
                 codec_video TEXT,
-                cantidad_miniaturas INTEGER
+                cantidad_miniaturas INTEGER,
+                tamano_bytes INTEGER
             )
             """
         )
@@ -144,6 +145,7 @@ def _cadena_terminada(ventana):
     return (
         ventana.gestor.hilo is None
         and not ventana._escaneo_pendiente
+        and not ventana._tamanos_pendiente
         and not ventana._ffprobe_pendiente
         and not ventana._miniaturas_pendiente
         and not ventana._guardado_pendiente
@@ -251,6 +253,7 @@ def test_02():
         _limpiar(ventana)
         esperados = [
             "TareaEscaneo",
+            "TareaTamanosArchivos",
             "TareaFFprobe",
             "TareaMiniaturas",
             "TareaGuardarVideos",
@@ -259,8 +262,8 @@ def test_02():
         ]
         ok = (
             tipos == esperados
-            and len(tareas_vistas) == 6
-            and len(set(tareas_vistas)) == 6
+            and len(tareas_vistas) == 7
+            and len(set(tareas_vistas)) == 7
             and mismo_gestor
             and es_recarga
             and misma_tarea

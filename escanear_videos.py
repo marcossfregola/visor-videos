@@ -14,6 +14,7 @@ COLUMNAS_EXTRA = [
     ("alto", "INTEGER"),
     ("codec_video", "TEXT"),
     ("cantidad_miniaturas", "INTEGER"),
+    ("tamano_bytes", "INTEGER"),
 ]
 
 def escanear_videos(carpeta):
@@ -89,6 +90,60 @@ def combinar_registros_con_miniaturas(registros, resultado_miniaturas):
         por_ruta[ruta] = cantidad if isinstance(cantidad, int) else None
     for registro in lista:
         registro["cantidad_miniaturas"] = por_ruta.get(
+            _normalizar_ruta(registro.get("ruta"))
+        )
+    return lista
+
+
+def _tamano_archivo(ruta):
+    try:
+        return os.path.getsize(ruta)
+    except OSError:
+        return None
+
+
+def obtener_tamanos_archivos(videos, carpeta):
+    if not isinstance(carpeta, str) or not carpeta:
+        raise ValueError("carpeta debe ser una ruta de texto no vacía")
+    if not os.path.isdir(carpeta):
+        raise FileNotFoundError(f"Carpeta no encontrada: {carpeta}")
+    if isinstance(videos, (str, bytes, bytearray)):
+        raise TypeError("videos debe ser una colección de nombres, no texto")
+    try:
+        lista = list(videos)
+    except TypeError:
+        raise TypeError("videos debe ser una colección iterable") from None
+    rutas = [os.path.join(carpeta, nombre) for nombre in lista]
+    resultados = [
+        {"ruta": ruta, "tamano_bytes": _tamano_archivo(ruta)} for ruta in rutas
+    ]
+    return {
+        "rutas": rutas,
+        "resultados": resultados,
+        "procesados": len(resultados),
+        "con_tamano": sum(1 for r in resultados if r["tamano_bytes"] is not None),
+        "sin_tamano": sum(1 for r in resultados if r["tamano_bytes"] is None),
+    }
+
+
+def combinar_registros_con_tamanos(registros, resultado_tamanos):
+    if isinstance(registros, (str, bytes, bytearray)):
+        raise TypeError("registros debe ser una colección, no texto")
+    try:
+        lista = [dict(r) for r in list(registros)]
+    except TypeError:
+        raise TypeError("registros debe ser una colección iterable") from None
+    por_ruta = {}
+    for item in ((resultado_tamanos or {}).get("resultados") or []):
+        if not isinstance(item, dict):
+            continue
+        ruta = _normalizar_ruta(item.get("ruta"))
+        if ruta is None:
+            continue
+        tamano = item.get("tamano_bytes")
+        por_ruta[ruta] = tamano if isinstance(tamano, int) else None
+    for registro in lista:
+        registro["tamano_bytes"] = por_ruta.get(
             _normalizar_ruta(registro.get("ruta"))
         )
     return lista
@@ -271,15 +326,16 @@ def actualizar_datos(conn, carpeta, nombre):
     es_vacio = os.path.getsize(ruta) == 0
     datos = None if es_vacio else obtener_datos_ffprobe(ruta)
     miniaturas = contar_miniaturas(nombre)
+    tamano_bytes = os.path.getsize(ruta)
     if datos is None:
         conn.execute(
-            "UPDATE videos SET duracion_segundos = NULL, ancho = NULL, alto = NULL, codec_video = NULL, cantidad_miniaturas = ? WHERE nombre = ?",
-            (miniaturas, nombre),
+            "UPDATE videos SET duracion_segundos = NULL, ancho = NULL, alto = NULL, codec_video = NULL, cantidad_miniaturas = ?, tamano_bytes = ? WHERE nombre = ?",
+            (miniaturas, tamano_bytes, nombre),
         )
     else:
         conn.execute(
-            "UPDATE videos SET duracion_segundos = ?, ancho = ?, alto = ?, codec_video = ?, cantidad_miniaturas = ? WHERE nombre = ?",
-            (datos["duracion_segundos"], datos["ancho"], datos["alto"], datos["codec_video"], miniaturas, nombre),
+            "UPDATE videos SET duracion_segundos = ?, ancho = ?, alto = ?, codec_video = ?, cantidad_miniaturas = ?, tamano_bytes = ? WHERE nombre = ?",
+            (datos["duracion_segundos"], datos["ancho"], datos["alto"], datos["codec_video"], miniaturas, tamano_bytes, nombre),
         )
 
 def sincronizar_bd(conn, carpeta):
@@ -302,7 +358,7 @@ def listar_videos(ruta_db=None):
     try:
         return conn.execute(
             """
-            SELECT nombre, duracion_segundos, ancho, alto, codec_video, cantidad_miniaturas
+            SELECT nombre, duracion_segundos, ancho, alto, codec_video, cantidad_miniaturas, tamano_bytes
             FROM videos
             ORDER BY nombre
             """
@@ -443,7 +499,7 @@ def listar_videos_paginado(limite, desplazamiento=0, texto=None, ruta_db=None):
         if texto is None:
             filas = conn.execute(
                 """
-                SELECT nombre, duracion_segundos, ancho, alto, codec_video, cantidad_miniaturas
+                SELECT nombre, duracion_segundos, ancho, alto, codec_video, cantidad_miniaturas, tamano_bytes
                 FROM videos
                 ORDER BY nombre
                 LIMIT ? OFFSET ?
@@ -455,7 +511,7 @@ def listar_videos_paginado(limite, desplazamiento=0, texto=None, ruta_db=None):
             patron = f"%{texto}%"
             filas = conn.execute(
                 """
-                SELECT nombre, duracion_segundos, ancho, alto, codec_video, cantidad_miniaturas
+                SELECT nombre, duracion_segundos, ancho, alto, codec_video, cantidad_miniaturas, tamano_bytes
                 FROM videos
                 WHERE nombre LIKE ?
                 ORDER BY nombre
@@ -487,8 +543,8 @@ def _validar_registro_video(datos):
 def _upsert_video(conn, datos):
     conn.execute(
         """
-        INSERT INTO videos (nombre, ruta, extension, fecha_importacion, duracion_segundos, ancho, alto, codec_video, cantidad_miniaturas)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO videos (nombre, ruta, extension, fecha_importacion, duracion_segundos, ancho, alto, codec_video, cantidad_miniaturas, tamano_bytes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(nombre) DO UPDATE SET
             ruta = excluded.ruta,
             extension = excluded.extension,
@@ -497,7 +553,8 @@ def _upsert_video(conn, datos):
             ancho = excluded.ancho,
             alto = excluded.alto,
             codec_video = excluded.codec_video,
-            cantidad_miniaturas = excluded.cantidad_miniaturas
+            cantidad_miniaturas = excluded.cantidad_miniaturas,
+            tamano_bytes = excluded.tamano_bytes
         """,
         (
             datos["nombre"],
@@ -509,6 +566,7 @@ def _upsert_video(conn, datos):
             datos.get("alto"),
             datos.get("codec_video"),
             datos.get("cantidad_miniaturas"),
+            datos.get("tamano_bytes"),
         ),
     )
 

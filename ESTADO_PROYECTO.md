@@ -20,15 +20,17 @@ ruta absoluta, la valida y la conserva en la sesión sin escanearla),
 **escaneo manual y asíncrono de la carpeta elegida desde la interfaz**
 (`visor_videos.py` escanea la carpeta con `TareaEscaneo` mediante el
 mismo `GestorTareas`, muestra la cantidad de videos detectados y no
-ejecuta FFmpeg ni genera miniaturas) y **pipeline escaneo → FFprobe →
-miniaturas → guardado** (`TareaEscaneo` → `TareaFFprobe` →
+ejecuta FFmpeg ni genera miniaturas) y **pipeline escaneo → tamaños →
+FFprobe → miniaturas → guardado** (`TareaEscaneo` →
+`TareaTamanosArchivos` → `TareaFFprobe` →
 `combinar_registros_con_ffprobe` → `TareaMiniaturas` →
-`combinar_registros_con_miniaturas` → `TareaGuardarVideos`, encadenado
-desde la interfaz con el mismo gestor; los archivos detectados se
-guardan en SQLite con metadatos FFprobe (duración, resolución, codec;
-`NULL` ante vacíos/incompletos/fallos individuales) y cantidad de
-miniaturas por video mediante el upsert transaccional existente,
-conservando los registros preexistentes), **detección no destructiva de
+`combinar_registros_con_miniaturas` → `combinar_registros_con_tamanos`
+→ `TareaGuardarVideos`, encadenado desde la interfaz con el mismo gestor;
+los archivos detectados se guardan en SQLite con el tamaño de archivo,
+metadatos FFprobe (duración, resolución, codec; `NULL` ante
+vacíos/incompletos/fallos individuales) y cantidad de miniaturas por
+video mediante el upsert transaccional existente, conservando los
+registros preexistentes), **detección no destructiva de
 diferencias entre la carpeta y el catálogo SQLite** (`detectar_diferencias`
 en `escanear_videos.py`: compara por nombre lo que hay en disco con lo que
 hay en la base y devuelve `presentes_en_ambos`/`nuevos`/`ausentes_del_disco`;
@@ -74,8 +76,8 @@ incorporaciones confirmadas permanecen—; devuelve
 `{"diferencias", "plan", "incorporaciones", "eliminaciones", "resumen"}`)
 y **la integración de la sincronización completa en la interfaz**
 (`visor_videos.py` lanza `TareaSincronizacionCatalogo` con el mismo
-`GestorTareas` **tras el guardado exitoso** del pipeline escaneo → FFprobe
-→ miniaturas → guardado: `_sincronizacion_pendiente`/`tarea_sincronizacion`/
+`GestorTareas` **tras el guardado exitoso** del pipeline escaneo → tamaños
+→ FFprobe → miniaturas → guardado: `_sincronizacion_pendiente`/`tarea_sincronizacion`/
 `resultado_sincronizacion`, mensajes `MENSAJE_SINCRONIZANDO`/
 `MENSAJE_ERROR_SINCRONIZACION` y resumen final "Sincronización completa: N
 incorporados, M eliminados, K candidatos restantes"; los registros ausentes
@@ -107,38 +109,50 @@ del `QScrollArea`; se elimina la grilla de 2 columnas, la constante
 `COLUMNAS` y `setColumnStretch(1, 1)`; `_crear_tarjetas`/`_agregar_tarjetas`
 colocan cada tarjeta en la fila siguiente con columna 0; **solo se muestra la
 primera miniatura por video**, sin 4/6 miniaturas por video, sin generación
-progresiva de miniaturas, sin tamaño de archivo, sin doble clic y sin última
-carpeta recordada) aprobadas;
+progresiva de miniaturas, sin doble clic y sin última
+carpeta recordada) y **la incorporación y visualización del tamaño de los
+archivos de video** (`escanear_videos.py` añade `tamano_bytes INTEGER` a
+`COLUMNAS_EXTRA` con migración idempotente de bases existentes,
+`obtener_tamanos_archivos` y `combinar_registros_con_tamanos`;
+`tareas_videos.py` añade `TareaTamanosArchivos`; `visor_videos.py` inserta el
+paso de tamaños **entre el escaneo y FFprobe**, extendiendo la cadena a 7
+tareas (`TareaEscaneo` → `TareaTamanosArchivos` → `TareaFFprobe` →
+`TareaMiniaturas` → `TareaGuardarVideos` → `TareaSincronizacionCatalogo` →
+`TareaLecturaCatalogoPaginada`), persiste `tamano_bytes` (NULL si el archivo
+no existe o no es legible) y muestra el campo "Tamaño" en cada fila con
+`formatear_tamano` en B/KB/MB/GB y "Desconocido" para valores ausentes o
+inválidos; suite nueva `prueba_tamano_archivo.py` con 15 pruebas y
+correcciones de aislamiento T15/T27 sobre copia de `biblioteca.db`) aprobadas;
 quedan pendientes la **deduplicación de nombres repetidos** y la
 **paginación completa** (scroll infinito, búsqueda en SQL desde la
 interfaz y ordenamiento configurable), que todavía no existen.
 
 ## Último commit aprobado
 
-**Mensaje:** Presentar el catálogo en filas horizontales
+**Mensaje:** Incorporar tamaño de archivos al catálogo
 
-**Etapa aprobada:** Presentación del catálogo en filas horizontales:
-`visor_videos.py` cambia la presentación de la grilla de 2 columnas a **una
-tarjeta horizontal por video, una fila por video en una única columna**. Se
-elimina la constante `COLUMNAS = 2`; `Tarjeta` usa `QHBoxLayout` con la
-miniatura (o el recuadro "Sin miniatura") a la izquierda y una columna
-derecha `columna_campos = QVBoxLayout()` con los cinco campos (nombre,
-duración, resolución, codec, miniaturas) agregada con
-`layout.addLayout(columna_campos, 1)`; `_crear_tarjetas` y
-`_agregar_tarjetas` agregan cada tarjeta en la fila siguiente (columna 0) y
-se elimina `setColumnStretch(1, 1)`. `_reemplazar_tarjetas` conserva su
-semántica (libera las anteriores y reconstruye; la recarga sigue siendo la
-única vía que reemplaza tarjetas). **Ausencia deliberada**: solo se muestra
-la primera miniatura (no 4/6 imágenes por video), sin generación progresiva
-de miniaturas, sin tamaño de archivo, sin doble clic y sin última carpeta
-recordada. Se agregó `prueba_filas_horizontales.py` (**16 pruebas**: una
-fila por video, posiciones reales en la ventana —misma columna, `y`
-crecientes, sin segunda columna—, captura real de un PNG en
-`TemporaryDirectory`, campos de texto, filtrado, página adicional,
-reemplazo, redimensionado, AST sin `sqlite3`, ausencia de
-subprocess/FFmpeg, datos reales intactos). Regresiones de
-`prueba_pagina_siguiente.py` y `prueba_recarga_catalogo.py` 20/20 y 20/20
-OK. **Sin cambios en los datos reales** (`biblioteca.db`, `miniaturas/` y
+**Etapa aprobada:** Incorporar y mostrar el tamaño de los archivos de video:
+`escanear_videos.py` añade **`("tamano_bytes", "INTEGER")`** a `COLUMNAS_EXTRA`
+(la migración idempotente de `conectar_bd` agrega la columna a las bases
+existentes sin tocar los registros, que quedan en `NULL`), incorpora
+`obtener_tamanos_archivos(videos, carpeta)` (resumen `{"rutas", "resultados",
+"procesados", "con_tamano", "sin_tamano"}` con `{"ruta", "tamano_bytes"}` por
+archivo; `None` si el archivo no existe o es ilegible) y
+`combinar_registros_con_tamanos(registros, resultado_tamanos)` (asigna
+`tamano_bytes` por ruta normalizada; devuelve copias); `guardar_video`/
+`guardar_videos` persisten la clave opcional (`NULL` si falta) y
+`listar_videos`/`listar_videos_paginado` devuelven **tuplas de siete campos**.
+`tareas_videos.py` incorpora `TareaTamanosArchivos(TareaBase)` (obtiene los
+tamaños en segundo plano) y re-exporta ambas funciones. `visor_videos.py`
+inserta el paso **después del escaneo y antes de FFprobe**, extendiendo la
+cadena a **7 tareas** con los estados `_tamanos_pendiente`/`tarea_tamanos`/
+`resultado_tamanos`, los handlers `_al_resultado_tamanos`/`_al_error_tamanos`
+y `MENSAJE_ERROR_TAMANOS`; la tarjeta horizontal desempaqueta la tupla de
+siete campos y muestra el campo "Tamaño" con `formatear_tamano` (B/KB/MB/GB;
+"Desconocido" para valores ausentes o inválidos). Se agregó
+`prueba_tamano_archivo.py` (**15 pruebas** T01–T15). Correcciones de
+aislamiento T15/T27 sobre copia de `biblioteca.db`. Datos reales preservados
+(`biblioteca.db` con la columna `tamano_bytes` agregada, `miniaturas/` y
 `videos_prueba/` intactos) y sin avisos `QThread: Destroyed`. Aprobada.
 
 **SHA definitivo:** debe consultarse con `git log -1` (el SHA no se
@@ -146,32 +160,41 @@ escribe en este documento para evitar autorreferencias al commit).
 
 ## Última etapa aprobada
 
-Presentación del catálogo en filas horizontales: `visor_videos.py` presenta
-el catálogo con **una tarjeta horizontal por video, una fila por video en
-una única columna** dentro del `QScrollArea`. Se elimina la constante
-`COLUMNAS = 2` y `setColumnStretch(1, 1)`; `Tarjeta` usa `QHBoxLayout` con
-la miniatura (o el recuadro "Sin miniatura", tamaño fijo
-`ANCHO_TARJETA`×`ALTO_TARJETA`) a la izquierda y una columna derecha
-(`columna_campos = QVBoxLayout()`) con los cinco campos (nombre, duración,
-resolución, codec, miniaturas) agregada con `layout.addLayout(columna_campos, 1)`;
-`_crear_tarjetas`/`_agregar_tarjetas` colocan cada tarjeta en la fila
-siguiente con columna 0 (`addWidget(tarjeta, posicion/indice, 0)`);
-`_reemplazar_tarjetas` libera las tarjetas anteriores (`removeWidget` +
-`deleteLater`) y reconstruye, conservando la recarga como la única vía que
-reemplaza tarjetas. **Ausencia deliberada**: solo se muestra la primera
-miniatura (no 4/6 imágenes por video), sin generación progresiva de
-miniaturas, sin tamaño de archivo, sin doble clic y sin última carpeta
-recordada. Con suite nueva `prueba_filas_horizontales.py` (**16 pruebas**:
-una fila por video; posiciones reales en la ventana —misma columna `x`, `y`
-crecientes, alto fijo, sin segunda columna, ancho de fila y del contenedor—;
-guardado real de un PNG en `TemporaryDirectory`; campos de texto; filtrado;
-página adicional debajo; reemplazo con liberación; fase de paginación (150
-registros → `primera_pagina=100`, `total_tras_cargar_mas=150`,
-`duplicados_tras_cargar_mas=0`); redimensionado y scrolleado; AST sin
-`sqlite3`/`connect`; ausencia de literales binarios/subprocess/Popen/
-`QProcess`/`os.system`; datos reales intactos). Regresiones de
-`prueba_pagina_siguiente.py` y `prueba_recarga_catalogo.py` 20/20 y 20/20
-OK. **Sin cambios en los datos reales** (`biblioteca.db`, `miniaturas/` y
+Incorporar y mostrar el tamaño de los archivos de video: el catálogo
+incorpora el **tamaño en bytes** como columna opcional y la interfaz lo
+muestra en cada fila. `escanear_videos.py` añade **`("tamano_bytes",
+"INTEGER")`** a `COLUMNAS_EXTRA` (la **migración idempotente** de
+`conectar_bd` —`PRAGMA table_info` + `ALTER TABLE ADD COLUMN`— agrega la
+columna a las bases existentes **sin tocar los registros**, que quedan en
+`NULL` hasta que un escaneo los complete), incorpora
+`obtener_tamanos_archivos(videos, carpeta)` (consulta `os.path.getsize` por
+archivo y devuelve el resumen `{"rutas", "resultados", "procesados",
+"con_tamano", "sin_tamano"}` con `{"ruta", "tamano_bytes"}` por archivo;
+`None` si el archivo no existe o es ilegible; validación previa) y
+`combinar_registros_con_tamanos(registros, resultado_tamanos)` (asigna
+`tamano_bytes` por ruta normalizada; devuelve copias); `guardar_video`/
+`guardar_videos` persisten la clave opcional (`NULL` si falta) y
+`listar_videos`/`listar_videos_paginado` devuelven **tuplas de siete
+campos**. `tareas_videos.py` incorpora `TareaTamanosArchivos(TareaBase)`
+(obtiene los tamaños en segundo plano) y re-exporta ambas funciones.
+`visor_videos.py` inserta el paso **después del escaneo y antes de
+FFprobe**, extendiendo la cadena a **7 tareas** (`TareaEscaneo` →
+`TareaTamanosArchivos` → `TareaFFprobe` → `TareaMiniaturas` →
+`TareaGuardarVideos` → `TareaSincronizacionCatalogo` →
+`TareaLecturaCatalogoPaginada`) con los estados
+`_tamanos_pendiente`/`tarea_tamanos`/`resultado_tamanos`, los handlers
+`_al_resultado_tamanos`/`_al_error_tamanos` y `MENSAJE_ERROR_TAMANOS`
+("No se pudieron obtener los tamaños de los archivos"); la tarjeta horizontal
+desempaqueta la tupla de siete campos (`nombre, duracion, ancho, alto,
+codec, miniaturas, tamano = fila`) y muestra el campo "Tamaño" con
+`formatear_tamano` (B/KB/MB/GB; "Desconocido" para valores ausentes o
+inválidos). Con suite nueva `prueba_tamano_archivo.py` (**15 pruebas**
+T01–T15) y **correcciones de aislamiento**: `test_15` de
+`prueba_aplicar_incorporaciones.py` y `test_27` de
+`prueba_sincronizacion_asincrona.py` operan sobre una copia de
+`biblioteca.db` y verifican que la base real queda intacta. **Sin cambios
+en los datos reales** (`biblioteca.db` con la columna `tamano_bytes`
+agregada por migración, sin pérdida de registros; `miniaturas/` y
 `videos_prueba/` intactos) y sin avisos `QThread: Destroyed`. Aprobada.
 
 ## Estado de la arquitectura
@@ -241,7 +264,7 @@ OK. **Sin cambios en los datos reales** (`biblioteca.db`, `miniaturas/` y
 -   Integración de la sincronización completa en la interfaz
     (`visor_videos.py` lanza `TareaSincronizacionCatalogo` con el mismo
     `GestorTareas` **tras el guardado exitoso** del pipeline escaneo →
-    FFprobe → miniaturas → guardado; estados
+    tamaños → FFprobe → miniaturas → guardado; estados
     `_sincronizacion_pendiente`/`tarea_sincronizacion`/
     `resultado_sincronizacion`, handlers `_al_resultado_sincronizacion`/
     `_al_error_sincronizacion`, constantes `MENSAJE_SINCRONIZANDO`/
@@ -292,21 +315,36 @@ OK. **Sin cambios en los datos reales** (`biblioteca.db`, `miniaturas/` y
     única columna**; se elimina la constante `COLUMNAS = 2` y
     `setColumnStretch(1, 1)`; `_crear_tarjetas`/`_agregar_tarjetas`
     agregan cada tarjeta en la fila siguiente con columna 0;
-    `_reemplazar_tarjetas` libera las anteriores (`removeWidget` +
-    `deleteLater`) y reconstruye; la recarga sigue siendo la única vía que
-    reemplaza tarjetas; **solo se muestra la primera miniatura por video**,
-    sin 4/6 miniaturas por video, sin generación progresiva de miniaturas,
-    sin tamaño de archivo, sin doble clic y sin última carpeta recordada;
-    suite `prueba_filas_horizontales.py` con 16 pruebas; datos reales
-    intactos).
+     `_reemplazar_tarjetas` libera las anteriores (`removeWidget` +
+     `deleteLater`) y reconstruye; la recarga sigue siendo la única vía que
+     reemplaza tarjetas; **solo se muestra la primera miniatura por video**,
+     sin 4/6 miniaturas por video, sin generación progresiva de miniaturas,
+     sin doble clic y sin última carpeta recordada;
+     suite `prueba_filas_horizontales.py` con 16 pruebas; datos reales
+     intactos).
+-   Incorporación y visualización del tamaño de los archivos de video
+    (`escanear_videos.py` añade `("tamano_bytes", "INTEGER")` a
+    `COLUMNAS_EXTRA` con migración idempotente de bases existentes,
+    incorpora `obtener_tamanos_archivos(videos, carpeta)` y
+    `combinar_registros_con_tamanos(registros, resultado_tamanos)`;
+    `tareas_videos.py` añade `TareaTamanosArchivos`; `visor_videos.py`
+    inserta el paso de tamaños **entre el escaneo y FFprobe** —cadena de 7
+    tareas con el mismo `GestorTareas`—, persiste `tamano_bytes` (NULL si
+    el archivo no existe o no es legible) y muestra el campo "Tamaño" en
+    cada fila con `formatear_tamano` (B/KB/MB/GB; "Desconocido" para
+    valores ausentes o inválidos); `listar_videos`/`listar_videos_paginado`
+    devuelven tuplas de siete campos; suite `prueba_tamano_archivo.py` con
+    15 pruebas; aislamiento T15/T27 sobre copia de `biblioteca.db`; datos
+    reales intactos).
 -   Pruebas automatizadas.
 
 ### En desarrollo
 
 La sincronización completa del catálogo ya está integrada en la interfaz:
-el pipeline (`TareaEscaneo` → `TareaFFprobe` → `TareaMiniaturas` →
-`TareaGuardarVideos`) convierte los archivos detectados en registros con
-metadatos FFprobe y cantidad de miniaturas y los escribe en SQLite
+el pipeline (`TareaEscaneo` → `TareaTamanosArchivos` → `TareaFFprobe` →
+`TareaMiniaturas` → `TareaGuardarVideos`) convierte los archivos detectados
+en registros con tamaño de archivo, metadatos FFprobe y cantidad de
+miniaturas y los escribe en SQLite
 conservando los preexistentes, tras el guardado exitoso se lanza
 `TareaSincronizacionCatalogo` (detección de diferencias
 `detectar_diferencias`, preparación del plan
@@ -324,8 +362,9 @@ existen): la carga inicial y la recarga muestran únicamente la primera
 página, y **ya existe la carga manual de una página adicional** con el
 botón "Cargar más" (se agregan tarjetas debajo de las existentes sin
 reemplazarlas). El catálogo se presenta con **una tarjeta horizontal por
-video, una fila por video en una única columna** (presentación aprobada en
-la última etapa).
+video, una fila por video en una única columna** y cada fila **muestra el
+tamaño de archivo** (campo "Tamaño" con `formatear_tamano`;
+presentación y tamaño aprobados en las últimas etapas).
 
 ## Pendientes prioritarios
 
@@ -383,7 +422,8 @@ deduplicación de nombres repetidos; - `detectar_diferencias` compara
 por nombre y no detecta movimientos ni renombrados (queda para etapas
 futuras); - **no existe todavía deduplicación de nombres repetidos** en
 el plan de sincronización; - el enrutado de resultados por
-`_escaneo_pendiente`/`_ffprobe_pendiente`/`_miniaturas_pendiente`/
+`_escaneo_pendiente`/`_tamanos_pendiente`/`_ffprobe_pendiente`/
+`_miniaturas_pendiente`/
 `_guardado_pendiente`/`_sincronizacion_pendiente`/
 `_recarga_catalogo_pendiente`/`_pagina_pendiente` es suficiente para una
 única tarea activa y debe revisarse si la interfaz incorpora más tipos de tarea; - el escaneo no
@@ -409,18 +449,23 @@ limpieza controlada de miniaturas antiguas.
 
 ## Próxima etapa
 
-**Aún no definida**: la presentación del catálogo en filas horizontales ya
-quedó aprobada y commiteada ("Presentar el catálogo en filas horizontales"),
-por lo que no se inicia ninguna etapa nueva en esta entrega. Los siguientes
-candidatos (todavía no definidos ni iniciados) son la **paginación completa
+**Aún no definida**: la incorporación y visualización del tamaño de los
+archivos de video ya
+quedó aprobada y commiteada ("Incorporar tamaño de archivos al catálogo"),
+por lo que no se inicia ninguna etapa nueva en esta entrega. El siguiente
+candidato (todavía no definido ni iniciado) es la **paginación completa
 automática del catálogo en la interfaz** (scroll infinito, búsqueda en SQL
 desde la interfaz y ordenamiento configurable — hoy la carga inicial y la
 recarga muestran únicamente la primera página, existe la carga manual con
-"Cargar más" y el catálogo se presenta en filas horizontales) y la
+"Cargar más", el catálogo se presenta en filas horizontales y cada fila
+muestra el tamaño de archivo) y la
 **deduplicación de nombres repetidos** en el plan de sincronización,
 manteniendo el alcance limitado: sin selección inteligente, sin múltiples
 miniaturas, sin eliminación de archivos antiguos y sin paginación
-automática.
+automática. Para **Beta 1.0** el candidato inmediato es la **generación de
+múltiples previews progresivas por video** (varias miniaturas por video con
+generación progresiva, doble clic para abrir y persistencia de la última
+carpeta).
 
 ## Documentos del proyecto
 

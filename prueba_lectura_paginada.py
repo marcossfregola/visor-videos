@@ -61,7 +61,8 @@ def _crear_bd(filas):
                 ancho INTEGER,
                 alto INTEGER,
                 codec_video TEXT,
-                cantidad_miniaturas INTEGER
+                cantidad_miniaturas INTEGER,
+                tamano_bytes INTEGER
             )
             """
         )
@@ -447,8 +448,8 @@ def test_16():
         con_null = por_nombre.get("con_null.mp4")
         con_datos = por_nombre.get("con_datos.mp4")
         ok = (
-            con_null == ("con_null.mp4", None, None, None, None, None)
-            and con_datos == ("con_datos.mp4", 2.5, 640, 360, "h264", 4)
+            con_null == ("con_null.mp4", None, None, None, None, None, None)
+            and con_datos == ("con_datos.mp4", 2.5, 640, 360, "h264", 4, None)
             and resultado["total"] == 2
         )
         return ok, f"con_null={con_null} con_datos={con_datos}"
@@ -535,7 +536,7 @@ def test_19():
         except sqlite3.ProgrammingError:
             cerrada = True
         esperado = {
-            "videos": [("a.mp4", 1.0, 1, 1, "c", 0)],
+            "videos": [("a.mp4", 1.0, 1, 1, "c", 0, None)],
             "total": 1,
             "limite": 5,
             "desplazamiento": 0,

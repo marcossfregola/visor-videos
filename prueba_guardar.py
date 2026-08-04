@@ -43,7 +43,8 @@ def _crear_bd(filas):
                 ancho INTEGER,
                 alto INTEGER,
                 codec_video TEXT,
-                cantidad_miniaturas INTEGER
+                cantidad_miniaturas INTEGER,
+                tamano_bytes INTEGER
             )
             """
         )
@@ -130,7 +131,7 @@ def test_02():
             filas = conn.execute("SELECT * FROM videos").fetchall()
         finally:
             conn.close()
-        esperado = (1, "a.mp4", "C:\\v\\a.mp4", ".mp4", "2026-08-02T00:00:00", 3.5, 640, 360, "h264", 2)
+        esperado = (1, "a.mp4", "C:\\v\\a.mp4", ".mp4", "2026-08-02T00:00:00", 3.5, 640, 360, "h264", 2, None)
         ok = (
             ok
             and not fl["timeout"]
@@ -163,7 +164,7 @@ def test_03():
             filas = conn.execute("SELECT * FROM videos").fetchall()
         finally:
             conn.close()
-        esperado = (id_v1, "a.mp4", "C:\\v\\a_v2.mp4", ".mp4", "2026-08-02T00:00:00", 9.5, 1920, 1080, "av1", 3)
+        esperado = (id_v1, "a.mp4", "C:\\v\\a_v2.mp4", ".mp4", "2026-08-02T00:00:00", 9.5, 1920, 1080, "av1", 3, None)
         ok = (
             ok1
             and ok2

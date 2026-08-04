@@ -43,7 +43,8 @@ def _crear_bd(filas):
                 ancho INTEGER,
                 alto INTEGER,
                 codec_video TEXT,
-                cantidad_miniaturas INTEGER
+                cantidad_miniaturas INTEGER,
+                tamano_bytes INTEGER
             )
             """
         )
@@ -188,7 +189,7 @@ def test_02():
             ruta_db,
         )
         filas = _dump(ruta_db)
-        esperado = [(1, "a.mp4", "C:\\v\\a.mp4", ".mp4", "2026-08-02T00:00:00", 3.5, 640, 360, "h264", 2)]
+        esperado = [(1, "a.mp4", "C:\\v\\a.mp4", ".mp4", "2026-08-02T00:00:00", 3.5, 640, 360, "h264", 2, None)]
         ok = (
             resultado == {"guardados": 1, "nombres": ["a.mp4"]}
             and filas == esperado
@@ -227,8 +228,8 @@ def test_04():
         resultado = guardar_videos(coleccion, ruta_db)
         filas_db = _dump(ruta_db)
         esperado = [
-            (1, "a.mp4", "C:\\nueva\\a.mp4", ".mp4", "2026-08-02T00:00:00", 9.0, 90, 50, "x", 7),
-            (2, "b.mp4", "C:\\nueva\\b.mp4", ".mp4", "2026-08-02T00:00:00", 8.0, 80, 40, "y", 6),
+            (1, "a.mp4", "C:\\nueva\\a.mp4", ".mp4", "2026-08-02T00:00:00", 9.0, 90, 50, "x", 7, None),
+            (2, "b.mp4", "C:\\nueva\\b.mp4", ".mp4", "2026-08-02T00:00:00", 8.0, 80, 40, "y", 6, None),
         ]
         ok = (
             resultado == {"guardados": 2, "nombres": ["a.mp4", "b.mp4"]}
@@ -278,7 +279,7 @@ def test_06():
                        duracion=12.5, ancho=1280, alto=720, codec="hevc", miniaturas=5)
         resultado = guardar_videos([datos], ruta_db)
         filas = _dump(ruta_db)
-        esperado = [(1, "full.mp4", "C:\\full\\video.mp4", ".mp4", "2026-08-02T12:00:00", 12.5, 1280, 720, "hevc", 5)]
+        esperado = [(1, "full.mp4", "C:\\full\\video.mp4", ".mp4", "2026-08-02T12:00:00", 12.5, 1280, 720, "hevc", 5, None)]
         ok = (
             resultado == {"guardados": 1, "nombres": ["full.mp4"]}
             and filas == esperado
@@ -754,7 +755,7 @@ def test_22():
             sqlite3.connect = original_connect
 
         filas = _dump(ruta_db)
-        esperado = [(1, "a.mp4", "C:\\v\\a.mp4", ".mp4", "f", 1.0, 1, 1, "c", 0)]
+        esperado = [(1, "a.mp4", "C:\\v\\a.mp4", ".mp4", "f", 1.0, 1, 1, "c", 0, None)]
         ok = (
             ok
             and not fl["timeout"]
@@ -953,7 +954,7 @@ def test_29():
             ruta_db,
         )
         filas = _dump(ruta_db)
-        esperado = [(1, "a.mp4", "C:\\v\\a.mp4", ".mp4", "2026-08-02T00:00:00", 3.5, 640, 360, "h264", 2)]
+        esperado = [(1, "a.mp4", "C:\\v\\a.mp4", ".mp4", "2026-08-02T00:00:00", 3.5, 640, 360, "h264", 2, None)]
         ok = (
             resultado == {"guardado": True, "nombre": "a.mp4"}
             and filas == esperado
@@ -975,7 +976,7 @@ def test_30():
             ),
         )
         filas = _dump(ruta_db)
-        esperado = [(1, "a.mp4", "C:\\v\\a.mp4", ".mp4", "2026-08-02T00:00:00", 1.5, 2, 2, "x", 1)]
+        esperado = [(1, "a.mp4", "C:\\v\\a.mp4", ".mp4", "2026-08-02T00:00:00", 1.5, 2, 2, "x", 1, None)]
         ok = (
             ok
             and not fl["timeout"]

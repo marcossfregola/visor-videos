@@ -45,10 +45,22 @@ arquitectónicas.
     elimina la grilla de 2 columnas y la constante `COLUMNAS`.
     **Aclaración de alcance**: sí se muestra la primera miniatura por
     video, pero **no** hay 4/6 imágenes por video, **no** hay generación
-    progresiva de miniaturas, **no** se muestra el tamaño de archivo,
-    **no** hay apertura por doble clic y **no** se recuerda la última
-    carpeta seleccionada (la persistencia de configuración sigue
-    pendiente).
+    progresiva de miniaturas, **no** hay apertura por doble clic y **no**
+    se recuerda la última carpeta seleccionada (la persistencia de
+    configuración sigue pendiente). El tamaño de archivo por fila **se
+    incorporó después** en la etapa "Incorporar y mostrar el tamaño de los
+    archivos de video" (ver el siguiente punto).
+-   Mostrar el tamaño de los archivos de video — **completado**
+    (`escanear_videos.py` añade `tamano_bytes INTEGER` a `COLUMNAS_EXTRA`
+    con migración idempotente e incorpora `obtener_tamanos_archivos`/
+    `combinar_registros_con_tamanos`; `tareas_videos.py` añade
+    `TareaTamanosArchivos`; `visor_videos.py` inserta el paso de tamaños
+    entre el escaneo y FFprobe —cadena de 7 tareas—, persiste
+    `tamano_bytes` y muestra el campo "Tamaño" en cada fila con
+    `formatear_tamano` en B/KB/MB/GB): **cada fila del catálogo muestra el
+    tamaño del archivo de video**. Quedan pendientes los **cuatro previews
+    por video con generación progresiva**, la apertura por doble clic y la
+    persistencia de la última carpeta.
 -   Escritura individual asíncrona — **completado** (`TareaGuardarVideo`).
 -   Escritura de colección asíncrona — **completado**
     (`TareaGuardarVideos`): persiste colecciones de registros preparados

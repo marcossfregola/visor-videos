@@ -72,7 +72,8 @@ def _crear_bd(filas):
                 ancho INTEGER,
                 alto INTEGER,
                 codec_video TEXT,
-                cantidad_miniaturas INTEGER
+                cantidad_miniaturas INTEGER,
+                tamano_bytes INTEGER
             )
             """
         )
@@ -87,7 +88,7 @@ def _crear_bd(filas):
 
 
 def _filas_resultado(nombres):
-    return [(nombre, None, None, None, None, 0) for nombre in nombres]
+    return [(nombre, None, None, None, None, 0, None) for nombre in nombres]
 
 
 def _resultado(nombres):

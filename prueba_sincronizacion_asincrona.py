@@ -162,7 +162,8 @@ def _crear_bd(filas):
                 ancho INTEGER,
                 alto INTEGER,
                 codec_video TEXT,
-                cantidad_miniaturas INTEGER
+                cantidad_miniaturas INTEGER,
+                tamano_bytes INTEGER
             )
             """
         )
@@ -1062,13 +1063,16 @@ def test_27():
         "candidatos_restantes": 0,
     }
     nombres_esperados = sorted(
-        (set(_nombres_bd(bd)) | set(plan["ya_sincronizados"]))
+        (set(_nombres_bd(bd)) | {r["nombre"] for r in plan["a_incorporar"]})
         - set(plan["candidatos_a_eliminar"])
     )
     temp = tempfile.TemporaryDirectory()
     try:
         copia = os.path.join(temp.name, "copia_biblioteca.db")
         shutil.copy2(bd, copia)
+        conn = escanear_mod.conectar_bd(copia)
+        conn.commit()
+        conn.close()
         g = GestorTareas()
         cap, fl, ok = correr(g, TareaSincronizacionCatalogo(videos, copia))
         resumen = cap.resultado["resumen"]
