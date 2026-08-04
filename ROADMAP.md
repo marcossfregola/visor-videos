@@ -23,6 +23,19 @@ arquitectónicas.
     mediante `GestorTareas`): la primera página del catálogo se carga en
     segundo plano con estado de carga, manejo de errores y apagado
     ordenado, sin bloquear la ventana.
+-   Carga manual de una página adicional del catálogo — **completado**
+    (`visor_videos.py` + `TareaLecturaCatalogoPaginada` + `GestorTareas`):
+    el botón "Cargar más" (`boton_cargar_mas`/`cargar_mas`) agrega la
+    página siguiente con `OFFSET = len(self.tarjetas)`, usando la misma
+    tarea de lectura (`_crear_tarea_lectura(desplazamiento)`) y el mismo
+    gestor; las tarjetas nuevas se agregan debajo de las existentes sin
+    reemplazarlas y sin duplicados (`_agregar_tarjetas`, deduplicación
+    por `nombre`), se actualiza `_total_catalogo` y, ante un error de
+    página, se conservan las tarjetas ya cargadas y se muestra
+    `MENSAJE_ERROR_PAGINA`. El botón se habilita solo con carga inicial
+    terminada, tarjetas por cargar y gestor inactivo sin cadena activa.
+    La paginación automática (scroll infinito), la búsqueda en SQL desde
+    la interfaz y el ordenamiento configurable siguen pendientes.
 -   Escritura individual asíncrona — **completado** (`TareaGuardarVideo`).
 -   Escritura de colección asíncrona — **completado**
     (`TareaGuardarVideos`): persiste colecciones de registros preparados
@@ -136,8 +149,9 @@ arquitectónicas.
     catálogo en segundo plano** (`visor_videos.py` relee la primera
     página con `TareaLecturaCatalogoPaginada` y reemplaza las tarjetas
     con `_reemplazar_tarjetas`); quedan pendientes la **paginación
-    completa** (páginas posteriores, scroll infinito, búsqueda en SQL
-    desde la interfaz y ordenamiento configurable — no existen todavía)
+    completa automática** (scroll infinito, búsqueda en SQL desde la
+    interfaz y ordenamiento configurable — no existen todavía; hoy existe
+    la **carga manual de una página adicional** con el botón "Cargar más")
     y la deduplicación de nombres repetidos.
 4.  FFprobe integrado en el pipeline — **completado** (el pipeline
     escaneo → guardado completa duración, resolución y codec antes de
@@ -176,8 +190,9 @@ arquitectónicas.
     las nuevas en la misma grilla y se reaplica el filtro, conservando
     `resultado_sincronizacion`; ante un error de recarga se conservan las
     tarjetas viejas y no se revierte la sincronización ya confirmada en
-    SQLite. La recarga muestra únicamente la primera página; la
-    paginación completa, la búsqueda en SQL desde la interfaz y el
+    SQLite. La recarga muestra únicamente la primera página; la **carga
+    manual de una página adicional** con el botón "Cargar más" ya existe,
+    y la paginación automática, la búsqueda en SQL desde la interfaz y el
     ordenamiento configurable siguen pendientes).
 8.  Progreso — **pendiente** (barra de progreso y estado de las tareas
     en curso).

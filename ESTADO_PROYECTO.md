@@ -92,98 +92,84 @@ una sincronización exitosa** y reemplaza las tarjetas con
 reaplica el filtro, conservando `resultado_sincronizacion`; ante un error
 de recarga conserva las tarjetas viejas, muestra `MENSAJE_ERROR_RECARGA` y
 no revierte la sincronización ya confirmada; sin FFprobe/FFmpeg/miniaturas
-y sin SQL en la GUI—) aprobadas; quedan pendientes la **deduplicación de
-nombres repetidos** y la **paginación completa** (scroll infinito, búsqueda
-en SQL desde la interfaz y ordenamiento configurable), que todavía no
-existen.
+ y sin SQL en la GUI—) y **la carga manual de una página adicional del
+catálogo** (`visor_videos.py` agrega una página más con el botón "Cargar
+más" —`boton_cargar_mas`/`cargar_mas`— con la **misma**
+`TareaLecturaCatalogoPaginada`/`GestorTareas` y `OFFSET = len(self.tarjetas)`,
+**agregando** tarjetas nuevas debajo de las existentes sin reemplazarlas
+ni duplicarlas, actualizando `_total_catalogo` y rearmando el botón según
+las tarjetas por cargar; ante un error de página conserva las tarjetas ya
+cargadas y muestra `MENSAJE_ERROR_PAGINA`; sin SQL en la GUI—) aprobadas;
+quedan pendientes la **deduplicación de nombres repetidos** y la
+**paginación completa** (scroll infinito, búsqueda en SQL desde la
+interfaz y ordenamiento configurable), que todavía no existen.
 
 ## Último commit aprobado
 
-**Mensaje:** Recargar el catálogo después de sincronizar
+**Mensaje:** Incorporar carga manual de páginas del catálogo
 
-**Etapa aprobada:** Recarga asíncrona del catálogo tras la sincronización:
-`visor_videos.py` recarga el catálogo en segundo plano **solo tras una
-sincronización exitosa** y **reemplaza las tarjetas** por las de la primera
-página actualizada, extendiendo la cadena a **6 tareas** (`TareaEscaneo` →
-`TareaFFprobe` → `TareaMiniaturas` → `TareaGuardarVideos` →
-`TareaSincronizacionCatalogo` → `TareaLecturaCatalogoPaginada`) con el
-mismo `GestorTareas`. `_al_resultado_sincronizacion` marca
-`_recarga_catalogo_pendiente = True` y `_al_tarea_finalizada` (gestor
-`inactivo`) inicia la recarga con `_iniciar_recarga_catalogo()`, que usa la
-misma factoría `_crear_tarea_lectura()` (misma
-`TareaLecturaCatalogoPaginada(TAMANIO_PAGINA_INICIAL, 0, None, ruta_db)`,
-primera página). Se incorporan los atributos `_recarga_catalogo_pendiente`/
-`tarea_recarga_catalogo`, los handlers `_al_resultado_recarga`/
-`_al_error_recarga`, la constante `MENSAJE_ERROR_RECARGA` ("No se pudo
-actualizar el catálogo") y `_reemplazar_tarjetas(filas)`: **las tarjetas
-viejas se conservan hasta que llega el resultado válido y completo**; al
-llegar, se quitan de la grilla (`removeWidget` + `deleteLater`, liberando
-los widgets Qt), se vacía `self.tarjetas`, se crean las tarjetas nuevas en
-la **misma `QGridLayout` y el mismo `QScrollArea` reutilizados** y se
-reaplica el filtro (que actualiza el contador) — **sin tarjetas ocultas
-obsoletas**—; `resultado_sincronizacion` se conserva. Ante un **fallo de
-recarga**, `_al_error_recarga` **conserva las tarjetas viejas**, muestra
-`MENSAJE_ERROR_RECARGA`, el gestor queda `INACTIVO`, el botón de escaneo se
-rehabilita y un nuevo escaneo es posible; la recarga fallida **no revierte
-la sincronización ya confirmada en SQLite**. La recarga es de **solo
-lectura** de la primera página: **no ejecuta FFprobe/FFmpeg/miniaturas**, la
-GUI sigue sin SQLite ni SQL y **no llama a `listar_videos_paginado`
-directamente**. **No existen todavía** páginas posteriores, scroll
-infinito, búsqueda en SQL desde la interfaz ni ordenamiento configurable.
-Se agregó `prueba_recarga_catalogo.py` (**20 pruebas**) y se actualizaron
-`prueba_escaneo_guardado.py` (24), `prueba_escaneo_interfaz.py` (36) y
-`prueba_sincronizacion_interfaz.py` (18) a la cadena de 6 tareas. Smoke
-test `visor_videos.py` con `tarjetas_finales=['clip.avi', 'peli.mp4',
-'serie.mkv']` (recarga tras la sincronización) y `resumen_sincronizacion`
-conservado, exit 0. Regresiones parciales 82/82 OK (suites ajenas no
-reejecutadas). **Alcance**: la recarga muestra únicamente la primera página;
-la paginación completa (scroll infinito), la búsqueda en SQL desde la
-interfaz, el ordenamiento configurable y la deduplicación de nombres
-repetidos quedan pendientes. Aprobada con observaciones.
+**Etapa aprobada:** Carga manual de una página adicional del catálogo:
+`visor_videos.py` incorpora el botón "Cargar más" (`boton_cargar_mas`) en
+la barra de búsqueda para **agregar** manualmente una página adicional del
+catálogo **debajo de las tarjetas ya cargadas, sin reemplazarlas y sin
+duplicados**. `_crear_tarea_lectura(desplazamiento=0)` se parametrizó con
+el `OFFSET`: la carga inicial (0), la recarga tras la sincronización (0) y
+la página adicional (`desplazamiento = len(self.tarjetas)`) usan la
+**misma** `TareaLecturaCatalogoPaginada` y el **mismo** `GestorTareas`.
+`cargar_mas()` calcula el offset como la cantidad de tarjetas ya cargadas,
+marca `_pagina_pendiente = True` y guarda la tarea en `tarea_pagina`;
+`_al_resultado_pagina` actualiza `_total_catalogo` y agrega las tarjetas
+nuevas con `_agregar_tarjetas` (misma `QGridLayout`, posiciones
+siguientes, sin liberar las existentes), **descartando filas cuyo
+`nombre` ya está cargado** (deduplicación por nombre); `_al_error_pagina`
+conserva las tarjetas ya cargadas, muestra `MENSAJE_ERROR_PAGINA` ("No se
+pudo cargar la página"), deja el gestor `INACTIVO` y rearma el botón para
+reintentar. El botón se habilita solo con carga inicial terminada,
+`_total_catalogo` conocido, tarjetas por cargar (`len(self.tarjetas) <
+self._total_catalogo`), gestor `inactivo` y sin cadena activa
+(`_actualizar_botones_carpeta`). La GUI **sigue sin SQLite ni SQL** y **no
+llama a `listar_videos_paginado` directamente**; la recarga tras la
+sincronización **sigue siendo el único camino que reemplaza tarjetas**.
+**No existen todavía** paginación automática, scroll infinito, búsqueda en
+SQL desde la interfaz ni ordenamiento configurable. Se agregó
+`prueba_pagina_siguiente.py` (**20 pruebas**) y se amplió el smoke test de
+`main()` con una fase de paginación (150 registros → `primera_pagina=100`,
+`cargar_mas_habilitado=True`, tras "Cargar más" `total_tras_cargar_mas=150`,
+`duplicados_tras_cargar_mas=0`, `primeras_conservadas=True`). Regresiones
+de las 4 suites de interfaz 98/98 OK (24/24, 36/36, 18/18 y 20/20).
+Aprobada.
 
 **SHA definitivo:** debe consultarse con `git log -1` (el SHA no se
 escribe en este documento para evitar autorreferencias al commit).
 
 ## Última etapa aprobada
 
-Recarga asíncrona del catálogo tras la sincronización: `visor_videos.py`
-recarga el catálogo en segundo plano **solo tras una sincronización
-exitosa** y **reemplaza las tarjetas** por las de la primera página
-actualizada, extendiendo la cadena a **6 tareas** (`TareaEscaneo` →
-`TareaFFprobe` → `TareaMiniaturas` → `TareaGuardarVideos` →
-`TareaSincronizacionCatalogo` → `TareaLecturaCatalogoPaginada`) con el
-**mismo** `GestorTareas`. `_al_resultado_sincronizacion` marca
-`_recarga_catalogo_pendiente = True` y `_al_tarea_finalizada` (gestor
-`inactivo`) inicia la recarga con `_iniciar_recarga_catalogo()`, que usa la
-misma factoría `_crear_tarea_lectura()` (misma
-`TareaLecturaCatalogoPaginada(TAMANIO_PAGINA_INICIAL, 0, None, ruta_db)`,
-primera página). Estados nuevos `_recarga_catalogo_pendiente`/
-`tarea_recarga_catalogo`, handlers `_al_resultado_recarga` (reemplaza las
-tarjetas con `_reemplazar_tarjetas`) y `_al_error_recarga` (muestra
-`MENSAJE_ERROR_RECARGA`, gestor `INACTIVO`, interfaz recuperable),
-constante `MENSAJE_ERROR_RECARGA` ("No se pudo actualizar el catálogo") y
-`_reemplazar_tarjetas(filas)`: **las tarjetas viejas se conservan hasta que
-llega el resultado válido y completo**; al llegar se quitan de la grilla
-(`removeWidget` + `deleteLater`, liberando los widgets Qt), se vacía
-`self.tarjetas`, se crean las tarjetas nuevas en la **misma `QGridLayout` y
-el mismo `QScrollArea` reutilizados** y se reaplica el filtro (que actualiza
-el contador) — **sin tarjetas ocultas obsoletas** —; `resultado_sincronizacion`
-se conserva. Ante un **fallo de recarga** se **conservan las tarjetas
-viejas**, se muestra `MENSAJE_ERROR_RECARGA`, el gestor queda `INACTIVO`,
-el botón de escaneo se rehabilita y un nuevo escaneo es posible; la recarga
-fallida **no revierte la sincronización ya confirmada en SQLite**. La
-recarga es de **solo lectura** de la primera página: **no ejecuta
-FFprobe/FFmpeg/miniaturas**, la GUI sigue sin SQLite ni SQL y **no llama a
-`listar_videos_paginado` directamente**. La sincronización **solo se lanza
-tras un guardado exitoso** (no se inicia si falla cualquier fase anterior).
-**Ausencia deliberada**: la recarga muestra únicamente la primera página;
-la paginación completa (scroll infinito), la búsqueda en SQL desde la
-interfaz, el ordenamiento configurable y la deduplicación de nombres
-repetidos continúan pendientes. Con suite nueva `prueba_recarga_catalogo.py`
-(20 pruebas) y suites actualizadas `prueba_escaneo_guardado.py` (24),
-`prueba_escaneo_interfaz.py` (36) y `prueba_sincronizacion_interfaz.py`
-(18) a la cadena de 6 tareas. Regresiones parciales 82/82 OK (suites ajenas
-no reejecutadas). Aprobada con observaciones.
+Carga manual de una página adicional del catálogo: `visor_videos.py`
+agrega manualmente una página más del catálogo con el botón "Cargar más"
+(`boton_cargar_mas`), usando la **misma** `TareaLecturaCatalogoPaginada`/
+`GestorTareas` con `OFFSET = len(self.tarjetas)`. `_crear_tarea_lectura
+(desplazamiento=0)` se parametrizó con el offset (carga inicial y recarga
+en 0; página adicional en la cantidad de tarjetas ya cargadas). Estados
+nuevos `_pagina_pendiente`/`tarea_pagina` y `_total_catalogo`; handlers
+`_al_resultado_pagina` (actualiza `_total_catalogo` y **agrega** las
+tarjetas con `_agregar_tarjetas` en la misma grilla, sin liberar las
+existentes y **descartando nombres ya cargados** —sin duplicados—) y
+`_al_error_pagina` (muestra `MENSAJE_ERROR_PAGINA` "No se pudo cargar la
+página", gestor `INACTIVO`, conserva las tarjetas ya cargadas y rearma el
+botón para reintentar), constante `MENSAJE_ERROR_PAGINA`. El botón se
+habilita solo con carga inicial terminada, `_total_catalogo` conocido,
+tarjetas por cargar (`len(self.tarjetas) < self._total_catalogo`), gestor
+`inactivo` y sin cadena activa. La GUI sigue sin SQLite ni SQL y **no
+llama a `listar_videos_paginado` directamente**; **el reemplazo de
+tarjetas sigue siendo exclusivo de la recarga tras la sincronización**.
+**Ausencia deliberada**: sin paginación automática, sin scroll infinito,
+sin búsqueda en SQL desde la interfaz y sin ordenamiento configurable.
+Con suite nueva `prueba_pagina_siguiente.py` (**20 pruebas**) y smoke test
+ampliado con una fase de paginación (150 registros → `primera_pagina=100`,
+`cargar_mas_habilitado=True`, `total_tras_cargar_mas=150`,
+`duplicados_tras_cargar_mas=0`, `primeras_conservadas=True`). Regresiones
+de las 4 suites de interfaz 98/98 OK (24/24, 36/36, 18/18 y 20/20).
+Aprobada.
 
 ## Estado de la arquitectura
 
@@ -277,9 +263,23 @@ no reejecutadas). Aprobada con observaciones.
     el filtro — sin tarjetas ocultas obsoletas —; `resultado_sincronizacion`
     se conserva; ante un error de recarga se conservan las tarjetas viejas,
     se muestra `MENSAJE_ERROR_RECARGA`, el gestor queda `INACTIVO`, el botón
-    de escaneo se rehabilita y **no se revierte la sincronización ya
-    confirmada en SQLite**; fase de solo lectura de la primera página sin
-    FFprobe/FFmpeg/miniaturas y sin SQL en la GUI).
+     de escaneo se rehabilita y **no se revierte la sincronización ya
+     confirmada en SQLite**; fase de solo lectura de la primera página sin
+     FFprobe/FFmpeg/miniaturas y sin SQL en la GUI).
+-   Carga manual de una página adicional del catálogo (`visor_videos.py`
+    agrega una página más con el botón "Cargar más" —`boton_cargar_mas`/
+    `cargar_mas`— con la **misma** `TareaLecturaCatalogoPaginada`/
+    `GestorTareas` y `OFFSET = len(self.tarjetas)`; `_crear_tarea_lectura
+    (desplazamiento)` parametrizada; estados `_pagina_pendiente`/
+    `tarea_pagina` y `_total_catalogo`; handlers `_al_resultado_pagina`
+    (agrega tarjetas con `_agregar_tarjetas` en la misma grilla sin
+    liberar las existentes y sin duplicados por `nombre`) y
+    `_al_error_pagina` (conserva las tarjetas ya cargadas, muestra
+    `MENSAJE_ERROR_PAGINA` y rearma el botón); botón habilitado solo con
+    carga inicial terminada, `_total_catalogo` conocido, tarjetas por
+    cargar y gestor inactivo sin cadena activa; sin SQL en la GUI; el
+    reemplazo de tarjetas sigue siendo exclusivo de la recarga tras la
+    sincronización).
 -   Pruebas automatizadas.
 
 ### En desarrollo
@@ -299,21 +299,28 @@ sincronización exitosa se recarga el catálogo en segundo plano**
 (`TareaLecturaCatalogoPaginada` con el mismo gestor) y se **reemplazan las
 tarjetas** con la primera página actualizada (`_reemplazar_tarjetas`).
 Quedan pendientes la **deduplicación de nombres repetidos** y la
-**paginación completa** del catálogo (páginas posteriores, scroll
-infinito, búsqueda en SQL desde la interfaz y ordenamiento configurable,
-que todavía no existen): la carga inicial y la recarga muestran únicamente
-la primera página.
+**paginación completa automática** del catálogo (scroll infinito, búsqueda
+en SQL desde la interfaz y ordenamiento configurable, que todavía no
+existen): la carga inicial y la recarga muestran únicamente la primera
+página, y **ya existe la carga manual de una página adicional** con el
+botón "Cargar más" (se agregan tarjetas debajo de las existentes sin
+reemplazarlas).
 
 ## Pendientes prioritarios
 
-1.  Paginación completa del catálogo en la interfaz (páginas posteriores,
-    scroll infinito, búsqueda en SQL desde la interfaz y ordenamiento
-    configurable). **No existen todavía**: la carga inicial y la recarga
-    tras la sincronización muestran únicamente la primera página
-    (`TAMANIO_PAGINA_INICIAL = 100`); la recarga tras una sincronización
-    exitosa ya está implementada (`visor_videos.py` relee la primera página
-    con la misma `TareaLecturaCatalogoPaginada`/`GestorTareas` y reemplaza
-    las tarjetas con `_reemplazar_tarjetas`).
+1.  Paginación completa del catálogo en la interfaz (páginas posteriores
+    con scroll automático/infinito, búsqueda en SQL desde la interfaz y
+    ordenamiento configurable). **No existe todavía** la paginación
+    automática: la carga inicial y la recarga tras la sincronización
+    muestran únicamente la primera página (`TAMANIO_PAGINA_INICIAL = 100`);
+    ya existe la **carga manual de una página adicional** con el botón
+    "Cargar más" (`visor_videos.py`, con la misma
+    `TareaLecturaCatalogoPaginada`/`GestorTareas` y
+    `OFFSET = len(self.tarjetas)`, agregando tarjetas sin reemplazarlas
+    ni duplicarlas); la recarga tras una sincronización exitosa ya está
+    implementada (`visor_videos.py` relee la primera página con la misma
+    `TareaLecturaCatalogoPaginada`/`GestorTareas` y reemplaza las tarjetas
+    con `_reemplazar_tarjetas`).
 2.  Deduplicación de nombres repetidos en el plan de sincronización.
 3.  Integración SQLite asíncrona en el pipeline (encadenado).
 4.  Actualización asíncrona de la interfaz (tarjetas dinámicas).
@@ -348,15 +355,16 @@ exitosa se recarga el catálogo en segundo plano** (`visor_videos.py`
 relee la primera página con `TareaLecturaCatalogoPaginada` y reemplaza
 las tarjetas con `_reemplazar_tarjetas`, liberando las viejas y creando
 las nuevas en la misma grilla); quedan pendientes la **paginación
-completa** (páginas posteriores, scroll infinito, búsqueda en SQL desde
-la interfaz y ordenamiento configurable — no existen todavía) y la
+completa automática** (scroll infinito, búsqueda en SQL desde la interfaz
+y ordenamiento configurable — no existen todavía; hoy existe la **carga
+manual de una página adicional** con el botón "Cargar más") y la
 deduplicación de nombres repetidos; - `detectar_diferencias` compara
 por nombre y no detecta movimientos ni renombrados (queda para etapas
 futuras); - **no existe todavía deduplicación de nombres repetidos** en
 el plan de sincronización; - el enrutado de resultados por
 `_escaneo_pendiente`/`_ffprobe_pendiente`/`_miniaturas_pendiente`/
 `_guardado_pendiente`/`_sincronizacion_pendiente`/
-`_recarga_catalogo_pendiente` es suficiente para una
+`_recarga_catalogo_pendiente`/`_pagina_pendiente` es suficiente para una
 única tarea activa y debe revisarse si la interfaz incorpora más tipos de tarea; - el escaneo no
 incluye subcarpetas; - decisión pendiente sobre si `%` y `_` como
 comodines `LIKE` en la búsqueda de `listar_videos_paginado` se aceptan
@@ -380,18 +388,18 @@ limpieza controlada de miniaturas antiguas.
 
 ## Próxima etapa
 
-**Aún no definida**: la recarga asíncrona del catálogo con la
-actualización de tarjetas tras una sincronización exitosa ya quedó
-aprobada y commiteada ("Recargar el catálogo después de sincronizar"), por
-lo que no se inicia ninguna etapa nueva en esta entrega. Los siguientes
-candidatos (todavía no definidos ni iniciados) son la **paginación
-completa del catálogo en la interfaz** (páginas posteriores, scroll
-infinito, búsqueda en SQL desde la interfaz y ordenamiento configurable —
-hoy la carga inicial y la recarga muestran únicamente la primera página) y
+**Aún no definida**: la carga manual de una página adicional del catálogo
+("Cargar más") ya quedó aprobada y commiteada ("Incorporar carga manual de
+páginas del catálogo"), por lo que no se inicia ninguna etapa nueva en
+esta entrega. Los siguientes candidatos (todavía no definidos ni
+iniciados) son la **paginación completa automática del catálogo en la
+interfaz** (scroll infinito, búsqueda en SQL desde la interfaz y
+ordenamiento configurable — hoy la carga inicial y la recarga muestran
+únicamente la primera página y existe la carga manual con "Cargar más") y
 la **deduplicación de nombres repetidos** en el plan de sincronización,
 manteniendo el alcance limitado: sin selección inteligente, sin múltiples
-miniaturas, sin eliminación de archivos antiguos y sin paginación más allá
-de la primera página.
+miniaturas, sin eliminación de archivos antiguos y sin paginación
+automática.
 
 ## Documentos del proyecto
 

@@ -1,6 +1,7 @@
 import os
 import sys
 import tempfile
+import time
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QPixmap
@@ -31,6 +32,7 @@ from tareas_videos import (
     combinar_registros_con_ffprobe,
     combinar_registros_con_miniaturas,
     conectar_bd,
+    guardar_videos,
 )
 
 ANCHO_TARJETA = 320
@@ -50,6 +52,7 @@ MENSAJE_ERROR_GUARDADO = "No se pudieron guardar los videos"
 MENSAJE_SINCRONIZANDO = "Sincronizando catálogo…"
 MENSAJE_ERROR_SINCRONIZACION = "No se pudo sincronizar el catálogo"
 MENSAJE_ERROR_RECARGA = "No se pudo actualizar el catálogo"
+MENSAJE_ERROR_PAGINA = "No se pudo cargar la página"
 MENSAJE_SIN_ESCANEO = "Sin escanear"
 
 
@@ -160,6 +163,9 @@ class VisorVideos(QMainWindow):
         self.resultado_sincronizacion = None
         self._recarga_catalogo_pendiente = False
         self.tarea_recarga_catalogo = None
+        self._pagina_pendiente = False
+        self.tarea_pagina = None
+        self._total_catalogo = None
 
         self.busqueda = QLineEdit()
         self.busqueda.setPlaceholderText("Buscar por nombre...")
@@ -174,6 +180,10 @@ class VisorVideos(QMainWindow):
         self.boton_escanear = QPushButton("Escanear carpeta")
         self.boton_escanear.setEnabled(False)
         self.boton_escanear.clicked.connect(self.iniciar_escaneo)
+
+        self.boton_cargar_mas = QPushButton("Cargar más")
+        self.boton_cargar_mas.setEnabled(False)
+        self.boton_cargar_mas.clicked.connect(self.cargar_mas)
 
         self.etiqueta_carpeta = QLabel(MENSAJE_SIN_CARPETA)
         self.etiqueta_carpeta.setTextInteractionFlags(Qt.TextSelectableByMouse)
@@ -193,6 +203,7 @@ class VisorVideos(QMainWindow):
         barra = QHBoxLayout()
         barra.addWidget(self.busqueda, 1)
         barra.addWidget(self.contador)
+        barra.addWidget(self.boton_cargar_mas)
         barra.addWidget(self.estado_carga)
 
         self.contenedor = QWidget()
@@ -223,9 +234,9 @@ class VisorVideos(QMainWindow):
         self.tarea_lectura = self._crear_tarea_lectura()
         self.gestor.iniciar(self.tarea_lectura)
 
-    def _crear_tarea_lectura(self):
+    def _crear_tarea_lectura(self, desplazamiento=0):
         return TareaLecturaCatalogoPaginada(
-            TAMANIO_PAGINA_INICIAL, 0, None, self._ruta_db
+            TAMANIO_PAGINA_INICIAL, desplazamiento, None, self._ruta_db
         )
 
     def seleccionar_carpeta(self):
@@ -257,11 +268,20 @@ class VisorVideos(QMainWindow):
             or self._guardado_pendiente
             or self._sincronizacion_pendiente
             or self._recarga_catalogo_pendiente
+            or self._pagina_pendiente
         )
         self.boton_seleccionar_carpeta.setEnabled(not cadena_activa)
         self.boton_escanear.setEnabled(
             carpeta_valida and not self.gestor.activo and not cadena_activa
         )
+        hay_mas = (
+            self._carga_completada
+            and self._total_catalogo is not None
+            and len(self.tarjetas) < self._total_catalogo
+            and not self.gestor.activo
+            and not cadena_activa
+        )
+        self.boton_cargar_mas.setEnabled(hay_mas)
 
     def _al_actividad(self, activo):
         self._actualizar_botones_carpeta()
@@ -281,6 +301,7 @@ class VisorVideos(QMainWindow):
         self._guardado_pendiente = False
         self._sincronizacion_pendiente = False
         self._recarga_catalogo_pendiente = False
+        self._pagina_pendiente = False
         self.registros_guardados = None
         self.resultado_sincronizacion = None
         self.tarea_escaneo = None
@@ -289,6 +310,7 @@ class VisorVideos(QMainWindow):
         self.tarea_guardado = None
         self.tarea_sincronizacion = None
         self.tarea_recarga_catalogo = None
+        self.tarea_pagina = None
         self.resultado_ffprobe = None
         self.resultado_miniaturas = None
         if not self.gestor.iniciar(tarea):
@@ -306,12 +328,14 @@ class VisorVideos(QMainWindow):
         self._guardado_pendiente = False
         self._sincronizacion_pendiente = False
         self._recarga_catalogo_pendiente = False
+        self._pagina_pendiente = False
         self.tarea_escaneo = None
         self.tarea_ffprobe = None
         self.tarea_miniaturas = None
         self.tarea_guardado = None
         self.tarea_sincronizacion = None
         self.tarea_recarga_catalogo = None
+        self.tarea_pagina = None
         self.resultado_ffprobe = None
         self.resultado_miniaturas = None
 
@@ -356,9 +380,13 @@ class VisorVideos(QMainWindow):
         if self._recarga_catalogo_pendiente:
             self._al_resultado_recarga(resultado)
             return
+        if self._pagina_pendiente:
+            self._al_resultado_pagina(resultado)
+            return
         if self._carga_completada:
             return
         self.estado_carga.hide()
+        self._total_catalogo = resultado.get("total")
         self._crear_tarjetas(resultado.get("videos", []))
         self._carga_completada = True
 
@@ -499,6 +527,7 @@ class VisorVideos(QMainWindow):
     def _al_resultado_recarga(self, resultado):
         self._recarga_catalogo_pendiente = False
         self.tarea_recarga_catalogo = None
+        self._total_catalogo = resultado.get("total", self._total_catalogo)
         self._reemplazar_tarjetas(resultado.get("videos", []))
         self._actualizar_botones_carpeta()
 
@@ -514,6 +543,48 @@ class VisorVideos(QMainWindow):
         self.tarjetas = []
         self.visibles = []
         self._crear_tarjetas(filas)
+
+    def cargar_mas(self):
+        if self.gestor.activo:
+            return
+        if not self._carga_completada:
+            return
+        tarea = self._crear_tarea_lectura(len(self.tarjetas))
+        self._pagina_pendiente = True
+        self.tarea_pagina = tarea
+        if not self.gestor.iniciar(tarea):
+            self._pagina_pendiente = False
+            self.tarea_pagina = None
+            self._actualizar_botones_carpeta()
+            return
+        self._actualizar_botones_carpeta()
+
+    def _al_resultado_pagina(self, resultado):
+        self._pagina_pendiente = False
+        self.tarea_pagina = None
+        self._total_catalogo = resultado.get("total", self._total_catalogo)
+        filas = resultado.get("videos", [])
+        existentes = {nombre for nombre, _ in self.tarjetas}
+        filas_nuevas = [fila for fila in filas if fila[0] not in existentes]
+        self._agregar_tarjetas(filas_nuevas)
+        self._actualizar_botones_carpeta()
+
+    def _al_error_pagina(self, mensaje):
+        self._limpiar_cadena()
+        self.estado_escaneo.setText(MENSAJE_ERROR_PAGINA)
+        self._actualizar_botones_carpeta()
+
+    def _agregar_tarjetas(self, filas):
+        inicio = len(self.tarjetas)
+        for indice, fila in enumerate(filas):
+            posicion = inicio + indice
+            tarjeta = Tarjeta(fila)
+            self.tarjetas.append((fila[0], tarjeta))
+            self.visibles.append(fila[0])
+            self.cuadricula.addWidget(
+                tarjeta, posicion // COLUMNAS, posicion % COLUMNAS
+            )
+        self.filtrar(self.busqueda.text())
 
     def _al_resultado_guardado(self, resultado):
         self._guardado_pendiente = False
@@ -542,6 +613,9 @@ class VisorVideos(QMainWindow):
             return
         if self._recarga_catalogo_pendiente:
             self._al_error_recarga(mensaje)
+            return
+        if self._pagina_pendiente:
+            self._al_error_pagina(mensaje)
             return
         if self._carga_completada:
             return
@@ -587,6 +661,62 @@ class VisorVideos(QMainWindow):
 
 def main():
     app = QApplication(sys.argv)
+
+    def esperar_smoke(predicado, intentos=400):
+        for _ in range(intentos):
+            QApplication.processEvents()
+            if predicado():
+                return True
+            time.sleep(0.02)
+        QApplication.processEvents()
+        return predicado()
+
+    temp_paginacion = tempfile.TemporaryDirectory()
+    ruta_db_paginacion = os.path.join(temp_paginacion.name, "catalogo.db")
+    conn = conectar_bd(ruta_db_paginacion)
+    conn.commit()
+    conn.close()
+    guardar_videos(
+        [
+            {
+                "nombre": f"v{i:03d}.mp4",
+                "ruta": os.path.join(temp_paginacion.name, f"v{i:03d}.mp4"),
+                "extension": ".mp4",
+                "fecha_importacion": "2026-08-03T00:00:00",
+            }
+            for i in range(1, 151)
+        ],
+        ruta_db_paginacion,
+    )
+    ventana_paginacion = VisorVideos(ruta_db=ruta_db_paginacion)
+    ventana_paginacion.resize(720, 540)
+    ventana_paginacion.show()
+    esperar_smoke(
+        lambda v=ventana_paginacion: v._carga_completada and v.gestor.hilo is None
+    )
+    print(f"primera_pagina={len(ventana_paginacion.tarjetas)}")
+    print(f"contador_primera_pagina={ventana_paginacion.contador.text()}")
+    print(f"cargar_mas_habilitado={ventana_paginacion.boton_cargar_mas.isEnabled()}")
+    ventana_paginacion.boton_cargar_mas.click()
+    esperar_smoke(
+        lambda v=ventana_paginacion: not v._pagina_pendiente
+        and v.gestor.hilo is None
+    )
+    nombres_paginacion = [nombre for nombre, _ in ventana_paginacion.tarjetas]
+    print(f"total_tras_cargar_mas={len(nombres_paginacion)}")
+    print(
+        f"duplicados_tras_cargar_mas="
+        f"{len(nombres_paginacion) - len(set(nombres_paginacion))}"
+    )
+    print(
+        f"primeras_conservadas="
+        f"{nombres_paginacion[:100] == [f'v{i:03d}.mp4' for i in range(1, 101)]}"
+    )
+    print(f"contador_tras_cargar_mas={ventana_paginacion.contador.text()}")
+    ventana_paginacion.close()
+    ventana_paginacion.gestor.cerrar()
+    temp_paginacion.cleanup()
+
     temp = tempfile.TemporaryDirectory()
     ruta_db = os.path.join(temp.name, "catalogo.db")
     conn = conectar_bd(ruta_db)
