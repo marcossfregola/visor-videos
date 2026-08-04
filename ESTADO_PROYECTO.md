@@ -110,7 +110,9 @@ del `QScrollArea`; se elimina la grilla de 2 columnas, la constante
 colocan cada tarjeta en la fila siguiente con columna 0; **solo se muestra la
 primera miniatura por video**, sin 4/6 miniaturas por video, sin generación
 progresiva de miniaturas, sin doble clic y sin última
-carpeta recordada) y **la incorporación y visualización del tamaño de los
+carpeta recordada; la **generación progresiva de previews** se incorporó
+después en la etapa "Previews progresivas para la Beta 1.0") y **la
+incorporación y visualización del tamaño de los
 archivos de video** (`escanear_videos.py` añade `tamano_bytes INTEGER` a
 `COLUMNAS_EXTRA` con migración idempotente de bases existentes,
 `obtener_tamanos_archivos` y `combinar_registros_con_tamanos`;
@@ -122,79 +124,102 @@ tareas (`TareaEscaneo` → `TareaTamanosArchivos` → `TareaFFprobe` →
 no existe o no es legible) y muestra el campo "Tamaño" en cada fila con
 `formatear_tamano` en B/KB/MB/GB y "Desconocido" para valores ausentes o
 inválidos; suite nueva `prueba_tamano_archivo.py` con 15 pruebas y
-correcciones de aislamiento T15/T27 sobre copia de `biblioteca.db`) aprobadas;
+correcciones de aislamiento T15/T27 sobre copia de `biblioteca.db`) aprobadas)
+y **la generación de previews progresivas por video** (`escanear_videos.py`
+define `CANTIDAD_PREVIEWS = 3`, `ruta_preview` (convención
+`miniaturas/<prefijo>_preview_NN.jpg`), `_es_archivo_preview`,
+`previews_existentes`, `previews_faltantes`, `calcular_tiempo_preview`
+(tiempos proporcionales 25/50/75 % con `indice` en 1..3), `generar_preview`
+(FFmpeg `-ss`/`-frames:v 1`) y `generar_previews_faltantes` (genera **solo los
+índices faltantes**, reutiliza la miniatura principal válida como base si
+FFmpeg falla y **nunca sobrescribe ni elimina** archivos); `contar_miniaturas`/
+`miniatura_reutilizable`/`miniatura_principal` **excluyen** los archivos
+`_preview_`; `tareas_videos.py` añade `TareaPreviewsProgresivas` (genera en
+segundo plano en `_trabajo()`); y `visor_videos.py` integra la generación
+**progresiva** con un **segundo `GestorTareas` propio** (`gestor_previews`),
+cola `_cola_previews`, lotes de `TAMANIO_LOTE_PREVIEWS = 3`, temporizador
+`_timer_previews` (300 ms) y **actualización incremental** de cada tarjeta a
+medida que llega cada preview (`Tarjeta.actualizar_previews`), apoyándose en
+`previews_de`/`previews_existentes`; suite nueva `prueba_previews_progresivas.py`
+con **16 pruebas**) aprobadas;
 quedan pendientes la **deduplicación de nombres repetidos** y la
 **paginación completa** (scroll infinito, búsqueda en SQL desde la
 interfaz y ordenamiento configurable), que todavía no existen.
 
 ## Último commit aprobado
 
-**Mensaje:** Incorporar tamaño de archivos al catálogo
+**Mensaje:** Implementar previews progresivas para la Beta 1.0
 
-**Etapa aprobada:** Incorporar y mostrar el tamaño de los archivos de video:
-`escanear_videos.py` añade **`("tamano_bytes", "INTEGER")`** a `COLUMNAS_EXTRA`
-(la migración idempotente de `conectar_bd` agrega la columna a las bases
-existentes sin tocar los registros, que quedan en `NULL`), incorpora
-`obtener_tamanos_archivos(videos, carpeta)` (resumen `{"rutas", "resultados",
-"procesados", "con_tamano", "sin_tamano"}` con `{"ruta", "tamano_bytes"}` por
-archivo; `None` si el archivo no existe o es ilegible) y
-`combinar_registros_con_tamanos(registros, resultado_tamanos)` (asigna
-`tamano_bytes` por ruta normalizada; devuelve copias); `guardar_video`/
-`guardar_videos` persisten la clave opcional (`NULL` si falta) y
-`listar_videos`/`listar_videos_paginado` devuelven **tuplas de siete campos**.
-`tareas_videos.py` incorpora `TareaTamanosArchivos(TareaBase)` (obtiene los
-tamaños en segundo plano) y re-exporta ambas funciones. `visor_videos.py`
-inserta el paso **después del escaneo y antes de FFprobe**, extendiendo la
-cadena a **7 tareas** con los estados `_tamanos_pendiente`/`tarea_tamanos`/
-`resultado_tamanos`, los handlers `_al_resultado_tamanos`/`_al_error_tamanos`
-y `MENSAJE_ERROR_TAMANOS`; la tarjeta horizontal desempaqueta la tupla de
-siete campos y muestra el campo "Tamaño" con `formatear_tamano` (B/KB/MB/GB;
-"Desconocido" para valores ausentes o inválidos). Se agregó
-`prueba_tamano_archivo.py` (**15 pruebas** T01–T15). Correcciones de
-aislamiento T15/T27 sobre copia de `biblioteca.db`. Datos reales preservados
-(`biblioteca.db` con la columna `tamano_bytes` agregada, `miniaturas/` y
-`videos_prueba/` intactos) y sin avisos `QThread: Destroyed`. Aprobada.
+**Etapa aprobada:** Previews progresivas para la Beta 1.0:
+`escanear_videos.py` añade `CANTIDAD_PREVIEWS = 3` y las funciones
+`ruta_preview` (convención `miniaturas/<prefijo>_preview_NN.jpg`),
+`_es_archivo_preview`, `previews_existentes`, `previews_faltantes`,
+`calcular_tiempo_preview`, `generar_preview` y `generar_previews_faltantes`
+(genera **solo los índices faltantes** con FFmpeg; ante un fallo reutiliza la
+miniatura principal válida como base; **nunca sobrescribe ni elimina**
+archivos). `tareas_videos.py` re-exporta `CANTIDAD_PREVIEWS`,
+`_es_archivo_preview`, `previews_existentes` y `generar_previews_faltantes` y
+añade `TareaPreviewsProgresivas(TareaBase)`. `visor_videos.py` integra la
+generación **progresiva** en segundo plano con un **segundo `GestorTareas`**
+propio (`gestor_previews`), la cola `_cola_previews`, lotes de
+`TAMANIO_LOTE_PREVIEWS = 3`, el temporizador `_timer_previews` (300 ms),
+`previews_de` y `Tarjeta.actualizar_previews` (los placeholders "Generando
+preview…" se reemplazan a medida que llega cada imagen); la miniatura
+principal y `contar_miniaturas` **excluyen** los archivos `_preview_`. Se
+agregó `prueba_previews_progresivas.py` (**16 pruebas** P01–P16). Datos
+reales preservados (`biblioteca.db`, `miniaturas/` y `videos_prueba/`
+intactos) y sin avisos `QThread: Destroyed`. Aprobada.
 
 **SHA definitivo:** debe consultarse con `git log -1` (el SHA no se
 escribe en este documento para evitar autorreferencias al commit).
 
 ## Última etapa aprobada
 
-Incorporar y mostrar el tamaño de los archivos de video: el catálogo
-incorpora el **tamaño en bytes** como columna opcional y la interfaz lo
-muestra en cada fila. `escanear_videos.py` añade **`("tamano_bytes",
-"INTEGER")`** a `COLUMNAS_EXTRA` (la **migración idempotente** de
-`conectar_bd` —`PRAGMA table_info` + `ALTER TABLE ADD COLUMN`— agrega la
-columna a las bases existentes **sin tocar los registros**, que quedan en
-`NULL` hasta que un escaneo los complete), incorpora
-`obtener_tamanos_archivos(videos, carpeta)` (consulta `os.path.getsize` por
-archivo y devuelve el resumen `{"rutas", "resultados", "procesados",
-"con_tamano", "sin_tamano"}` con `{"ruta", "tamano_bytes"}` por archivo;
-`None` si el archivo no existe o es ilegible; validación previa) y
-`combinar_registros_con_tamanos(registros, resultado_tamanos)` (asigna
-`tamano_bytes` por ruta normalizada; devuelve copias); `guardar_video`/
-`guardar_videos` persisten la clave opcional (`NULL` si falta) y
-`listar_videos`/`listar_videos_paginado` devuelven **tuplas de siete
-campos**. `tareas_videos.py` incorpora `TareaTamanosArchivos(TareaBase)`
-(obtiene los tamaños en segundo plano) y re-exporta ambas funciones.
-`visor_videos.py` inserta el paso **después del escaneo y antes de
-FFprobe**, extendiendo la cadena a **7 tareas** (`TareaEscaneo` →
-`TareaTamanosArchivos` → `TareaFFprobe` → `TareaMiniaturas` →
-`TareaGuardarVideos` → `TareaSincronizacionCatalogo` →
-`TareaLecturaCatalogoPaginada`) con los estados
-`_tamanos_pendiente`/`tarea_tamanos`/`resultado_tamanos`, los handlers
-`_al_resultado_tamanos`/`_al_error_tamanos` y `MENSAJE_ERROR_TAMANOS`
-("No se pudieron obtener los tamaños de los archivos"); la tarjeta horizontal
-desempaqueta la tupla de siete campos (`nombre, duracion, ancho, alto,
-codec, miniaturas, tamano = fila`) y muestra el campo "Tamaño" con
-`formatear_tamano` (B/KB/MB/GB; "Desconocido" para valores ausentes o
-inválidos). Con suite nueva `prueba_tamano_archivo.py` (**15 pruebas**
-T01–T15) y **correcciones de aislamiento**: `test_15` de
-`prueba_aplicar_incorporaciones.py` y `test_27` de
-`prueba_sincronizacion_asincrona.py` operan sobre una copia de
-`biblioteca.db` y verifican que la base real queda intacta. **Sin cambios
-en los datos reales** (`biblioteca.db` con la columna `tamano_bytes`
-agregada por migración, sin pérdida de registros; `miniaturas/` y
+Previews progresivas para la Beta 1.0: el catálogo pasa de una sola
+miniatura por video a **tres previews por video con generación progresiva**.
+`escanear_videos.py` define **`CANTIDAD_PREVIEWS = 3`** y añade
+`ruta_preview(video, indice)` (ruta canónica `miniaturas/<prefijo>_preview_NN.jpg`),
+`_es_archivo_preview(nombre, video)` (detecta los archivos `_preview_`),
+`previews_existentes(video)` (rutas de los índices 1..3 que ya existen, en
+orden) y `previews_faltantes(video)` (índices 1..3 sin archivo),
+`calcular_tiempo_preview(duracion, indice)` (tiempos proporcionales
+25/50/75 % de la duración, acotados entre 0.1 s y 0.95×duración; 1 s sin
+duración), `generar_preview(ruta_video, destino, indice)` (FFmpeg
+`-ss`/`-frames:v 1`/`-q:v 3`, timeout 30 s) y
+`generar_previews_faltantes(videos, carpeta)` (orquesta por video la
+generación **solo de los índices faltantes**; si FFmpeg falla, reutiliza la
+miniatura principal válida (`miniatura_reutilizable`) como base con `copyfile`;
+resumen `{"rutas", "resultados", "procesados", "con_previews", "sin_previews"}`
+con detalle por video `{"nombre", "ruta", "previews", "generados",
+"reutilizados", "errores", "completos"}`; validación previa: `videos` no texto
+ni no iterable (`TypeError`) y `carpeta` texto no vacío (`ValueError`)). La
+miniatura principal (`miniatura_reutilizable`), el conteo de miniaturas
+(`contar_miniaturas`) y `miniatura_principal` del visor **excluyen** los
+archivos `_preview_`, de modo que los previews no alteran `cantidad_miniaturas`
+ni la miniatura mostrada. `tareas_videos.py` añade
+**`TareaPreviewsProgresivas(TareaBase)`** (instantánea de `videos`/`carpeta`,
+invoca `generar_previews_faltantes` en `_trabajo()` y re-exporta
+`CANTIDAD_PREVIEWS`, `_es_archivo_preview`, `previews_existentes` y
+`generar_previews_faltantes`). `visor_videos.py` integra la generación
+**progresiva** en la interfaz con un **segundo `GestorTareas`** propio
+(`gestor_previews`, independiente del gestor principal), la cola
+`_cola_previews`, lotes de `TAMANIO_LOTE_PREVIEWS = 3`, el temporizador
+`_timer_previews` (300 ms, single-shot, arrancado al terminar cada
+carga/recarga/página), `_encolar_previews` (descarta videos que ya tienen
+previews o están en cola), `_siguiente_lote_previews` (lanza
+`TareaPreviewsProgresivas` por lote con el gestor de previews),
+`_aplicar_previews` y `Tarjeta.actualizar_previews` (reemplaza los
+placeholders "Generando preview…" por las imágenes a medida que llegan;
+`ANCHO_PREVIEW`/`ALTO_PREVIEW` = tercera parte de la tarjeta). La interfaz
+genera los previews **sin bloquear** el hilo principal, en paralelo a la
+carga del catálogo, y los muestra de forma **incremental**. Con suite nueva
+`prueba_previews_progresivas.py` (**16 pruebas** P01–P16: compilación;
+cantidad y rutas; exclusión de `_preview_` en conteo/reutilización/principal;
+tiempos proporcionales; errores sin FFmpeg; generación incremental;
+no-regeneración de existentes; generación en segundo plano en un hilo distinto
+al principal; integración con la interfaz y pixmaps; progresión por lotes con
+3 y 4 videos; primer pase parcial y final sin regenerar; validación previa).
+**Sin cambios en los datos reales** (`biblioteca.db`, `miniaturas/` y
 `videos_prueba/` intactos) y sin avisos `QThread: Destroyed`. Aprobada.
 
 ## Estado de la arquitectura
@@ -336,6 +361,22 @@ agregada por migración, sin pérdida de registros; `miniaturas/` y
     devuelven tuplas de siete campos; suite `prueba_tamano_archivo.py` con
     15 pruebas; aislamiento T15/T27 sobre copia de `biblioteca.db`; datos
     reales intactos).
+-   Previews progresivas para la Beta 1.0 (`escanear_videos.py` define
+    `CANTIDAD_PREVIEWS = 3` y añade `ruta_preview` (convención
+    `miniaturas/<prefijo>_preview_NN.jpg`), `_es_archivo_preview`,
+    `previews_existentes`, `previews_faltantes`, `calcular_tiempo_preview`
+    (proporcional 25/50/75 %), `generar_preview` (FFmpeg) y
+    `generar_previews_faltantes` (genera solo los índices faltantes; ante
+    un fallo reutiliza la miniatura principal válida como base; nunca
+    sobrescribe ni elimina); `contar_miniaturas`/`miniatura_reutilizable`/
+    `miniatura_principal` excluyen los archivos `_preview_`;
+    `tareas_videos.py` añade `TareaPreviewsProgresivas`; `visor_videos.py`
+    integra la generación progresiva con un **segundo `GestorTareas`**
+    (`gestor_previews`), cola `_cola_previews`, lotes de
+    `TAMANIO_LOTE_PREVIEWS = 3`, temporizador `_timer_previews` (300 ms) y
+    actualización incremental de cada tarjeta (`Tarjeta.actualizar_previews`);
+    suite `prueba_previews_progresivas.py` con 16 pruebas; datos reales
+    intactos).
 -   Pruebas automatizadas.
 
 ### En desarrollo
@@ -362,9 +403,10 @@ existen): la carga inicial y la recarga muestran únicamente la primera
 página, y **ya existe la carga manual de una página adicional** con el
 botón "Cargar más" (se agregan tarjetas debajo de las existentes sin
 reemplazarlas). El catálogo se presenta con **una tarjeta horizontal por
-video, una fila por video en una única columna** y cada fila **muestra el
-tamaño de archivo** (campo "Tamaño" con `formatear_tamano`;
-presentación y tamaño aprobados en las últimas etapas).
+video, una fila por video en una única columna**, cada fila **muestra el
+tamaño de archivo** (campo "Tamaño" con `formatear_tamano`) y cada tarjeta
+**muestra tres previews progresivos** generados en segundo plano con un
+gestor propio (etapas de presentación, tamaño y previews aprobadas).
 
 ## Pendientes prioritarios
 
@@ -385,11 +427,11 @@ presentación y tamaño aprobados en las últimas etapas).
 3.  Integración SQLite asíncrona en el pipeline (encadenado).
 4.  Actualización asíncrona de la interfaz (tarjetas dinámicas).
 5.  FFmpeg asíncrono.
-6.  Varias miniaturas por video.
-7.  Selección inteligente de miniaturas.
-8.  Barra de progreso.
-9.  Caché avanzada.
-10. Optimización para miles de videos.
+6.  Selección inteligente de miniaturas (la generación de **tres previews
+    progresivos por video** ya está implementada).
+7.  Barra de progreso.
+8.  Caché avanzada.
+9.  Optimización para miles de videos.
 
 ## Problemas abiertos
 
@@ -449,23 +491,20 @@ limpieza controlada de miniaturas antiguas.
 
 ## Próxima etapa
 
-**Aún no definida**: la incorporación y visualización del tamaño de los
-archivos de video ya
-quedó aprobada y commiteada ("Incorporar tamaño de archivos al catálogo"),
-por lo que no se inicia ninguna etapa nueva en esta entrega. El siguiente
-candidato (todavía no definido ni iniciado) es la **paginación completa
-automática del catálogo en la interfaz** (scroll infinito, búsqueda en SQL
-desde la interfaz y ordenamiento configurable — hoy la carga inicial y la
-recarga muestran únicamente la primera página, existe la carga manual con
-"Cargar más", el catálogo se presenta en filas horizontales y cada fila
-muestra el tamaño de archivo) y la
-**deduplicación de nombres repetidos** en el plan de sincronización,
-manteniendo el alcance limitado: sin selección inteligente, sin múltiples
-miniaturas, sin eliminación de archivos antiguos y sin paginación
-automática. Para **Beta 1.0** el candidato inmediato es la **generación de
-múltiples previews progresivas por video** (varias miniaturas por video con
-generación progresiva, doble clic para abrir y persistencia de la última
-carpeta).
+**Aún no definida**: la etapa de **previews progresivas para la Beta 1.0**
+ya quedó aprobada y commiteada ("Implementar previews progresivas para la
+Beta 1.0"), por lo que no se inicia ninguna etapa nueva en esta entrega. El
+siguiente candidato (todavía no definido ni iniciado) es la **paginación
+completa automática del catálogo en la interfaz** (scroll infinito, búsqueda
+en SQL desde la interfaz y ordenamiento configurable — hoy la carga inicial y
+la recarga muestran únicamente la primera página, existe la carga manual con
+"Cargar más", el catálogo se presenta en filas horizontales, cada fila
+muestra el tamaño de archivo y cada tarjeta muestra tres previews
+progresivos) y la **deduplicación de nombres repetidos** en el plan de
+sincronización, manteniendo el alcance limitado: sin selección inteligente,
+sin eliminación de archivos antiguos y sin paginación automática. Para
+**Beta 1.0** quedan como candidatos inmediatos la **apertura del video por
+doble clic** y la **persistencia de la última carpeta seleccionada**.
 
 ## Documentos del proyecto
 

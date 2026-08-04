@@ -8,6 +8,7 @@ from rutas import ruta_biblioteca, ruta_carpeta_miniaturas, ruta_carpeta_videos
 
 EXTENSIONES = {".mp4", ".mkv", ".avi"}
 EXTENSION_MINIATURA = ".jpg"
+CANTIDAD_PREVIEWS = 3
 COLUMNAS_EXTRA = [
     ("duracion_segundos", "REAL"),
     ("ancho", "INTEGER"),
@@ -210,6 +211,18 @@ def ruta_miniatura(video, indice=1):
         f"{prefijo}_{indice:02d}{EXTENSION_MINIATURA}",
     )
 
+def ruta_preview(video, indice):
+    prefijo = os.path.splitext(video)[0]
+    return os.path.join(
+        ruta_carpeta_miniaturas(),
+        f"{prefijo}_preview_{indice:02d}{EXTENSION_MINIATURA}",
+    )
+
+def _es_archivo_preview(nombre, video):
+    return os.path.splitext(nombre)[0].startswith(
+        f"{os.path.splitext(video)[0]}_preview_"
+    )
+
 def calcular_tiempo_miniatura(duracion):
     if duracion is None or duracion <= 0:
         return 1.0
@@ -252,7 +265,10 @@ def miniatura_reutilizable(video, ruta_video):
     if not os.path.isdir(carpeta):
         return None
     for nombre in sorted(os.listdir(carpeta)):
-        if os.path.splitext(nombre)[0].startswith(prefijo):
+        if (
+            os.path.splitext(nombre)[0].startswith(prefijo)
+            and not _es_archivo_preview(nombre, video)
+        ):
             ruta = os.path.join(carpeta, nombre)
             if miniatura_vigente(ruta_video, ruta):
                 return ruta
@@ -309,8 +325,118 @@ def contar_miniaturas(video):
         return 0
     return sum(
         1 for nombre in os.listdir(carpeta)
-        if os.path.splitext(nombre)[0].startswith(prefijo)
+        if (
+            os.path.splitext(nombre)[0].startswith(prefijo)
+            and not _es_archivo_preview(nombre, video)
+        )
     )
+
+def previews_existentes(video):
+    carpeta = ruta_carpeta_miniaturas()
+    if not os.path.isdir(carpeta):
+        return []
+    return [
+        ruta_preview(video, indice)
+        for indice in range(1, CANTIDAD_PREVIEWS + 1)
+        if os.path.isfile(ruta_preview(video, indice))
+    ]
+
+def previews_faltantes(video):
+    return [
+        indice
+        for indice in range(1, CANTIDAD_PREVIEWS + 1)
+        if not os.path.isfile(ruta_preview(video, indice))
+    ]
+
+def calcular_tiempo_preview(duracion, indice=None):
+    if duracion is None or duracion <= 0:
+        return 1.0
+    posicion = 1
+    if isinstance(indice, int) and not isinstance(indice, bool) and 1 <= indice <= CANTIDAD_PREVIEWS:
+        posicion = indice
+    fraccion = posicion / (CANTIDAD_PREVIEWS + 1)
+    return max(0.1, min(duracion * fraccion, duracion * 0.95))
+
+def generar_preview(ruta_video, destino, indice=None):
+    datos = obtener_datos_ffprobe(ruta_video)
+    duracion = datos["duracion_segundos"] if datos else None
+    tiempo = calcular_tiempo_preview(duracion, indice)
+    try:
+        resultado = subprocess.run(
+            [
+                "ffmpeg", "-y", "-ss", str(tiempo),
+                "-i", ruta_video,
+                "-frames:v", "1", "-q:v", "3",
+                destino,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        return resultado.returncode == 0 and os.path.isfile(destino)
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+def generar_previews_faltantes(videos, carpeta):
+    if isinstance(videos, (str, bytes, bytearray)):
+        raise TypeError("videos debe ser una colección de nombres, no texto")
+    try:
+        lista = list(videos)
+    except TypeError:
+        raise TypeError("videos debe ser una colección iterable") from None
+    if not isinstance(carpeta, str) or not carpeta:
+        raise ValueError("carpeta debe ser una ruta de texto no vacía")
+    resultados = []
+    for nombre in lista:
+        ruta_video = os.path.join(carpeta, nombre)
+        faltantes = previews_faltantes(nombre)
+        generados = 0
+        reutilizados = 0
+        errores = 0
+        if faltantes:
+            os.makedirs(ruta_carpeta_miniaturas(), exist_ok=True)
+            base = None
+            if os.path.isfile(ruta_video):
+                base = miniatura_reutilizable(nombre, ruta_video)
+            for indice in faltantes:
+                destino = ruta_preview(nombre, indice)
+                if (
+                    os.path.isfile(ruta_video)
+                    and os.path.getsize(ruta_video) > 0
+                    and generar_preview(ruta_video, destino, indice)
+                ):
+                    generados += 1
+                elif base is not None and os.path.isfile(base):
+                    try:
+                        shutil.copyfile(base, destino)
+                        reutilizados += 1
+                    except OSError:
+                        errores += 1
+                else:
+                    errores += 1
+        previews = previews_existentes(nombre)
+        resultados.append(
+            {
+                "nombre": nombre,
+                "ruta": ruta_video,
+                "previews": previews,
+                "generados": generados,
+                "reutilizados": reutilizados,
+                "errores": errores,
+                "completos": len(previews) >= CANTIDAD_PREVIEWS,
+            }
+        )
+    return {
+        "rutas": [r["ruta"] for r in resultados],
+        "resultados": resultados,
+        "procesados": len(resultados),
+        "con_previews": sum(1 for r in resultados if r["previews"]),
+        "sin_previews": sum(1 for r in resultados if not r["previews"]),
+        "completos": sum(1 for r in resultados if r["completos"]),
+        "generados": sum(r["generados"] for r in resultados),
+        "reutilizados": sum(r["reutilizados"] for r in resultados),
+        "errores": sum(r["errores"] for r in resultados),
+    }
 
 def insertar_video(conn, carpeta, nombre):
     extension = os.path.splitext(nombre)[1].lower()

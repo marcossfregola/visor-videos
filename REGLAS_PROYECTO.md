@@ -86,3 +86,21 @@ forme parte de la etapa.
 Prioridades: 1. Seguridad de los datos. 2. Arquitectura. 3.
 Mantenibilidad. 4. Estabilidad. 5. Rendimiento. 6. Nuevas
 funcionalidades.
+
+## 11. Evaluación de etapas
+
+-   Cada etapa se evalúa exclusivamente contra el objetivo definido para
+    ella en su momento de aprobación.
+-   Las funcionalidades previstas para etapas futuras no constituyen
+    evidencia de incompletitud de la etapa en evaluación: solo se
+    evalúan contra lo prometido por esa etapa.
+
+## 12. Gestión de hilos
+
+-   Cuando el contexto de trabajo sea alto, se abren hilos nuevos de
+    forma simultánea en ChatGPT y en OpenCode para continuar el
+    desarrollo.
+-   Los hilos nuevos parten siempre de los documentos oficiales
+    actualizados (`REGLAS_PROYECTO.md`, `DOCUMENTO_TECNICO.md`,
+    `ESTADO_PROYECTO.md` y `ROADMAP.md`), que constituyen la fuente
+    principal de contexto del proyecto.

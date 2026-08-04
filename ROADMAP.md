@@ -49,7 +49,9 @@ arquitectónicas.
     se recuerda la última carpeta seleccionada (la persistencia de
     configuración sigue pendiente). El tamaño de archivo por fila **se
     incorporó después** en la etapa "Incorporar y mostrar el tamaño de los
-    archivos de video" (ver el siguiente punto).
+    archivos de video" (ver el siguiente punto). Los **tres previews por
+    video con generación progresiva** **se incorporaron después** en la
+    etapa "Previews progresivas para la Beta 1.0" (ver más abajo).
 -   Mostrar el tamaño de los archivos de video — **completado**
     (`escanear_videos.py` añade `tamano_bytes INTEGER` a `COLUMNAS_EXTRA`
     con migración idempotente e incorpora `obtener_tamanos_archivos`/
@@ -58,9 +60,21 @@ arquitectónicas.
     entre el escaneo y FFprobe —cadena de 7 tareas—, persiste
     `tamano_bytes` y muestra el campo "Tamaño" en cada fila con
     `formatear_tamano` en B/KB/MB/GB): **cada fila del catálogo muestra el
-    tamaño del archivo de video**. Quedan pendientes los **cuatro previews
-    por video con generación progresiva**, la apertura por doble clic y la
-    persistencia de la última carpeta.
+    tamaño del archivo de video**. Quedan pendientes la apertura por
+    doble clic y la persistencia de la última carpeta.
+-   Previews progresivas para la Beta 1.0 — **completado**:
+    `escanear_videos.py` genera **tres previews por video** con
+    **generación progresiva** (`CANTIDAD_PREVIEWS = 3`; convención
+    `miniaturas/<prefijo>_preview_NN.jpg`; `ruta_preview`,
+    `previews_existentes`, `previews_faltantes`, `calcular_tiempo_preview`,
+    `generar_preview` y `generar_previews_faltantes`); `tareas_videos.py`
+    añade `TareaPreviewsProgresivas`; `visor_videos.py` integra la
+    generación en segundo plano con un `GestorTareas` propio, cola por
+    lotes (`TAMANIO_LOTE_PREVIEWS = 3`) y actualización incremental de las
+    tarjetas a medida que llega cada preview; la miniatura principal y el
+    conteo de miniaturas **excluyen** los archivos `_preview_`. Queda
+    pendiente la **apertura por doble clic** del video y la
+    **persistencia de la última carpeta**.
 -   Escritura individual asíncrona — **completado** (`TareaGuardarVideo`).
 -   Escritura de colección asíncrona — **completado**
     (`TareaGuardarVideos`): persiste colecciones de registros preparados

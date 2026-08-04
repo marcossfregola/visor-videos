@@ -23,23 +23,30 @@ from PySide6.QtWidgets import (
 from rutas import ruta_carpeta_miniaturas
 from tareas import Estado, GestorTareas
 from tareas_videos import (
+    CANTIDAD_PREVIEWS,
     TareaEscaneo,
     TareaFFprobe,
     TareaGuardarVideos,
     TareaLecturaCatalogoPaginada,
     TareaMiniaturas,
+    TareaPreviewsProgresivas,
     TareaSincronizacionCatalogo,
     TareaTamanosArchivos,
+    _es_archivo_preview,
     combinar_registros_con_ffprobe,
     combinar_registros_con_miniaturas,
     combinar_registros_con_tamanos,
     conectar_bd,
     guardar_videos,
+    previews_existentes,
 )
 
 ANCHO_TARJETA = 320
 ALTO_TARJETA = 180
+ANCHO_PREVIEW = ANCHO_TARJETA // 3
+ALTO_PREVIEW = ALTO_TARJETA // 3
 TAMANIO_PAGINA_INICIAL = 100
+TAMANIO_LOTE_PREVIEWS = 3
 
 MENSAJE_CARGANDO = "Cargando catálogo…"
 MENSAJE_ERROR = "No se pudo cargar el catálogo"
@@ -97,11 +104,18 @@ def miniatura_principal(nombre):
     carpeta = ruta_carpeta_miniaturas()
     if os.path.isdir(carpeta):
         for archivo in sorted(os.listdir(carpeta)):
-            if os.path.splitext(archivo)[0].startswith(prefijo):
+            if (
+                os.path.splitext(archivo)[0].startswith(prefijo)
+                and not _es_archivo_preview(archivo, nombre)
+            ):
                 ruta = os.path.join(carpeta, archivo)
                 if os.path.isfile(ruta):
                     return ruta
     return None
+
+
+def previews_de(nombre):
+    return previews_existentes(nombre)
 
 
 class Tarjeta(QFrame):
@@ -135,6 +149,20 @@ class Tarjeta(QFrame):
             recuadro.setStyleSheet("background-color: #e0e0e0; border: 1px solid #999;")
             layout.addWidget(recuadro)
 
+        self._nombre = nombre
+        self._etiquetas_previews = []
+        contenedor_previews = QVBoxLayout()
+        contenedor_previews.addStretch()
+        for _ in range(CANTIDAD_PREVIEWS):
+            etiqueta = QLabel("Generando preview…")
+            etiqueta.setFixedSize(ANCHO_PREVIEW, ALTO_PREVIEW)
+            etiqueta.setAlignment(Qt.AlignCenter)
+            etiqueta.setStyleSheet("background-color: #f0f0f0; border: 1px solid #ccc;")
+            self._etiquetas_previews.append(etiqueta)
+            contenedor_previews.addWidget(etiqueta)
+        contenedor_previews.addStretch()
+        layout.addLayout(contenedor_previews)
+
         resolucion = "No disponible"
         if ancho is not None and alto is not None:
             resolucion = f"{ancho}x{alto}"
@@ -154,6 +182,40 @@ class Tarjeta(QFrame):
             columna_campos.addWidget(campo)
         columna_campos.addStretch()
         layout.addLayout(columna_campos, 1)
+
+    @property
+    def nombre(self):
+        return self._nombre
+
+    def _colocar_preview(self, indice, ruta):
+        if not (0 <= indice < len(self._etiquetas_previews)):
+            return False
+        etiqueta = self._etiquetas_previews[indice]
+        ruta_a_usar = ruta
+        pixmap = QPixmap(ruta_a_usar)
+        if pixmap.isNull():
+            return False
+        etiqueta.setPixmap(
+            pixmap.scaled(
+                ANCHO_PREVIEW,
+                ALTO_PREVIEW,
+                Qt.KeepAspectRatio,
+                Qt.SmoothTransformation,
+            )
+        )
+        etiqueta.setText("")
+        return True
+
+    def actualizar_previews(self, rutas):
+        if rutas is None:
+            return False
+        if isinstance(rutas, str):
+            rutas = [rutas]
+        actualizado = False
+        for indice in range(min(len(self._etiquetas_previews), len(rutas))):
+            if self._colocar_preview(indice, rutas[indice]):
+                actualizado = True
+        return actualizado
 
 
 class VisorVideos(QMainWindow):
@@ -189,6 +251,9 @@ class VisorVideos(QMainWindow):
         self._pagina_pendiente = False
         self.tarea_pagina = None
         self._total_catalogo = None
+        self._cola_previews = []
+        self.tarea_previews = None
+        self.gestor_previews = None
 
         self.busqueda = QLineEdit()
         self.busqueda.setPlaceholderText("Buscar por nombre...")
@@ -250,6 +315,16 @@ class VisorVideos(QMainWindow):
         self.gestor.tarea_error.connect(self._al_error)
         self.gestor.tarea_finalizada.connect(self._al_tarea_finalizada)
         self.gestor.actividad_cambiada.connect(self._al_actividad)
+
+        self.gestor_previews = GestorTareas(self)
+        self.gestor_previews.tarea_resultado.connect(self._al_resultado_previews)
+        self.gestor_previews.tarea_error.connect(self._al_error_previews)
+        self.gestor_previews.tarea_finalizada.connect(self._al_previews_finalizada)
+
+        self._timer_previews = QTimer(self)
+        self._timer_previews.setSingleShot(True)
+        self._timer_previews.setInterval(300)
+        self._timer_previews.timeout.connect(self._iniciar_previews)
         self._iniciar_carga()
 
     def _iniciar_carga(self):
@@ -421,6 +496,7 @@ class VisorVideos(QMainWindow):
         self._total_catalogo = resultado.get("total")
         self._crear_tarjetas(resultado.get("videos", []))
         self._carga_completada = True
+        self._programar_previews()
 
     def _iniciar_tamanos(self):
         if self.tarea_escaneo is None or self.videos_detectados is None:
@@ -594,6 +670,7 @@ class VisorVideos(QMainWindow):
         self.tarea_recarga_catalogo = None
         self._total_catalogo = resultado.get("total", self._total_catalogo)
         self._reemplazar_tarjetas(resultado.get("videos", []))
+        self._programar_previews()
         self._actualizar_botones_carpeta()
 
     def _al_error_recarga(self, mensaje):
@@ -632,12 +709,85 @@ class VisorVideos(QMainWindow):
         existentes = {nombre for nombre, _ in self.tarjetas}
         filas_nuevas = [fila for fila in filas if fila[0] not in existentes]
         self._agregar_tarjetas(filas_nuevas)
+        self._programar_previews()
         self._actualizar_botones_carpeta()
 
     def _al_error_pagina(self, mensaje):
         self._limpiar_cadena()
         self.estado_escaneo.setText(MENSAJE_ERROR_PAGINA)
         self._actualizar_botones_carpeta()
+
+    def _programar_previews(self):
+        if not self._carga_completada:
+            return
+        carpeta = self.carpeta_seleccionada
+        if not carpeta or not os.path.isdir(carpeta):
+            return
+        self._timer_previews.start()
+
+    def _iniciar_previews(self):
+        if not self._carga_completada:
+            return
+        carpeta = self.carpeta_seleccionada
+        if not carpeta or not os.path.isdir(carpeta):
+            return
+        nombres = [nombre for nombre, _ in self.tarjetas]
+        if not nombres:
+            return
+        self._encolar_previews(nombres)
+        self._al_previews_finalizada()
+
+    def _encolar_previews(self, nombres):
+        con_previews = set()
+        for nombre, _ in self.tarjetas:
+            if previews_de(nombre):
+                con_previews.add(nombre)
+        pendientes = set(self._cola_previews)
+        for nombre in nombres:
+            if nombre in con_previews or nombre in pendientes:
+                continue
+            self._cola_previews.append(nombre)
+
+    def _al_previews_finalizada(self):
+        if self.gestor_previews.estado != Estado.INACTIVO:
+            return
+        self._siguiente_lote_previews()
+
+    def _siguiente_lote_previews(self):
+        if self.gestor_previews.activo:
+            return
+        lote = []
+        while self._cola_previews and len(lote) < TAMANIO_LOTE_PREVIEWS:
+            lote.append(self._cola_previews.pop(0))
+        if not lote:
+            return
+        carpeta = self.carpeta_seleccionada
+        if not carpeta or not os.path.isdir(carpeta):
+            self._cola_previews = []
+            return
+        tarea = TareaPreviewsProgresivas(lote, carpeta)
+        if not self.gestor_previews.iniciar(tarea):
+            return
+        self.tarea_previews = tarea
+
+    def _al_resultado_previews(self, resultado):
+        self._aplicar_previews(resultado)
+
+    def _al_error_previews(self, mensaje):
+        self._siguiente_lote_previews()
+
+    def _aplicar_previews(self, resultado):
+        for item in resultado.get("resultados", []):
+            nombre = item.get("nombre")
+            rutas = item.get("previews")
+            if rutas:
+                self.actualizar_previews(nombre, rutas)
+
+    def actualizar_previews(self, nombre, rutas):
+        for candidato, tarjeta in self.tarjetas:
+            if candidato == nombre:
+                return tarjeta.actualizar_previews(rutas)
+        return False
 
     def _agregar_tarjetas(self, filas):
         inicio = len(self.tarjetas)
@@ -722,7 +872,10 @@ class VisorVideos(QMainWindow):
         self.contador.setText(f"{cantidad} {palabra}")
 
     def closeEvent(self, event):
+        self._timer_previews.stop()
         self.gestor.cerrar()
+        if self.gestor_previews is not None:
+            self.gestor_previews.cerrar()
         super().closeEvent(event)
 
 
@@ -885,6 +1038,84 @@ def main():
         QFileDialog.getExistingDirectory = original_dialogo
         temp_carpeta.cleanup()
         temp.cleanup()
+
+    carpeta_real = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "videos_prueba"
+    )
+    if os.path.isdir(carpeta_real):
+        temp_previews = tempfile.TemporaryDirectory()
+        ruta_db_previews = os.path.join(temp_previews.name, "catalogo.db")
+        conn = conectar_bd(ruta_db_previews)
+        conn.commit()
+        conn.close()
+        ventana_previews = VisorVideos(ruta_db=ruta_db_previews)
+        ventana_previews.resize(900, 600)
+        ventana_previews.show()
+        esperar_smoke(
+            lambda v=ventana_previews: v._carga_completada and v.gestor.hilo is None
+        )
+        dialogo_real = QFileDialog.getExistingDirectory
+        QFileDialog.getExistingDirectory = lambda *a, **k: carpeta_real
+        ventana_previews.seleccionar_carpeta()
+        QFileDialog.getExistingDirectory = dialogo_real
+        ventana_previews.boton_escanear.click()
+        print(
+            f"previews_escanear_boton={ventana_previews.boton_escanear.isEnabled()}"
+        )
+
+        pasos_previews = {"cadena": 0, "fin": 0}
+
+        def comprobar_cadena_previews():
+            if (
+                ventana_previews.gestor.activo
+                or ventana_previews._escaneo_pendiente
+                or ventana_previews._tamanos_pendiente
+                or ventana_previews._ffprobe_pendiente
+                or ventana_previews._miniaturas_pendiente
+                or ventana_previews._guardado_pendiente
+                or ventana_previews._sincronizacion_pendiente
+                or ventana_previews._recarga_catalogo_pendiente
+            ) and pasos_previews["cadena"] < 600:
+                pasos_previews["cadena"] += 1
+                QTimer.singleShot(25, comprobar_cadena_previews)
+                return
+            print(
+                "previews_estado_escaneo=" + ventana_previews.estado_escaneo.text()
+            )
+            QTimer.singleShot(0, comprobar_fin_previews)
+
+        def comprobar_fin_previews():
+            if (
+                ventana_previews.gestor_previews.activo
+                or ventana_previews._cola_previews
+                or ventana_previews._timer_previews.isActive()
+            ) and pasos_previews["fin"] < 900:
+                pasos_previews["fin"] += 1
+                QTimer.singleShot(25, comprobar_fin_previews)
+                return
+            archivos = []
+            if os.path.isdir(ruta_carpeta_miniaturas()):
+                archivos = sorted(
+                    a for a in os.listdir(ruta_carpeta_miniaturas())
+                    if "_preview_" in a
+                )
+            print("previews_archivos=" + str(archivos))
+            pixmaps = 0
+            for _, tarjeta in ventana_previews.tarjetas:
+                pixmaps += sum(
+                    1
+                    for l in tarjeta.findChildren(QLabel)
+                    if l.pixmap() is not None and not l.pixmap().isNull()
+                )
+            print("previews_pixmaps=" + str(pixmaps))
+            print("previews_tarjetas=" + str(len(ventana_previews.tarjetas)))
+            ventana_previews.close()
+            app.quit()
+
+        QTimer.singleShot(0, comprobar_cadena_previews)
+        app.exec()
+        temp_previews.cleanup()
+
     sys.exit(codigo)
 
 

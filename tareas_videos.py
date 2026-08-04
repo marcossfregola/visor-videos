@@ -2,12 +2,15 @@ import os
 
 import escanear_videos as escanear_mod
 from escanear_videos import (
+    CANTIDAD_PREVIEWS,
+    _es_archivo_preview,
     asegurar_miniaturas,
     combinar_registros_con_ffprobe,
     combinar_registros_con_miniaturas,
     combinar_registros_con_tamanos,
     conectar_bd,
     escanear_videos,
+    generar_previews_faltantes,
     guardar_video,
     guardar_videos,
     listar_videos,
@@ -15,6 +18,7 @@ from escanear_videos import (
     obtener_datos_ffprobe,
     obtener_tamanos_archivos,
     preparar_registros_basicos,
+    previews_existentes,
 )
 from rutas import ruta_carpeta_videos
 from tareas import TareaBase
@@ -121,6 +125,28 @@ class TareaMiniaturas(TareaBase):
 
     def _trabajo(self):
         return asegurar_miniaturas(self._videos, self._carpeta)
+
+
+class TareaPreviewsProgresivas(TareaBase):
+    def __init__(self, videos, carpeta, parent=None):
+        super().__init__(parent)
+        if videos is None:
+            videos = []
+        if isinstance(videos, str):
+            videos = [videos]
+        self._videos = list(videos)
+        self._carpeta = carpeta
+
+    @property
+    def videos(self):
+        return list(self._videos)
+
+    @property
+    def carpeta(self):
+        return self._carpeta
+
+    def _trabajo(self):
+        return generar_previews_faltantes(self._videos, self._carpeta)
 
 
 class TareaLecturaCatalogo(TareaBase):
