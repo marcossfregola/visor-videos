@@ -130,6 +130,20 @@ arquitectónicas.
     `VISOR_CONFIG` para el aislamiento; suite `prueba_persistencia_carpeta.py`
     con **20 pruebas**. La persistencia de **preferencias generales**
     (más allá de la última carpeta) sigue pendiente.
+-   Separación del punto de entrada de producción y del arnés de smoke
+    tests — **completado**: `visor_videos.py` `main()` queda como
+    **bootstrap puro de la interfaz** (solo `QApplication(sys.argv)`,
+    `VisorVideos()`, `resize(900, 600)`, `show()` y
+    `sys.exit(app.exec())`) y **no ejecuta pruebas al iniciar**; el
+    **smoke test se independizó en `prueba_smoke.py`** (arnés de
+    **ejecución explícita** con `python prueba_smoke.py`, que verifica el
+    pipeline completo —paginación, escaneo + carpeta + sincronización,
+    previews, doble clic y persistencia— con una base SQLite temporal) y
+    las suites de interfaz `prueba_escaneo_interfaz.py`,
+    `prueba_seleccion_carpeta.py`, `prueba_interfaz_asincrona.py`,
+    `prueba_pagina_siguiente.py` y `prueba_recarga_catalogo.py` pasan a
+    invocarlo por `subprocess`. El arranque normal queda **preparado para
+    el empaquetado de la Beta** sin ejecutar pruebas.
 -   Escritura individual asíncrona — **completado** (`TareaGuardarVideo`).
 -   Escritura de colección asíncrona — **completado**
     (`TareaGuardarVideos`): persiste colecciones de registros preparados
@@ -298,8 +312,13 @@ arquitectónicas.
     `VISOR_CONFIG`; ver "Persistencia de la última carpeta seleccionada" en
     "Prioridad inmediata"). Las **preferencias generales** (más allá de la
     última carpeta) siguen pendientes.
-10. Beta funcional — **pendiente** (aplicación utilizable de punta a
-    punta con las funcionalidades anteriores integradas).
+10. Beta funcional — **pendiente**: la aplicación está **preparada para el
+    empaquetado** (el arranque normal ya no ejecuta pruebas; ver
+    "Separación del punto de entrada de producción y del arnés de smoke
+    tests" en "Prioridad inmediata"). Quedan pendientes únicamente: el
+    **empaquetado de la Beta**, las **pruebas sobre una instalación limpia**
+    y la **revisión del mecanismo de búsqueda de miniaturas** (esta última,
+    posterior a la Beta).
 
 ------------------------------------------------------------------------
 

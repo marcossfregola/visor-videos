@@ -183,94 +183,79 @@ quedan pendientes la **deduplicación de nombres repetidos** y la
 **paginación completa** (scroll infinito, búsqueda en SQL desde la
 interfaz y ordenamiento configurable), que todavía no existen.
 
+**Separación del punto de entrada de producción y del arnés de smoke
+tests** (etapa aprobada y commiteada): `visor_videos.py` `main()` queda
+como **bootstrap puro de la interfaz** (solo `QApplication`,
+`VisorVideos()`, `resize(900, 600)`, `show()` y `sys.exit(app.exec())`);
+el **smoke test se independizó en `prueba_smoke.py`** (arnés de
+**ejecución explícita** con `python prueba_smoke.py`, con base SQLite
+temporal y las fases de paginación, escaneo + carpeta + sincronización,
+previews, doble clic y persistencia) y las cinco suites de interfaz que
+lo invocaban por `subprocess` (`prueba_escaneo_interfaz.py`,
+`prueba_seleccion_carpeta.py`, `prueba_interfaz_asincrona.py`,
+`prueba_pagina_siguiente.py`, `prueba_recarga_catalogo.py`) pasan a
+llamar a `prueba_smoke.py`. **El arranque normal ya no ejecuta pruebas
+automáticamente** y la aplicación queda **preparada para el empaquetado
+de la Beta 1.0 sin ejecutar pruebas al iniciar**.
+
 ## Último commit aprobado
 
-**Mensaje:** Persistir la última carpeta seleccionada
+**Mensaje:** Separar punto de entrada y smoke tests
 
-**Etapa aprobada:** Persistencia de la última carpeta seleccionada desde la
-interfaz: nuevo módulo de servicio **`configuracion.py`** con
-`guardar_ultima_carpeta(carpeta, ruta_config=None)` y
-`obtener_ultima_carpeta(ruta_config=None)`. La carpeta elegida se **persiste**
-en `configuracion.json` (gitignored) y se **restaura automáticamente al
-iniciar** la aplicación; la persistencia está activa **por defecto para el
-usuario final** (`python visor_videos.py` lee y escribe el JSON sin banderas;
-el aislamiento de las pruebas usa la variable de entorno `VISOR_CONFIG`, que
-no es una bandera de depuración sino una redirección de ubicación).
-`configuracion.py` define `CLAVE_CARPETA = "ultima_carpeta"`,
-`VARIABLE_ENTORNO = "VISOR_CONFIG"` y `_resolver_ruta_config(ruta_config)`
-(orden: `ruta_config` explícita → entorno `VISOR_CONFIG` → `ruta_configuracion()`);
-`guardar_ultima_carpeta` valida texto no vacío tras `strip()` (`None`, `""`,
-solo espacios o un no-texto → `ValueError`), absolutiza la ruta y la valida
-con `os.path.isdir` (si no es un directorio devuelve `None` sin escribir) y
-escribe de forma **atómica** (`<ruta>.tmp` + `os.replace`,
-`os.makedirs(..., exist_ok=True)`); `obtener_ultima_carpeta` es **tolerante**
-(JSON ausente/corrupto, clave inválida o carpeta inexistente → `None` sin
-lanzar ni crear el archivo). `rutas.py` incorpora `ruta_configuracion()` →
-`os.path.join(ruta_raiz(), "configuracion.json")`. `visor_videos.py` amplía
-el constructor a `__init__(self, ruta_db=None, parent=None, ruta_config=None)`,
-**restaura** en el arranque (`self.carpeta_seleccionada =
-obtener_ultima_carpeta(self._ruta_config)`) y **persiste** al seleccionar
-(`guardar_ultima_carpeta(ruta_absoluta, self._ruta_config)`); `main()` imprime
-`config_ruta`, `persistencia_restaurada` y `persistencia_sin_carpeta` con una
-configuración temporal. `.gitignore` ignora `configuracion.json`. Se agregó
-`prueba_persistencia_carpeta.py` (**20 pruebas**, incluidos los AST, la
-atomicidad sin `.tmp` residuales y la evidencia de que el `configuracion.json`
-real permanece intacto). Datos reales preservados (`biblioteca.db` y
-`videos_prueba/` intactos) y sin avisos `QThread: Destroyed`. Aprobada.
+**Etapa aprobada:** Separación del punto de entrada de producción y del arnés
+de smoke tests. `visor_videos.py` `main()` queda como **bootstrap puro de la
+interfaz** (solo `QApplication(sys.argv)`, `VisorVideos()`, `resize(900, 600)`,
+`show()` y `sys.exit(app.exec())`) y **no ejecuta pruebas al iniciar**; el
+**smoke test se independizó en `prueba_smoke.py`** (arnés de **ejecución
+explícita** con `python prueba_smoke.py`, con la base SQLite temporal y las
+fases de paginación, escaneo + carpeta + sincronización, previews, doble clic
+y persistencia; el cuerpo se movió verbatim y el único ajuste es el parcheo de
+la fase de doble clic, que ahora apunta a
+`visor_videos.abrir_video_con_aplicacion_predeterminada`). Las suites
+`prueba_escaneo_interfaz.py`, `prueba_seleccion_carpeta.py`,
+`prueba_interfaz_asincrona.py`, `prueba_pagina_siguiente.py` y
+`prueba_recarga_catalogo.py` pasan a invocar `prueba_smoke.py` vía `subprocess`.
+**El arranque normal ya no ejecuta el smoke test** y la aplicación queda
+**preparada para el empaquetado de la Beta 1.0 sin ejecutar pruebas al iniciar**.
+Regresiones: 36/36, 26/26, 29/29, 20/20 y 19/20 OK (el T13 de
+`prueba_recarga_catalogo.py` es preexistente, reproducido en la línea base;
+flakiness de tiempo, no lógico). Aprobada.
 
 **SHA definitivo:** debe consultarse con `git log -1` (el SHA no se
 escribe en este documento para evitar autorreferencias al commit).
 
 ## Última etapa aprobada
 
-Persistencia de la última carpeta seleccionada desde la interfaz: la carpeta
-elegida se **persiste** en `configuracion.json` (gitignored) y se **restaura
-automáticamente al iniciar** la aplicación. La persistencia está activa **por
-defecto para el usuario final**: `python visor_videos.py` lee y escribe el
-JSON automáticamente, sin banderas ni opciones; el aislamiento de las pruebas
-se logra con la **variable de entorno `VISOR_CONFIG`** (redirección de
-ubicación, no una bandera de depuración). Se creó el **módulo de servicio
-`configuracion.py`** (ajeno a la GUI, a SQLite, a FFprobe/FFmpeg y a
-`subprocess`) con:
-- `CLAVE_CARPETA = "ultima_carpeta"` — clave del JSON con la carpeta persistida.
-- `VARIABLE_ENTORNO = "VISOR_CONFIG"` — redirige la ruta del archivo de
-  configuración; la usan **solo las suites de prueba** para no tocar el archivo
-  real del usuario.
-- `_resolver_ruta_config(ruta_config)` — orden de resolución: `ruta_config`
-  explícita → entorno `VISOR_CONFIG` → `ruta_configuracion()`.
-- `guardar_ultima_carpeta(carpeta, ruta_config=None)` — valida texto no vacío
-  tras `strip()` (`None`, `""`, solo espacios o un no-texto → `ValueError`),
-  absolutiza la ruta y la valida con `os.path.isdir` (si no es un directorio
-  devuelve `None` sin escribir); lectura del JSON existente (o `{}`), añade
-  `CLAVE_CARPETA` y **escritura atómica** (`<ruta>.tmp` + `os.replace`,
-  `os.makedirs(..., exist_ok=True)`); devuelve la ruta absoluta.
-- `obtener_ultima_carpeta(ruta_config=None)` — **tolerante**: JSON
-  ausente/corrupto, clave inválida o carpeta inexistente → `None` sin lanzar ni
-  crear el archivo; devuelve la ruta absoluta.
+Separación del punto de entrada de producción y del arnés de smoke tests:
+`visor_videos.py` `main()` queda como **bootstrap puro de la interfaz** (solo
+`QApplication(sys.argv)`, `VisorVideos()`, `resize(900, 600)`, `show()` y
+`sys.exit(app.exec())`) y **no ejecuta pruebas al iniciar**. El **smoke test se
+independizó en `prueba_smoke.py`** (arnés de **ejecución explícita** con
+`python prueba_smoke.py`), con:
+- El mismo cuerpo del smoke test anterior, movido verbatim: base SQLite temporal
+  reutilizando el esquema existente (`conectar_bd(ruta_db)`) y las fases de
+  **paginación** (150 registros → `primera_pagina=100`, "Cargar más" →
+  `total_tras_cargar_mas=150`, `duplicados_tras_cargar_mas=0`),
+  **escaneo + carpeta + sincronización** (`videos_detectados=3`,
+  `guardado_total=3`, `resumen_sincronizacion` sin incorporados/eliminados),
+  **previews progresivos** (carpeta real `videos_prueba/`, gestor `inactivo`),
+  **doble clic** (`QTest.mouseDClick` con `abrir_video_con_aplicacion_predeterminada`
+  parcheado) y **persistencia** (configuración temporal `VISOR_CONFIG` con
+  `persistencia_restaurada`).
+- Ejecución **solo a demanda** (`python prueba_smoke.py`); la aplicación normal
+  no lo ejecuta al iniciar.
+- Las suites de interfaz `prueba_escaneo_interfaz.py`, `prueba_seleccion_carpeta.py`,
+  `prueba_interfaz_asincrona.py`, `prueba_pagina_siguiente.py` y
+  `prueba_recarga_catalogo.py` pasan a invocar `prueba_smoke.py` vía `subprocess`
+  (en lugar de `visor_videos.py`).
 
-`rutas.py` incorpora `ruta_configuracion()` →
-`os.path.join(ruta_raiz(), "configuracion.json")`. `visor_videos.py` amplía el
-constructor a `__init__(self, ruta_db=None, parent=None, ruta_config=None)`,
-**restaura** en el arranque (`self.carpeta_seleccionada =
-obtener_ultima_carpeta(self._ruta_config)`) y **persiste** al seleccionar
-(`guardar_ultima_carpeta(ruta_absoluta, self._ruta_config)`); `main()` imprime
-`config_ruta`/`persistencia_restaurada`/`persistencia_sin_carpeta` con una
-configuración temporal. `.gitignore` ignora `configuracion.json`. Los **11
-módulos de prueba** añaden `_CONFIG_TEMPORAL = tempfile.TemporaryDirectory()`
-y `os.environ["VISOR_CONFIG"] = ...` (aislamiento; el archivo real del usuario
-nunca se toca). Con suite nueva **`prueba_persistencia_carpeta.py` (20 pruebas
-T01–T20)**: compilación de los 7 módulos; `ruta_configuracion()` → JSON en la
-raíz; guardar crea el archivo con `"ultima_carpeta"`; ronda completa
-preservando la ruta absoluta; JSON ausente/corrupto/clave ajena/clave vacía/
-carpeta inexistente → `None`; guardar carpeta inexistente → `None` sin
-escribir; entrada inválida → `ValueError` sin corromper el archivo previo;
-escritura atómica (dos guardados → un solo archivo válido, sin `.tmp`
-residuales); creación automática del directorio padre; sobreescritura de la
-clave previa; `ruta_config` explícita prevalece sobre el entorno y la ruta por
-defecto; el `configuracion.json` real permanece intacto (comparación de
-bytes); por defecto guarda/restaura vía `VISOR_CONFIG`; AST de `visor_videos.py`
-sin banderas de depuración (la persistencia queda en el servicio y la interfaz
-solo la invoca). **Sin cambios en los datos reales** (`biblioteca.db` y
+**Consecuencia**: el arranque normal (`python visor_videos.py`) ya no ejecuta
+pruebas automáticamente y la aplicación queda **preparada para el empaquetado de
+la Beta 1.0**. Se resolvió la deuda futura de la etapa 15 (el smoke test debía
+separarse del arranque normal antes de distribuir una beta). Regresiones: 36/36,
+26/26, 29/29, 20/20 y 19/20 OK (el T13 de `prueba_recarga_catalogo.py` es
+preexistente, reproducido en la línea base; flakiness de tiempo, no lógico).
+**Sin cambios en los datos reales** (`biblioteca.db`, `miniaturas/` y
 `videos_prueba/` intactos) y sin avisos `QThread: Destroyed`. Aprobada.
 
 ## Estado de la arquitectura
@@ -467,6 +452,13 @@ solo la invoca). **Sin cambios en los datos reales** (`biblioteca.db` y
     `_CONFIG_TEMPORAL` + `VISOR_CONFIG` (aislamiento; el archivo real del
     usuario nunca se toca); suite `prueba_persistencia_carpeta.py` con 20
     pruebas; datos reales intactos).
+-   Separación del punto de entrada de producción del arnés de smoke tests
+    (`visor_videos.py` `main()` queda como **bootstrap puro de la interfaz**,
+    sin ejecutar pruebas; el smoke test se independizó en `prueba_smoke.py`,
+    arnés de ejecución explícita con `python prueba_smoke.py`; las cinco
+    suites de interfaz que invocaban el smoke por `subprocess` pasan a llamar
+    a `prueba_smoke.py`; el arranque normal ya no ejecuta pruebas y la app
+    queda preparada para el empaquetado de la Beta).
 -   Pruebas automatizadas.
 
 ### En desarrollo
@@ -584,22 +576,22 @@ limpieza controlada de miniaturas antiguas.
 
 ## Próxima etapa
 
-**Aún no definida**: la etapa de **persistencia de la última carpeta
-seleccionada** ya quedó aprobada y commiteada ("Persistir la última carpeta
-seleccionada"), por lo que no se inicia ninguna etapa nueva en esta entrega.
-El siguiente candidato (todavía no definido ni iniciado por ChatGPT) es la
-**paginación completa automática del catálogo en la interfaz** (scroll
-infinito, búsqueda en SQL desde la interfaz y ordenamiento configurable —
-hoy la carga inicial y la recarga muestran únicamente la primera página,
-existe la carga manual con "Cargar más", el catálogo se presenta en filas
-horizontales, cada fila muestra el tamaño de archivo, cada tarjeta muestra
-tres previews progresivos, el doble clic abre el video y la **última carpeta
-seleccionada se recuerda entre sesiones**) y la **deduplicación de nombres
-repetidos** en el plan de sincronización, manteniendo el alcance limitado:
-sin selección inteligente, sin eliminación de archivos antiguos y sin
-paginación automática. Para **Beta 1.0** la **persistencia de la última
-carpeta seleccionada** quedó completada; la definición de la siguiente
-etapa inmediata queda pendiente de aprobación por ChatGPT.
+**Aún no definida**: la etapa de **separación del punto de entrada de
+producción y del arnés de smoke tests** ya quedó aprobada y commiteada
+("Separar punto de entrada y smoke tests"): el arranque normal (`python
+visor_videos.py`) solo inicia la interfaz y **ya no ejecuta pruebas**; el
+smoke test se independizó en `prueba_smoke.py` (ejecución explícita) y las
+cinco suites de interfaz lo invocan por `subprocess`. La aplicación queda
+**preparada para el empaquetado de la Beta 1.0**. No se inicia ninguna etapa
+nueva en esta entrega. Los siguientes candidatos (todavía no definidos ni
+iniciados por ChatGPT) son la **paginación completa automática del catálogo
+en la interfaz** (scroll infinito, búsqueda en SQL desde la interfaz y
+ordenamiento configurable) y la **deduplicación de nombres repetidos** en el
+plan de sincronización, manteniendo el alcance limitado. Para **Beta 1.0**
+quedan pendientes únicamente: el **empaquetado de la Beta**, las **pruebas
+sobre una instalación limpia** y la **revisión del mecanismo de búsqueda de
+miniaturas** (esta última, posterior a la Beta). La definición de la
+siguiente etapa inmediata queda pendiente de aprobación por ChatGPT.
 
 ## Documentos del proyecto
 

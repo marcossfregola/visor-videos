@@ -842,7 +842,7 @@ def test_27():
 
 
 def test_28():
-    comando = [sys.executable, "visor_videos.py"]
+    comando = [sys.executable, "prueba_smoke.py"]
     resultado = subprocess.run(
         comando,
         cwd=ruta_raiz(),
