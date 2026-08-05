@@ -1,4 +1,5 @@
 import os
+import shutil
 import sys
 import tempfile
 import time
@@ -22,7 +23,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from rutas import ruta_carpeta_miniaturas
+from configuracion import guardar_ultima_carpeta, obtener_ultima_carpeta
+from rutas import ruta_carpeta_miniaturas, ruta_configuracion
 from tareas import Estado, GestorTareas
 from apertura_videos import abrir_video_con_aplicacion_predeterminada
 from tareas_videos import (
@@ -228,12 +230,13 @@ class Tarjeta(QFrame):
 
 
 class VisorVideos(QMainWindow):
-    def __init__(self, ruta_db=None, parent=None):
+    def __init__(self, ruta_db=None, parent=None, ruta_config=None):
         super().__init__(parent)
         self.setWindowTitle("Biblioteca de videos")
         self.tarjetas = []
         self.visibles = []
         self._ruta_db = ruta_db
+        self._ruta_config = ruta_config
         self._carga_completada = False
         self.tarea_lectura = None
         self.carpeta_seleccionada = None
@@ -334,6 +337,11 @@ class VisorVideos(QMainWindow):
         self._timer_previews.setSingleShot(True)
         self._timer_previews.setInterval(300)
         self._timer_previews.timeout.connect(self._iniciar_previews)
+        carpeta_guardada = obtener_ultima_carpeta(self._ruta_config)
+        if carpeta_guardada is not None:
+            self.carpeta_seleccionada = carpeta_guardada
+            self.etiqueta_carpeta.setText(carpeta_guardada)
+            self._actualizar_botones_carpeta()
         self._iniciar_carga()
 
     def _iniciar_carga(self):
@@ -360,6 +368,7 @@ class VisorVideos(QMainWindow):
         self.carpeta_seleccionada = ruta_absoluta
         self.etiqueta_carpeta.setText(ruta_absoluta)
         self.mensaje_carpeta.clear()
+        guardar_ultima_carpeta(ruta_absoluta, self._ruta_config)
         self._actualizar_botones_carpeta()
 
     def _actualizar_botones_carpeta(self):
@@ -1214,6 +1223,56 @@ def main():
         QTimer.singleShot(0, comprobar_cadena_doble)
         app.exec()
         temp_doble.cleanup()
+
+    temp_config = tempfile.TemporaryDirectory()
+    ruta_config = os.path.join(temp_config.name, "configuracion.json")
+    ruta_db_persistencia = os.path.join(temp_config.name, "catalogo.db")
+    conn = conectar_bd(ruta_db_persistencia)
+    conn.commit()
+    conn.close()
+    carpeta_persistencia = tempfile.TemporaryDirectory()
+    carpeta_elegida = os.path.join(carpeta_persistencia.name, "carpeta_elegida")
+    os.makedirs(carpeta_elegida)
+    ventana_persistencia = VisorVideos(
+        ruta_db=ruta_db_persistencia, ruta_config=ruta_config
+    )
+    ventana_persistencia.show()
+    esperar_smoke(
+        lambda v=ventana_persistencia: v._carga_completada and v.gestor.hilo is None
+    )
+    print(f"persistencia_inicio={ventana_persistencia.carpeta_seleccionada}")
+    dialogo_persistencia = QFileDialog.getExistingDirectory
+    QFileDialog.getExistingDirectory = lambda *a, **k: carpeta_elegida
+    ventana_persistencia.seleccionar_carpeta()
+    QFileDialog.getExistingDirectory = dialogo_persistencia
+    print(f"persistencia_guardada={ventana_persistencia.carpeta_seleccionada}")
+    ventana_persistencia.close()
+    ventana_persistencia.gestor.cerrar()
+
+    ventana_restaurada = VisorVideos(
+        ruta_db=ruta_db_persistencia, ruta_config=ruta_config
+    )
+    ventana_restaurada.show()
+    esperar_smoke(
+        lambda v=ventana_restaurada: v._carga_completada and v.gestor.hilo is None
+    )
+    print(f"persistencia_restaurada={ventana_restaurada.carpeta_seleccionada}")
+
+    shutil.rmtree(carpeta_elegida, ignore_errors=True)
+    ventana_sin_carpeta = VisorVideos(
+        ruta_db=ruta_db_persistencia, ruta_config=ruta_config
+    )
+    ventana_sin_carpeta.show()
+    esperar_smoke(
+        lambda v=ventana_sin_carpeta: v._carga_completada and v.gestor.hilo is None
+    )
+    print(f"persistencia_sin_carpeta={ventana_sin_carpeta.carpeta_seleccionada}")
+    ventana_restaurada.close()
+    ventana_sin_carpeta.close()
+    ventana_restaurada.gestor.cerrar()
+    ventana_sin_carpeta.gestor.cerrar()
+    carpeta_persistencia.cleanup()
+    temp_config.cleanup()
 
     sys.exit(codigo)
 

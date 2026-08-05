@@ -23,3 +23,6 @@ miniaturas/
 
 # Salida del script de prueba main.py
 datos.txt
+
+# Configuración local del usuario (última carpeta seleccionada)
+configuracion.json

@@ -112,7 +112,8 @@ primera miniatura por video**, sin 4/6 miniaturas por video y sin generación
 progresiva de miniaturas; la **generación progresiva de previews** se incorporó
 después en la etapa "Previews progresivas para la Beta 1.0" y la **apertura del
 video por doble clic** se incorporó después en la etapa "Apertura del video por
-doble clic"; la persistencia de la última carpeta recordada sigue pendiente) y **la
+doble clic"; la **persistencia de la última carpeta seleccionada** se incorporó
+después en la etapa "Persistencia de la última carpeta seleccionada") y **la
 incorporación y visualización del tamaño de los
 archivos de video** (`escanear_videos.py` añade `tamano_bytes INTEGER` a
 `COLUMNAS_EXTRA` con migración idempotente de bases existentes,
@@ -155,93 +156,122 @@ realiza en `_crear_tarjetas` **y** `_agregar_tarjetas`, de modo que el doble cli
 funciona en las tarjetas de la carga inicial y de las páginas adicionales; ante
 un fallo de apertura (`ValueError`/`FileNotFoundError`/`OSError`) se muestra
 `MENSAJE_ERROR_ABRIR` y la interfaz nunca propaga excepciones; suite nueva
-`prueba_doble_clic.py` con **14 pruebas**) aprobadas;
+`prueba_doble_clic.py` con **14 pruebas**) y **la persistencia de la última
+carpeta seleccionada** (`configuracion.py` es un **servicio de persistencia de
+configuración** ajeno a la GUI, a SQLite, a FFprobe/FFmpeg y a `subprocess`:
+`CLAVE_CARPETA = "ultima_carpeta"`, `VARIABLE_ENTORNO = "VISOR_CONFIG"`
+(redirige la ruta del archivo de configuración y la usan **solo las suites de
+prueba** para no tocar el archivo real del usuario; no es una bandera de
+depuración), `_resolver_ruta_config(ruta_config)` (orden: `ruta_config`
+explícita → entorno `VISOR_CONFIG` → `ruta_configuracion()`),
+`guardar_ultima_carpeta(carpeta, ruta_config=None)` (valida texto no vacío
+tras `strip()` → `ValueError`; absolutiza y valida con `os.path.isdir` —si no
+es un directorio devuelve `None` sin escribir—; **escritura atómica** con
+`<ruta>.tmp` + `os.replace` y `os.makedirs(..., exist_ok=True)`) y
+`obtener_ultima_carpeta(ruta_config=None)` (ruta absoluta; JSON
+ausente/corrupto, clave inválida o carpeta inexistente → `None` sin lanzar);
+`rutas.py` añade `ruta_configuracion()` → `configuracion.json` en la raíz;
+`visor_videos.py` amplía el constructor a `__init__(self, ruta_db=None,
+parent=None, ruta_config=None)`, **restaura** en el arranque
+(`obtener_ultima_carpeta(self._ruta_config)`) y **persiste** al seleccionar
+(`guardar_ultima_carpeta(ruta_absoluta, self._ruta_config)`); `.gitignore`
+ignora `configuracion.json`; los **11 módulos de prueba** añaden
+`_CONFIG_TEMPORAL = tempfile.TemporaryDirectory()` + `os.environ["VISOR_CONFIG"]`
+para el aislamiento (el archivo real del usuario nunca se toca); suite nueva
+`prueba_persistencia_carpeta.py` con **20 pruebas**) aprobadas;
 quedan pendientes la **deduplicación de nombres repetidos** y la
 **paginación completa** (scroll infinito, búsqueda en SQL desde la
 interfaz y ordenamiento configurable), que todavía no existen.
 
 ## Último commit aprobado
 
-**Mensaje:** Abrir videos por doble clic
+**Mensaje:** Persistir la última carpeta seleccionada
 
-**Etapa aprobada:** Apertura del video por doble clic desde la interfaz:
-nuevo módulo de servicio **`apertura_videos.py`** con
-`abrir_video_con_aplicacion_predeterminada(nombre, carpeta)`: valida
-`nombre`/`carpeta` como texto no vacío tras `strip()` (`None`, `""`,
-solo espacios o un no-texto → `ValueError`), construye la **ruta
-absoluta** con `os.path.abspath(os.path.join(carpeta, nombre))`,
-comprueba con `os.path.isfile` que el archivo exista (si no →
-`FileNotFoundError`) y abre con `os.startfile(ruta)` devolviendo la ruta;
-un fallo del propio `os.startfile` propaga `OSError`. Es el **único punto
-del proyecto que ejecuta `os.startfile`**. `visor_videos.py` incorpora el
-import del servicio, `MENSAJE_ERROR_ABRIR = "No se pudo abrir el video"`,
-la señal de clase `Tarjeta.doble_clic = Signal(str)` con la sobrescritura
-de `mouseDoubleClickEvent` (emite `self.doble_clic.emit(self._nombre)`),
-el handler `_abrir_video(nombre)` (captura `ValueError`/`FileNotFoundError`/
-`OSError` → `MENSAJE_ERROR_ABRIR` en la etiqueta de estado; en éxito la
-deja en blanco; nunca propaga excepciones) y la conexión
-`tarjeta.doble_clic.connect(self._abrir_video)` en `_crear_tarjetas` **y**
-`_agregar_tarjetas`. `miniatura_principal` se simplifica eliminando la
-comprobación redundante `os.path.isfile(ruta)`. Se agregó
-`prueba_doble_clic.py` (**14 pruebas**, incluido el AST de `visor_videos.py`
-con **cero referencias a `os.path.isfile`/`os.startfile`**) y el smoke test
-de `main()` incorpora una **fase de doble clic real** (`QTest.mouseDClick`
-sobre la tarjeta del video real de `videos_prueba/`). Datos reales
-preservados (`biblioteca.db` y `videos_prueba/` intactos) y sin avisos
-`QThread: Destroyed`. Aprobada.
+**Etapa aprobada:** Persistencia de la última carpeta seleccionada desde la
+interfaz: nuevo módulo de servicio **`configuracion.py`** con
+`guardar_ultima_carpeta(carpeta, ruta_config=None)` y
+`obtener_ultima_carpeta(ruta_config=None)`. La carpeta elegida se **persiste**
+en `configuracion.json` (gitignored) y se **restaura automáticamente al
+iniciar** la aplicación; la persistencia está activa **por defecto para el
+usuario final** (`python visor_videos.py` lee y escribe el JSON sin banderas;
+el aislamiento de las pruebas usa la variable de entorno `VISOR_CONFIG`, que
+no es una bandera de depuración sino una redirección de ubicación).
+`configuracion.py` define `CLAVE_CARPETA = "ultima_carpeta"`,
+`VARIABLE_ENTORNO = "VISOR_CONFIG"` y `_resolver_ruta_config(ruta_config)`
+(orden: `ruta_config` explícita → entorno `VISOR_CONFIG` → `ruta_configuracion()`);
+`guardar_ultima_carpeta` valida texto no vacío tras `strip()` (`None`, `""`,
+solo espacios o un no-texto → `ValueError`), absolutiza la ruta y la valida
+con `os.path.isdir` (si no es un directorio devuelve `None` sin escribir) y
+escribe de forma **atómica** (`<ruta>.tmp` + `os.replace`,
+`os.makedirs(..., exist_ok=True)`); `obtener_ultima_carpeta` es **tolerante**
+(JSON ausente/corrupto, clave inválida o carpeta inexistente → `None` sin
+lanzar ni crear el archivo). `rutas.py` incorpora `ruta_configuracion()` →
+`os.path.join(ruta_raiz(), "configuracion.json")`. `visor_videos.py` amplía
+el constructor a `__init__(self, ruta_db=None, parent=None, ruta_config=None)`,
+**restaura** en el arranque (`self.carpeta_seleccionada =
+obtener_ultima_carpeta(self._ruta_config)`) y **persiste** al seleccionar
+(`guardar_ultima_carpeta(ruta_absoluta, self._ruta_config)`); `main()` imprime
+`config_ruta`, `persistencia_restaurada` y `persistencia_sin_carpeta` con una
+configuración temporal. `.gitignore` ignora `configuracion.json`. Se agregó
+`prueba_persistencia_carpeta.py` (**20 pruebas**, incluidos los AST, la
+atomicidad sin `.tmp` residuales y la evidencia de que el `configuracion.json`
+real permanece intacto). Datos reales preservados (`biblioteca.db` y
+`videos_prueba/` intactos) y sin avisos `QThread: Destroyed`. Aprobada.
 
 **SHA definitivo:** debe consultarse con `git log -1` (el SHA no se
 escribe en este documento para evitar autorreferencias al commit).
 
 ## Última etapa aprobada
 
-Apertura del video por doble clic desde la interfaz: un **doble clic con
-el botón izquierdo** sobre la tarjeta de un video lo abre con la
-**aplicación predeterminada del sistema**. La apertura queda aislada en el
-**módulo de servicio nuevo `apertura_videos.py`** con
-`abrir_video_con_aplicacion_predeterminada(nombre, carpeta)`: valida
-`nombre`/`carpeta` como texto no vacío tras `strip()` (`None`, `""`, solo
-espacios o un no-texto → `ValueError`), construye la **ruta absoluta**
-(`os.path.abspath(os.path.join(carpeta, nombre))`), comprueba con
-`os.path.isfile` que el archivo exista (si no → `FileNotFoundError`) y
-abre con `os.startfile(ruta)` devolviendo la ruta; un fallo del propio
-`os.startfile` propaga `OSError`. Es el **único módulo que ejecuta
-`os.startfile`** (verificado por AST de `visor_videos.py` en T14 de
-`prueba_doble_clic.py`); **no abre SQLite, no ejecuta FFprobe/FFmpeg y no
-usa subprocesos** (T08: sin `subprocess`/`Popen`). `visor_videos.py`
-incorpora el import del servicio (`from apertura_videos import
-abrir_video_con_aplicacion_predeterminada`), la constante
-`MENSAJE_ERROR_ABRIR = "No se pudo abrir el video"`, la **señal de clase
-`Tarjeta.doble_clic = Signal(str)`** con la sobrescritura de
-`mouseDoubleClickEvent(event)` (llama a `super().mouseDoubleClickEvent(event)`
-y emite `self.doble_clic.emit(self._nombre)`), el handler `_abrir_video(nombre)`
-(invoca el servicio con `self.carpeta_seleccionada`; captura `ValueError`/
-`FileNotFoundError`/`OSError` → `MENSAJE_ERROR_ABRIR` en la etiqueta de
-estado; en éxito la deja en blanco; **nunca propaga excepciones**) y la
-conexión `tarjeta.doble_clic.connect(self._abrir_video)` en `_crear_tarjetas`
-**y** `_agregar_tarjetas` (tarjetas de la carga inicial y de las páginas
-adicionales). `miniatura_principal(nombre)` se simplifica devolviendo la
-ruta directamente (se elimina la comprobación redundante
-`os.path.isfile(ruta)`, propia del lector; se conserva la exclusión de los
-`_preview_`). Con suite nueva **`prueba_doble_clic.py` (14 pruebas
-T01–T14)**: compilación de los 7 módulos; el servicio abre la **ruta
-absoluta** exacta con `os.startfile` y lo invoca **exactamente una vez`;
-validación de `carpeta`/`nombre` inválidos (`ValueError`); archivo
-inexistente (`FileNotFoundError`); fallo del propio `os.startfile`
-(`OSError`); AST de `apertura_videos.py` sin `subprocess`/`Popen`; el
-`QTest.mouseDClick` sobre una `Tarjeta` independiente emite `doble_clic`
-con el nombre; doble clic sobre una tarjeta de la **carga inicial** invoca
-`_abrir_video` con `(nombre, ruta absoluta)`; fallo del servicio → sin
-excepción propagada y `MENSAJE_ERROR_ABRIR` visible; sin carpeta
-seleccionada → servicio con `(nombre, None)` → `MENSAJE_ERROR_ABRIR`; el
-doble clic funciona también en tarjetas **agregadas con
-`_agregar_tarjetas`**; AST de `visor_videos.py` con **cero referencias a
-`os.path.isfile`/`os.startfile`**). El smoke test de `main()` incorpora
-una **fase de doble clic real** (`QTest.mouseDClick` sobre la tarjeta del
-video real de `videos_prueba/` tras la carga y el pipeline; imprime
-`abrir_nombre`/`abrir_ruta`/`abrir_mensaje`/`abrir_con_aplicacion`).
-**Sin cambios en los datos reales** (`biblioteca.db` y `videos_prueba/`
-intactos) y sin avisos `QThread: Destroyed`. Aprobada.
+Persistencia de la última carpeta seleccionada desde la interfaz: la carpeta
+elegida se **persiste** en `configuracion.json` (gitignored) y se **restaura
+automáticamente al iniciar** la aplicación. La persistencia está activa **por
+defecto para el usuario final**: `python visor_videos.py` lee y escribe el
+JSON automáticamente, sin banderas ni opciones; el aislamiento de las pruebas
+se logra con la **variable de entorno `VISOR_CONFIG`** (redirección de
+ubicación, no una bandera de depuración). Se creó el **módulo de servicio
+`configuracion.py`** (ajeno a la GUI, a SQLite, a FFprobe/FFmpeg y a
+`subprocess`) con:
+- `CLAVE_CARPETA = "ultima_carpeta"` — clave del JSON con la carpeta persistida.
+- `VARIABLE_ENTORNO = "VISOR_CONFIG"` — redirige la ruta del archivo de
+  configuración; la usan **solo las suites de prueba** para no tocar el archivo
+  real del usuario.
+- `_resolver_ruta_config(ruta_config)` — orden de resolución: `ruta_config`
+  explícita → entorno `VISOR_CONFIG` → `ruta_configuracion()`.
+- `guardar_ultima_carpeta(carpeta, ruta_config=None)` — valida texto no vacío
+  tras `strip()` (`None`, `""`, solo espacios o un no-texto → `ValueError`),
+  absolutiza la ruta y la valida con `os.path.isdir` (si no es un directorio
+  devuelve `None` sin escribir); lectura del JSON existente (o `{}`), añade
+  `CLAVE_CARPETA` y **escritura atómica** (`<ruta>.tmp` + `os.replace`,
+  `os.makedirs(..., exist_ok=True)`); devuelve la ruta absoluta.
+- `obtener_ultima_carpeta(ruta_config=None)` — **tolerante**: JSON
+  ausente/corrupto, clave inválida o carpeta inexistente → `None` sin lanzar ni
+  crear el archivo; devuelve la ruta absoluta.
+
+`rutas.py` incorpora `ruta_configuracion()` →
+`os.path.join(ruta_raiz(), "configuracion.json")`. `visor_videos.py` amplía el
+constructor a `__init__(self, ruta_db=None, parent=None, ruta_config=None)`,
+**restaura** en el arranque (`self.carpeta_seleccionada =
+obtener_ultima_carpeta(self._ruta_config)`) y **persiste** al seleccionar
+(`guardar_ultima_carpeta(ruta_absoluta, self._ruta_config)`); `main()` imprime
+`config_ruta`/`persistencia_restaurada`/`persistencia_sin_carpeta` con una
+configuración temporal. `.gitignore` ignora `configuracion.json`. Los **11
+módulos de prueba** añaden `_CONFIG_TEMPORAL = tempfile.TemporaryDirectory()`
+y `os.environ["VISOR_CONFIG"] = ...` (aislamiento; el archivo real del usuario
+nunca se toca). Con suite nueva **`prueba_persistencia_carpeta.py` (20 pruebas
+T01–T20)**: compilación de los 7 módulos; `ruta_configuracion()` → JSON en la
+raíz; guardar crea el archivo con `"ultima_carpeta"`; ronda completa
+preservando la ruta absoluta; JSON ausente/corrupto/clave ajena/clave vacía/
+carpeta inexistente → `None`; guardar carpeta inexistente → `None` sin
+escribir; entrada inválida → `ValueError` sin corromper el archivo previo;
+escritura atómica (dos guardados → un solo archivo válido, sin `.tmp`
+residuales); creación automática del directorio padre; sobreescritura de la
+clave previa; `ruta_config` explícita prevalece sobre el entorno y la ruta por
+defecto; el `configuracion.json` real permanece intacto (comparación de
+bytes); por defecto guarda/restaura vía `VISOR_CONFIG`; AST de `visor_videos.py`
+sin banderas de depuración (la persistencia queda en el servicio y la interfaz
+solo la invoca). **Sin cambios en los datos reales** (`biblioteca.db` y
+`videos_prueba/` intactos) y sin avisos `QThread: Destroyed`. Aprobada.
 
 ## Estado de la arquitectura
 
@@ -366,8 +396,9 @@ intactos) y sin avisos `QThread: Destroyed`. Aprobada.
      reemplaza tarjetas; **solo se muestra la primera miniatura por video**,
      sin 4/6 miniaturas por video y sin generación progresiva de miniaturas
      (la **apertura por doble clic** **se incorporó después** en la etapa
-     "Apertura del video por doble clic"); la persistencia de la última
-     carpeta sigue pendiente;
+     "Apertura del video por doble clic"); la **persistencia de la última
+     carpeta seleccionada** **se incorporó después** en la etapa
+     "Persistencia de la última carpeta seleccionada";
      suite `prueba_filas_horizontales.py` con 16 pruebas; datos reales
      intactos).
 -   Incorporación y visualización del tamaño de los archivos de video
@@ -415,6 +446,27 @@ intactos) y sin avisos `QThread: Destroyed`. Aprobada.
     `prueba_doble_clic.py` con 14 pruebas, incluido el AST de
     `visor_videos.py` con cero referencias a `os.path.isfile`/`os.startfile`;
     datos reales intactos).
+-   Persistencia de la última carpeta seleccionada (`configuracion.py` es un
+    **servicio de persistencia de configuración** ajeno a la GUI/SQLite/
+    FFprobe/FFmpeg/`subprocess`: `CLAVE_CARPETA = "ultima_carpeta"`,
+    `VARIABLE_ENTORNO = "VISOR_CONFIG"` (redirige la ruta del archivo de
+    configuración; la usan solo las suites de prueba para no tocar el archivo
+    real del usuario), `_resolver_ruta_config` (orden: `ruta_config` explícita
+    → entorno `VISOR_CONFIG` → `ruta_configuracion()`),
+    `guardar_ultima_carpeta(carpeta, ruta_config=None)` (valida texto no
+    vacío → `ValueError`; absolutiza y valida con `os.path.isdir`; si no es un
+    directorio devuelve `None` sin escribir; **escritura atómica** con
+    `<ruta>.tmp` + `os.replace` y `os.makedirs(..., exist_ok=True)`) y
+    `obtener_ultima_carpeta(ruta_config=None)` (ruta absoluta; JSON
+    ausente/corrupto, clave inválida o carpeta inexistente → `None` sin
+    lanzar ni crear el archivo); `rutas.py` añade `ruta_configuracion()` →
+    `configuracion.json` en la raíz; `visor_videos.py` amplía el constructor a
+    `ruta_config`, **restaura** en el arranque (`obtener_ultima_carpeta`) y
+    **persiste** al seleccionar (`guardar_ultima_carpeta`); `.gitignore`
+    ignora `configuracion.json`; los 11 módulos de prueba añaden
+    `_CONFIG_TEMPORAL` + `VISOR_CONFIG` (aislamiento; el archivo real del
+    usuario nunca se toca); suite `prueba_persistencia_carpeta.py` con 20
+    pruebas; datos reales intactos).
 -   Pruebas automatizadas.
 
 ### En desarrollo
@@ -532,20 +584,22 @@ limpieza controlada de miniaturas antiguas.
 
 ## Próxima etapa
 
-**Aún no definida**: la etapa de **apertura del video por doble clic** ya
-quedó aprobada y commiteada ("Abrir videos por doble clic"), por lo que no
-se inicia ninguna etapa nueva en esta entrega. El siguiente candidato
-(todavía no definido ni iniciado) es la **paginación completa automática
-del catálogo en la interfaz** (scroll infinito, búsqueda en SQL desde la
-interfaz y ordenamiento configurable — hoy la carga inicial y la recarga
-muestran únicamente la primera página, existe la carga manual con "Cargar
-más", el catálogo se presenta en filas horizontales, cada fila muestra el
-tamaño de archivo, cada tarjeta muestra tres previews progresivos y el
-doble clic abre el video) y la **deduplicación de nombres repetidos** en el
-plan de sincronización, manteniendo el alcance limitado: sin selección
-inteligente, sin eliminación de archivos antiguos y sin paginación
-automática. Para **Beta 1.0** queda como candidato inmediato la
-**persistencia de la última carpeta seleccionada**.
+**Aún no definida**: la etapa de **persistencia de la última carpeta
+seleccionada** ya quedó aprobada y commiteada ("Persistir la última carpeta
+seleccionada"), por lo que no se inicia ninguna etapa nueva en esta entrega.
+El siguiente candidato (todavía no definido ni iniciado por ChatGPT) es la
+**paginación completa automática del catálogo en la interfaz** (scroll
+infinito, búsqueda en SQL desde la interfaz y ordenamiento configurable —
+hoy la carga inicial y la recarga muestran únicamente la primera página,
+existe la carga manual con "Cargar más", el catálogo se presenta en filas
+horizontales, cada fila muestra el tamaño de archivo, cada tarjeta muestra
+tres previews progresivos, el doble clic abre el video y la **última carpeta
+seleccionada se recuerda entre sesiones**) y la **deduplicación de nombres
+repetidos** en el plan de sincronización, manteniendo el alcance limitado:
+sin selección inteligente, sin eliminación de archivos antiguos y sin
+paginación automática. Para **Beta 1.0** la **persistencia de la última
+carpeta seleccionada** quedó completada; la definición de la siguiente
+etapa inmediata queda pendiente de aprobación por ChatGPT.
 
 ## Documentos del proyecto
 

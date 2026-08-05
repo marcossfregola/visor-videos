@@ -32,6 +32,9 @@ from visor_videos import (
 
 QT_MENSAJES = []
 
+_CONFIG_TEMPORAL = tempfile.TemporaryDirectory()
+os.environ["VISOR_CONFIG"] = os.path.join(_CONFIG_TEMPORAL.name, "configuracion.json")
+
 
 def _mensaje_qt(tipo, contexto, texto):
     QT_MENSAJES.append(str(texto))

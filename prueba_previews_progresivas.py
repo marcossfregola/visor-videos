@@ -28,6 +28,9 @@ from tareas import GestorTareas
 from tareas_videos import TareaPreviewsProgresivas
 from visor_videos import Tarjeta, VisorVideos
 
+_CONFIG_TEMPORAL = tempfile.TemporaryDirectory()
+os.environ["VISOR_CONFIG"] = os.path.join(_CONFIG_TEMPORAL.name, "configuracion.json")
+
 
 def _filas(nombres):
     filas = []

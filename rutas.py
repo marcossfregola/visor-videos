@@ -17,3 +17,7 @@ def ruta_carpeta_miniaturas():
 
 def ruta_carpeta_videos():
     return os.path.join(ruta_raiz(), "videos_prueba")
+
+
+def ruta_configuracion():
+    return os.path.join(ruta_raiz(), "configuracion.json")

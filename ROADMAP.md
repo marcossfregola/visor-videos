@@ -51,8 +51,9 @@ arquitectónicas.
     generación progresiva** **se incorporaron después** en la etapa
     "Previews progresivas para la Beta 1.0" y la **apertura por doble
     clic** **se incorporó después** en la etapa "Apertura del video por
-    doble clic" (ver más abajo). La persistencia de la última carpeta
-    seleccionada sigue pendiente.
+    doble     clic" (ver más abajo). La **persistencia de la última carpeta
+    seleccionada** **se incorporó después** en la etapa "Persistencia de
+    la última carpeta seleccionada" (ver más abajo).
 -   Mostrar el tamaño de los archivos de video — **completado**
     (`escanear_videos.py` añade `tamano_bytes INTEGER` a `COLUMNAS_EXTRA`
     con migración idempotente e incorpora `obtener_tamanos_archivos`/
@@ -63,7 +64,9 @@ arquitectónicas.
     `formatear_tamano` en B/KB/MB/GB): **cada fila del catálogo muestra el
     tamaño del archivo de video**. La **apertura por doble clic** **se
     incorporó después** en la etapa "Apertura del video por doble clic"
-    (ver más abajo); queda pendiente la persistencia de la última carpeta.
+    (ver más abajo); la **persistencia de la última carpeta** **se
+    incorporó después** en la etapa "Persistencia de la última carpeta
+    seleccionada" (ver más abajo).
 -   Previews progresivas para la Beta 1.0 — **completado**:
     `escanear_videos.py` genera **tres previews por video** con
     **generación progresiva** (`CANTIDAD_PREVIEWS = 3`; convención
@@ -76,8 +79,9 @@ arquitectónicas.
     tarjetas a medida que llega cada preview; la miniatura principal y el
     conteo de miniaturas **excluyen** los archivos `_preview_`. La
     **apertura por doble clic** **se incorporó después** en la etapa
-    "Apertura del video por doble clic" (ver el siguiente punto); queda
-    pendiente la **persistencia de la última carpeta**.
+    "Apertura del video por doble clic" (ver el siguiente punto); la
+    **persistencia de la última carpeta** **se incorporó después** en la
+    etapa "Persistencia de la última carpeta seleccionada" (ver más abajo).
 -   Apertura del video por doble clic — **completado**
     (`visor_videos.py` detecta el **doble clic con el botón izquierdo**
     sobre una tarjeta con la señal `Tarjeta.doble_clic = Signal(str)` y la
@@ -94,8 +98,38 @@ arquitectónicas.
     de modo que el doble clic funciona en las tarjetas de la carga inicial
     y de las páginas adicionales; suite `prueba_doble_clic.py` con 14
     pruebas, incluido el AST de `visor_videos.py` con cero referencias a
-    `os.path.isfile`/`os.startfile`). Queda pendiente la persistencia de
-    la última carpeta.
+    `os.path.isfile`/`os.startfile`). La **persistencia de la última
+    carpeta** **se incorporó después** en la etapa "Persistencia de la
+    última carpeta seleccionada" (ver el siguiente punto).
+-   Persistencia de la última carpeta seleccionada — **completado**
+    (`configuracion.py` es un **servicio de persistencia de configuración**
+    ajeno a la GUI, a SQLite, a FFprobe/FFmpeg y a `subprocess`;
+    `guardar_ultima_carpeta(carpeta, ruta_config=None)` y
+    `obtener_ultima_carpeta(ruta_config=None)` sobre `configuracion.json`
+    gitignored): la carpeta elegida se **persiste** y se **restaura
+    automáticamente al iniciar** la aplicación. La persistencia está activa
+    **por defecto para el usuario final** (`python visor_videos.py` lee y
+    escribe el JSON automáticamente, sin banderas); el aislamiento de las
+    pruebas usa la **variable de entorno `VISOR_CONFIG`** (redirección de
+    ubicación, no una bandera de depuración), que la usan **solo las suites
+    de prueba** para no tocar el archivo real del usuario. `configuracion.py`
+    define `CLAVE_CARPETA = "ultima_carpeta"`, `VARIABLE_ENTORNO =
+    "VISOR_CONFIG"` y `_resolver_ruta_config(ruta_config)` (orden: `ruta_config`
+    explícita → entorno `VISOR_CONFIG` → `ruta_configuracion()`);
+    `guardar_ultima_carpeta` valida texto no vacío tras `strip()` (`None`,
+    `""`, solo espacios o un no-texto → `ValueError`), absolutiza la ruta y la
+    valida con `os.path.isdir` (si no es un directorio devuelve `None` sin
+    escribir) y escribe de forma **atómica** (`<ruta>.tmp` + `os.replace`,
+    `os.makedirs(..., exist_ok=True)`); `obtener_ultima_carpeta` es
+    **tolerante** (JSON ausente/corrupto, clave inválida o carpeta inexistente
+    → `None` sin lanzar ni crear el archivo). `rutas.py` añade
+    `ruta_configuracion()` → `configuracion.json` en la raíz; `visor_videos.py`
+    amplía el constructor a `__init__(self, ruta_db=None, parent=None,
+    ruta_config=None)`, **restaura** en el arranque y **persiste** al
+    seleccionar; los 11 módulos de prueba añaden `_CONFIG_TEMPORAL` +
+    `VISOR_CONFIG` para el aislamiento; suite `prueba_persistencia_carpeta.py`
+    con **20 pruebas**. La persistencia de **preferencias generales**
+    (más allá de la última carpeta) sigue pendiente.
 -   Escritura individual asíncrona — **completado** (`TareaGuardarVideo`).
 -   Escritura de colección asíncrona — **completado**
     (`TareaGuardarVideos`): persiste colecciones de registros preparados
@@ -256,9 +290,14 @@ arquitectónicas.
     ordenamiento configurable siguen pendientes).
 8.  Progreso — **pendiente** (barra de progreso y estado de las tareas
     en curso).
-9.  Persistencia de configuración — **pendiente** (recordar entre
-    sesiones la carpeta seleccionada y las preferencias; hoy la
-    selección vive solo en la sesión).
+9.  Persistencia de configuración — **completado (parcial: última carpeta
+    seleccionada)** (recordar entre sesiones la carpeta seleccionada y las
+    preferencias). La **última carpeta seleccionada** ya se persiste en
+    `configuracion.json` (servicio `configuracion.py`, escritura atómica,
+    restauración automática al iniciar y aislamiento de pruebas con
+    `VISOR_CONFIG`; ver "Persistencia de la última carpeta seleccionada" en
+    "Prioridad inmediata"). Las **preferencias generales** (más allá de la
+    última carpeta) siguen pendientes.
 10. Beta funcional — **pendiente** (aplicación utilizable de punta a
     punta con las funcionalidades anteriores integradas).
 
