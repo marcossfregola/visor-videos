@@ -81,12 +81,6 @@ Cuando cambie la arquitectura o el comportamiento técnico: - verificar
 si `DOCUMENTO_TECNICO.md` requiere actualización; - informarlo aunque no
 forme parte de la etapa.
 
-La arquitectura documental deberá auditarse periódicamente (cada 5-10
-etapas o cuando se detecten síntomas de mezcla de responsabilidades o
-duplicación entre documentos). Cada tipo de información debe tener un
-único documento propietario (ver `ESTADO_PROYECTO.md`, sección
-"Documentos del proyecto").
-
 ## 10. Calidad
 
 Prioridades: 1. Seguridad de los datos. 2. Arquitectura. 3.
@@ -110,12 +104,6 @@ funcionalidades.
     actualizados (`REGLAS_PROYECTO.md`, `DOCUMENTO_TECNICO.md`,
     `ESTADO_PROYECTO.md` y `ROADMAP.md`), que constituyen la fuente
     principal de contexto del proyecto.
--   `VISION_PRODUCTO.md` se consulta como contexto estratégico para
-    comprender la filosofía y las decisiones de producto que guían el
-    desarrollo.
--   `HISTORIAL_PROYECTO.md` se consulta únicamente cuando sea necesario
-    consultar antecedentes de etapas anteriores; no forma parte del
-    contexto operativo de desarrollo.
 
 ## 13. Cierre y continuidad entre hilos
 
