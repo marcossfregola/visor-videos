@@ -26,6 +26,9 @@ arquitectónicas.
 # Experiencia de usuario
 
 -   ~~Barra de progreso.~~ Implementada.
+-   ~~Selección visual de filas (simple y Ctrl+clic).~~ Implementada.
+    Pendiente: acciones sobre elementos seleccionados y restauración
+    automática tras reconstrucción de tarjetas.
 -   Cancelación de tareas.
 -   Reanudación de trabajos.
 -   Configuración persistente.

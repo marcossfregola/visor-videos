@@ -119,8 +119,12 @@ def previews_de(nombre):
     return previews_existentes(nombre)
 
 
+ESTILO_SELECCIONADA = "Tarjeta { border: 3px solid #2196F3; }"
+
+
 class Tarjeta(QFrame):
     doble_clic = Signal(str)
+    seleccionada = Signal(str, bool)
 
     def __init__(self, fila, parent=None):
         super().__init__(parent)
@@ -154,6 +158,7 @@ class Tarjeta(QFrame):
         layout.addWidget(datos_widget)
 
         self._nombre = nombre
+        self._seleccionada = False
         self._etiquetas_previews = []
 
         contenedor_imagenes = QHBoxLayout()
@@ -197,9 +202,22 @@ class Tarjeta(QFrame):
     def nombre(self):
         return self._nombre
 
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            ctrl = bool(event.modifiers() & Qt.ControlModifier)
+            self.seleccionada.emit(self._nombre, ctrl)
+        super().mousePressEvent(event)
+
     def mouseDoubleClickEvent(self, event):
         super().mouseDoubleClickEvent(event)
         self.doble_clic.emit(self._nombre)
+
+    def marcar_seleccionada(self, valor):
+        self._seleccionada = valor
+        if valor:
+            self.setStyleSheet(ESTILO_SELECCIONADA)
+        else:
+            self.setStyleSheet("")
 
     def _colocar_preview(self, indice, ruta):
         if not (0 <= indice < len(self._etiquetas_previews)):
@@ -270,6 +288,7 @@ class VisorVideos(QMainWindow):
         self.tarea_previews = None
         self.gestor_previews = None
         self._pipeline_activo = False
+        self._nombres_seleccionados = set()
 
         self.busqueda = QLineEdit()
         self.busqueda.setPlaceholderText("Buscar por nombre...")
@@ -420,6 +439,31 @@ class VisorVideos(QMainWindow):
     def _ocultar_progreso(self):
         self._pipeline_activo = False
         self.barra_progreso.setVisible(False)
+
+    def _al_seleccionar_tarjeta(self, nombre, ctrl):
+        if not ctrl:
+            self._limpiar_seleccion()
+        if nombre in self._nombres_seleccionados:
+            self._nombres_seleccionados.discard(nombre)
+            self._marcar_tarjeta(nombre, False)
+        else:
+            self._nombres_seleccionados.add(nombre)
+            self._marcar_tarjeta(nombre, True)
+
+    def _limpiar_seleccion(self):
+        for nombre in list(self._nombres_seleccionados):
+            self._marcar_tarjeta(nombre, False)
+        self._nombres_seleccionados.clear()
+
+    def _marcar_tarjeta(self, nombre, valor):
+        for candidato, tarjeta in self.tarjetas:
+            if candidato == nombre:
+                tarjeta.marcar_seleccionada(valor)
+                return
+
+    @property
+    def nombres_seleccionados(self):
+        return set(self._nombres_seleccionados)
 
     def iniciar_escaneo(self):
         if self.gestor.activo:
@@ -725,6 +769,7 @@ class VisorVideos(QMainWindow):
         self._actualizar_botones_carpeta()
 
     def _reemplazar_tarjetas(self, filas):
+        self._limpiar_seleccion()
         for nombre, tarjeta in self.tarjetas:
             self.cuadricula.removeWidget(tarjeta)
             tarjeta.deleteLater()
@@ -841,6 +886,7 @@ class VisorVideos(QMainWindow):
             posicion = inicio + indice
             tarjeta = Tarjeta(fila)
             tarjeta.doble_clic.connect(self._abrir_video)
+            tarjeta.seleccionada.connect(self._al_seleccionar_tarjeta)
             self.tarjetas.append((fila[0], tarjeta))
             self.visibles.append(fila[0])
             self.cuadricula.addWidget(tarjeta, posicion, 0)
@@ -898,6 +944,7 @@ class VisorVideos(QMainWindow):
         for indice, fila in enumerate(filas):
             tarjeta = Tarjeta(fila)
             tarjeta.doble_clic.connect(self._abrir_video)
+            tarjeta.seleccionada.connect(self._al_seleccionar_tarjeta)
             self.tarjetas.append((fila[0], tarjeta))
             self.visibles.append(fila[0])
             self.cuadricula.addWidget(tarjeta, indice, 0)

@@ -5,6 +5,21 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 36. Selección visual de filas (simple y múltiple con Ctrl+clic)
+
+- **Fecha:** 2026-08-05
+- **Objetivo:** Incorporar selección visual de filas en la lista de videos, con selección simple y múltiple mediante Ctrl+clic, preparando la base para futuras operaciones sobre elementos seleccionados.
+- **Archivos modificados:**
+  - `visor_videos.py` — señal `seleccionada(nombre, ctrl)` en `Tarjeta`, `mousePressEvent` con detección de `Qt.ControlModifier`, método `marcar_seleccionada(True/False)` con estilo de borde azul 3px (`ESTILO_SELECCIONADA`), tracking de selección en `VisorVideos` mediante `_nombres_seleccionados` (expuesto como `@property nombres_seleccionados`), métodos `_al_seleccionar_tarjeta` / `_limpiar_seleccion` / `_marcar_tarjeta`, conexión de señal en `_crear_tarjetas` y `_agregar_tarjetas`, limpieza en `_reemplazar_tarjetas`.
+  - `DOCUMENTO_TECNICO.md` — nueva entrada documental `Tarjeta.seleccionada` / `_nombres_seleccionados`.
+- **Archivos creados:**
+  - `prueba_seleccion.py` — 26 pruebas unitarias de selección.
+  - `prueba_seleccion_visual.py` — verificación automatizada del comportamiento de selección.
+- **Pruebas:** `prueba_seleccion.py` 26/26, verificación visual OK. Regresiones: `prueba_escaneo_interfaz.py` 36/36, `prueba_escaneo_guardado.py` 24/24, `prueba_sincronizacion_interfaz.py` 18/18, `prueba_smoke.py` OK, `prueba_progreso.py` 13/13, `prueba_pagina_siguiente.py` 20/20.
+- **Commit:** Pendiente de aprobación.
+- **Resultado:** Selección simple (clic reemplaza) y múltiple (Ctrl+clic agrega/quita) con diferencia visual clara (borde azul). La selección persiste al filtrar pero se pierde al reconstruir tarjetas. El doble clic no interfiere con la selección. Sin menús, botones, Shift+clic ni acciones masivas en esta etapa.
+- **Decisiones importantes:** `Tarjeta.seleccionada` es señal de clase, no propiedad (la propiedad se eliminó para evitar conflicto con el descriptor del Signal). Base preparada para futuras operaciones sobre `_nombres_seleccionados`.
+
 ## 35. Estabilización de la Beta 1.0
 
 - **Fecha:** 2026-08-05

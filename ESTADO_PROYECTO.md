@@ -54,14 +54,15 @@ con 23 videos reales:
 - Separación del punto de entrada de producción y del arnés de smoke tests.
 - Ejecutable portable (PyInstaller `--onedir --windowed`).
 - Instalador Beta funcional (Inno Setup, sin permisos de administrador).
-- Pruebas automatizadas.
+- Feedback visual del procesamiento (barra de progreso indeterminada con texto de etapa).
+- Selección visual de filas (simple y múltiple con Ctrl+clic). Base preparada para futuras acciones sobre elementos seleccionados sin agregar menús ni botones todavía.
 
 ## Pendientes prioritarios
 
 1. ~~Mejorar el feedback visual del procesamiento (barra de progreso,~~
    ~~estado visible de tareas en curso).~~ **Implementado.**
-2. Incorporar selección visual de filas (selección simple y múltiple,
-   acciones sobre videos seleccionados).
+2. ~~Incorporar selección visual de filas (selección simple y múltiple,~~
+   ~~acciones sobre videos seleccionados).~~ **Implementado.**
 3. Evaluar y optimizar el rendimiento con colecciones grandes de videos.
 4. Paginación completa automática del catálogo (scroll infinito,
    búsqueda en SQL desde la interfaz, ordenamiento configurable).
@@ -77,14 +78,18 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
 - Pendiente documental: reducir progresivamente el nivel de detalle de
   implementación en `DOCUMENTO_TECNICO.md`, conservando la información
   arquitectónica pero eliminando detalles que ya refleja el código fuente.
+- La selección no se restaura automáticamente después de reconstruir
+  completamente las tarjetas (`_reemplazar_tarjetas`, p.ej. tras un
+  reescaneo).
 
 ## Próxima etapa
 
 **Mejora continua de la Beta.** La Beta 1.0 fue validada en equipos
 externos, lo que dio origen a las correcciones de estabilización ya
 implementadas. La fase actual se centra en mejorar la experiencia de
-uso basada en pruebas reales, continuando con la selección visual de
-filas y la optimización de rendimiento con colecciones grandes.
+uso basada en pruebas reales, continuando con la optimización de
+rendimiento con colecciones grandes y las acciones sobre los elementos
+seleccionados.
 
 ## Documentos del proyecto
 
