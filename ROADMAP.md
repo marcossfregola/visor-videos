@@ -144,6 +144,19 @@ arquitectónicas.
     `prueba_pagina_siguiente.py` y `prueba_recarga_catalogo.py` pasan a
     invocarlo por `subprocess`. El arranque normal queda **preparado para
     el empaquetado de la Beta** sin ejecutar pruebas.
+-   Ejecutable portable — **completado** (PyInstaller 6.21.0
+    `--onedir --windowed`: carpeta autocontenida `VisorVideos.exe` +
+    `_internal/`; `rutas.py` resuelve la raíz en modo congelado con
+    `sys.frozen` —`os.path.dirname(sys.executable)`—; FFmpeg/FFprobe por
+    `PATH`; portable validado con el driver funcional completo —catálogo,
+    miniaturas, previews, persistencia, doble clic y pipeline—).
+-   Instalador Beta — **completado** (Inno Setup 6.7.3 genera
+    `VisorVideos_Beta1.0_Setup.exe`: instalación por usuario en
+    `{localappdata}\Programs` sin permisos de administrador, copia
+    recursiva del portable, `miniaturas/` garantizada, `biblioteca.db`
+    vacía de esquema vigente, accesos directos y desinstalador automático
+    con `[UninstallDelete]`; **pruebas de instalación y desinstalación
+    superadas**).
 -   Escritura individual asíncrona — **completado** (`TareaGuardarVideo`).
 -   Escritura de colección asíncrona — **completado**
     (`TareaGuardarVideos`): persiste colecciones de registros preparados
@@ -312,13 +325,15 @@ arquitectónicas.
     `VISOR_CONFIG`; ver "Persistencia de la última carpeta seleccionada" en
     "Prioridad inmediata"). Las **preferencias generales** (más allá de la
     última carpeta) siguen pendientes.
-10. Beta funcional — **pendiente**: la aplicación está **preparada para el
-    empaquetado** (el arranque normal ya no ejecuta pruebas; ver
-    "Separación del punto de entrada de producción y del arnés de smoke
-    tests" en "Prioridad inmediata"). Quedan pendientes únicamente: el
-    **empaquetado de la Beta**, las **pruebas sobre una instalación limpia**
-    y la **revisión del mecanismo de búsqueda de miniaturas** (esta última,
-    posterior a la Beta).
+10. Pruebas de la Beta en equipos externos — **pendiente (siguiente hito)**:
+    la Beta ya está **empaquetada y distribuible** —**ejecutable portable
+    validado** e **instalador funcional** `VisorVideos_Beta1.0_Setup.exe`
+    (ver "Ejecutable portable" e "Instalador Beta" en "Prioridad
+    inmediata"); las **pruebas de instalación y desinstalación fueron
+    superadas**—. Queda pendiente probar la Beta en equipos externos
+    (instalación, arranque, catálogo, miniaturas/previews, doble clic y
+    desinstalación en máquinas ajenas) y la **revisión del mecanismo de
+    búsqueda de miniaturas** (esta última, posterior a la Beta).
 
 ------------------------------------------------------------------------
 

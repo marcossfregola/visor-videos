@@ -198,65 +198,88 @@ llamar a `prueba_smoke.py`. **El arranque normal ya no ejecuta pruebas
 automáticamente** y la aplicación queda **preparada para el empaquetado
 de la Beta 1.0 sin ejecutar pruebas al iniciar**.
 
+**Empaquetado de la Beta 1.0 (etapa aprobada y commiteada)**: la
+aplicación quedó empaquetada como **ejecutable portable** y con un
+**instalador de Windows funcional**. El **ejecutable portable validado**
+(`VisorVideos.exe` + `_internal/`, PyInstaller `--onedir --windowed`,
+con `rutas.py` resuelto en modo congelado vía `sys.frozen`) se verificó
+con el driver funcional completo (carga de catálogo, miniaturas,
+previews, persistencia, doble clic y pipeline FFprobe/FFmpeg). El
+**instalador Beta funcional** (`VisorVideos_Beta1.0_Setup.exe`,
+Inno Setup 6.7.3, instalación por usuario en `{localappdata}\Programs`
+sin permisos de administrador, con `biblioteca.db` vacía de esquema
+vigente) superó las **pruebas de instalación y desinstalación**:
+instalación limpia, primer inicio desde el acceso directo, catálogo
+poblado por la propia app instalada, desinstalación total (carpeta,
+accesos directos y registro eliminados) y sin regresiones contra el
+portable. La **Beta queda lista para distribución de pruebas** en
+equipos externos.
+
 ## Último commit aprobado
 
-**Mensaje:** Separar punto de entrada y smoke tests
+**Mensaje:** Empaquetar la Beta 1.0 (portable e instalador)
 
-**Etapa aprobada:** Separación del punto de entrada de producción y del arnés
-de smoke tests. `visor_videos.py` `main()` queda como **bootstrap puro de la
-interfaz** (solo `QApplication(sys.argv)`, `VisorVideos()`, `resize(900, 600)`,
-`show()` y `sys.exit(app.exec())`) y **no ejecuta pruebas al iniciar**; el
-**smoke test se independizó en `prueba_smoke.py`** (arnés de **ejecución
-explícita** con `python prueba_smoke.py`, con la base SQLite temporal y las
-fases de paginación, escaneo + carpeta + sincronización, previews, doble clic
-y persistencia; el cuerpo se movió verbatim y el único ajuste es el parcheo de
-la fase de doble clic, que ahora apunta a
-`visor_videos.abrir_video_con_aplicacion_predeterminada`). Las suites
-`prueba_escaneo_interfaz.py`, `prueba_seleccion_carpeta.py`,
-`prueba_interfaz_asincrona.py`, `prueba_pagina_siguiente.py` y
-`prueba_recarga_catalogo.py` pasan a invocar `prueba_smoke.py` vía `subprocess`.
-**El arranque normal ya no ejecuta el smoke test** y la aplicación queda
-**preparada para el empaquetado de la Beta 1.0 sin ejecutar pruebas al iniciar**.
-Regresiones: 36/36, 26/26, 29/29, 20/20 y 19/20 OK (el T13 de
-`prueba_recarga_catalogo.py` es preexistente, reproducido en la línea base;
-flakiness de tiempo, no lógico). Aprobada.
+**Etapa aprobada:** Empaquetado de la Beta 1.0 como **ejecutable portable** y
+con **instalador de Windows**. `rutas.py` añade `_directorio_base()` para
+resolver la raíz en **modo PyInstaller** (`getattr(sys, "frozen", False)` →
+`os.path.dirname(sys.executable)`) manteniendo el comportamiento de desarrollo.
+Se validó el **portable** (`VisorVideos.exe` + `_internal/`, PyInstaller
+`--onedir --windowed`) con el driver funcional completo y se construyó el
+**instalador** con Inno Setup 6.7.3 (`VisorVideos_Beta1.0_Setup.exe`,
+instalación por usuario en `{localappdata}\Programs` sin permisos de
+administrador, con `biblioteca.db` vacía de esquema vigente). **Pruebas
+superadas**: instalación limpia, primer inicio desde el acceso directo,
+funcionalidad completa desde la carpeta instalada (catálogo, miniaturas,
+previews, persistencia, doble clic y pipeline), desinstalación total (carpeta,
+accesos directos y registro eliminados) y sin regresiones contra el portable.
+La **Beta queda lista para distribución de pruebas** en equipos externos.
+Aprobada.
 
 **SHA definitivo:** debe consultarse con `git log -1` (el SHA no se
 escribe en este documento para evitar autorreferencias al commit).
 
 ## Última etapa aprobada
 
-Separación del punto de entrada de producción y del arnés de smoke tests:
-`visor_videos.py` `main()` queda como **bootstrap puro de la interfaz** (solo
-`QApplication(sys.argv)`, `VisorVideos()`, `resize(900, 600)`, `show()` y
-`sys.exit(app.exec())`) y **no ejecuta pruebas al iniciar**. El **smoke test se
-independizó en `prueba_smoke.py`** (arnés de **ejecución explícita** con
-`python prueba_smoke.py`), con:
-- El mismo cuerpo del smoke test anterior, movido verbatim: base SQLite temporal
-  reutilizando el esquema existente (`conectar_bd(ruta_db)`) y las fases de
-  **paginación** (150 registros → `primera_pagina=100`, "Cargar más" →
-  `total_tras_cargar_mas=150`, `duplicados_tras_cargar_mas=0`),
-  **escaneo + carpeta + sincronización** (`videos_detectados=3`,
-  `guardado_total=3`, `resumen_sincronizacion` sin incorporados/eliminados),
-  **previews progresivos** (carpeta real `videos_prueba/`, gestor `inactivo`),
-  **doble clic** (`QTest.mouseDClick` con `abrir_video_con_aplicacion_predeterminada`
-  parcheado) y **persistencia** (configuración temporal `VISOR_CONFIG` con
-  `persistencia_restaurada`).
-- Ejecución **solo a demanda** (`python prueba_smoke.py`); la aplicación normal
-  no lo ejecuta al iniciar.
-- Las suites de interfaz `prueba_escaneo_interfaz.py`, `prueba_seleccion_carpeta.py`,
-  `prueba_interfaz_asincrona.py`, `prueba_pagina_siguiente.py` y
-  `prueba_recarga_catalogo.py` pasan a invocar `prueba_smoke.py` vía `subprocess`
-  (en lugar de `visor_videos.py`).
+Empaquetado de la Beta 1.0 como **ejecutable portable** y con **instalador de
+Windows**, cerrando la distribución de pruebas de la aplicación:
 
-**Consecuencia**: el arranque normal (`python visor_videos.py`) ya no ejecuta
-pruebas automáticamente y la aplicación queda **preparada para el empaquetado de
-la Beta 1.0**. Se resolvió la deuda futura de la etapa 15 (el smoke test debía
-separarse del arranque normal antes de distribuir una beta). Regresiones: 36/36,
-26/26, 29/29, 20/20 y 19/20 OK (el T13 de `prueba_recarga_catalogo.py` es
-preexistente, reproducido en la línea base; flakiness de tiempo, no lógico).
-**Sin cambios en los datos reales** (`biblioteca.db`, `miniaturas/` y
-`videos_prueba/` intactos) y sin avisos `QThread: Destroyed`. Aprobada.
+- **Ejecutable portable validado**: PyInstaller 6.21.0 (`--onedir --windowed
+  --name VisorVideos`). La carpeta portable (`VisorVideos.exe` + `_internal/`,
+  ≈ 110 MB) se validó con el **driver funcional completo** contra una copia
+  pristina (carga de catálogo, generación de miniaturas, tres previews
+  progresivos, persistencia de `configuracion.json`, apertura por doble clic y
+  pipeline escaneo → tamaños → FFprobe → miniaturas → guardado →
+  sincronización → recarga, con FFmpeg/FFprobe resueltos por `PATH`).
+- **`rutas.py` en modo congelado**: `_directorio_base()` resuelve la raíz con
+  `os.path.dirname(sys.executable)` cuando `sys.frozen` es verdadero y con
+  `os.path.dirname(os.path.abspath(__file__))` en desarrollo, de modo que
+  `biblioteca.db`, `miniaturas/` y `configuracion.json` viven junto al
+  ejecutable empaquetado sin depender del CWD.
+- **Instalador Beta funcional**: Inno Setup 6.7.3 (`instalador_beta1.0.iss`
+  compilado con `ISCC.exe`) genera `VisorVideos_Beta1.0_Setup.exe`
+  (≈ 31,7 MB, `lzma2/max` + compresión sólida, idioma español). Instalación
+  **por usuario** en `{localappdata}\Programs\VisorVideos` con
+  `PrivilegesRequired=lowest` (sin administrador), copia recursiva del
+  portable, `miniaturas/` garantizada, **`biblioteca.db` vacía con esquema
+  vigente**, accesos directos en el Menú Inicio (y opcionalmente el escritorio)
+  y desinstalador automático (`unins000.exe`). `[UninstallDelete]` elimina
+  `configuracion.json` y `miniaturas/`; los videos fuente del usuario nunca se
+  tocan.
+- **Pruebas de instalación y desinstalación superadas** (todas con EXIT=0):
+  instalación silenciosa correcta; los 163 archivos del portable byte-idénticos
+  en la instalación; primer inicio desde el acceso directo (ventana "Biblioteca
+  de videos"); driver funcional ejecutado desde la carpeta instalada (catálogo
+  poblado en la BD instalada, miniatura y previews generados, persistencia
+  restaurada, doble clic OK); segundo arranque real con catálogo poblado; y
+  desinstalación total (carpeta, accesos directos y registro de desinstalación
+  eliminados) verificada también sobre una instalación pristina sin artefactos
+  de prueba.
+- **Sin regresiones**: el portable original sigue arrancando y `git status`
+  quedó sin cambios respecto del estado previo.
+
+**Consecuencia**: la **Beta queda lista para distribución de pruebas** en
+equipos externos. El próximo hito es la **prueba de la Beta en equipos
+externos**. Aprobada.
 
 ## Estado de la arquitectura
 
@@ -459,6 +482,12 @@ preexistente, reproducido en la línea base; flakiness de tiempo, no lógico).
     suites de interfaz que invocaban el smoke por `subprocess` pasan a llamar
     a `prueba_smoke.py`; el arranque normal ya no ejecuta pruebas y la app
     queda preparada para el empaquetado de la Beta).
+-   Ejecutable portable (PyInstaller `--onedir --windowed`; `rutas.py`
+    resuelve la raíz en modo congelado con `sys.frozen`; portable validado con
+    el driver funcional completo).
+-   Instalador Beta (Inno Setup 6.7.3; instalación por usuario sin
+    administrador en `{localappdata}\Programs`; `biblioteca.db` vacía de
+    esquema vigente; pruebas de instalación y desinstalación superadas).
 -   Pruebas automatizadas.
 
 ### En desarrollo
@@ -576,22 +605,22 @@ limpieza controlada de miniaturas antiguas.
 
 ## Próxima etapa
 
-**Aún no definida**: la etapa de **separación del punto de entrada de
-producción y del arnés de smoke tests** ya quedó aprobada y commiteada
-("Separar punto de entrada y smoke tests"): el arranque normal (`python
-visor_videos.py`) solo inicia la interfaz y **ya no ejecuta pruebas**; el
-smoke test se independizó en `prueba_smoke.py` (ejecución explícita) y las
-cinco suites de interfaz lo invocan por `subprocess`. La aplicación queda
-**preparada para el empaquetado de la Beta 1.0**. No se inicia ninguna etapa
-nueva en esta entrega. Los siguientes candidatos (todavía no definidos ni
-iniciados por ChatGPT) son la **paginación completa automática del catálogo
-en la interfaz** (scroll infinito, búsqueda en SQL desde la interfaz y
-ordenamiento configurable) y la **deduplicación de nombres repetidos** en el
-plan de sincronización, manteniendo el alcance limitado. Para **Beta 1.0**
-quedan pendientes únicamente: el **empaquetado de la Beta**, las **pruebas
-sobre una instalación limpia** y la **revisión del mecanismo de búsqueda de
-miniaturas** (esta última, posterior a la Beta). La definición de la
-siguiente etapa inmediata queda pendiente de aprobación por ChatGPT.
+**Pruebas de la Beta en equipos externos**: la etapa de **empaquetado de la
+Beta 1.0** ya quedó aprobada y commiteada ("Empaquetar la Beta 1.0 (portable e
+instalador)"): la aplicación está empaquetada como **ejecutable portable
+validado** y con **instalador de Windows funcional** (`VisorVideos_Beta1.0_Setup.exe`,
+instalación por usuario sin administrador), las **pruebas de instalación y
+desinstalación fueron superadas** y la **Beta queda lista para distribución de
+pruebas** en equipos externos. El siguiente hito es probar la Beta en equipos
+externos (instalación, arranque, catálogo, miniaturas/previews, doble clic y
+desinstalación en máquinas ajenas). No se inicia ninguna etapa nueva en esta
+entrega. Los candidatos funcionales posteriores (todavía no definidos ni
+iniciados por ChatGPT) son la **paginación completa automática del catálogo en
+la interfaz** (scroll infinito, búsqueda en SQL desde la interfaz y ordenamiento
+configurable) y la **deduplicación de nombres repetidos** en el plan de
+sincronización, además de la **revisión del mecanismo de búsqueda de
+miniaturas** (posterior a la Beta). La definición de la siguiente etapa
+inmediata queda pendiente de aprobación por ChatGPT.
 
 ## Documentos del proyecto
 

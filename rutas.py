@@ -1,6 +1,14 @@
 import os
+import sys
 
-RUTA_RAIZ = os.path.dirname(os.path.abspath(__file__))
+
+def _directorio_base():
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+RUTA_RAIZ = _directorio_base()
 
 
 def ruta_raiz():
