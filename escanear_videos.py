@@ -6,6 +6,12 @@ from datetime import datetime
 
 from rutas import ruta_biblioteca, ruta_carpeta_miniaturas, ruta_carpeta_videos
 
+_ARGS_SIN_CONSOLA = (
+    {"creationflags": subprocess.CREATE_NO_WINDOW}
+    if os.name == "nt"
+    else {}
+)
+
 EXTENSIONES = {".mp4", ".mkv", ".avi"}
 EXTENSION_MINIATURA = ".jpg"
 CANTIDAD_PREVIEWS = 3
@@ -182,6 +188,7 @@ def obtener_datos_ffprobe(ruta):
             capture_output=True,
             text=True,
             timeout=30,
+            **_ARGS_SIN_CONSOLA,
         )
         if resultado.returncode != 0:
             return None
@@ -248,6 +255,7 @@ def generar_miniatura(ruta_video, ruta_miniatura):
             capture_output=True,
             text=True,
             timeout=30,
+            **_ARGS_SIN_CONSOLA,
         )
         return resultado.returncode == 0 and os.path.isfile(ruta_miniatura)
     except (OSError, subprocess.SubprocessError):
@@ -372,6 +380,7 @@ def generar_preview(ruta_video, destino, indice=None):
             capture_output=True,
             text=True,
             timeout=30,
+            **_ARGS_SIN_CONSOLA,
         )
         return resultado.returncode == 0 and os.path.isfile(destino)
     except (OSError, subprocess.SubprocessError):

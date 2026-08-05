@@ -26,3 +26,6 @@ datos.txt
 
 # Configuración local del usuario (última carpeta seleccionada)
 configuracion.json
+
+# Artefactos de distribución de la Beta (instalador + app portable)
+VisorVideoBeta1/

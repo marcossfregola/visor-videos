@@ -217,68 +217,62 @@ equipos externos.
 
 ## Último commit aprobado
 
-**Mensaje:** Empaquetar la Beta 1.0 (portable e instalador)
+**Mensaje:** Estabilizar la Beta 1.0 (consola, reescaneo de previews y layout definitivo)
 
-**Etapa aprobada:** Empaquetado de la Beta 1.0 como **ejecutable portable** y
-con **instalador de Windows**. `rutas.py` añade `_directorio_base()` para
-resolver la raíz en **modo PyInstaller** (`getattr(sys, "frozen", False)` →
-`os.path.dirname(sys.executable)`) manteniendo el comportamiento de desarrollo.
-Se validó el **portable** (`VisorVideos.exe` + `_internal/`, PyInstaller
-`--onedir --windowed`) con el driver funcional completo y se construyó el
-**instalador** con Inno Setup 6.7.3 (`VisorVideos_Beta1.0_Setup.exe`,
-instalación por usuario en `{localappdata}\Programs` sin permisos de
-administrador, con `biblioteca.db` vacía de esquema vigente). **Pruebas
-superadas**: instalación limpia, primer inicio desde el acceso directo,
-funcionalidad completa desde la carpeta instalada (catálogo, miniaturas,
-previews, persistencia, doble clic y pipeline), desinstalación total (carpeta,
-accesos directos y registro eliminados) y sin regresiones contra el portable.
-La **Beta queda lista para distribución de pruebas** en equipos externos.
-Aprobada.
+**Etapa aprobada:** Estabilización de la Beta 1.0 con tres correcciones validadas por el usuario ejecutando la aplicación desde el código fuente contra `Videos de muestra\Visor` (23 videos reales):
+
+1. **Eliminación de ventanas de consola de FFmpeg/FFprobe**: `escanear_videos.py` define `_ARGS_SIN_CONSOLA` con `creationflags=subprocess.CREATE_NO_WINDOW` en Windows y lo aplica en todos los `subprocess.run` (`obtener_datos_ffprobe`, `generar_miniatura`, `generar_preview`).
+
+2. **Conservación de previews tras el reescaneo**: `visor_videos.py` carga inmediatamente las previews existentes en disco al crear cada tarjeta en `_crear_tarjetas` y `_agregar_tarjetas`, corrigiendo el bug donde las previews desaparecían al reescanear una carpeta ya procesada (causa: `_encolar_previews` saltaba los videos con previews preexistentes y la cola quedaba vacía).
+
+3. **Nuevo layout definitivo de las tarjetas para la Beta**: `Tarjeta.__init__` reorganiza el diseño a `[Datos (maxWidth=240)] [4 imágenes horizontales consecutivas: miniatura + 3 previews, fixedHeight=180, ancho automático por aspect ratio] [addStretch]`. La estructura del contenedor de imágenes es independiente de `CANTIDAD_PREVIEWS` (soporta cualquier número sin rediseñar la fila). Se elimina el `QVBoxLayout` anidado de previews.
+
+**Pruebas superadas**: `prueba_filas_horizontales.py` 16/16, `prueba_previews_progresivas.py` 16/16, `prueba_escaneo_interfaz.py` 36/36, `prueba_interfaz_asincrona.py` 29/29, `prueba_pagina_siguiente.py` 20/20, `prueba_recarga_catalogo.py` 19/20 (T13 preexistente), `prueba_sincronizacion_interfaz.py` 18/18, `prueba_doble_clic.py` 14/14 — sin regresiones. Prueba real con 23 videos: escaneo inicial 23/23 previews visibles, reescaneo 23/23 previews conservadas, sin scroll horizontal. Datos reales intactos. Aprobada.
 
 **SHA definitivo:** debe consultarse con `git log -1` (el SHA no se
 escribe en este documento para evitar autorreferencias al commit).
 
 ## Última etapa aprobada
 
-Empaquetado de la Beta 1.0 como **ejecutable portable** y con **instalador de
-Windows**, cerrando la distribución de pruebas de la aplicación:
+Estabilización de la Beta 1.0 con tres correcciones validadas por el usuario
+ejecutando la aplicación desde el código fuente contra `Videos de muestra\Visor`
+(23 videos reales):
 
-- **Ejecutable portable validado**: PyInstaller 6.21.0 (`--onedir --windowed
-  --name VisorVideos`). La carpeta portable (`VisorVideos.exe` + `_internal/`,
-  ≈ 110 MB) se validó con el **driver funcional completo** contra una copia
-  pristina (carga de catálogo, generación de miniaturas, tres previews
-  progresivos, persistencia de `configuracion.json`, apertura por doble clic y
-  pipeline escaneo → tamaños → FFprobe → miniaturas → guardado →
-  sincronización → recarga, con FFmpeg/FFprobe resueltos por `PATH`).
-- **`rutas.py` en modo congelado**: `_directorio_base()` resuelve la raíz con
-  `os.path.dirname(sys.executable)` cuando `sys.frozen` es verdadero y con
-  `os.path.dirname(os.path.abspath(__file__))` en desarrollo, de modo que
-  `biblioteca.db`, `miniaturas/` y `configuracion.json` viven junto al
-  ejecutable empaquetado sin depender del CWD.
-- **Instalador Beta funcional**: Inno Setup 6.7.3 (`instalador_beta1.0.iss`
-  compilado con `ISCC.exe`) genera `VisorVideos_Beta1.0_Setup.exe`
-  (≈ 31,7 MB, `lzma2/max` + compresión sólida, idioma español). Instalación
-  **por usuario** en `{localappdata}\Programs\VisorVideos` con
-  `PrivilegesRequired=lowest` (sin administrador), copia recursiva del
-  portable, `miniaturas/` garantizada, **`biblioteca.db` vacía con esquema
-  vigente**, accesos directos en el Menú Inicio (y opcionalmente el escritorio)
-  y desinstalador automático (`unins000.exe`). `[UninstallDelete]` elimina
-  `configuracion.json` y `miniaturas/`; los videos fuente del usuario nunca se
-  tocan.
-- **Pruebas de instalación y desinstalación superadas** (todas con EXIT=0):
-  instalación silenciosa correcta; los 163 archivos del portable byte-idénticos
-  en la instalación; primer inicio desde el acceso directo (ventana "Biblioteca
-  de videos"); driver funcional ejecutado desde la carpeta instalada (catálogo
-  poblado en la BD instalada, miniatura y previews generados, persistencia
-  restaurada, doble clic OK); segundo arranque real con catálogo poblado; y
-  desinstalación total (carpeta, accesos directos y registro de desinstalación
-  eliminados) verificada también sobre una instalación pristina sin artefactos
-  de prueba.
-- **Sin regresiones**: el portable original sigue arrancando y `git status`
-  quedó sin cambios respecto del estado previo.
+- **Eliminación de ventanas de consola**: `escanear_videos.py` define `_ARGS_SIN_CONSOLA`
+  con `creationflags=subprocess.CREATE_NO_WINDOW` en Windows y lo aplica en todos
+  los `subprocess.run` de FFprobe/FFmpeg (`obtener_datos_ffprobe`, `generar_miniatura`,
+  `generar_preview`), suprimiendo ventanas emergentes sin alterar el
+  comportamiento de los subprocesos.
 
-**Consecuencia**: la **Beta queda lista para distribución de pruebas** en
-equipos externos. El próximo hito es la **prueba de la Beta en equipos
+- **Conservación de previews tras el reescaneo**: `visor_videos.py` carga
+  inmediatamente las previews existentes en disco al crear cada tarjeta en
+  `_crear_tarjetas` y `_agregar_tarjetas` (mediante `previews_de(fila[0])` y
+  `tarjeta.actualizar_previews(rutas_existentes)`), corrigiendo el bug donde
+  las tres previews desaparecían al reescanear una carpeta ya procesada (causa:
+  `_encolar_previews` saltaba los videos con previews preexistentes porque
+  `previews_de()` devolvía una lista no vacía, y la cola de generación quedaba
+  vacía sin cargar las previews en las nuevas tarjetas). La cola de generación
+  asíncrona se mantiene sin cambios.
+
+- **Nuevo layout definitivo de las tarjetas para la Beta**: `Tarjeta.__init__`
+  reorganiza el diseño de cada fila a `[Datos (maxWidth=240)] [4 imágenes
+  horizontales consecutivas: miniatura principal + 3 previews] [addStretch]`.
+  Las cuatro imágenes —consideradas una secuencia de fotogramas del mismo nivel—
+  usan `setFixedHeight(ALTO_TARJETA)` sin ancho fijo, de modo que el ancho de
+  cada `QLabel` se ajusta automáticamente al tamaño real del pixmap escalado
+  manteniendo la relación de aspecto (`KeepAspectRatio`). Las imágenes se colocan
+  consecutivamente con spacing 6 dentro de un `QHBoxLayout` sin sub-layouts
+  anidados, y un `addStretch()` al final concentra el espacio sobrante a la
+  derecha. La estructura del contenedor de imágenes es independiente de
+  `CANTIDAD_PREVIEWS`: soporta cualquier número de previews sin necesidad de
+  rediseñar la fila. Se elimina el `QVBoxLayout` anidado que contenía las
+  previews verticales. `_colocar_preview` escala a `ANCHO_TARJETA×ALTO_TARJETA`.
+  El placeholder "Sin miniatura" conserva `setFixedSize(ANCHO_TARJETA,
+  ALTO_TARJETA)` por no tener pixmap del cual derivar el ancho.
+
+**Consecuencia**: la Beta queda estabilizada para distribución de pruebas, con
+el layout definitivo aprobado, sin ventanas de consola y sin pérdida de previews
+al reescanear. El próximo hito es la **prueba de la Beta en equipos
 externos**. Aprobada.
 
 ## Estado de la arquitectura
@@ -605,16 +599,14 @@ limpieza controlada de miniaturas antiguas.
 
 ## Próxima etapa
 
-**Pruebas de la Beta en equipos externos**: la etapa de **empaquetado de la
-Beta 1.0** ya quedó aprobada y commiteada ("Empaquetar la Beta 1.0 (portable e
-instalador)"): la aplicación está empaquetada como **ejecutable portable
-validado** y con **instalador de Windows funcional** (`VisorVideos_Beta1.0_Setup.exe`,
-instalación por usuario sin administrador), las **pruebas de instalación y
-desinstalación fueron superadas** y la **Beta queda lista para distribución de
-pruebas** en equipos externos. El siguiente hito es probar la Beta en equipos
-externos (instalación, arranque, catálogo, miniaturas/previews, doble clic y
-desinstalación en máquinas ajenas). No se inicia ninguna etapa nueva en esta
-entrega. Los candidatos funcionales posteriores (todavía no definidos ni
+**Pruebas de la Beta en equipos externos**: la etapa de **estabilización de la
+Beta 1.0** ya quedó aprobada y commiteada ("Estabilizar la Beta 1.0 (consola,
+reescaneo de previews y layout definitivo)"): la aplicación tiene el layout
+definitivo aprobado, las ventanas de consola de FFmpeg/FFprobe eliminadas y las
+previews se conservan tras el reescaneo. El siguiente hito es probar la Beta en
+equipos externos (instalación, arranque, catálogo, miniaturas/previews, doble
+clic y desinstalación en máquinas ajenas). No se inicia ninguna etapa nueva en
+esta entrega. Los candidatos funcionales posteriores (todavía no definidos ni
 iniciados por ChatGPT) son la **paginación completa automática del catálogo en
 la interfaz** (scroll infinito, búsqueda en SQL desde la interfaz y ordenamiento
 configurable) y la **deduplicación de nombres repetidos** en el plan de

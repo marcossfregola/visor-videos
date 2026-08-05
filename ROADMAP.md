@@ -39,21 +39,16 @@ arquitectónicas.
 -   Presentación del catálogo en filas horizontales — **completado**
     (`visor_videos.py` muestra una **tarjeta horizontal por video** en una
     única columna, una fila por video): cada `Tarjeta` usa `QHBoxLayout`
-    con la miniatura (o el recuadro "Sin miniatura") a la izquierda y los
-    cinco campos (nombre, duración, resolución, codec, miniaturas) a la
-    derecha (`columna_campos = QVBoxLayout()`, `addLayout(..., 1)`); se
-    elimina la grilla de 2 columnas y la constante `COLUMNAS`.
-    **Aclaración de alcance**: sí se muestra la primera miniatura por
-    video, pero **no** hay 4/6 imágenes por video y **no** hay generación
-    progresiva de miniaturas; el tamaño de archivo por fila **se incorporó
-    después** en la etapa "Incorporar y mostrar el tamaño de los archivos
-    de video" (ver el siguiente punto), los **tres previews por video con
-    generación progresiva** **se incorporaron después** en la etapa
-    "Previews progresivas para la Beta 1.0" y la **apertura por doble
-    clic** **se incorporó después** en la etapa "Apertura del video por
-    doble     clic" (ver más abajo). La **persistencia de la última carpeta
-    seleccionada** **se incorporó después** en la etapa "Persistencia de
-    la última carpeta seleccionada" (ver más abajo).
+    con la **columna de datos a la izquierda** (`maxWidth=240`, seis campos)
+    y un **contenedor horizontal de imágenes** a la derecha con la miniatura
+    principal y las tres previews colocadas consecutivamente (spacing 6),
+    todas con `setFixedHeight` y ancho automático según aspect ratio, más
+    un `addStretch()` al final que concentra el espacio sobrante. La
+    estructura del contenedor de imágenes es independiente de
+    `CANTIDAD_PREVIEWS`. Se elimina el `QVBoxLayout` anidado de previews.
+    El tamaño de archivo por fila y los tres previews progresivos ya fueron
+    incorporados en etapas anteriores; la apertura por doble clic y la
+    persistencia de la última carpeta también.
 -   Mostrar el tamaño de los archivos de video — **completado**
     (`escanear_videos.py` añade `tamano_bytes INTEGER` a `COLUMNAS_EXTRA`
     con migración idempotente e incorpora `obtener_tamanos_archivos`/

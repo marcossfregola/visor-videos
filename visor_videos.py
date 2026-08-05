@@ -129,42 +129,6 @@ class Tarjeta(QFrame):
 
         nombre, duracion, ancho, alto, codec, miniaturas, tamano = fila
 
-        ruta_miniatura = miniatura_principal(nombre)
-        if ruta_miniatura is not None:
-            imagen = QLabel()
-            pixmap = QPixmap(ruta_miniatura)
-            imagen.setPixmap(
-                pixmap.scaled(
-                    ANCHO_TARJETA,
-                    ALTO_TARJETA,
-                    Qt.KeepAspectRatio,
-                    Qt.SmoothTransformation,
-                )
-            )
-            imagen.setFixedHeight(ALTO_TARJETA)
-            imagen.setAlignment(Qt.AlignCenter)
-            layout.addWidget(imagen)
-        else:
-            recuadro = QLabel("Sin miniatura")
-            recuadro.setFixedSize(ANCHO_TARJETA, ALTO_TARJETA)
-            recuadro.setAlignment(Qt.AlignCenter)
-            recuadro.setStyleSheet("background-color: #e0e0e0; border: 1px solid #999;")
-            layout.addWidget(recuadro)
-
-        self._nombre = nombre
-        self._etiquetas_previews = []
-        contenedor_previews = QVBoxLayout()
-        contenedor_previews.addStretch()
-        for _ in range(CANTIDAD_PREVIEWS):
-            etiqueta = QLabel("Generando preview…")
-            etiqueta.setFixedSize(ANCHO_PREVIEW, ALTO_PREVIEW)
-            etiqueta.setAlignment(Qt.AlignCenter)
-            etiqueta.setStyleSheet("background-color: #f0f0f0; border: 1px solid #ccc;")
-            self._etiquetas_previews.append(etiqueta)
-            contenedor_previews.addWidget(etiqueta)
-        contenedor_previews.addStretch()
-        layout.addLayout(contenedor_previews)
-
         resolucion = "No disponible"
         if ancho is not None and alto is not None:
             resolucion = f"{ancho}x{alto}"
@@ -183,7 +147,50 @@ class Tarjeta(QFrame):
             campo.setWordWrap(True)
             columna_campos.addWidget(campo)
         columna_campos.addStretch()
-        layout.addLayout(columna_campos, 1)
+        datos_widget = QWidget()
+        datos_widget.setMaximumWidth(240)
+        datos_widget.setLayout(columna_campos)
+        layout.addWidget(datos_widget)
+
+        self._nombre = nombre
+        self._etiquetas_previews = []
+
+        contenedor_imagenes = QHBoxLayout()
+        contenedor_imagenes.setContentsMargins(0, 0, 0, 0)
+        contenedor_imagenes.setSpacing(6)
+
+        ruta_miniatura = miniatura_principal(nombre)
+        if ruta_miniatura is not None:
+            imagen = QLabel()
+            pixmap = QPixmap(ruta_miniatura)
+            imagen.setPixmap(
+                pixmap.scaled(
+                    ANCHO_TARJETA,
+                    ALTO_TARJETA,
+                    Qt.KeepAspectRatio,
+                    Qt.SmoothTransformation,
+                )
+            )
+            imagen.setFixedHeight(ALTO_TARJETA)
+            imagen.setAlignment(Qt.AlignCenter)
+            contenedor_imagenes.addWidget(imagen)
+        else:
+            recuadro = QLabel("Sin miniatura")
+            recuadro.setFixedSize(ANCHO_TARJETA, ALTO_TARJETA)
+            recuadro.setAlignment(Qt.AlignCenter)
+            recuadro.setStyleSheet("background-color: #e0e0e0; border: 1px solid #999;")
+            contenedor_imagenes.addWidget(recuadro)
+
+        for _ in range(CANTIDAD_PREVIEWS):
+            etiqueta = QLabel("Generando preview…")
+            etiqueta.setFixedHeight(ALTO_TARJETA)
+            etiqueta.setAlignment(Qt.AlignCenter)
+            etiqueta.setStyleSheet("background-color: #f0f0f0; border: 1px solid #ccc;")
+            self._etiquetas_previews.append(etiqueta)
+            contenedor_imagenes.addWidget(etiqueta)
+
+        contenedor_imagenes.addStretch()
+        layout.addLayout(contenedor_imagenes, 1)
 
     @property
     def nombre(self):
@@ -203,8 +210,8 @@ class Tarjeta(QFrame):
             return False
         etiqueta.setPixmap(
             pixmap.scaled(
-                ANCHO_PREVIEW,
-                ALTO_PREVIEW,
+                ANCHO_TARJETA,
+                ALTO_TARJETA,
                 Qt.KeepAspectRatio,
                 Qt.SmoothTransformation,
             )
@@ -811,6 +818,9 @@ class VisorVideos(QMainWindow):
             self.tarjetas.append((fila[0], tarjeta))
             self.visibles.append(fila[0])
             self.cuadricula.addWidget(tarjeta, posicion, 0)
+            rutas_existentes = previews_de(fila[0])
+            if rutas_existentes:
+                tarjeta.actualizar_previews(rutas_existentes)
         self.filtrar(self.busqueda.text())
 
     def _al_resultado_guardado(self, resultado):
@@ -865,6 +875,9 @@ class VisorVideos(QMainWindow):
             self.tarjetas.append((fila[0], tarjeta))
             self.visibles.append(fila[0])
             self.cuadricula.addWidget(tarjeta, indice, 0)
+            rutas_existentes = previews_de(fila[0])
+            if rutas_existentes:
+                tarjeta.actualizar_previews(rutas_existentes)
         self.filtrar(self.busqueda.text())
 
     def _abrir_video(self, nombre):
