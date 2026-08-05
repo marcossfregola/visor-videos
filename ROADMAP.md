@@ -18,8 +18,6 @@ arquitectónicas.
     carga manual de una página adicional con el botón "Cargar más" ya
     existe.
 -   Deduplicación de nombres repetidos en el plan de sincronización.
--   Mejorar el feedback visual del procesamiento — barra de progreso y
-    estado visible de tareas en curso.
 -   Persistencia de preferencias generales de configuración — más allá
     de la última carpeta seleccionada, que ya se persiste.
 
@@ -27,7 +25,7 @@ arquitectónicas.
 
 # Experiencia de usuario
 
--   Barra de progreso.
+-   ~~Barra de progreso.~~ Implementada.
 -   Cancelación de tareas.
 -   Reanudación de trabajos.
 -   Configuración persistente.

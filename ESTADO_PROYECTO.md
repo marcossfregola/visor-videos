@@ -58,8 +58,8 @@ con 23 videos reales:
 
 ## Pendientes prioritarios
 
-1. Mejorar el feedback visual del procesamiento (barra de progreso,
-   estado visible de tareas en curso).
+1. ~~Mejorar el feedback visual del procesamiento (barra de progreso,~~
+   ~~estado visible de tareas en curso).~~ **Implementado.**
 2. Incorporar selección visual de filas (selección simple y múltiple,
    acciones sobre videos seleccionados).
 3. Evaluar y optimizar el rendimiento con colecciones grandes de videos.
@@ -83,8 +83,8 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
 **Mejora continua de la Beta.** La Beta 1.0 fue validada en equipos
 externos, lo que dio origen a las correcciones de estabilización ya
 implementadas. La fase actual se centra en mejorar la experiencia de
-uso basada en pruebas reales, comenzando por el feedback visual del
-procesamiento.
+uso basada en pruebas reales, continuando con la selección visual de
+filas y la optimización de rendimiento con colecciones grandes.
 
 ## Documentos del proyecto
 

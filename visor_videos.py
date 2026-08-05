@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMainWindow,
+    QProgressBar,
     QPushButton,
     QScrollArea,
     QVBoxLayout,
@@ -268,6 +269,7 @@ class VisorVideos(QMainWindow):
         self._cola_previews = []
         self.tarea_previews = None
         self.gestor_previews = None
+        self._pipeline_activo = False
 
         self.busqueda = QLineEdit()
         self.busqueda.setPlaceholderText("Buscar por nombre...")
@@ -275,6 +277,11 @@ class VisorVideos(QMainWindow):
 
         self.contador = QLabel()
         self.estado_carga = QLabel(MENSAJE_CARGANDO)
+
+        self.barra_progreso = QProgressBar()
+        self.barra_progreso.setRange(0, 0)
+        self.barra_progreso.setVisible(False)
+        self.barra_progreso.setFixedHeight(24)
 
         self.boton_seleccionar_carpeta = QPushButton("Seleccionar carpeta")
         self.boton_seleccionar_carpeta.clicked.connect(self.seleccionar_carpeta)
@@ -321,6 +328,7 @@ class VisorVideos(QMainWindow):
         layout = QVBoxLayout(raiz)
         layout.addLayout(fila_carpeta)
         layout.addLayout(barra)
+        layout.addWidget(self.barra_progreso)
         layout.addWidget(self.area)
         self.setCentralWidget(raiz)
 
@@ -404,6 +412,15 @@ class VisorVideos(QMainWindow):
     def _al_actividad(self, activo):
         self._actualizar_botones_carpeta()
 
+    def _mostrar_progreso(self, texto):
+        self._pipeline_activo = True
+        self.barra_progreso.setFormat(texto)
+        self.barra_progreso.setVisible(True)
+
+    def _ocultar_progreso(self):
+        self._pipeline_activo = False
+        self.barra_progreso.setVisible(False)
+
     def iniciar_escaneo(self):
         if self.gestor.activo:
             return
@@ -440,6 +457,7 @@ class VisorVideos(QMainWindow):
             return
         self.tarea_escaneo = tarea
         self.estado_escaneo.setText(MENSAJE_ESCANEANDO)
+        self._mostrar_progreso("Escaneando…")
         self._actualizar_botones_carpeta()
 
     def _limpiar_cadena(self):
@@ -462,6 +480,7 @@ class VisorVideos(QMainWindow):
         self.resultado_tamanos = None
         self.resultado_ffprobe = None
         self.resultado_miniaturas = None
+        self._ocultar_progreso()
 
     def _al_resultado_escaneo(self, videos):
         self._escaneo_pendiente = False
@@ -531,6 +550,7 @@ class VisorVideos(QMainWindow):
             self._actualizar_botones_carpeta()
             return
         self.tarea_tamanos = tarea
+        self._mostrar_progreso("Obteniendo tamaños…")
 
     def _al_resultado_tamanos(self, resultado):
         self._tamanos_pendiente = False
@@ -557,6 +577,7 @@ class VisorVideos(QMainWindow):
             self._actualizar_botones_carpeta()
             return
         self.tarea_ffprobe = tarea
+        self._mostrar_progreso("Leyendo metadatos…")
 
     def _al_resultado_ffprobe(self, resultado):
         self._ffprobe_pendiente = False
@@ -581,6 +602,7 @@ class VisorVideos(QMainWindow):
             self._actualizar_botones_carpeta()
             return
         self.tarea_miniaturas = tarea
+        self._mostrar_progreso("Generando miniaturas…")
 
     def _al_resultado_miniaturas(self, resultado):
         self._miniaturas_pendiente = False
@@ -620,6 +642,7 @@ class VisorVideos(QMainWindow):
             self._actualizar_botones_carpeta()
             return
         self.tarea_guardado = tarea
+        self._mostrar_progreso("Guardando…")
 
     def _al_tarea_finalizada(self):
         if self.gestor.estado != Estado.INACTIVO:
@@ -659,6 +682,7 @@ class VisorVideos(QMainWindow):
             return
         self.tarea_sincronizacion = tarea
         self.estado_escaneo.setText(MENSAJE_SINCRONIZANDO)
+        self._mostrar_progreso("Sincronizando…")
         self._actualizar_botones_carpeta()
 
     def _al_resultado_sincronizacion(self, resultado):
@@ -684,6 +708,7 @@ class VisorVideos(QMainWindow):
             self._actualizar_botones_carpeta()
             return
         self.tarea_recarga_catalogo = tarea
+        self._mostrar_progreso("Actualizando catálogo…")
 
     def _al_resultado_recarga(self, resultado):
         self._recarga_catalogo_pendiente = False
@@ -691,6 +716,7 @@ class VisorVideos(QMainWindow):
         self._total_catalogo = resultado.get("total", self._total_catalogo)
         self._reemplazar_tarjetas(resultado.get("videos", []))
         self._programar_previews()
+        self._ocultar_progreso()
         self._actualizar_botones_carpeta()
 
     def _al_error_recarga(self, mensaje):
