@@ -2,9 +2,11 @@ import os
 import sys
 import tempfile
 import time
+from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QPixmap
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -22,6 +24,7 @@ from PySide6.QtWidgets import (
 
 from rutas import ruta_carpeta_miniaturas
 from tareas import Estado, GestorTareas
+from apertura_videos import abrir_video_con_aplicacion_predeterminada
 from tareas_videos import (
     CANTIDAD_PREVIEWS,
     TareaEscaneo,
@@ -63,6 +66,7 @@ MENSAJE_ERROR_SINCRONIZACION = "No se pudo sincronizar el catálogo"
 MENSAJE_ERROR_RECARGA = "No se pudo actualizar el catálogo"
 MENSAJE_ERROR_PAGINA = "No se pudo cargar la página"
 MENSAJE_SIN_ESCANEO = "Sin escanear"
+MENSAJE_ERROR_ABRIR = "No se pudo abrir el video"
 
 
 def texto_resumen_sincronizacion(resumen):
@@ -109,8 +113,7 @@ def miniatura_principal(nombre):
                 and not _es_archivo_preview(archivo, nombre)
             ):
                 ruta = os.path.join(carpeta, archivo)
-                if os.path.isfile(ruta):
-                    return ruta
+                return ruta
     return None
 
 
@@ -119,6 +122,8 @@ def previews_de(nombre):
 
 
 class Tarjeta(QFrame):
+    doble_clic = Signal(str)
+
     def __init__(self, fila, parent=None):
         super().__init__(parent)
         self.setFrameShape(QFrame.StyledPanel)
@@ -186,6 +191,10 @@ class Tarjeta(QFrame):
     @property
     def nombre(self):
         return self._nombre
+
+    def mouseDoubleClickEvent(self, event):
+        super().mouseDoubleClickEvent(event)
+        self.doble_clic.emit(self._nombre)
 
     def _colocar_preview(self, indice, ruta):
         if not (0 <= indice < len(self._etiquetas_previews)):
@@ -794,6 +803,7 @@ class VisorVideos(QMainWindow):
         for indice, fila in enumerate(filas):
             posicion = inicio + indice
             tarjeta = Tarjeta(fila)
+            tarjeta.doble_clic.connect(self._abrir_video)
             self.tarjetas.append((fila[0], tarjeta))
             self.visibles.append(fila[0])
             self.cuadricula.addWidget(tarjeta, posicion, 0)
@@ -847,10 +857,20 @@ class VisorVideos(QMainWindow):
     def _crear_tarjetas(self, filas):
         for indice, fila in enumerate(filas):
             tarjeta = Tarjeta(fila)
+            tarjeta.doble_clic.connect(self._abrir_video)
             self.tarjetas.append((fila[0], tarjeta))
             self.visibles.append(fila[0])
             self.cuadricula.addWidget(tarjeta, indice, 0)
         self.filtrar(self.busqueda.text())
+
+    def _abrir_video(self, nombre):
+        carpeta = self.carpeta_seleccionada
+        try:
+            abrir_video_con_aplicacion_predeterminada(nombre, carpeta)
+        except (ValueError, FileNotFoundError, OSError):
+            self.mensaje_carpeta.setText(MENSAJE_ERROR_ABRIR)
+            return
+        self.mensaje_carpeta.clear()
 
     def filtrar(self, texto):
         texto = texto.lower()
@@ -956,10 +976,9 @@ def main():
     temp_carpeta = tempfile.TemporaryDirectory()
     try:
         for nombre in ["peli.mp4", "serie.mkv", "clip.avi", "doc.txt", "nota.log"]:
-            with open(
-                os.path.join(temp_carpeta.name, nombre), "w", encoding="utf-8"
-            ) as f:
-                f.write("contenido")
+            Path(os.path.join(temp_carpeta.name, nombre)).write_text(
+                "contenido", encoding="utf-8"
+            )
 
         QFileDialog.getExistingDirectory = lambda *args, **kwargs: temp_carpeta.name
         ventana.seleccionar_carpeta()
@@ -1115,6 +1134,86 @@ def main():
         QTimer.singleShot(0, comprobar_cadena_previews)
         app.exec()
         temp_previews.cleanup()
+
+    if os.path.isdir(carpeta_real):
+        temp_doble = tempfile.TemporaryDirectory()
+        ruta_db_doble = os.path.join(temp_doble.name, "catalogo.db")
+        conn = conectar_bd(ruta_db_doble)
+        conn.commit()
+        conn.close()
+        ventana_doble = VisorVideos(ruta_db=ruta_db_doble)
+        ventana_doble.resize(900, 600)
+        ventana_doble.show()
+        esperar_smoke(
+            lambda v=ventana_doble: v._carga_completada and v.gestor.hilo is None
+        )
+        dialogo_doble = QFileDialog.getExistingDirectory
+        QFileDialog.getExistingDirectory = lambda *a, **k: carpeta_real
+        ventana_doble.seleccionar_carpeta()
+        QFileDialog.getExistingDirectory = dialogo_doble
+        ventana_doble.boton_escanear.click()
+
+        pasos_doble = {"cadena": 0}
+
+        def comprobar_cadena_doble():
+            if (
+                ventana_doble.gestor.activo
+                or ventana_doble._escaneo_pendiente
+                or ventana_doble._tamanos_pendiente
+                or ventana_doble._ffprobe_pendiente
+                or ventana_doble._miniaturas_pendiente
+                or ventana_doble._guardado_pendiente
+                or ventana_doble._sincronizacion_pendiente
+                or ventana_doble._recarga_catalogo_pendiente
+            ) and pasos_doble["cadena"] < 600:
+                pasos_doble["cadena"] += 1
+                QTimer.singleShot(25, comprobar_cadena_doble)
+                return
+            QTimer.singleShot(0, comprobar_fin_doble)
+
+        def comprobar_fin_doble():
+            por_nombre = {
+                nombre: tarjeta for nombre, tarjeta in ventana_doble.tarjetas
+            }
+            tarjeta = por_nombre.get("video_real.mp4")
+            if tarjeta is None:
+                print("abrir_error=sin tarjeta de video_real.mp4")
+                ventana_doble.close()
+                app.quit()
+                return
+            original_abrir = abrir_video_con_aplicacion_predeterminada
+            datos_abrir = {}
+
+            def capturar_abrir(nombre, carpeta):
+                ruta = original_abrir(nombre, carpeta)
+                datos_abrir["nombre"] = nombre
+                datos_abrir["carpeta"] = carpeta
+                datos_abrir["ruta"] = ruta
+                return ruta
+
+            globals()["abrir_video_con_aplicacion_predeterminada"] = capturar_abrir
+            try:
+                QTest.mouseDClick(tarjeta, Qt.LeftButton)
+                QApplication.processEvents()
+            finally:
+                globals()[
+                    "abrir_video_con_aplicacion_predeterminada"
+                ] = original_abrir
+            print("abrir_nombre=" + str(datos_abrir.get("nombre")))
+            print("abrir_ruta=" + str(datos_abrir.get("ruta")))
+            print("abrir_mensaje=" + ventana_doble.mensaje_carpeta.text())
+            print(
+                "abrir_con_aplicacion="
+                + str(
+                    "ruta" in datos_abrir and datos_abrir["ruta"] is not None
+                )
+            )
+            ventana_doble.close()
+            app.quit()
+
+        QTimer.singleShot(0, comprobar_cadena_doble)
+        app.exec()
+        temp_doble.cleanup()
 
     sys.exit(codigo)
 

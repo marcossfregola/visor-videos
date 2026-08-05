@@ -108,10 +108,11 @@ de texto a la derecha— dispuesta **una por fila en una única columna** dentro
 del `QScrollArea`; se elimina la grilla de 2 columnas, la constante
 `COLUMNAS` y `setColumnStretch(1, 1)`; `_crear_tarjetas`/`_agregar_tarjetas`
 colocan cada tarjeta en la fila siguiente con columna 0; **solo se muestra la
-primera miniatura por video**, sin 4/6 miniaturas por video, sin generación
-progresiva de miniaturas, sin doble clic y sin última
-carpeta recordada; la **generación progresiva de previews** se incorporó
-después en la etapa "Previews progresivas para la Beta 1.0") y **la
+primera miniatura por video**, sin 4/6 miniaturas por video y sin generación
+progresiva de miniaturas; la **generación progresiva de previews** se incorporó
+después en la etapa "Previews progresivas para la Beta 1.0" y la **apertura del
+video por doble clic** se incorporó después en la etapa "Apertura del video por
+doble clic"; la persistencia de la última carpeta recordada sigue pendiente) y **la
 incorporación y visualización del tamaño de los
 archivos de video** (`escanear_videos.py` añade `tamano_bytes INTEGER` a
 `COLUMNAS_EXTRA` con migración idempotente de bases existentes,
@@ -141,86 +142,106 @@ cola `_cola_previews`, lotes de `TAMANIO_LOTE_PREVIEWS = 3`, temporizador
 `_timer_previews` (300 ms) y **actualización incremental** de cada tarjeta a
 medida que llega cada preview (`Tarjeta.actualizar_previews`), apoyándose en
 `previews_de`/`previews_existentes`; suite nueva `prueba_previews_progresivas.py`
-con **16 pruebas**) aprobadas;
+con **16 pruebas**) y **la apertura del video por doble clic** (`visor_videos.py`
+detecta el **doble clic con el botón izquierdo** sobre una tarjeta mediante la
+nueva señal `Tarjeta.doble_clic` y la sobrescritura de `mouseDoubleClickEvent`,
+y `_abrir_video` invoca el **módulo de servicio nuevo `apertura_videos.py`**
+—`abrir_video_con_aplicacion_predeterminada(nombre, carpeta)`, que valida
+`nombre`/`carpeta` como texto no vacío (si no → `ValueError`), resuelve la ruta
+**absoluta** con `os.path.abspath`/`os.path.isfile` (archivo inexistente →
+`FileNotFoundError`) y abre el video con `os.startfile`, siendo el **único punto
+del proyecto que ejecuta `os.startfile`**; la conexión a `_abrir_video` se
+realiza en `_crear_tarjetas` **y** `_agregar_tarjetas`, de modo que el doble clic
+funciona en las tarjetas de la carga inicial y de las páginas adicionales; ante
+un fallo de apertura (`ValueError`/`FileNotFoundError`/`OSError`) se muestra
+`MENSAJE_ERROR_ABRIR` y la interfaz nunca propaga excepciones; suite nueva
+`prueba_doble_clic.py` con **14 pruebas**) aprobadas;
 quedan pendientes la **deduplicación de nombres repetidos** y la
 **paginación completa** (scroll infinito, búsqueda en SQL desde la
 interfaz y ordenamiento configurable), que todavía no existen.
 
 ## Último commit aprobado
 
-**Mensaje:** Implementar previews progresivas para la Beta 1.0
+**Mensaje:** Abrir videos por doble clic
 
-**Etapa aprobada:** Previews progresivas para la Beta 1.0:
-`escanear_videos.py` añade `CANTIDAD_PREVIEWS = 3` y las funciones
-`ruta_preview` (convención `miniaturas/<prefijo>_preview_NN.jpg`),
-`_es_archivo_preview`, `previews_existentes`, `previews_faltantes`,
-`calcular_tiempo_preview`, `generar_preview` y `generar_previews_faltantes`
-(genera **solo los índices faltantes** con FFmpeg; ante un fallo reutiliza la
-miniatura principal válida como base; **nunca sobrescribe ni elimina**
-archivos). `tareas_videos.py` re-exporta `CANTIDAD_PREVIEWS`,
-`_es_archivo_preview`, `previews_existentes` y `generar_previews_faltantes` y
-añade `TareaPreviewsProgresivas(TareaBase)`. `visor_videos.py` integra la
-generación **progresiva** en segundo plano con un **segundo `GestorTareas`**
-propio (`gestor_previews`), la cola `_cola_previews`, lotes de
-`TAMANIO_LOTE_PREVIEWS = 3`, el temporizador `_timer_previews` (300 ms),
-`previews_de` y `Tarjeta.actualizar_previews` (los placeholders "Generando
-preview…" se reemplazan a medida que llega cada imagen); la miniatura
-principal y `contar_miniaturas` **excluyen** los archivos `_preview_`. Se
-agregó `prueba_previews_progresivas.py` (**16 pruebas** P01–P16). Datos
-reales preservados (`biblioteca.db`, `miniaturas/` y `videos_prueba/`
-intactos) y sin avisos `QThread: Destroyed`. Aprobada.
+**Etapa aprobada:** Apertura del video por doble clic desde la interfaz:
+nuevo módulo de servicio **`apertura_videos.py`** con
+`abrir_video_con_aplicacion_predeterminada(nombre, carpeta)`: valida
+`nombre`/`carpeta` como texto no vacío tras `strip()` (`None`, `""`,
+solo espacios o un no-texto → `ValueError`), construye la **ruta
+absoluta** con `os.path.abspath(os.path.join(carpeta, nombre))`,
+comprueba con `os.path.isfile` que el archivo exista (si no →
+`FileNotFoundError`) y abre con `os.startfile(ruta)` devolviendo la ruta;
+un fallo del propio `os.startfile` propaga `OSError`. Es el **único punto
+del proyecto que ejecuta `os.startfile`**. `visor_videos.py` incorpora el
+import del servicio, `MENSAJE_ERROR_ABRIR = "No se pudo abrir el video"`,
+la señal de clase `Tarjeta.doble_clic = Signal(str)` con la sobrescritura
+de `mouseDoubleClickEvent` (emite `self.doble_clic.emit(self._nombre)`),
+el handler `_abrir_video(nombre)` (captura `ValueError`/`FileNotFoundError`/
+`OSError` → `MENSAJE_ERROR_ABRIR` en la etiqueta de estado; en éxito la
+deja en blanco; nunca propaga excepciones) y la conexión
+`tarjeta.doble_clic.connect(self._abrir_video)` en `_crear_tarjetas` **y**
+`_agregar_tarjetas`. `miniatura_principal` se simplifica eliminando la
+comprobación redundante `os.path.isfile(ruta)`. Se agregó
+`prueba_doble_clic.py` (**14 pruebas**, incluido el AST de `visor_videos.py`
+con **cero referencias a `os.path.isfile`/`os.startfile`**) y el smoke test
+de `main()` incorpora una **fase de doble clic real** (`QTest.mouseDClick`
+sobre la tarjeta del video real de `videos_prueba/`). Datos reales
+preservados (`biblioteca.db` y `videos_prueba/` intactos) y sin avisos
+`QThread: Destroyed`. Aprobada.
 
 **SHA definitivo:** debe consultarse con `git log -1` (el SHA no se
 escribe en este documento para evitar autorreferencias al commit).
 
 ## Última etapa aprobada
 
-Previews progresivas para la Beta 1.0: el catálogo pasa de una sola
-miniatura por video a **tres previews por video con generación progresiva**.
-`escanear_videos.py` define **`CANTIDAD_PREVIEWS = 3`** y añade
-`ruta_preview(video, indice)` (ruta canónica `miniaturas/<prefijo>_preview_NN.jpg`),
-`_es_archivo_preview(nombre, video)` (detecta los archivos `_preview_`),
-`previews_existentes(video)` (rutas de los índices 1..3 que ya existen, en
-orden) y `previews_faltantes(video)` (índices 1..3 sin archivo),
-`calcular_tiempo_preview(duracion, indice)` (tiempos proporcionales
-25/50/75 % de la duración, acotados entre 0.1 s y 0.95×duración; 1 s sin
-duración), `generar_preview(ruta_video, destino, indice)` (FFmpeg
-`-ss`/`-frames:v 1`/`-q:v 3`, timeout 30 s) y
-`generar_previews_faltantes(videos, carpeta)` (orquesta por video la
-generación **solo de los índices faltantes**; si FFmpeg falla, reutiliza la
-miniatura principal válida (`miniatura_reutilizable`) como base con `copyfile`;
-resumen `{"rutas", "resultados", "procesados", "con_previews", "sin_previews"}`
-con detalle por video `{"nombre", "ruta", "previews", "generados",
-"reutilizados", "errores", "completos"}`; validación previa: `videos` no texto
-ni no iterable (`TypeError`) y `carpeta` texto no vacío (`ValueError`)). La
-miniatura principal (`miniatura_reutilizable`), el conteo de miniaturas
-(`contar_miniaturas`) y `miniatura_principal` del visor **excluyen** los
-archivos `_preview_`, de modo que los previews no alteran `cantidad_miniaturas`
-ni la miniatura mostrada. `tareas_videos.py` añade
-**`TareaPreviewsProgresivas(TareaBase)`** (instantánea de `videos`/`carpeta`,
-invoca `generar_previews_faltantes` en `_trabajo()` y re-exporta
-`CANTIDAD_PREVIEWS`, `_es_archivo_preview`, `previews_existentes` y
-`generar_previews_faltantes`). `visor_videos.py` integra la generación
-**progresiva** en la interfaz con un **segundo `GestorTareas`** propio
-(`gestor_previews`, independiente del gestor principal), la cola
-`_cola_previews`, lotes de `TAMANIO_LOTE_PREVIEWS = 3`, el temporizador
-`_timer_previews` (300 ms, single-shot, arrancado al terminar cada
-carga/recarga/página), `_encolar_previews` (descarta videos que ya tienen
-previews o están en cola), `_siguiente_lote_previews` (lanza
-`TareaPreviewsProgresivas` por lote con el gestor de previews),
-`_aplicar_previews` y `Tarjeta.actualizar_previews` (reemplaza los
-placeholders "Generando preview…" por las imágenes a medida que llegan;
-`ANCHO_PREVIEW`/`ALTO_PREVIEW` = tercera parte de la tarjeta). La interfaz
-genera los previews **sin bloquear** el hilo principal, en paralelo a la
-carga del catálogo, y los muestra de forma **incremental**. Con suite nueva
-`prueba_previews_progresivas.py` (**16 pruebas** P01–P16: compilación;
-cantidad y rutas; exclusión de `_preview_` en conteo/reutilización/principal;
-tiempos proporcionales; errores sin FFmpeg; generación incremental;
-no-regeneración de existentes; generación en segundo plano en un hilo distinto
-al principal; integración con la interfaz y pixmaps; progresión por lotes con
-3 y 4 videos; primer pase parcial y final sin regenerar; validación previa).
-**Sin cambios en los datos reales** (`biblioteca.db`, `miniaturas/` y
-`videos_prueba/` intactos) y sin avisos `QThread: Destroyed`. Aprobada.
+Apertura del video por doble clic desde la interfaz: un **doble clic con
+el botón izquierdo** sobre la tarjeta de un video lo abre con la
+**aplicación predeterminada del sistema**. La apertura queda aislada en el
+**módulo de servicio nuevo `apertura_videos.py`** con
+`abrir_video_con_aplicacion_predeterminada(nombre, carpeta)`: valida
+`nombre`/`carpeta` como texto no vacío tras `strip()` (`None`, `""`, solo
+espacios o un no-texto → `ValueError`), construye la **ruta absoluta**
+(`os.path.abspath(os.path.join(carpeta, nombre))`), comprueba con
+`os.path.isfile` que el archivo exista (si no → `FileNotFoundError`) y
+abre con `os.startfile(ruta)` devolviendo la ruta; un fallo del propio
+`os.startfile` propaga `OSError`. Es el **único módulo que ejecuta
+`os.startfile`** (verificado por AST de `visor_videos.py` en T14 de
+`prueba_doble_clic.py`); **no abre SQLite, no ejecuta FFprobe/FFmpeg y no
+usa subprocesos** (T08: sin `subprocess`/`Popen`). `visor_videos.py`
+incorpora el import del servicio (`from apertura_videos import
+abrir_video_con_aplicacion_predeterminada`), la constante
+`MENSAJE_ERROR_ABRIR = "No se pudo abrir el video"`, la **señal de clase
+`Tarjeta.doble_clic = Signal(str)`** con la sobrescritura de
+`mouseDoubleClickEvent(event)` (llama a `super().mouseDoubleClickEvent(event)`
+y emite `self.doble_clic.emit(self._nombre)`), el handler `_abrir_video(nombre)`
+(invoca el servicio con `self.carpeta_seleccionada`; captura `ValueError`/
+`FileNotFoundError`/`OSError` → `MENSAJE_ERROR_ABRIR` en la etiqueta de
+estado; en éxito la deja en blanco; **nunca propaga excepciones**) y la
+conexión `tarjeta.doble_clic.connect(self._abrir_video)` en `_crear_tarjetas`
+**y** `_agregar_tarjetas` (tarjetas de la carga inicial y de las páginas
+adicionales). `miniatura_principal(nombre)` se simplifica devolviendo la
+ruta directamente (se elimina la comprobación redundante
+`os.path.isfile(ruta)`, propia del lector; se conserva la exclusión de los
+`_preview_`). Con suite nueva **`prueba_doble_clic.py` (14 pruebas
+T01–T14)**: compilación de los 7 módulos; el servicio abre la **ruta
+absoluta** exacta con `os.startfile` y lo invoca **exactamente una vez`;
+validación de `carpeta`/`nombre` inválidos (`ValueError`); archivo
+inexistente (`FileNotFoundError`); fallo del propio `os.startfile`
+(`OSError`); AST de `apertura_videos.py` sin `subprocess`/`Popen`; el
+`QTest.mouseDClick` sobre una `Tarjeta` independiente emite `doble_clic`
+con el nombre; doble clic sobre una tarjeta de la **carga inicial** invoca
+`_abrir_video` con `(nombre, ruta absoluta)`; fallo del servicio → sin
+excepción propagada y `MENSAJE_ERROR_ABRIR` visible; sin carpeta
+seleccionada → servicio con `(nombre, None)` → `MENSAJE_ERROR_ABRIR`; el
+doble clic funciona también en tarjetas **agregadas con
+`_agregar_tarjetas`**; AST de `visor_videos.py` con **cero referencias a
+`os.path.isfile`/`os.startfile`**). El smoke test de `main()` incorpora
+una **fase de doble clic real** (`QTest.mouseDClick` sobre la tarjeta del
+video real de `videos_prueba/` tras la carga y el pipeline; imprime
+`abrir_nombre`/`abrir_ruta`/`abrir_mensaje`/`abrir_con_aplicacion`).
+**Sin cambios en los datos reales** (`biblioteca.db` y `videos_prueba/`
+intactos) y sin avisos `QThread: Destroyed`. Aprobada.
 
 ## Estado de la arquitectura
 
@@ -343,8 +364,10 @@ al principal; integración con la interfaz y pixmaps; progresión por lotes con
      `_reemplazar_tarjetas` libera las anteriores (`removeWidget` +
      `deleteLater`) y reconstruye; la recarga sigue siendo la única vía que
      reemplaza tarjetas; **solo se muestra la primera miniatura por video**,
-     sin 4/6 miniaturas por video, sin generación progresiva de miniaturas,
-     sin doble clic y sin última carpeta recordada;
+     sin 4/6 miniaturas por video y sin generación progresiva de miniaturas
+     (la **apertura por doble clic** **se incorporó después** en la etapa
+     "Apertura del video por doble clic"); la persistencia de la última
+     carpeta sigue pendiente;
      suite `prueba_filas_horizontales.py` con 16 pruebas; datos reales
      intactos).
 -   Incorporación y visualización del tamaño de los archivos de video
@@ -377,6 +400,21 @@ al principal; integración con la interfaz y pixmaps; progresión por lotes con
     actualización incremental de cada tarjeta (`Tarjeta.actualizar_previews`);
     suite `prueba_previews_progresivas.py` con 16 pruebas; datos reales
     intactos).
+-   Apertura del video por doble clic (`visor_videos.py` detecta el
+    **doble clic con el botón izquierdo** sobre una tarjeta con la señal
+    `Tarjeta.doble_clic = Signal(str)` y la sobrescritura de
+    `mouseDoubleClickEvent`; `_abrir_video(nombre)` invoca el **módulo de
+    servicio `apertura_videos.py`** —`abrir_video_con_aplicacion_predeterminada
+    (nombre, carpeta)`: valida `nombre`/`carpeta` como texto no vacío
+    (`ValueError`), resuelve la ruta absoluta con
+    `os.path.abspath`/`os.path.isfile` (`FileNotFoundError`) y abre con
+    `os.startfile`, siendo el **único punto del proyecto que ejecuta
+    `os.startfile`**—; ante un fallo de apertura muestra `MENSAJE_ERROR_ABRIR`
+    y no propaga excepciones; conexión en `_crear_tarjetas` y
+    `_agregar_tarjetas` (carga inicial y páginas adicionales); suite
+    `prueba_doble_clic.py` con 14 pruebas, incluido el AST de
+    `visor_videos.py` con cero referencias a `os.path.isfile`/`os.startfile`;
+    datos reales intactos).
 -   Pruebas automatizadas.
 
 ### En desarrollo
@@ -404,9 +442,12 @@ página, y **ya existe la carga manual de una página adicional** con el
 botón "Cargar más" (se agregan tarjetas debajo de las existentes sin
 reemplazarlas). El catálogo se presenta con **una tarjeta horizontal por
 video, una fila por video en una única columna**, cada fila **muestra el
-tamaño de archivo** (campo "Tamaño" con `formatear_tamano`) y cada tarjeta
+tamaño de archivo** (campo "Tamaño" con `formatear_tamano`), cada tarjeta
 **muestra tres previews progresivos** generados en segundo plano con un
-gestor propio (etapas de presentación, tamaño y previews aprobadas).
+gestor propio y un **doble clic sobre la tarjeta abre el video** con la
+aplicación predeterminada del sistema (módulo `apertura_videos.py` con
+`os.startfile`; etapas de presentación, tamaño, previews y doble clic
+aprobadas).
 
 ## Pendientes prioritarios
 
@@ -491,20 +532,20 @@ limpieza controlada de miniaturas antiguas.
 
 ## Próxima etapa
 
-**Aún no definida**: la etapa de **previews progresivas para la Beta 1.0**
-ya quedó aprobada y commiteada ("Implementar previews progresivas para la
-Beta 1.0"), por lo que no se inicia ninguna etapa nueva en esta entrega. El
-siguiente candidato (todavía no definido ni iniciado) es la **paginación
-completa automática del catálogo en la interfaz** (scroll infinito, búsqueda
-en SQL desde la interfaz y ordenamiento configurable — hoy la carga inicial y
-la recarga muestran únicamente la primera página, existe la carga manual con
-"Cargar más", el catálogo se presenta en filas horizontales, cada fila
-muestra el tamaño de archivo y cada tarjeta muestra tres previews
-progresivos) y la **deduplicación de nombres repetidos** en el plan de
-sincronización, manteniendo el alcance limitado: sin selección inteligente,
-sin eliminación de archivos antiguos y sin paginación automática. Para
-**Beta 1.0** quedan como candidatos inmediatos la **apertura del video por
-doble clic** y la **persistencia de la última carpeta seleccionada**.
+**Aún no definida**: la etapa de **apertura del video por doble clic** ya
+quedó aprobada y commiteada ("Abrir videos por doble clic"), por lo que no
+se inicia ninguna etapa nueva en esta entrega. El siguiente candidato
+(todavía no definido ni iniciado) es la **paginación completa automática
+del catálogo en la interfaz** (scroll infinito, búsqueda en SQL desde la
+interfaz y ordenamiento configurable — hoy la carga inicial y la recarga
+muestran únicamente la primera página, existe la carga manual con "Cargar
+más", el catálogo se presenta en filas horizontales, cada fila muestra el
+tamaño de archivo, cada tarjeta muestra tres previews progresivos y el
+doble clic abre el video) y la **deduplicación de nombres repetidos** en el
+plan de sincronización, manteniendo el alcance limitado: sin selección
+inteligente, sin eliminación de archivos antiguos y sin paginación
+automática. Para **Beta 1.0** queda como candidato inmediato la
+**persistencia de la última carpeta seleccionada**.
 
 ## Documentos del proyecto
 

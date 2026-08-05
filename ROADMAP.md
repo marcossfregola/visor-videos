@@ -44,14 +44,15 @@ arquitectónicas.
     derecha (`columna_campos = QVBoxLayout()`, `addLayout(..., 1)`); se
     elimina la grilla de 2 columnas y la constante `COLUMNAS`.
     **Aclaración de alcance**: sí se muestra la primera miniatura por
-    video, pero **no** hay 4/6 imágenes por video, **no** hay generación
-    progresiva de miniaturas, **no** hay apertura por doble clic y **no**
-    se recuerda la última carpeta seleccionada (la persistencia de
-    configuración sigue pendiente). El tamaño de archivo por fila **se
-    incorporó después** en la etapa "Incorporar y mostrar el tamaño de los
-    archivos de video" (ver el siguiente punto). Los **tres previews por
-    video con generación progresiva** **se incorporaron después** en la
-    etapa "Previews progresivas para la Beta 1.0" (ver más abajo).
+    video, pero **no** hay 4/6 imágenes por video y **no** hay generación
+    progresiva de miniaturas; el tamaño de archivo por fila **se incorporó
+    después** en la etapa "Incorporar y mostrar el tamaño de los archivos
+    de video" (ver el siguiente punto), los **tres previews por video con
+    generación progresiva** **se incorporaron después** en la etapa
+    "Previews progresivas para la Beta 1.0" y la **apertura por doble
+    clic** **se incorporó después** en la etapa "Apertura del video por
+    doble clic" (ver más abajo). La persistencia de la última carpeta
+    seleccionada sigue pendiente.
 -   Mostrar el tamaño de los archivos de video — **completado**
     (`escanear_videos.py` añade `tamano_bytes INTEGER` a `COLUMNAS_EXTRA`
     con migración idempotente e incorpora `obtener_tamanos_archivos`/
@@ -60,8 +61,9 @@ arquitectónicas.
     entre el escaneo y FFprobe —cadena de 7 tareas—, persiste
     `tamano_bytes` y muestra el campo "Tamaño" en cada fila con
     `formatear_tamano` en B/KB/MB/GB): **cada fila del catálogo muestra el
-    tamaño del archivo de video**. Quedan pendientes la apertura por
-    doble clic y la persistencia de la última carpeta.
+    tamaño del archivo de video**. La **apertura por doble clic** **se
+    incorporó después** en la etapa "Apertura del video por doble clic"
+    (ver más abajo); queda pendiente la persistencia de la última carpeta.
 -   Previews progresivas para la Beta 1.0 — **completado**:
     `escanear_videos.py` genera **tres previews por video** con
     **generación progresiva** (`CANTIDAD_PREVIEWS = 3`; convención
@@ -72,9 +74,28 @@ arquitectónicas.
     generación en segundo plano con un `GestorTareas` propio, cola por
     lotes (`TAMANIO_LOTE_PREVIEWS = 3`) y actualización incremental de las
     tarjetas a medida que llega cada preview; la miniatura principal y el
-    conteo de miniaturas **excluyen** los archivos `_preview_`. Queda
-    pendiente la **apertura por doble clic** del video y la
-    **persistencia de la última carpeta**.
+    conteo de miniaturas **excluyen** los archivos `_preview_`. La
+    **apertura por doble clic** **se incorporó después** en la etapa
+    "Apertura del video por doble clic" (ver el siguiente punto); queda
+    pendiente la **persistencia de la última carpeta**.
+-   Apertura del video por doble clic — **completado**
+    (`visor_videos.py` detecta el **doble clic con el botón izquierdo**
+    sobre una tarjeta con la señal `Tarjeta.doble_clic = Signal(str)` y la
+    sobrescritura de `mouseDoubleClickEvent`; `_abrir_video(nombre)`
+    invoca el **módulo de servicio `apertura_videos.py`** con
+    `abrir_video_con_aplicacion_predeterminada(nombre, carpeta)` —valida
+    `nombre`/`carpeta` como texto no vacío (`ValueError`), resuelve la
+    ruta absoluta con `os.path.abspath`/`os.path.isfile`
+    (`FileNotFoundError`) y abre el video con `os.startfile`, siendo el
+    **único punto del proyecto que ejecuta `os.startfile`**—; ante un
+    fallo de apertura (`ValueError`/`FileNotFoundError`/`OSError`) muestra
+    `MENSAJE_ERROR_ABRIR` y no propaga excepciones; la conexión a
+    `_abrir_video` se realiza en `_crear_tarjetas` **y** `_agregar_tarjetas`,
+    de modo que el doble clic funciona en las tarjetas de la carga inicial
+    y de las páginas adicionales; suite `prueba_doble_clic.py` con 14
+    pruebas, incluido el AST de `visor_videos.py` con cero referencias a
+    `os.path.isfile`/`os.startfile`). Queda pendiente la persistencia de
+    la última carpeta.
 -   Escritura individual asíncrona — **completado** (`TareaGuardarVideo`).
 -   Escritura de colección asíncrona — **completado**
     (`TareaGuardarVideos`): persiste colecciones de registros preparados
