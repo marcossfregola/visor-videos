@@ -518,7 +518,12 @@ aprobadas).
 
 ## Pendientes prioritarios
 
-1.  Paginación completa del catálogo en la interfaz (páginas posteriores
+1.  Mejorar el feedback visual del procesamiento (barra de progreso,
+    estado visible de tareas en curso, indicadores de generación de
+    previews).
+2.  Incorporar selección visual de filas (selección simple y múltiple,
+    acciones sobre videos seleccionados).
+3.  Paginación completa del catálogo en la interfaz (páginas posteriores
     con scroll automático/infinito, búsqueda en SQL desde la interfaz y
     ordenamiento configurable). **No existe todavía** la paginación
     automática: la carga inicial y la recarga tras la sincronización
@@ -531,15 +536,15 @@ aprobadas).
     implementada (`visor_videos.py` relee la primera página con la misma
     `TareaLecturaCatalogoPaginada`/`GestorTareas` y reemplaza las tarjetas
     con `_reemplazar_tarjetas`).
-2.  Deduplicación de nombres repetidos en el plan de sincronización.
-3.  Integración SQLite asíncrona en el pipeline (encadenado).
-4.  Actualización asíncrona de la interfaz (tarjetas dinámicas).
-5.  FFmpeg asíncrono.
-6.  Selección inteligente de miniaturas (la generación de **tres previews
+4.  Evaluar y optimizar el rendimiento utilizando colecciones de videos
+    más grandes (miles de videos, scroll fluido, uso de memoria).
+5.  Deduplicación de nombres repetidos en el plan de sincronización.
+6.  Integración SQLite asíncrona en el pipeline (encadenado).
+7.  Actualización asíncrona de la interfaz (tarjetas dinámicas).
+8.  FFmpeg asíncrono.
+9.  Selección inteligente de miniaturas (la generación de **tres previews
     progresivos por video** ya está implementada).
-7.  Barra de progreso.
-8.  Caché avanzada.
-9.  Optimización para miles de videos.
+10. Caché avanzada.
 
 ## Problemas abiertos
 

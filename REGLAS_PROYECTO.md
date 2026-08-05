@@ -104,3 +104,38 @@ funcionalidades.
     actualizados (`REGLAS_PROYECTO.md`, `DOCUMENTO_TECNICO.md`,
     `ESTADO_PROYECTO.md` y `ROADMAP.md`), que constituyen la fuente
     principal de contexto del proyecto.
+
+## 13. Cierre y continuidad entre hilos
+
+Al finalizar cada hilo de trabajo deberán realizarse dos cierres
+independientes:
+
+### Cierre técnico
+
+Incluye únicamente:
+
+- documentación técnica;
+- pruebas correspondientes;
+- commit de la etapa implementada.
+
+### Cierre estratégico
+
+Se realizará únicamente cuando durante el hilo hayan surgido nuevas
+ideas de producto, cambios de prioridades, decisiones de arquitectura
+de alto nivel o criterios de diseño que deban conservarse para el
+futuro.
+
+En ese caso:
+
+- ChatGPT mantendrá una "memoria viva" durante toda la conversación.
+- Al cerrar el hilo generará un prompt específico para sincronizar
+  dicha memoria con la documentación.
+- OpenCode actualizará exclusivamente la documentación correspondiente.
+- La sincronización estratégica se realizará mediante un commit
+  documental independiente.
+- Solo después de actualizar las fuentes oficiales se abrirá el
+  siguiente hilo de trabajo.
+
+El objetivo de este proceso es evitar la pérdida de decisiones de
+producto entre conversaciones y mantener la continuidad del proyecto a
+largo plazo.
