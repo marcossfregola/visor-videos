@@ -5,6 +5,7 @@ from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QCursor, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QFileDialog,
     QFrame,
     QGridLayout,
@@ -21,6 +22,7 @@ from PySide6.QtWidgets import (
 )
 
 from configuracion import guardar_ultima_carpeta, obtener_ultima_carpeta
+from escanear_videos import _nombre_seguro, configurar_escaneo_recursivo
 from rutas import ruta_carpeta_miniaturas, ruta_configuracion
 from tareas import Estado, GestorTareas
 from apertura_videos import abrir_video_con_aplicacion_predeterminada
@@ -103,7 +105,7 @@ def formatear_tamano(valor):
 
 
 def miniatura_principal(nombre):
-    prefijo = os.path.splitext(nombre)[0]
+    prefijo = _nombre_seguro(os.path.splitext(nombre)[0])
     carpeta = ruta_carpeta_miniaturas()
     if os.path.isdir(carpeta):
         for archivo in sorted(os.listdir(carpeta)):
@@ -321,6 +323,8 @@ class VisorVideos(QMainWindow):
         self.boton_escanear.setEnabled(False)
         self.boton_escanear.clicked.connect(self.iniciar_escaneo)
 
+        self.incluir_subcarpetas = QCheckBox("Incluir subcarpetas")
+
         self.boton_cargar_mas = QPushButton("Cargar más")
         self.boton_cargar_mas.setEnabled(False)
         self.boton_cargar_mas.clicked.connect(self.cargar_mas)
@@ -336,6 +340,7 @@ class VisorVideos(QMainWindow):
         fila_carpeta = QHBoxLayout()
         fila_carpeta.addWidget(self.boton_seleccionar_carpeta)
         fila_carpeta.addWidget(self.boton_escanear)
+        fila_carpeta.addWidget(self.incluir_subcarpetas)
         fila_carpeta.addWidget(self.etiqueta_carpeta, 1)
         fila_carpeta.addWidget(self.estado_escaneo)
         fila_carpeta.addWidget(self.mensaje_carpeta)
@@ -504,6 +509,7 @@ class VisorVideos(QMainWindow):
             self.mensaje_carpeta.setText(MENSAJE_RUTA_INVALIDA)
             self._actualizar_botones_carpeta()
             return
+        configurar_escaneo_recursivo(self.incluir_subcarpetas.isChecked())
         tarea = TareaEscaneo(carpeta)
         self._escaneo_pendiente = True
         self._tamanos_pendiente = False

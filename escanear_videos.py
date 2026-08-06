@@ -24,7 +24,26 @@ COLUMNAS_EXTRA = [
     ("tamano_bytes", "INTEGER"),
 ]
 
+_ESCANEO_RECURSIVO = False
+
+
+def configurar_escaneo_recursivo(activado):
+    global _ESCANEO_RECURSIVO
+    _ESCANEO_RECURSIVO = activado
+
+
+def _nombre_seguro(nombre):
+    return nombre.replace(os.sep, "_").replace("/", "_")
+
+
 def escanear_videos(carpeta):
+    if _ESCANEO_RECURSIVO:
+        return sorted(
+            os.path.relpath(os.path.join(raiz, nombre), carpeta)
+            for raiz, _, archivos in os.walk(carpeta)
+            for nombre in archivos
+            if os.path.splitext(nombre)[1].lower() in EXTENSIONES
+        )
     return sorted(
         nombre for nombre in os.listdir(carpeta)
         if os.path.splitext(nombre)[1].lower() in EXTENSIONES
@@ -210,16 +229,16 @@ def obtener_datos_ffprobe(ruta):
 
 def ffmpeg_disponible():
     return shutil.which("ffmpeg") is not None
-
 def ruta_miniatura(video, indice=1):
-    prefijo = os.path.splitext(video)[0]
+    prefijo = _nombre_seguro(os.path.splitext(video)[0])
     return os.path.join(
         ruta_carpeta_miniaturas(),
         f"{prefijo}_{indice:02d}{EXTENSION_MINIATURA}",
     )
 
+
 def ruta_preview(video, indice):
-    prefijo = os.path.splitext(video)[0]
+    prefijo = _nombre_seguro(os.path.splitext(video)[0])
     return os.path.join(
         ruta_carpeta_miniaturas(),
         f"{prefijo}_preview_{indice:02d}{EXTENSION_MINIATURA}",

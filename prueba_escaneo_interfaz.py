@@ -1396,7 +1396,8 @@ def test_31():
         and "generar_miniatura" not in importadas
         and "listar_videos" not in importadas
         and "listar_videos_paginado" not in importadas
-        and "escanear_videos" not in importadas
+        and "configurar_escaneo_recursivo" in importadas
+        and "_nombre_seguro" in importadas
     )
     return ok, f"importaciones={sorted(importadas)}"
 

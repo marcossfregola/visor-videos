@@ -5,6 +5,22 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 42. Escaneo opcional de subcarpetas
+
+- **Fecha:** 2026-08-05
+- **Objetivo:** Incorporar la opción de incluir o excluir subcarpetas durante el escaneo de videos, una funcionalidad prevista en el ROADMAP original.
+- **Archivos modificados:**
+  - `escanear_videos.py` — flag `_ESCANEO_RECURSIVO` a nivel módulo, setter `configurar_escaneo_recursivo(activado)`, función `_nombre_seguro(nombre)` que reemplaza `os.sep` y `/` por `_`, `escanear_videos(carpeta)` ampliado con `os.walk` cuando el flag está activo (devuelve rutas relativas), `ruta_miniatura` y `ruta_preview` usan `_nombre_seguro` para mantener planos los nombres de archivo con nombres de video que incluyen subcarpetas.
+  - `visor_videos.py` — importa `QCheckBox`, `_nombre_seguro` y `configurar_escaneo_recursivo` desde `escanear_videos`; casilla `incluir_subcarpetas` (`QCheckBox` "Incluir subcarpetas") junto a los botones de carpeta y escaneo; `iniciar_escaneo()` llama a `configurar_escaneo_recursivo(self.incluir_subcarpetas.isChecked())` antes de crear la tarea; `miniatura_principal` usa `_nombre_seguro`.
+  - `prueba_escaneo_interfaz.py` — test 31 actualizado: verifica `configurar_escaneo_recursivo` y `_nombre_seguro` en lugar de prohibir el módulo `escanear_videos`.
+  - `DOCUMENTO_TECNICO.md` — `escanear_videos` documentado con modo recursivo y `_nombre_seguro`; `boton_escanear` actualizado con la casilla.
+- **Archivos creados:**
+  - `prueba_escaneo_subcarpetas.py` — 12 pruebas: flag, escaneo flat, recursivo con rutas relativas, restauración a flat, `_nombre_seguro` con slash/backslash/plano, `ruta_miniatura` y `ruta_preview` seguras, checkbox en UI.
+- **Pruebas:** `prueba_escaneo_subcarpetas.py` 12/12, `prueba_escaneo.py` 12/12, `prueba_escaneo_interfaz.py` 36/36, `prueba_smoke.py` OK.
+- **Resultado:** Escaneo recursivo funcional con rutas relativas. Miniaturas y previews con nombres seguros (separadores reemplazados por `_`). Sin persistencia de la preferencia, filtros por profundidad ni exclusiones de carpetas en esta etapa.
+- **Commit:** "Agregar escaneo recursivo opcional de subcarpetas"
+- **Decisiones importantes:** Flag global `_ESCANEO_RECURSIVO` como solución más simple dado que solo hay un escaneo a la vez (garantizado por el `GestorTareas`). `_nombre_seguro` permite mantener el sistema de archivos de miniaturas plano sin necesidad de crear subdirectorios. La importación directa desde `escanear_videos` en `visor_videos.py` fue necesaria porque no se podía modificar `tareas_videos.py` para reexportar las nuevas funciones.
+
 ## 41. Abrir carpetas de los seleccionados
 
 - **Fecha:** 2026-08-05

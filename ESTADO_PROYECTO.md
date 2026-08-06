@@ -13,18 +13,18 @@ y persistencia de la última carpeta seleccionada.
 
 ## Último commit aprobado
 
-**Mensaje:** Agregar accion: abrir carpetas de los seleccionados al menu contextual
+**Mensaje:** Agregar escaneo recursivo opcional de subcarpetas
 
-**Etapa:** Ampliación del menú contextual — quinta acción que abre las carpetas
-de todos los videos seleccionados:
-- Si hay un único video, abre su carpeta.
-- Si hay varios, abre cada carpeta distinta una sola vez (deduplicación con
-  `dict.fromkeys` sobre `os.path.dirname` de cada ruta).
-- La acción original "Abrir carpeta" permanece intacta (solo la carpeta del
-  video sobre el que se abrió el menú).
-- Sin confirmaciones ni límites artificiales.
+**Etapa:** Escaneo opcional de subcarpetas — casilla "Incluir subcarpetas" que
+controla si el escaneo recorre recursivamente todas las subcarpetas:
+- Activada: `escanear_videos` usa `os.walk` y devuelve rutas relativas.
+- Desactivada: solo analiza la carpeta raíz con `os.listdir` (comportamiento original).
+- `_nombre_seguro` reemplaza separadores de ruta por `_` para que miniaturas
+  y previews sigan siendo planos con nombres de video que incluyen subcarpetas.
+- El estado se comunica mediante `configurar_escaneo_recursivo()` desde la interfaz.
+- Limitación: usa un flag global a nivel módulo (un solo escaneo a la vez).
 
-**Pruebas superadas:** `prueba_abrir_carpetas_seleccionados.py` 10/10, `prueba_menu_contextual.py` 18/18, `prueba_copiar_rutas_seleccionados.py` 8/8, `prueba_shift_clic.py` 28/28, `prueba_smoke.py` OK.
+**Pruebas superadas:** `prueba_escaneo_subcarpetas.py` 12/12, `prueba_escaneo.py` 12/12, `prueba_escaneo_interfaz.py` 36/36, `prueba_smoke.py` OK.
 
 **SHA:** consultar con `git log -1`.
 
@@ -64,7 +64,8 @@ de todos los videos seleccionados:
 - Selección por rango con Shift+clic basada en un ancla de selección y el orden visible.
 - Copia de rutas de los seleccionados mediante menú contextual (primera operación sobre selección múltiple).
 - Apertura de carpetas de los seleccionados mediante menú contextual (deduplicación de carpetas).
-- Validación manual con videos reales: apertura única y múltiple de carpetas, deduplicación correcta, resto del menú contextual funcional.
+- Escaneo opcional de subcarpetas mediante casilla "Incluir subcarpetas" (nombres seguros para miniaturas).
+- Validación manual con videos reales: escaneo con y sin subcarpetas, diferencia en cantidad de videos detectados, sin regresiones.
 ## Pendientes prioritarios
 
 1. ~~Mejorar el feedback visual del procesamiento (barra de progreso,~~
