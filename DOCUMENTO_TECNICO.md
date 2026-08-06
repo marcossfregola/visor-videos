@@ -56,6 +56,7 @@ prueba/
 ├── prueba_carpeta_actual.py  Pruebas automatizadas de la integración de la selección del árbol con la carpeta activa de la aplicación (Etapa 2.4)
 ├── prueba_persistencia_arbol.py  Pruebas automatizadas de la persistencia y restauración del árbol (Etapa 2.5)
 ├── prueba_escaneo_arbol.py  Pruebas automatizadas del disparo automático del escaneo desde el árbol y el diálogo (Etapa 2.6)
+├── prueba_subcarpetas_arbol.py  Pruebas de verificación de la paridad árbol/botón/diálogo respecto de "Incluir subcarpetas" (Etapa 2.7)
 ├── visor_videos.py        Interfaz gráfica (PySide6): panel izquierdo con árbol de navegación (`ArbolNavegacion`) + carga asíncrona de la primera página + carga manual de una página adicional ("Cargar más") + selección de carpeta + persistencia de la última carpeta seleccionada (servicio `configuracion`) + escaneo asíncrono de la carpeta elegida + encadenamiento escaneo → tamaños → FFprobe → miniaturas → registros con tamaño/metadatos → guardado → sincronización completa del catálogo → recarga asíncrona del catálogo (reemplazo de tarjetas) + generación progresiva de previews con gestor propio + apertura del video por doble clic (señal `Tarjeta.doble_clic` → `_abrir_video` → servicio `apertura_videos`); `main()` es el **punto de entrada de producción** (solo UI, sin pruebas)
 ├── prueba_smoke.py        Arnés de smoke tests (ejecución explícita con `python prueba_smoke.py`): verifica el pipeline completo (paginación, escaneo + carpeta + sincronización, previews, doble clic y persistencia) con una base SQLite temporal; no se ejecuta al iniciar la aplicación
 ├── DOCUMENTO_TECNICO.md   Este documento
@@ -158,7 +159,7 @@ Módulo **de interfaz** que encapsula el árbol del panel izquierdo, base del fu
 
 ### `visor_videos.py` — interfaz gráfica
 
-**Infraestructura de paneles (QSplitter):** La ventana principal se divide en dos paneles permanentes mediante un `QSplitter` horizontal (`Qt.Horizontal`). El panel izquierdo (`QWidget`, minWidth=80, maxWidth=400) contiene el árbol de navegación (`ArbolNavegacion`, de `arbol_navegacion.py`), que en la Etapa 2.6 muestra el nodo raíz "Este equipo", los discos y sus carpetas (carga diferida por nivel), permite seleccionar discos y carpetas, **persiste y restaura** la carpeta activa y, al seleccionar una carpeta válida, **inicia automáticamente el mismo escaneo** que el botón "Escanear carpeta"; la selección del árbol actualiza la **carpeta activa de la aplicación** (`carpeta_seleccionada` y `etiqueta_carpeta`) y el catálogo se actualiza mediante el pipeline existente, sin afectar el panel derecho. El panel derecho contiene toda la interfaz existente sin cambios, encapsulada en la clase `PanelPrincipal` (ver abajo). El splitter utiliza `handleWidth=8` para garantizar que la barra divisoria pueda tomarse cómodamente con el mouse, y el cursor `Qt.SplitHCursor` se asigna exclusivamente al `QSplitterHandle` (no al splitter completo) mediante `splitter.handle(1).setCursor(Qt.SplitHCursor)`. El `setStretchFactor(0, 0)` y `setStretchFactor(1, 1)` hacen que solo el panel derecho se expanda al redimensionar la ventana.
+**Infraestructura de paneles (QSplitter):** La ventana principal se divide en dos paneles permanentes mediante un `QSplitter` horizontal (`Qt.Horizontal`). El panel izquierdo (`QWidget`, minWidth=80, maxWidth=400) contiene el árbol de navegación (`ArbolNavegacion`, de `arbol_navegacion.py`), que en la Etapa 2.7 muestra el nodo raíz "Este equipo", los discos y sus carpetas (carga diferida por nivel), permite seleccionar discos y carpetas, **persiste y restaura** la carpeta activa y, al seleccionar una carpeta válida, **inicia automáticamente el mismo escaneo** que el botón "Escanear carpeta"; la selección del árbol actualiza la **carpeta activa de la aplicación** (`carpeta_seleccionada` y `etiqueta_carpeta`) y el catálogo se actualiza mediante el pipeline existente, sin afectar el panel derecho. **Verificación (Etapa 2.7)**: árbol, botón y diálogo comparten `iniciar_escaneo()` y, por tanto, respetan de forma **idéntica** el estado de "Incluir subcarpetas" (`configurar_escaneo_recursivo(self.incluir_subcarpetas.isChecked())`); verificado por `prueba_subcarpetas_arbol.py`. El panel derecho contiene toda la interfaz existente sin cambios, encapsulada en la clase `PanelPrincipal` (ver abajo). El splitter utiliza `handleWidth=8` para garantizar que la barra divisoria pueda tomarse cómodamente con el mouse, y el cursor `Qt.SplitHCursor` se asigna exclusivamente al `QSplitterHandle` (no al splitter completo) mediante `splitter.handle(1).setCursor(Qt.SplitHCursor)`. El `setStretchFactor(0, 0)` y `setStretchFactor(1, 1)` hacen que solo el panel derecho se expanda al redimensionar la ventana.
 
 **`PanelPrincipal(QWidget)`:** Subclase explícita del panel derecho (`visor_video.py:285-302`). Redefine `minimumSizeHint()` para devolver `QSize(0, 0)`. Esta decisión arquitectónica fue necesaria porque el `minimumSizeHint` por defecto (~720 px) está dominado por la barra de herramientas `fila_carpeta` (8 widgets: botones, checkbox, combo, labels) cuyo `minimumSizeHint` combinado fuerza un mínimo de ~703 px + márgenes. Sin la anulación, el QSplitter usa ese valor como tamaño mínimo efectivo del panel derecho, bloqueando el arrastre del divisor hacia la derecha porque el panel ya está en su mínimo. Al devolver `(0, 0)`, el splitter solo respeta el `minimumWidth` explícito del panel izquierdo (80 px), permitiendo que el divisor se arrastre libremente en ambas direcciones.
 
@@ -589,10 +590,13 @@ izquierdo (árbol de navegación) y el panel derecho (catálogo). El árbol del
 panel izquierdo se implementa por etapas (bloque de trabajo 2): la **Etapa
 2.6** ya integra la selección del árbol y del diálogo con el **flujo de
 escaneo** existente (un único punto de entrada `iniciar_escaneo()`, catálogo
-actualizado al seleccionar una carpeta válida); las etapas siguientes
-agregarán la integración con "Incluir subcarpetas", indicadores visuales de
-carpetas escaneadas y filtrado del catálogo desde el árbol. La arquitectura
-deberá permitir incorporar posteriormente nuevos paneles (propiedades,
-favoritos, etiquetas, IA) sin rediseñar la interfaz. Esta dirección está
-documentada en detalle en `VISION_PRODUCTO.md` y `ROADMAP.md`.
+actualizado al seleccionar una carpeta válida); la **Etapa 2.7** verificó que
+los tres orígenes (árbol, botón y diálogo) respetan de forma idéntica
+"Incluir subcarpetas" (etapa de verificación, sin cambios de producción). Las
+etapas siguientes podrán agregar la preferencia de escaneo automático (cuatro
+combinaciones), indicadores visuales de carpetas escaneadas y filtrado del
+catálogo desde el árbol. La arquitectura deberá permitir incorporar
+posteriormente nuevos paneles (propiedades, favoritos, etiquetas, IA) sin
+rediseñar la interfaz. Esta dirección está documentada en detalle en
+`VISION_PRODUCTO.md` y `ROADMAP.md`.
 | 13 | Baja | El pipeline limitado escribía registros **básicos** (nombre, ruta absoluta, extensión, fecha de importación) sin ejecutar FFprobe; los videos quedaban sin duración, resolución ni codec. **Resuelto**: FFprobe se integró en el pipeline (`TareaEscaneo` → `TareaFFprobe` → `combinar_registros_con_ffprobe` → `TareaGuardarVideos`) y los registros se guardan con los metadatos disponibles (`NULL` ante vacíos, incompletos o fallos individuales). |

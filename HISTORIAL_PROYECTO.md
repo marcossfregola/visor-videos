@@ -5,6 +5,38 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 53. Verificación de la paridad de "Incluir subcarpetas" entre árbol, botón y diálogo (Etapa 2.7)
+
+- **Fecha:** 2026-08-06
+- **Tipo:** Etapa de **verificación arquitectónica** — **sin cambios de producción**.
+- **Objetivo:** Confirmar con evidencia objetiva que el árbol, el botón "Escanear carpeta" y el diálogo
+  "Seleccionar carpeta" respetan de forma idéntica el estado de "Incluir subcarpetas", reutilizando el
+  pipeline existente.
+- **Conclusión de la inspección:** la Etapa 2.6 ya garantizaba la paridad: los tres orígenes convergen en
+  `iniciar_escaneo()` (visor_videos.py:619), que ejecuta
+  `configurar_escaneo_recursivo(self.incluir_subcarpetas.isChecked())` (línea 627) antes de crear la
+  `TareaEscaneo`. No se detectó diferencia funcional.
+- **Archivos creados:**
+  - `prueba_subcarpetas_arbol.py` — 15 verificaciones: para cada origen (árbol, botón, diálogo) y cada
+    estado de la casilla (activada/desactivada) captura el resultado real de `videos_detectados` y el
+    valor pasado a `configurar_escaneo_recursivo` (espía); verifica que desactivado produce solo el
+    nivel superior, activado incluye las subcarpetas, y que árbol == botón == diálogo en ambos estados.
+- **Archivos modificados:** ninguno de producción.
+- **Pruebas:** `prueba_subcarpetas_arbol.py` 15/15. Regresiones: `prueba_escaneo_subcarpetas.py` 12/12,
+  `prueba_escaneo_arbol.py` 11/11, `prueba_escaneo.py` 12/12, `prueba_escaneo_interfaz.py` 36/36,
+  `prueba_smoke.py` OK. Ejecución real de `visor_videos.py` con una carpeta con subcarpetas: desactivado
+  → `['top.mp4']`; activado → incluye `sub1/v1.mp4` y `sub2/v2.mkv`; cierre limpio (`exit 0`).
+- **Resultado:** La hipótesis quedó confirmada: no fue necesario modificar ningún archivo de producción;
+  la arquitectura de la Etapa 2.6 garantizaba automáticamente la paridad funcional.
+- **Commit:** "Verificar paridad de subcarpetas entre arbol, boton y dialogo (Etapa 2.7)"
+- **Decisiones importantes:**
+  1. **Verificación en lugar de implementación**: el objetivo de la etapa ya estaba satisfecho por la
+     Etapa 2.6; no se introdujeron cambios preventivos.
+  2. **Evidencia objetiva**: la suite verifica los tres orígenes con el mismo estado de la casilla y
+     compara resultados reales del escaneo, no solo la estructura del código.
+
+---
+
 ## 52. Escaneo automático al seleccionar una carpeta en el árbol (Etapa 2.6)
 
 - **Fecha:** 2026-08-06

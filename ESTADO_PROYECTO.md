@@ -13,26 +13,20 @@ y persistencia de la última carpeta seleccionada.
 
 ## Último commit aprobado
 
-**Mensaje:** Iniciar automaticamente el escaneo al seleccionar una carpeta en el arbol (Etapa 2.6)
+**Mensaje:** Verificar la paridad de "Incluir subcarpetas" entre arbol, boton y dialogo (Etapa 2.7)
 
-**Etapa:** Integración del árbol con el flujo de escaneo (Etapa 2.6 del Bloque de trabajo 2):
-- `visor_videos.py` — `_al_carpeta_actual_arbol` y `seleccionar_carpeta()` (diálogo) ahora invocan
-  `iniciar_escaneo()` al final. Se reutiliza **exactamente** el mismo punto de entrada que el botón
-  "Escanear carpeta" (sin duplicación ni segundo flujo). El guard de repetición impide dobles disparos
-  (restauración de arranque y sincronización con el diálogo no escanean).
-- `prueba_escaneo_arbol.py` — 11 verificaciones de la etapa (disparo, repetición, cambio de carpeta,
-  mismo mecanismo que el botón, diálogo con un único escaneo, restauración sin escaneo, flujo real con
-  actualización del catálogo y sin doble escaneo).
-- Suites de árbol y de escaneo-interfaz actualizadas al nuevo contrato (espías de `iniciar_escaneo` y
-  T04/T05/T06/T22 de `prueba_escaneo_interfaz.py`); `prueba_persistencia_carpeta.py` neutraliza la
-  deuda 8.3 con un parche acotado de `revelar_ruta`.
+**Etapa:** Verificación arquitectónica (Etapa 2.7 del Bloque de trabajo 2) — **sin cambios de producción**:
+- La Etapa 2.6 ya garantizaba automáticamente la paridad: botón, árbol y diálogo convergen en
+  `iniciar_escaneo()`, que ejecuta `configurar_escaneo_recursivo(self.incluir_subcarpetas.isChecked())`.
+- `prueba_subcarpetas_arbol.py` — 15 verificaciones que demuestran la equivalencia objetiva de los tres
+  orígenes en ambos estados de la casilla (resultados idénticos y valor de `configurar_escaneo_recursivo`
+  correcto).
 
-**Pruebas superadas:** `prueba_escaneo_arbol.py` 11/11; `prueba_escaneo_interfaz.py` 36/36,
-`prueba_carpeta_actual.py` 19/19, `prueba_seleccion_arbol.py` 25/25, `prueba_expansion_carpetas.py`
-35/35, `prueba_arbol_navegacion.py` OK, `prueba_persistencia_arbol.py` 15/15,
-`prueba_persistencia_carpeta.py` 20/20, `prueba_seleccion_carpeta.py` 26/26, `prueba_smoke.py` OK, y
-regresiones amplias (34 suites). Ejecución real de `visor_videos.py` con selección en el árbol →
-escaneo automático → catálogo actualizado y cierre limpio (exit 0).
+**Pruebas superadas:** `prueba_subcarpetas_arbol.py` 15/15 (árbol/botón/diálogo × activado/desactivado,
+igualdad off y on, diferencia off vs on); regresiones `prueba_escaneo_subcarpetas.py` 12/12,
+`prueba_escaneo_arbol.py` 11/11, `prueba_escaneo.py` 12/12, `prueba_escaneo_interfaz.py` 36/36,
+`prueba_smoke.py` OK. Ejecución real de `visor_videos.py` con una carpeta con subcarpetas: off → solo
+nivel superior, on → incluye subcarpetas; cierre limpio (exit 0).
 
 ## Hitos completados
 
@@ -78,6 +72,7 @@ escaneo automático → catálogo actualizado y cierre limpio (exit 0).
 - Integración de la selección del árbol con la carpeta activa de la aplicación (Etapa 2.4: `carpeta_seleccionada` como única fuente de verdad, handler `_al_carpeta_actual_arbol`, sincronización árbol ↔ diálogo con `seleccionar_ruta`, sin escaneo ni catálogo).
 - Persistencia y restauración del Centro de Navegación (Etapa 2.5: la carpeta seleccionada se persiste con `guardar_ultima_carpeta` y se reconstruye al iniciar con `revelar_ruta`, expandiendo solo la rama necesaria; restauración tolerante).
 - Integración del árbol con el flujo de escaneo (Etapa 2.6: seleccionar una carpeta válida en el árbol o por el diálogo inicia automáticamente el escaneo mediante `iniciar_escaneo()`, el mismo punto de entrada del botón; un único disparo por acción; restauración inicial sin escaneo).
+- Verificación de la paridad de "Incluir subcarpetas" (Etapa 2.7: etapa de validación sin cambios de producción; árbol, botón y diálogo respetan de forma idéntica la casilla, confirmado por `prueba_subcarpetas_arbol.py`).
 
 ## Pendientes prioritarios
 
@@ -120,11 +115,12 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
 
 ## Próxima etapa
 
-**Etapa 2.7 del Bloque de trabajo 2 (integración con el pipeline de
-escaneo).** Con el disparo automático del escaneo desde el árbol ya
-implementado (Etapa 2.6), la próxima etapa es la integración completa con el
-pipeline existente y con "Incluir subcarpetas", siguiendo la dirección
-definida en `VISION_PRODUCTO.md` y `ROADMAP.md`.
+**Etapa 2.8 del Bloque de trabajo 2 (integración con "Incluir subcarpetas",
+cuatro combinaciones).** Con la paridad árbol/botón/diálogo verificada
+(Etapa 2.7), la próxima etapa es incorporar la **preferencia independiente de
+"escaneo automático"** al seleccionar carpeta, habilitando las cuatro
+combinaciones (escaneo automático × "Incluir subcarpetas") descritas en
+`VISION_PRODUCTO.md`, siguiendo la dirección definida en `ROADMAP.md`.
 
 ## Documentos del proyecto
 

@@ -78,6 +78,7 @@ pequeña, verificable y acumulativa:
 - **Etapa 2.6** — Escaneo automático al seleccionar carpeta (preferencia
   independiente de "Incluir subcarpetas"). **Implementada.**
 - **Etapa 2.7** — Integración con el pipeline existente de escaneo.
+  **Implementada (etapa de verificación).**
 - **Etapa 2.8** — Integración con "Incluir subcarpetas" (cuatro
   combinaciones posibles).
 - **Etapa 2.9** — Indicadores visuales de carpetas escaneadas.
@@ -91,9 +92,10 @@ pequeña, verificable y acumulativa:
     con persistencia de la preferencia entre ejecuciones.
 -   ~~Infraestructura de paneles (QSplitter).~~ Implementada.
 -   ~~Árbol de carpetas en el panel izquierdo.~~ Implementadas las Etapas 2.1 a
-    2.6 (árbol con "Este equipo", discos, carpetas con carga diferida,
-    selección funcional, integración con la carpeta activa, persistencia y
-    escaneo automático al seleccionar); el bloque de trabajo 2 continúa.
+    2.7 (árbol con "Este equipo", discos, carpetas con carga diferida,
+    selección funcional, integración con la carpeta activa, persistencia,
+    escaneo automático al seleccionar y verificación de la paridad de
+    subcarpetas); el bloque de trabajo 2 continúa.
 -   Paginación completa automática del catálogo — scroll infinito,
     búsqueda en SQL desde la interfaz y ordenamiento configurable. La
     carga manual de una página adicional con el botón "Cargar más" ya
