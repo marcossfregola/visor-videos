@@ -556,4 +556,15 @@ Durante un escaneo se genera **como máximo una miniatura nueva por video**, y �
 | 10 | Media | El criterio de reutilización usa únicamente `mtime` (sin hash ni validación de integridad); no detecta cambios de contenido que conserven la fecha. Pendiente (mejora diferida). |
 | 11 | Media | Falta una limpieza controlada de versiones antiguas de miniaturas; por regla, los archivos nunca se eliminan automáticamente, por lo que requiere autorización expresa. Pendiente. |
 | 12 | Media | FFmpeg escribe directamente en la ruta definitiva de la miniatura; si falla después de comenzar la escritura puede quedar un archivo parcial o corrupto. Actualmente ese archivo no se elimina ni se valida, y por existencia y `mtime` podría ser contado o considerado vigente. Pendiente. |
+
+## 9. Dirección arquitectónica futura
+
+La interfaz evolucionará hacia un sistema de paneles independientes.
+La implementación técnica prevista utilizará **QSplitter** como base
+para dividir paneles redimensionables por el usuario. Inicialmente
+existirá un único splitter entre el árbol de carpetas y el catálogo de
+videos. La arquitectura deberá permitir incorporar posteriormente
+nuevos paneles (propiedades, favoritos, etiquetas, IA) sin rediseñar
+la interfaz. Esta dirección está documentada en detalle en
+`VISION_PRODUCTO.md` y `ROADMAP.md`.
 | 13 | Baja | El pipeline limitado escribía registros **básicos** (nombre, ruta absoluta, extensión, fecha de importación) sin ejecutar FFprobe; los videos quedaban sin duración, resolución ni codec. **Resuelto**: FFprobe se integró en el pipeline (`TareaEscaneo` → `TareaFFprobe` → `combinar_registros_con_ffprobe` → `TareaGuardarVideos`) y los registros se guardan con los metadatos disponibles (`NULL` ante vacíos, incompletos o fallos individuales). |

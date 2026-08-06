@@ -9,6 +9,25 @@ arquitectónicas.
 
 ------------------------------------------------------------------------
 
+# Próximas líneas de trabajo previstas
+
+Dirección general acordada para el desarrollo futuro. Constituye una
+guía de prioridades y no un compromiso rígido e inamovible:
+
+1. **Infraestructura de paneles** — migrar la interfaz actual a un
+   sistema de paneles independientes basado en QSplitter.
+2. **Árbol de carpetas** — panel izquierdo de navegación como mecanismo
+   principal para explorar la biblioteca.
+3. **Navegación completa desde el árbol** — reemplazar progresivamente
+   el botón "Seleccionar carpeta".
+4. **Tarjetas expandibles** — mostrar entre 20 y 30 previews por video
+   al expandir una tarjeta.
+5. **Ordenamientos del catálogo** — permitir ordenar por nombre,
+   duración, resolución, codec, tamaño o fecha.
+6. **Organización** — favoritos, etiquetas y funciones relacionadas.
+
+------------------------------------------------------------------------
+
 # Prioridad inmediata
 
 -   ~~Opción de incluir o excluir subcarpetas en el escaneo.~~ Implementada
@@ -35,6 +54,15 @@ arquitectónicas.
 -   Reanudación de trabajos.
 -   Configuración persistente.
 -   Mejor navegación entre videos.
+-   Tarjeta expandible — cada tarjeta podrá expandirse temporalmente
+    para mostrar aproximadamente entre 20 y 30 previews del mismo
+    video, permitiendo inspeccionar visualmente el contenido sin
+    reproducirlo. El doble clic continuará reservado para abrir el
+    video.
+    -   Desplazamiento horizontal de previews mediante rueda del mouse
+        cuando existan más previews que espacio disponible. La
+        conveniencia de mostrar o no una barra horizontal se evaluará
+        mediante pruebas de usabilidad.
 
 ------------------------------------------------------------------------
 
@@ -47,6 +75,22 @@ arquitectónicas.
 -   Evitar imágenes repetidas.
 -   ~~Cantidad configurable de miniaturas.~~ Implementada mediante combo box 3/5/7/9
     con persistencia y actualización inmediata de la interfaz.
+
+------------------------------------------------------------------------
+
+# Infraestructura futura
+
+-   Sistema de paneles independientes y configurables — infraestructura
+    base que permitirá agregar, quitar y reorganizar paneles sin
+    rediseñar la aplicación.
+-   Panel izquierdo de navegación con árbol de carpetas como mecanismo
+    principal para explorar la biblioteca.
+-   Panel de propiedades — metadatos del video seleccionado.
+-   Panel de favoritos — acceso rápido a videos marcados.
+-   Panel de etiquetas — organización mediante etiquetas.
+-   Panel de IA — clasificación, descripción y reconocimiento.
+-   Posibilidad de incorporar nuevos paneles en el futuro sin
+    modificar la arquitectura de paneles.
 
 ------------------------------------------------------------------------
 

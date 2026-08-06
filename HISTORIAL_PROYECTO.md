@@ -5,6 +5,39 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 45. Redefinición de la dirección futura de la interfaz
+
+- **Fecha:** 2026-08-05
+- **Tipo:** Decisión de producto (no implica cambios de código).
+- **Descripción:** Durante el cierre del ciclo de desarrollo de la Beta
+  1.0 se redefinió la dirección futura de la interfaz de usuario. Se
+  acordó evolucionar hacia una **interfaz modular basada en paneles
+  independientes** (QSplitter), con un árbol de carpetas como mecanismo
+  principal de navegación y la posibilidad de incorporar progresivamente
+  paneles de propiedades, favoritos, etiquetas e IA.
+- **Próximas líneas de trabajo:** infraestructura de paneles, árbol de
+  carpetas, navegación desde el árbol, tarjetas expandibles,
+  ordenamientos y organización.
+- **Documentos actualizados:**
+  - `VISION_PRODUCTO.md` — ampliada la sección de filosofía del
+    producto y agregados los principios de diseño.
+  - `ROADMAP.md` — agregadas las secciones «Próximas líneas de trabajo
+    previstas» e «Infraestructura futura»; ampliada «Experiencia de
+    usuario» con tarjetas expandibles y scroll horizontal.
+  - `DOCUMENTO_TECNICO.md` — agregada la sección «Dirección
+    arquitectónica futura» con la infraestructura prevista de paneles.
+- **Resultado:** La documentación del proyecto refleja ahora la visión
+  de largo plazo y permite que cualquier persona, al leer
+  `VISION_PRODUCTO.md`, `ROADMAP.md` y `DOCUMENTO_TECNICO.md`,
+  comprenda hacia dónde evoluciona el producto y cuál será la primera
+  etapa del próximo ciclo de desarrollo.
+- **Decisiones importantes:** El proyecto deja de concebirse únicamente
+  como un visor de tarjetas y pasa a proyectarse como un entorno de
+  trabajo. La exploración visual sigue siendo el objetivo principal;
+  la reproducción permanece como función secundaria.
+
+---
+
 ## 44. Cantidad configurable de previews visibles (3/5/7/9)
 
 - **Fecha:** 2026-08-05

@@ -9,11 +9,43 @@ Se actualiza mediante el cierre estratégico de hilos de trabajo (ver
 
 ## Filosofía del producto
 
-- El Visor de Videos debe mantenerse como un **explorador profesional
-  basado en fotogramas representativos**.
+- El Visor de Videos evoluciona desde un **explorador profesional basado
+  en fotogramas representativos** hacia un **entorno de trabajo
+  especializado para explorar, organizar y analizar grandes colecciones
+  de videos**.
+- La **exploración visual** continúa siendo el objetivo principal del
+  producto.
+- La **reproducción** permanece como una función secundaria respecto de
+  la exploración.
 - No debe evolucionar hacia un editor de video tradicional.
 - Las **previews** constituyen el principal elemento de interacción con
   el contenido.
+- La inspiración conceptual proviene de aplicaciones como Adobe Bridge,
+  sin intentar copiar su interfaz.
+- La interfaz evolucionará hacia un **sistema de paneles independientes
+  y configurables**, permitiendo al usuario organizar su espacio de
+  trabajo.
+- El crecimiento se realizará mediante **pequeñas mejoras acumulativas**,
+  evitando rediseños completos que requieran refundar la arquitectura.
+
+---
+
+## Principios de diseño
+
+Estos principios guían permanentemente las decisiones de implementación:
+
+- **Actualización parcial.** Siempre que sea técnicamente posible, la
+  interfaz debe actualizar únicamente el componente afectado, sin
+  reconstruir partes no modificadas.
+- **Evitar reconstrucciones completas** cuando una actualización parcial
+  sea suficiente.
+- **Reutilizar la caché** antes de regenerar información que ya existe.
+- **Evitar operaciones costosas** cuando exista una alternativa
+  equivalente más eficiente.
+- **Persistir automáticamente** las preferencias del usuario cuando
+  resulte razonable hacerlo.
+- **Priorizar la exploración visual** sobre la reproducción en todas
+  las decisiones de producto.
 
 ---
 
