@@ -13,17 +13,19 @@ y persistencia de la última carpeta seleccionada.
 
 ## Último commit aprobado
 
-**Mensaje:** Restaurar automáticamente la selección tras reconstruir la lista de tarjetas
+**Mensaje:** Agregar selección por rango con Shift+clic
 
-**Etapa:** Restauración automática de la selección — al reconstruir completamente
-la lista de tarjetas (tras un reescaneo y sincronización), la selección previa
-se conserva:
-- Se reutiliza el conjunto `_nombres_seleccionados` ya existente.
-- Solo se restauran los nombres que siguen presentes en el nuevo catálogo.
-- Los nombres desaparecidos se descartan sin error.
-- Sin persistencia en disco ni entre ejecuciones.
+**Etapa:** Selección por rango mediante Shift+clic — comportamiento estándar
+de Windows:
+- Shift+clic selecciona todas las filas entre el ancla (`_ancla_seleccion`) y
+  la fila clickeada, según el orden visible (`self.visibles`).
+- Si no existe ancla o el ancla no está visible, equivale a un clic normal.
+- El ancla se actualiza en cada selección simple y Ctrl+clic; no se modifica
+  durante el rango.
+- Compatible con la selección existente, el menú contextual y el doble clic.
+- Sin Ctrl+Shift+clic, selección con teclado ni atajos adicionales.
 
-**Pruebas superadas:** `prueba_restauracion_seleccion.py` 15/15, `prueba_seleccion.py` 28/28, `prueba_menu_contextual.py` 18/18, `prueba_doble_clic.py` 14/14, `prueba_smoke.py` OK.
+**Pruebas superadas:** `prueba_shift_clic.py` 28/28, `prueba_seleccion.py` 28/28, `prueba_restauracion_seleccion.py` 15/15, `prueba_menu_contextual.py` 18/18, `prueba_doble_clic.py` 14/14, `prueba_smoke.py` OK.
 
 **SHA:** consultar con `git log -1`.
 
@@ -60,7 +62,8 @@ se conserva:
 - Selección visual de filas (simple y múltiple con Ctrl+clic). Base preparada para futuras acciones sobre elementos seleccionados sin agregar menús ni botones todavía.
 - Menú contextual con clic derecho sobre filas de videos (abrir, abrir carpeta, copiar ruta).
 - Restauración automática de la selección tras reconstruir la lista de tarjetas.
-- Validación manual con videos reales: selección conservada tras reescaneo, menú contextual y doble clic funcionales.
+- Selección por rango con Shift+clic basada en un ancla de selección y el orden visible.
+- Validación manual con videos reales: selección conservada tras reescaneo, menú contextual y doble clic funcionales, Shift+clic hacia arriba y hacia abajo.
 ## Pendientes prioritarios
 
 1. ~~Mejorar el feedback visual del procesamiento (barra de progreso,~~
@@ -92,9 +95,10 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
 externos, lo que dio origen a las correcciones de estabilización ya
 implementadas. La fase actual se centra en mejorar la experiencia de
 uso basada en pruebas reales, continuando con la optimización de
-rendimiento con colecciones grandes y las acciones sobre los elementos
-seleccionados. El menú contextual con acciones básicas (abrir, abrir
-carpeta, copiar ruta) ya está funcional.
+rendimiento con colecciones grandes. El sistema completo de selección
+ya está funcional: simple, Ctrl+clic, Shift+clic, restauración tras
+reescaneo y menú contextual con acciones básicas (abrir, abrir carpeta,
+copiar ruta).
 
 ## Documentos del proyecto
 

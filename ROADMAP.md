@@ -26,11 +26,10 @@ arquitectónicas.
 # Experiencia de usuario
 
 -   ~~Barra de progreso.~~ Implementada.
--   ~~Selección visual de filas (simple y Ctrl+clic).~~ Implementada.
-    ~~Pendiente: acciones sobre elementos seleccionados y restauración
-    automática tras reconstrucción de tarjetas.~~ Implementadas acciones
-    básicas mediante menú contextual (abrir, abrir carpeta, copiar ruta)
-    y restauración automática de la selección tras reconstruir tarjetas.
+-   ~~Selección visual de filas (simple, Ctrl+clic y Shift+clic).~~ Implementada.
+    Incluye acciones básicas mediante menú contextual (abrir, abrir carpeta,
+    copiar ruta), restauración automática de la selección tras reconstruir
+    tarjetas y selección por rango con Shift+clic basada en ancla y orden visible.
 -   Cancelación de tareas.
 -   Reanudación de trabajos.
 -   Configuración persistente.

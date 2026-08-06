@@ -126,6 +126,7 @@ ESTILO_SELECCIONADA = "Tarjeta { border: 3px solid #2196F3; }"
 class Tarjeta(QFrame):
     doble_clic = Signal(str)
     seleccionada = Signal(str, bool)
+    seleccion_por_rango = Signal(str)
     menu_contextual = Signal(str)
 
     def __init__(self, fila, parent=None):
@@ -206,8 +207,12 @@ class Tarjeta(QFrame):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
-            ctrl = bool(event.modifiers() & Qt.ControlModifier)
-            self.seleccionada.emit(self._nombre, ctrl)
+            shift = bool(event.modifiers() & Qt.ShiftModifier)
+            if shift:
+                self.seleccion_por_rango.emit(self._nombre)
+            else:
+                ctrl = bool(event.modifiers() & Qt.ControlModifier)
+                self.seleccionada.emit(self._nombre, ctrl)
         elif event.button() == Qt.RightButton:
             if not self._seleccionada:
                 self.seleccionada.emit(self._nombre, False)
@@ -295,6 +300,7 @@ class VisorVideos(QMainWindow):
         self.gestor_previews = None
         self._pipeline_activo = False
         self._nombres_seleccionados = set()
+        self._ancla_seleccion = None
 
         self.busqueda = QLineEdit()
         self.busqueda.setPlaceholderText("Buscar por nombre...")
@@ -455,6 +461,25 @@ class VisorVideos(QMainWindow):
         else:
             self._nombres_seleccionados.add(nombre)
             self._marcar_tarjeta(nombre, True)
+        self._ancla_seleccion = nombre if self._nombres_seleccionados else None
+
+    def _al_seleccion_por_rango(self, nombre):
+        visibles = self.tarjetas_visibles()
+        if self._ancla_seleccion is None or self._ancla_seleccion not in visibles:
+            self._limpiar_seleccion()
+            self._nombres_seleccionados.add(nombre)
+            self._marcar_tarjeta(nombre, True)
+            self._ancla_seleccion = nombre
+            return
+        idx_ancla = visibles.index(self._ancla_seleccion)
+        idx_objetivo = visibles.index(nombre)
+        inicio = min(idx_ancla, idx_objetivo)
+        fin = max(idx_ancla, idx_objetivo)
+        self._limpiar_seleccion()
+        for idx in range(inicio, fin + 1):
+            n = visibles[idx]
+            self._nombres_seleccionados.add(n)
+            self._marcar_tarjeta(n, True)
 
     def _limpiar_seleccion(self):
         for nombre in list(self._nombres_seleccionados):
@@ -777,6 +802,7 @@ class VisorVideos(QMainWindow):
     def _reemplazar_tarjetas(self, filas):
         seleccion_previa = set(self._nombres_seleccionados)
         self._limpiar_seleccion()
+        self._ancla_seleccion = None
         for nombre, tarjeta in self.tarjetas:
             self.cuadricula.removeWidget(tarjeta)
             tarjeta.deleteLater()
@@ -899,6 +925,7 @@ class VisorVideos(QMainWindow):
             tarjeta = Tarjeta(fila)
             tarjeta.doble_clic.connect(self._abrir_video)
             tarjeta.seleccionada.connect(self._al_seleccionar_tarjeta)
+            tarjeta.seleccion_por_rango.connect(self._al_seleccion_por_rango)
             tarjeta.menu_contextual.connect(self._mostrar_menu_contextual)
             self.tarjetas.append((fila[0], tarjeta))
             self.visibles.append(fila[0])
@@ -958,6 +985,7 @@ class VisorVideos(QMainWindow):
             tarjeta = Tarjeta(fila)
             tarjeta.doble_clic.connect(self._abrir_video)
             tarjeta.seleccionada.connect(self._al_seleccionar_tarjeta)
+            tarjeta.seleccion_por_rango.connect(self._al_seleccion_por_rango)
             tarjeta.menu_contextual.connect(self._mostrar_menu_contextual)
             self.tarjetas.append((fila[0], tarjeta))
             self.visibles.append(fila[0])

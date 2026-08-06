@@ -5,6 +5,20 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 39. Selección por rango con Shift+clic
+
+- **Fecha:** 2026-08-05
+- **Objetivo:** Incorporar selección por rango mediante Shift+clic, con comportamiento estándar de Windows, reutilizando el sistema de selección ya existente.
+- **Archivos modificados:**
+  - `visor_videos.py` — nueva señal `seleccion_por_rango = Signal(str)` en `Tarjeta`; `mousePressEvent` detecta `Qt.ShiftModifier` y enruta a `seleccion_por_rango` o `seleccionada` según corresponda; atributo `_ancla_seleccion` en `VisorVideos` (rastrea la última tarjeta seleccionada sin Shift); método `_al_seleccion_por_rango(nombre)` que calcula el rango sobre `self.visibles` (orden visible) entre el ancla y la tarjeta clickeada; sin ancla o ancla fuera de visibles → equivale a clic normal; el ancla no se actualiza durante el rango; `_reemplazar_tarjetas` limpia el ancla; conexión de la nueva señal en `_crear_tarjetas` y `_agregar_tarjetas`.
+  - `DOCUMENTO_TECNICO.md` — sección de selección ampliada con Shift+clic, ancla, rango por orden visible y limpieza en reconstrucción.
+- **Archivos creados:**
+  - `prueba_shift_clic.py` — 28 pruebas: señal, atributo, método, Shift+clic sin ancla, rango hacia abajo, rango hacia arriba, ancla no se modifica, Ctrl+clic compatible, doble clic, emisión de señal, ancla fuera de visibles, limpieza en `_reemplazar_tarjetas`.
+- **Pruebas:** `prueba_shift_clic.py` 28/28, `prueba_seleccion.py` 28/28, `prueba_restauracion_seleccion.py` 15/15, `prueba_menu_contextual.py` 18/18, `prueba_doble_clic.py` 14/14, `prueba_smoke.py` OK.
+- **Resultado:** Shift+clic funcional en ambas direcciones (hacia arriba y hacia abajo). Ancla inmutable durante el rango. Compatibilidad total con selección simple, Ctrl+clic, menú contextual y doble clic. Sin Ctrl+Shift+clic, selección con teclado ni atajos adicionales.
+- **Commit:** "Agregar selección por rango con Shift+clic"
+- **Decisiones importantes:** Señal independiente `seleccion_por_rango` para no modificar el contrato de `seleccionada`. El rango opera sobre el orden visible (`self.visibles`), no sobre el orden de creación. El ancla se descarta en `_reemplazar_tarjetas` porque las referencias a las tarjetas antiguas se pierden.
+
 ## 38. Restauración automática de la selección tras reconstruir la lista de tarjetas
 
 - **Fecha:** 2026-08-05
