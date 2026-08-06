@@ -322,34 +322,17 @@ def test_04():
     temp, ruta_db = _crear_bd([])
     carpeta = tempfile.TemporaryDirectory()
     try:
-        llamadas = {"escaneo": 0}
-        orig = tv.escanear_videos
-
-        def _escaneo(*a, **k):
-            llamadas["escaneo"] += 1
-            raise AssertionError("no debe escanearse al seleccionar carpeta")
-
-        ventana = None
-        tv.escanear_videos = _escaneo
-        try:
-            ventana = VisorVideos(ruta_db=ruta_db)
-            _esperar(lambda v=ventana: v._carga_completada and v.gestor.hilo is None)
-            with _dialogo_falso(carpeta.name):
-                ventana.seleccionar_carpeta()
-            habilitado = ventana.boton_escanear.isEnabled()
-        finally:
-            tv.escanear_videos = orig
-        estado = ventana.estado_escaneo.text()
-        detectados = ventana.videos_detectados
+        ventana = VisorVideos(ruta_db=ruta_db)
+        _esperar(lambda v=ventana: v._carga_completada and v.gestor.hilo is None)
+        with _dialogo_falso(carpeta.name):
+            ventana.seleccionar_carpeta()
+        pendiente = ventana._escaneo_pendiente
+        tarea = ventana.tarea_escaneo
+        habilitado = ventana.boton_escanear.isEnabled()
         ventana.close()
         _limpiar(ventana)
-        ok = (
-            llamadas == {"escaneo": 0}
-            and habilitado
-            and estado == MENSAJE_SIN_ESCANEO
-            and detectados is None
-        )
-        return ok, f"llamadas={llamadas} habilitado={habilitado} estado={estado!r}"
+        ok = pendiente and tarea is not None and not habilitado
+        return ok, f"pendiente={pendiente} tarea={tarea is not None} habilitado={habilitado}"
     finally:
         carpeta.cleanup()
         temp.cleanup()
@@ -367,7 +350,7 @@ def test_05():
         guardada = ventana.carpeta_seleccionada
         ventana.close()
         _limpiar(ventana)
-        ok = habilitado and guardada == os.path.abspath(carpeta.name)
+        ok = not habilitado and guardada == os.path.abspath(carpeta.name)
         return ok, f"habilitado={habilitado} guardada={guardada}"
     finally:
         carpeta.cleanup()
@@ -387,10 +370,11 @@ def test_06():
         with _dialogo_falso(""):
             ventana.seleccionar_carpeta()
         conservada = ventana.carpeta_seleccionada
+        _esperar(lambda v=ventana: _escanear_terminado(v))
         hab_b = ventana.boton_escanear.isEnabled()
         ventana.close()
         _limpiar(ventana)
-        ok = conservada == previa and hab_a and hab_b
+        ok = conservada == previa and not hab_a and hab_b
         return ok, f"previa={previa} conservada={conservada} hab={hab_a},{hab_b}"
     finally:
         carpeta.cleanup()
@@ -913,8 +897,7 @@ def test_22():
     try:
         ventana = VisorVideos(ruta_db=ruta_db)
         _esperar(lambda v=ventana: v._carga_completada and v.gestor.hilo is None)
-        with _dialogo_falso(ruta):
-            ventana.seleccionar_carpeta()
+        ventana.carpeta_seleccionada = os.path.abspath(ruta)
         previa = ventana.carpeta_seleccionada
         carpeta.cleanup()
         ventana.iniciar_escaneo()

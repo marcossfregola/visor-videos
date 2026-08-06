@@ -13,27 +13,26 @@ y persistencia de la última carpeta seleccionada.
 
 ## Último commit aprobado
 
-**Mensaje:** Persistir y restaurar la carpeta seleccionada del arbol de navegacion (Etapa 2.5)
+**Mensaje:** Iniciar automaticamente el escaneo al seleccionar una carpeta en el arbol (Etapa 2.6)
 
-**Etapa:** Persistencia del Centro de Navegación (Etapa 2.5 del Bloque de trabajo 2):
-- `visor_videos.py` — `_al_carpeta_actual_arbol` ahora **persiste** la carpeta seleccionada con
-  `guardar_ultima_carpeta` (misma clave/escritura atómica que el diálogo; el guard de repetición
-  evita reescrituras). La restauración de arranque usa `revelar_ruta` y, si la ruta no puede
-  reconstruirse, deja el estado consistente sin carpeta seleccionada.
-- `arbol_navegacion.py` — nuevo método público `revelar_ruta(ruta)`: reconstrucción **estrictamente
-  incremental** de la rama necesaria (disco por prefijo, expansión nivel por nivel, búsqueda solo del
-  siguiente componente, comparación insensible a mayúsculas); devuelve `False` sin lanzar ante rutas
-  no reconstruibles. `seleccionar_ruta` se conserva para sincronizaciones rápidas con nodos ya cargados.
-- `prueba_persistencia_arbol.py` — 15 verificaciones de la etapa.
-- Suites de árbol actualizadas solo para aislamiento (config temporal): `prueba_seleccion_arbol.py`,
-  `prueba_expansion_carpetas.py`, `prueba_arbol_navegacion.py`.
+**Etapa:** Integración del árbol con el flujo de escaneo (Etapa 2.6 del Bloque de trabajo 2):
+- `visor_videos.py` — `_al_carpeta_actual_arbol` y `seleccionar_carpeta()` (diálogo) ahora invocan
+  `iniciar_escaneo()` al final. Se reutiliza **exactamente** el mismo punto de entrada que el botón
+  "Escanear carpeta" (sin duplicación ni segundo flujo). El guard de repetición impide dobles disparos
+  (restauración de arranque y sincronización con el diálogo no escanean).
+- `prueba_escaneo_arbol.py` — 11 verificaciones de la etapa (disparo, repetición, cambio de carpeta,
+  mismo mecanismo que el botón, diálogo con un único escaneo, restauración sin escaneo, flujo real con
+  actualización del catálogo y sin doble escaneo).
+- Suites de árbol y de escaneo-interfaz actualizadas al nuevo contrato (espías de `iniciar_escaneo` y
+  T04/T05/T06/T22 de `prueba_escaneo_interfaz.py`); `prueba_persistencia_carpeta.py` neutraliza la
+  deuda 8.3 con un parche acotado de `revelar_ruta`.
 
-**Pruebas superadas:** `prueba_persistencia_arbol.py` 15/15 (persistencia, una única escritura, sin
-reescritura por repetición, restauración tras reinicio con solo la rama necesaria, sin escaneo,
-restauración tolerante, diálogo intacto); regresiones `prueba_seleccion_arbol.py` 24/24,
-`prueba_expansion_carpetas.py` 34/34, `prueba_arbol_navegacion.py` OK, `prueba_carpeta_actual.py`
-17/17, `prueba_seleccion_carpeta.py` 26/26, `prueba_smoke.py` OK, `prueba_escaneo_interfaz.py` 36/36.
-Ejecución real de `visor_videos.py` con restauración real (`C:\Users\Marcos Casa`) y cierre limpio (exit 0).
+**Pruebas superadas:** `prueba_escaneo_arbol.py` 11/11; `prueba_escaneo_interfaz.py` 36/36,
+`prueba_carpeta_actual.py` 19/19, `prueba_seleccion_arbol.py` 25/25, `prueba_expansion_carpetas.py`
+35/35, `prueba_arbol_navegacion.py` OK, `prueba_persistencia_arbol.py` 15/15,
+`prueba_persistencia_carpeta.py` 20/20, `prueba_seleccion_carpeta.py` 26/26, `prueba_smoke.py` OK, y
+regresiones amplias (34 suites). Ejecución real de `visor_videos.py` con selección en el árbol →
+escaneo automático → catálogo actualizado y cierre limpio (exit 0).
 
 ## Hitos completados
 
@@ -78,6 +77,7 @@ Ejecución real de `visor_videos.py` con restauración real (`C:\Users\Marcos Ca
 - Selección funcional del árbol de navegación (Etapa 2.3: `carpeta_actual()` como interfaz oficial, señal `ruta_seleccionada` notificadora, raíz y placeholders excluidos, selección conservada al contraer/expandir).
 - Integración de la selección del árbol con la carpeta activa de la aplicación (Etapa 2.4: `carpeta_seleccionada` como única fuente de verdad, handler `_al_carpeta_actual_arbol`, sincronización árbol ↔ diálogo con `seleccionar_ruta`, sin escaneo ni catálogo).
 - Persistencia y restauración del Centro de Navegación (Etapa 2.5: la carpeta seleccionada se persiste con `guardar_ultima_carpeta` y se reconstruye al iniciar con `revelar_ruta`, expandiendo solo la rama necesaria; restauración tolerante).
+- Integración del árbol con el flujo de escaneo (Etapa 2.6: seleccionar una carpeta válida en el árbol o por el diálogo inicia automáticamente el escaneo mediante `iniciar_escaneo()`, el mismo punto de entrada del botón; un único disparo por acción; restauración inicial sin escaneo).
 
 ## Pendientes prioritarios
 
@@ -110,14 +110,21 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
   afecta el funcionamiento normal; considerarla en una futura etapa de
   robustez del Centro de Navegación (registrada también en
   `DOCUMENTO_TECNICO.md` §8, problema 13).
+- **`prueba_aplicar_incorporaciones.py` T15** — falla preexistente y
+  ambiental: opera sobre una copia de la base real `biblioteca.db` y asume
+  filas preexistentes con `tamano_bytes = NULL`; la base real actual tiene
+  `tamano_bytes` poblado. No atribuible a etapas recientes (verificado en la
+  Etapa 2.6); la suite no modifica ese subsistema y el resto del pipeline
+  funciona correctamente. Revisar el contrato de T15 o aislarlo de la base
+  real en una etapa futura.
 
 ## Próxima etapa
 
-**Etapa 2.6 del Bloque de trabajo 2 (escaneo automático al seleccionar
-carpeta).** Con la persistencia/restauración del árbol ya implementada
-(Etapa 2.5), la próxima etapa es el escaneo automático al seleccionar una
-carpeta (preferencia independiente de "Incluir subcarpetas"), siguiendo la
-dirección definida en `VISION_PRODUCTO.md` y `ROADMAP.md`.
+**Etapa 2.7 del Bloque de trabajo 2 (integración con el pipeline de
+escaneo).** Con el disparo automático del escaneo desde el árbol ya
+implementado (Etapa 2.6), la próxima etapa es la integración completa con el
+pipeline existente y con "Incluir subcarpetas", siguiendo la dirección
+definida en `VISION_PRODUCTO.md` y `ROADMAP.md`.
 
 ## Documentos del proyecto
 

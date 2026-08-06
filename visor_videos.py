@@ -516,6 +516,7 @@ class VisorVideos(QMainWindow):
         guardar_ultima_carpeta(ruta_absoluta, self._ruta_config)
         self.arbol_navegacion.seleccionar_ruta(ruta_absoluta)
         self._actualizar_botones_carpeta()
+        self.iniciar_escaneo()
 
     def _al_carpeta_actual_arbol(self, ruta):
         if not isinstance(ruta, str) or not ruta:
@@ -529,6 +530,7 @@ class VisorVideos(QMainWindow):
         self.mensaje_carpeta.clear()
         guardar_ultima_carpeta(ruta, self._ruta_config)
         self._actualizar_botones_carpeta()
+        self.iniciar_escaneo()
 
     def _actualizar_botones_carpeta(self):
         carpeta_valida = (

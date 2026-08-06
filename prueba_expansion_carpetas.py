@@ -9,6 +9,7 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QAbstractItemView, QApplication
 
 import arbol_navegacion
+import visor_videos
 from arbol_navegacion import (
     ROL_CARGADO,
     ROL_PLACEHOLDER,
@@ -233,16 +234,23 @@ def main():
         registrar("integracion_sin_pendientes", pendientes_despues == pendientes_antes)
         registrar("integracion_tarjetas_intactas", len(ventana.tarjetas) == tarjetas_antes)
 
-        rect = arbol_v.visualItemRect(b_v)
-        QTest.mouseClick(
-            arbol_v.viewport(), Qt.LeftButton, Qt.NoModifier, rect.center()
-        )
-        QApplication.processEvents()
-        registrar(
-            "integracion_clic_actualiza_carpeta",
-            ventana.carpeta_seleccionada == os.path.join(tmp.name, "b"),
-        )
-        registrar("integracion_clic_sin_escaneo", not ventana.gestor.activo)
+        with mock.patch.object(
+            visor_videos.VisorVideos, "iniciar_escaneo"
+        ) as espia_escaneo:
+            rect = arbol_v.visualItemRect(b_v)
+            QTest.mouseClick(
+                arbol_v.viewport(), Qt.LeftButton, Qt.NoModifier, rect.center()
+            )
+            QApplication.processEvents()
+            registrar(
+                "integracion_clic_actualiza_carpeta",
+                ventana.carpeta_seleccionada == os.path.join(tmp.name, "b"),
+            )
+            registrar(
+                "integracion_clic_dispara_escaneo",
+                espia_escaneo.call_count == 1,
+            )
+            registrar("integracion_clic_sin_escaneo_real", not ventana.gestor.activo)
 
         splitter = ventana.centralWidget()
         splitter.setSizes([300, 620])

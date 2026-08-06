@@ -6,11 +6,13 @@ import sqlite3
 import sys
 import tempfile
 import time
+from unittest import mock
 
 from PySide6.QtCore import QEventLoop, QTimer, qInstallMessageHandler
 from PySide6.QtWidgets import QApplication
 
 import visor_videos
+import arbol_navegacion
 from configuracion import (
     CLAVE_CARPETA,
     VARIABLE_ENTORNO,
@@ -561,13 +563,16 @@ def main():
         test_20,
     ]
     resultados = []
-    for i, fn in enumerate(pruebas, start=1):
-        try:
-            ok, detalle = fn()
-        except Exception as exc:
-            ok, detalle = False, f"excepcion: {type(exc).__name__}: {exc}"
-        resultados.append((i, ok, detalle))
-        print(f"T{i:02d} {'OK' if ok else 'FALLO'} - {detalle}")
+    with mock.patch.object(
+        arbol_navegacion.ArbolNavegacion, "revelar_ruta", return_value=True
+    ):
+        for i, fn in enumerate(pruebas, start=1):
+            try:
+                ok, detalle = fn()
+            except Exception as exc:
+                ok, detalle = False, f"excepcion: {type(exc).__name__}: {exc}"
+            resultados.append((i, ok, detalle))
+            print(f"T{i:02d} {'OK' if ok else 'FALLO'} - {detalle}")
 
     ok_total = all(ok for _, ok, _ in resultados)
     aprobadas = sum(1 for _, ok, _ in resultados if ok)

@@ -7,6 +7,7 @@ from unittest import mock
 from PySide6.QtWidgets import QApplication, QFileDialog
 
 import arbol_navegacion
+import visor_videos
 from arbol_navegacion import ArbolNavegacion
 from configuracion import obtener_ultima_carpeta
 from tareas_videos import conectar_bd, guardar_videos
@@ -74,6 +75,9 @@ def main():
     with mock.patch.object(
         arbol_navegacion, "discos_disponibles", return_value=[tmp.name]
     ):
+        espia_escaneo = mock.patch.object(
+            visor_videos.VisorVideos, "iniciar_escaneo"
+        ).start()
         ventana = VisorVideos(ruta_db=ruta_db, ruta_config=ruta_config)
         ventana.resize(900, 600)
         ventana.show()
@@ -93,17 +97,22 @@ def main():
             "arbol_aplica_etiqueta", ventana.etiqueta_carpeta.text() == ruta_a
         )
         registrar(
-            "arbol_sin_escaneo",
+            "arbol_dispara_escaneo", espia_escaneo.call_count >= 1
+        )
+        registrar(
+            "arbol_sin_escaneo_real",
             not ventana.gestor.activo and not ventana._escaneo_pendiente,
         )
         registrar("arbol_tarjetas_intactas", len(ventana.tarjetas) == 5)
 
         etiqueta_antes = ventana.etiqueta_carpeta.text()
+        cuenta_antes = espia_escaneo.call_count
         ventana._al_carpeta_actual_arbol(ruta_a)
         registrar(
             "repeticion_sin_cambios",
             ventana.etiqueta_carpeta.text() == etiqueta_antes
-            and ventana.carpeta_seleccionada == ruta_a,
+            and ventana.carpeta_seleccionada == ruta_a
+            and espia_escaneo.call_count == cuenta_antes,
         )
 
         ruta_no_cargada = os.path.join(tmp.name, "a", "x", "y")
@@ -170,7 +179,10 @@ def main():
 
         registrar("boton_escanear_habilitado", ventana.boton_escanear.isEnabled())
         registrar(
-            "sin_escaneo_iniciado",
+            "disparo_escaneo_registrado", espia_escaneo.call_count >= 1
+        )
+        registrar(
+            "sin_escaneo_real",
             not ventana._escaneo_pendiente and not ventana.gestor.activo,
         )
         registrar("total_intacto", ventana._total_catalogo == 5)
@@ -182,6 +194,7 @@ def main():
 
         ventana.close()
         ventana.gestor.cerrar()
+        espia_escaneo.stop()
 
     tmp.cleanup()
     temp_db.cleanup()

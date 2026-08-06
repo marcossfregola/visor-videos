@@ -2,11 +2,13 @@ import os
 import sys
 import tempfile
 import time
+from unittest import mock
 
 from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QLabel
 
+import visor_videos
 from arbol_navegacion import TEXTO_RAIZ, ArbolNavegacion, discos_disponibles
 from tareas_videos import conectar_bd, guardar_videos
 from visor_videos import VisorVideos
@@ -95,25 +97,29 @@ def main():
         or ventana._miniaturas_pendiente
         or ventana._guardado_pendiente
     )
-    if raiz.childCount() > 0:
-        item = raiz.child(0)
-        rect = arbol.visualItemRect(item)
-        QTest.mouseClick(
-            arbol.viewport(), Qt.LeftButton, Qt.NoModifier, rect.center()
-        )
-        QApplication.processEvents()
-        print(f"clic_current_item_cambio={arbol.currentItem() is not None}")
-        print(f"clic_carpeta_actualizada={ventana.carpeta_seleccionada == item.text(0)}")
-        print(f"clic_etiqueta_actualizada={ventana.etiqueta_carpeta.text() == item.text(0)}")
-        print(f"clic_gestor_activo={ventana.gestor.activo}")
-        pendientes_despues = (
-            ventana._escaneo_pendiente
-            or ventana._tamanos_pendiente
-            or ventana._ffprobe_pendiente
-            or ventana._miniaturas_pendiente
-            or ventana._guardado_pendiente
-        )
-        print(f"clic_pendientes_cambio={pendientes_despues != pendientes_antes}")
+    with mock.patch.object(
+        visor_videos.VisorVideos, "iniciar_escaneo"
+    ) as espia_escaneo:
+        if raiz.childCount() > 0:
+            item = raiz.child(0)
+            rect = arbol.visualItemRect(item)
+            QTest.mouseClick(
+                arbol.viewport(), Qt.LeftButton, Qt.NoModifier, rect.center()
+            )
+            QApplication.processEvents()
+            print(f"clic_current_item_cambio={arbol.currentItem() is not None}")
+            print(f"clic_carpeta_actualizada={ventana.carpeta_seleccionada == item.text(0)}")
+            print(f"clic_etiqueta_actualizada={ventana.etiqueta_carpeta.text() == item.text(0)}")
+            print(f"clic_dispara_escaneo={espia_escaneo.call_count == 1}")
+            print(f"clic_gestor_activo={ventana.gestor.activo}")
+            pendientes_despues = (
+                ventana._escaneo_pendiente
+                or ventana._tamanos_pendiente
+                or ventana._ffprobe_pendiente
+                or ventana._miniaturas_pendiente
+                or ventana._guardado_pendiente
+            )
+            print(f"clic_pendientes_cambio={pendientes_despues != pendientes_antes}")
 
     captura = os.path.join(temp.name, "captura.png")
     pixmap = ventana.grab()

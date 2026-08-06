@@ -84,7 +84,9 @@ def main():
         arbol_navegacion, "discos_disponibles", return_value=[tmp.name]
     ), mock.patch.object(
         visor_videos, "guardar_ultima_carpeta", wraps=visor_videos.guardar_ultima_carpeta
-    ) as escribir:
+    ) as escribir, mock.patch.object(
+        visor_videos.VisorVideos, "iniciar_escaneo"
+    ):
         ventana1 = VisorVideos(ruta_db=ruta_db, ruta_config=ruta_config)
         ventana1.resize(900, 600)
         ventana1.show()
@@ -196,6 +198,8 @@ def main():
     ruta_config3 = os.path.join(temp_config3.name, "configuracion.json")
     with mock.patch.object(
         arbol_navegacion, "discos_disponibles", return_value=[tmp.name]
+    ), mock.patch.object(
+        visor_videos.VisorVideos, "iniciar_escaneo"
     ):
         ventana4 = VisorVideos(ruta_db=ruta_db, ruta_config=ruta_config3)
         ventana4.resize(900, 600)

@@ -8,6 +8,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QAbstractItemView, QApplication
 
 import arbol_navegacion
+import visor_videos
 from arbol_navegacion import (
     ROL_PLACEHOLDER,
     ROL_RUTA,
@@ -188,46 +189,54 @@ def main():
             or ventana._pagina_pendiente
         )
 
-        arbol_v.setCurrentItem(a_v)
-        QApplication.processEvents()
-        registrar(
-            "integracion_arbol_carpeta_actual",
-            arbol_v.carpeta_actual() == ruta_a_v,
-        )
-        registrar(
-            "integracion_visor_carpeta_actualizada",
-            ventana.carpeta_seleccionada == ruta_a_v,
-        )
-        registrar(
-            "integracion_etiqueta_actualizada",
-            ventana.etiqueta_carpeta.text() == ruta_a_v,
-        )
-        registrar("integracion_gestor_inactivo", not ventana.gestor.activo)
-        pendientes_despues = (
-            ventana._escaneo_pendiente
-            or ventana._tamanos_pendiente
-            or ventana._ffprobe_pendiente
-            or ventana._miniaturas_pendiente
-            or ventana._guardado_pendiente
-            or ventana._sincronizacion_pendiente
-            or ventana._recarga_catalogo_pendiente
-            or ventana._pagina_pendiente
-        )
-        registrar(
-            "integracion_sin_pendientes", pendientes_despues == pendientes_antes
-        )
-        registrar(
-            "integracion_tarjetas_intactas", len(ventana.tarjetas) == antes_tarjetas
-        )
+        with mock.patch.object(
+            visor_videos.VisorVideos, "iniciar_escaneo"
+        ) as espia_escaneo:
+            arbol_v.setCurrentItem(a_v)
+            QApplication.processEvents()
+            registrar(
+                "integracion_arbol_carpeta_actual",
+                arbol_v.carpeta_actual() == ruta_a_v,
+            )
+            registrar(
+                "integracion_visor_carpeta_actualizada",
+                ventana.carpeta_seleccionada == ruta_a_v,
+            )
+            registrar(
+                "integracion_etiqueta_actualizada",
+                ventana.etiqueta_carpeta.text() == ruta_a_v,
+            )
+            registrar(
+                "integracion_dispara_escaneo", espia_escaneo.call_count == 1
+            )
+            registrar("integracion_sin_escaneo_real", not ventana.gestor.activo)
+            pendientes_despues = (
+                ventana._escaneo_pendiente
+                or ventana._tamanos_pendiente
+                or ventana._ffprobe_pendiente
+                or ventana._miniaturas_pendiente
+                or ventana._guardado_pendiente
+                or ventana._sincronizacion_pendiente
+                or ventana._recarga_catalogo_pendiente
+                or ventana._pagina_pendiente
+            )
+            registrar(
+                "integracion_sin_pendientes",
+                pendientes_despues == pendientes_antes,
+            )
+            registrar(
+                "integracion_tarjetas_intactas",
+                len(ventana.tarjetas) == antes_tarjetas,
+            )
 
-        splitter = ventana.centralWidget()
-        splitter.setSizes([300, 620])
-        QApplication.processEvents()
-        tamanos = list(splitter.sizes())
-        registrar(
-            "integracion_splitter_redimensionable",
-            tamanos[0] > 220 and abs(tamanos[0] - 300) <= 1,
-        )
+            splitter = ventana.centralWidget()
+            splitter.setSizes([300, 620])
+            QApplication.processEvents()
+            tamanos = list(splitter.sizes())
+            registrar(
+                "integracion_splitter_redimensionable",
+                tamanos[0] > 220 and abs(tamanos[0] - 300) <= 1,
+            )
 
         ventana.close()
         ventana.gestor.cerrar()

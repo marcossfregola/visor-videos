@@ -5,6 +5,65 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 52. Escaneo automático al seleccionar una carpeta en el árbol (Etapa 2.6)
+
+- **Fecha:** 2026-08-06
+- **Objetivo:** Integrar el Centro de Navegación con el flujo de trabajo principal: al seleccionar una
+  carpeta válida en el árbol se inicia automáticamente el mismo escaneo que dispara el botón "Escanear
+  carpeta", reutilizando exactamente el mismo punto de entrada (`iniciar_escaneo()`), sin duplicar
+  lógica ni crear un segundo flujo.
+- **Archivos creados:**
+  - `prueba_escaneo_arbol.py` — 11 verificaciones: disparo automático desde el árbol (1 llamada);
+    repetir la misma carpeta sin disparo; cambiar de carpeta con nuevo disparo; botón y árbol usando
+    el mismo `iniciar_escaneo`; diálogo con un único escaneo (sin doble por la sincronización con el
+    árbol); restauración inicial sin escaneo; flujo real (selección → pipeline → catálogo actualizado)
+    y sin doble escaneo durante un pipeline activo.
+- **Archivos modificados:**
+  - `visor_videos.py` — `_al_carpeta_actual_arbol` y `seleccionar_carpeta()` (diálogo) invocan
+    `self.iniciar_escaneo()` al final. El guard de repetición (`carpeta_seleccionada == ruta`) impide
+    dobles disparos: la restauración de arranque y la sincronización con el diálogo **no** escanean.
+  - `prueba_escaneo_interfaz.py` — T04, T05, T06 y T22 actualizados al nuevo contrato (el diálogo
+    ahora dispara un único escaneo). T22 fija `carpeta_seleccionada` directamente para probar el
+    escaneo manual de carpeta inválida.
+  - `prueba_carpeta_actual.py`, `prueba_seleccion_arbol.py`, `prueba_expansion_carpetas.py`,
+    `prueba_arbol_navegacion.py`, `prueba_persistencia_arbol.py` — espías de `iniciar_escaneo`
+    (registran el disparo sin ejecutar el pipeline, evitando escaneos reales como el de `C:\`) y
+    aserciones ajustadas.
+  - `prueba_persistencia_carpeta.py` — parche acotado de `ArbolNavegacion.revelar_ruta → True` en el
+    arnés: la suite prueba el round-trip de configuración y no la reconstrucción del árbol; evita que
+    la deuda 8.3 rompa sus aserciones.
+  - `DOCUMENTO_TECNICO.md` — punto de entrada único del escaneo documentado (botón, árbol y diálogo);
+    `seleccionar_carpeta` y el handler actualizados; dirección futura y árbol de directorios
+    actualizados.
+  - `ESTADO_PROYECTO.md` — última etapa aprobada, hitos, deuda técnica (T15 preexistente) y próxima
+    etapa actualizados.
+  - `ROADMAP.md` — Etapa 2.6 marcada como implementada.
+- **Pruebas:** `prueba_escaneo_arbol.py` 11/11; `prueba_escaneo_interfaz.py` 36/36,
+  `prueba_carpeta_actual.py` 19/19, `prueba_seleccion_arbol.py` 25/25, `prueba_expansion_carpetas.py`
+  35/35, `prueba_arbol_navegacion.py` OK, `prueba_persistencia_arbol.py` 15/15,
+  `prueba_persistencia_carpeta.py` 20/20, `prueba_seleccion_carpeta.py` 26/26, `prueba_smoke.py` OK y
+  regresiones amplias (34 suites). Ejecución real de `visor_videos.py`: selección de
+  `C:\prueba\videos_prueba` → escaneo automático → catálogo con los 4 videos reales, cierre limpio
+  (`exit 0`).
+- **Observación (preexistente):** `prueba_aplicar_incorporaciones.py` T15 falla de forma ambiental: la
+  base real `biblioteca.db` tiene `tamano_bytes` poblado y T15 asume NULL. No atribuible a esta etapa
+  (no modifica ese subsistema); registrado como deuda técnica.
+- **Resultado:** Seleccionar una carpeta válida en el árbol (o por el diálogo) inicia automáticamente
+  el escaneo y actualiza el catálogo mediante el pipeline existente; repetir la misma carpeta no
+  redispara; la restauración inicial no escanea; nunca hay dos escaneos simultáneos.
+- **Commit:** "Iniciar automaticamente el escaneo al seleccionar una carpeta en el arbol (Etapa 2.6)"
+- **Decisiones importantes:**
+  1. **Un único punto de entrada**: el árbol, el botón y el diálogo invocan `iniciar_escaneo()`; no
+     existe un segundo flujo de escaneo.
+  2. **Un solo disparo por acción**: el guard de repetición impide dobles disparos (restauración,
+     sincronización con el diálogo y selección repetida).
+  3. **Escaneo en curso**: se conserva el comportamiento de ignorar la nueva solicitud (sin colas,
+     cancelaciones ni reinicios en esta etapa).
+  4. **Tests con espías**: las suites de árbol parchean `iniciar_escaneo` para verificar el disparo sin
+     ejecutar pipelines reales ni escanear discos como `C:\`.
+
+---
+
 ## 51. Persistencia y restauración de la carpeta seleccionada del árbol (Etapa 2.5)
 
 - **Fecha:** 2026-08-06
