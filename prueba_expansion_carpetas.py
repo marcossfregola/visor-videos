@@ -186,8 +186,10 @@ def main():
     with mock.patch.object(
         arbol_navegacion, "discos_disponibles", return_value=[tmp.name]
     ):
+        temp_config = tempfile.TemporaryDirectory()
+        ruta_config = os.path.join(temp_config.name, "configuracion.json")
         inicio = time.perf_counter()
-        ventana = VisorVideos(ruta_db=ruta_db)
+        ventana = VisorVideos(ruta_db=ruta_db, ruta_config=ruta_config)
         ventana.resize(900, 600)
         ventana.show()
         esperar(lambda v=ventana: v._carga_completada and v.gestor.hilo is None)
@@ -253,6 +255,7 @@ def main():
 
         ventana.close()
         ventana.gestor.cerrar()
+        temp_config.cleanup()
 
     tmp_orden.cleanup()
     tmp.cleanup()

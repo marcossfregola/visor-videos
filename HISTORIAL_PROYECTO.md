@@ -5,6 +5,63 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 51. Persistencia y restauración de la carpeta seleccionada del árbol (Etapa 2.5)
+
+- **Fecha:** 2026-08-06
+- **Objetivo:** Persistir la carpeta actualmente seleccionada en el árbol y restaurarla al reiniciar,
+  reconstruyendo únicamente la rama necesaria para volver a mostrarla, manteniendo el catálogo
+  desacoplado y sin escaneo automático.
+- **Archivos creados:**
+  - `prueba_persistencia_arbol.py` — 15 verificaciones: persistencia de la carpeta; **una única
+    escritura** y sin reescritura por repetición (contador del wrap); restauración tras reinicio
+    (carpeta, etiqueta y árbol sincronizados); **solo rama necesaria** (disco/a/x expandidos y
+    cargados; b y c conservan placeholder); sin escaneo; tarjetas intactas; **restauración
+    tolerante** (carpeta borrada → sin excepción, sin carpeta activa); diálogo intacto
+    (válido/cancelar/inválido).
+- **Archivos modificados:**
+  - `visor_videos.py` — `_al_carpeta_actual_arbol` ahora persiste la carpeta con
+    `guardar_ultima_carpeta(ruta, self._ruta_config)` (misma clave/escritura atómica; el guard de
+    repetición evita reescrituras). La restauración de arranque usa
+    `self.arbol_navegacion.revelar_ruta(carpeta_guardada)` y, si la ruta no puede reconstruirse,
+    deja el estado consistente sin carpeta seleccionada (`carpeta_seleccionada = None`, etiqueta
+    `MENSAJE_SIN_CARPETA`).
+  - `arbol_navegacion.py` — nuevo método público `revelar_ruta(ruta)` (reconstrucción **estrictamente
+    incremental**: disco por prefijo común, expansión nivel por nivel con la carga diferida existente,
+    búsqueda solo del siguiente componente; comparación insensible a mayúsculas con `os.path.normcase`;
+    devuelve `False` sin lanzar ante rutas no reconstruibles) + helper `_buscar_disco`. `seleccionar_ruta`
+    se conserva (sincronizaciones rápidas con nodos ya cargados). Docstring actualizado a la Etapa 2.5.
+  - `prueba_seleccion_arbol.py`, `prueba_expansion_carpetas.py`, `prueba_arbol_navegacion.py` —
+    actualización solo de aislamiento (ruta de configuración temporal para que el nuevo persistir no
+    escriba el `configuracion.json` real).
+  - `DOCUMENTO_TECNICO.md` — `revelar_ruta` y la persistencia documentadas; dirección futura y árbol
+    de directorios actualizados; **problema 13 en §8** registra la deuda técnica de nombres cortos 8.3.
+  - `ESTADO_PROYECTO.md` — última etapa aprobada, deuda técnica, hitos y próxima etapa actualizados.
+  - `ROADMAP.md` — Etapa 2.5 marcada como implementada.
+- **Pruebas:** `prueba_persistencia_arbol.py` 15/15. Regresiones: `prueba_seleccion_arbol.py` 24/24,
+  `prueba_expansion_carpetas.py` 34/34, `prueba_arbol_navegacion.py` OK, `prueba_carpeta_actual.py`
+  17/17, `prueba_seleccion_carpeta.py` 26/26, `prueba_smoke.py` OK, `prueba_escaneo_interfaz.py` 36/36.
+  Ejecución real de `visor_videos.py` con restauración real (`C:\Users\Marcos Casa`, ~0.10 s) y cierre
+  limpio (`exit 0`).
+- **Observación (deuda técnica):** las rutas Windows con **nombres cortos 8.3** (p. ej. `MARCOS~1`)
+  no se reconstruyen en el árbol (el árbol carga nombres largos) y caen en el comportamiento tolerante
+  (aplicación inicia sin carpeta seleccionada, sin inconsistencias). No afecta el uso normal; se
+  registra para una futura etapa de robustez del Centro de Navegación.
+- **Resultado:** La carpeta seleccionada en el árbol persiste entre ejecuciones y se restaura al
+  iniciar reconstruyendo solo la rama necesaria, con el árbol y `carpeta_seleccionada` sincronizados y
+  sin escaneo automático ni modificaciones del catálogo.
+- **Commit:** "Persistir y restaurar la carpeta seleccionada del arbol de navegacion (Etapa 2.5)"
+- **Decisiones importantes:**
+  1. **Reutilización de `guardar_ultima_carpeta`**: no se agrega una segunda forma de persistir la
+     carpeta; `carpeta_seleccionada` sigue siendo la única fuente de verdad.
+  2. **`revelar_ruta` estrictamente incremental**: en cada nivel expande y busca solo el siguiente
+     componente; no recorre el árbol ni el disco completos y no carga ramas ajenas.
+  3. **Restauración tolerante**: si la ruta no puede reconstruirse, la aplicación inicia normalmente
+     y queda sin carpeta seleccionada, sin excepciones ni estados inconsistentes.
+  4. **Sin escrituras redundantes**: el guard de repetición evita reescribir la configuración cuando
+     la carpeta no cambió.
+
+---
+
 ## 50. Integración de la selección del árbol con la carpeta activa de la aplicación (Etapa 2.4)
 
 - **Fecha:** 2026-08-06

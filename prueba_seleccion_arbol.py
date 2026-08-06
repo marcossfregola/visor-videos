@@ -158,11 +158,13 @@ def main():
         ],
         ruta_db,
     )
+    temp_config = tempfile.TemporaryDirectory()
+    ruta_config = os.path.join(temp_config.name, "configuracion.json")
 
     with mock.patch.object(
         arbol_navegacion, "discos_disponibles", return_value=[tmp.name]
     ):
-        ventana = VisorVideos(ruta_db=ruta_db)
+        ventana = VisorVideos(ruta_db=ruta_db, ruta_config=ruta_config)
         ventana.resize(900, 600)
         ventana.show()
         esperar(lambda v=ventana: v._carga_completada and v.gestor.hilo is None)
@@ -232,6 +234,7 @@ def main():
 
     tmp.cleanup()
     temp_db.cleanup()
+    temp_config.cleanup()
 
     total_ok = sum(1 for _, ok in resultados if ok)
     print(f"TOTAL={total_ok}/{len(resultados)}")

@@ -42,7 +42,11 @@ def main():
         ruta_db,
     )
 
-    ventana = VisorVideos(ruta_db=ruta_db)
+    temp_config = tempfile.TemporaryDirectory()
+    ventana = VisorVideos(
+        ruta_db=ruta_db,
+        ruta_config=os.path.join(temp_config.name, "configuracion.json"),
+    )
     ventana.resize(900, 600)
     ventana.show()
     esperar(lambda v=ventana: v._carga_completada and v.gestor.hilo is None)
@@ -120,6 +124,7 @@ def main():
     ventana.close()
     ventana.gestor.cerrar()
     temp.cleanup()
+    temp_config.cleanup()
 
     sys.exit(0)
 

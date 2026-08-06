@@ -13,28 +13,27 @@ y persistencia de la última carpeta seleccionada.
 
 ## Último commit aprobado
 
-**Mensaje:** Integrar la seleccion del arbol con la carpeta activa de la aplicacion (Etapa 2.4)
+**Mensaje:** Persistir y restaurar la carpeta seleccionada del arbol de navegacion (Etapa 2.5)
 
-**Etapa:** Selección de la carpeta actual (Etapa 2.4 del Bloque de trabajo 2):
-- `visor_videos.py` — el árbol se guarda como `self.arbol_navegacion` y su señal `ruta_seleccionada`
-  se conecta al nuevo handler `_al_carpeta_actual_arbol` (valida, ignora repeticiones, asigna
-  `carpeta_seleccionada`, actualiza `etiqueta_carpeta`, limpia mensaje y rearma botones; sin
-  persistencia, tareas ni catálogo). `carpeta_seleccionada` es la única fuente de verdad. El diálogo
-  "Seleccionar carpeta" conserva su comportamiento intacto y sincroniza el árbol con
-  `seleccionar_ruta`; lo mismo en la restauración de arranque.
-- `arbol_navegacion.py` — nuevo método público `seleccionar_ruta(ruta)`: busca solo entre nodos ya
-  cargados (sin recorrer el sistema de archivos), expande ancestros cargados y selecciona; si la ruta
-  no está cargada, no modifica la selección.
-- `prueba_carpeta_actual.py` — 17 verificaciones de la etapa.
-- Suites actualizadas por el cambio de comportamiento intencional: `prueba_seleccion_arbol.py`,
-  `prueba_expansion_carpetas.py` y `prueba_arbol_navegacion.py`.
+**Etapa:** Persistencia del Centro de Navegación (Etapa 2.5 del Bloque de trabajo 2):
+- `visor_videos.py` — `_al_carpeta_actual_arbol` ahora **persiste** la carpeta seleccionada con
+  `guardar_ultima_carpeta` (misma clave/escritura atómica que el diálogo; el guard de repetición
+  evita reescrituras). La restauración de arranque usa `revelar_ruta` y, si la ruta no puede
+  reconstruirse, deja el estado consistente sin carpeta seleccionada.
+- `arbol_navegacion.py` — nuevo método público `revelar_ruta(ruta)`: reconstrucción **estrictamente
+  incremental** de la rama necesaria (disco por prefijo, expansión nivel por nivel, búsqueda solo del
+  siguiente componente, comparación insensible a mayúsculas); devuelve `False` sin lanzar ante rutas
+  no reconstruibles. `seleccionar_ruta` se conserva para sincronizaciones rápidas con nodos ya cargados.
+- `prueba_persistencia_arbol.py` — 15 verificaciones de la etapa.
+- Suites de árbol actualizadas solo para aislamiento (config temporal): `prueba_seleccion_arbol.py`,
+  `prueba_expansion_carpetas.py`, `prueba_arbol_navegacion.py`.
 
-**Pruebas superadas:** `prueba_carpeta_actual.py` 17/17 (árbol → app, sin escaneo, repetición sin
-cambios, `seleccionar_ruta` sin carga/recorrido, sincronización árbol ↔ diálogo, diálogo intacto,
-botón "Escanear carpeta" solo visual); regresiones `prueba_seleccion_arbol.py` 24/24,
-`prueba_expansion_carpetas.py` 34/34, `prueba_arbol_navegacion.py` OK, `prueba_seleccion_carpeta.py`
-26/26, `prueba_smoke.py` OK, `prueba_escaneo_interfaz.py` 36/36. Ejecución real de `visor_videos.py`
-con cierre limpio (exit 0).
+**Pruebas superadas:** `prueba_persistencia_arbol.py` 15/15 (persistencia, una única escritura, sin
+reescritura por repetición, restauración tras reinicio con solo la rama necesaria, sin escaneo,
+restauración tolerante, diálogo intacto); regresiones `prueba_seleccion_arbol.py` 24/24,
+`prueba_expansion_carpetas.py` 34/34, `prueba_arbol_navegacion.py` OK, `prueba_carpeta_actual.py`
+17/17, `prueba_seleccion_carpeta.py` 26/26, `prueba_smoke.py` OK, `prueba_escaneo_interfaz.py` 36/36.
+Ejecución real de `visor_videos.py` con restauración real (`C:\Users\Marcos Casa`) y cierre limpio (exit 0).
 
 ## Hitos completados
 
@@ -78,6 +77,7 @@ con cierre limpio (exit 0).
 - Expansión de discos y carpetas con carga diferida (Etapa 2.2: un solo nivel por expansión, estado de carga en el nodo, ruta absoluta en cada nodo, árbol desacoplado del catálogo).
 - Selección funcional del árbol de navegación (Etapa 2.3: `carpeta_actual()` como interfaz oficial, señal `ruta_seleccionada` notificadora, raíz y placeholders excluidos, selección conservada al contraer/expandir).
 - Integración de la selección del árbol con la carpeta activa de la aplicación (Etapa 2.4: `carpeta_seleccionada` como única fuente de verdad, handler `_al_carpeta_actual_arbol`, sincronización árbol ↔ diálogo con `seleccionar_ruta`, sin escaneo ni catálogo).
+- Persistencia y restauración del Centro de Navegación (Etapa 2.5: la carpeta seleccionada se persiste con `guardar_ultima_carpeta` y se reconstruye al iniciar con `revelar_ruta`, expandiendo solo la rama necesaria; restauración tolerante).
 
 ## Pendientes prioritarios
 
@@ -103,14 +103,21 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
 - La selección se restaura automáticamente después de reconstruir
   completamente las tarjetas (`_reemplazar_tarjetas`), pero solo para
   los nombres que siguen existiendo en el nuevo conjunto.
+- **Rutas Windows con nombres cortos 8.3** (p. ej. `MARCOS~1`): la
+  restauración del árbol (`revelar_ruta`) no las empareja con los nombres
+  largos que carga el árbol y cae en el comportamiento tolerante (la
+  aplicación inicia sin carpeta seleccionada, sin inconsistencias). No
+  afecta el funcionamiento normal; considerarla en una futura etapa de
+  robustez del Centro de Navegación (registrada también en
+  `DOCUMENTO_TECNICO.md` §8, problema 13).
 
 ## Próxima etapa
 
-**Etapa 2.5 del Bloque de trabajo 2 (persistencia del árbol).**
-Con la integración de la selección del árbol con la carpeta activa ya
-implementada (Etapa 2.4), la próxima etapa es la persistencia del árbol
-(carpeta seleccionada y estado de expansión), siguiendo la dirección definida
-en `VISION_PRODUCTO.md` y `ROADMAP.md`.
+**Etapa 2.6 del Bloque de trabajo 2 (escaneo automático al seleccionar
+carpeta).** Con la persistencia/restauración del árbol ya implementada
+(Etapa 2.5), la próxima etapa es el escaneo automático al seleccionar una
+carpeta (preferencia independiente de "Incluir subcarpetas"), siguiendo la
+dirección definida en `VISION_PRODUCTO.md` y `ROADMAP.md`.
 
 ## Documentos del proyecto
 

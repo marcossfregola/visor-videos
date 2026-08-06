@@ -459,8 +459,10 @@ class VisorVideos(QMainWindow):
         if carpeta_guardada is not None:
             self.carpeta_seleccionada = carpeta_guardada
             self.etiqueta_carpeta.setText(carpeta_guardada)
+            if not self.arbol_navegacion.revelar_ruta(carpeta_guardada):
+                self.carpeta_seleccionada = None
+                self.etiqueta_carpeta.setText(MENSAJE_SIN_CARPETA)
             self._actualizar_botones_carpeta()
-            self.arbol_navegacion.seleccionar_ruta(carpeta_guardada)
         self.incluir_subcarpetas.setChecked(
             obtener_preferencia_subcarpetas(self._ruta_config)
         )
@@ -525,6 +527,7 @@ class VisorVideos(QMainWindow):
         self.carpeta_seleccionada = ruta
         self.etiqueta_carpeta.setText(ruta)
         self.mensaje_carpeta.clear()
+        guardar_ultima_carpeta(ruta, self._ruta_config)
         self._actualizar_botones_carpeta()
 
     def _actualizar_botones_carpeta(self):
