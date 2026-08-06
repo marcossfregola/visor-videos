@@ -174,8 +174,6 @@ def main():
         a_v = _hijo_por_texto(disco_v, "a")
         ruta_a_v = os.path.join(tmp.name, "a")
 
-        antes_carpeta = ventana.carpeta_seleccionada
-        antes_etiqueta = ventana.etiqueta_carpeta.text()
         antes_tarjetas = len(ventana.tarjetas)
         pendientes_antes = (
             ventana._escaneo_pendiente
@@ -195,12 +193,12 @@ def main():
             arbol_v.carpeta_actual() == ruta_a_v,
         )
         registrar(
-            "integracion_visor_carpeta_sin_cambio",
-            ventana.carpeta_seleccionada == antes_carpeta,
+            "integracion_visor_carpeta_actualizada",
+            ventana.carpeta_seleccionada == ruta_a_v,
         )
         registrar(
-            "integracion_etiqueta_sin_cambio",
-            ventana.etiqueta_carpeta.text() == antes_etiqueta,
+            "integracion_etiqueta_actualizada",
+            ventana.etiqueta_carpeta.text() == ruta_a_v,
         )
         registrar("integracion_gestor_inactivo", not ventana.gestor.activo)
         pendientes_despues = (

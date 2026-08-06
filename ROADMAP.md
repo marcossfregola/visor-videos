@@ -72,7 +72,7 @@ pequeña, verificable y acumulativa:
   **Implementada.**
 - **Etapa 2.2** — Expandir discos y mostrar carpetas. **Implementada.**
 - **Etapa 2.3** — Navegación completa del árbol. **Implementada.**
-- **Etapa 2.4** — Selección de la carpeta actual.
+- **Etapa 2.4** — Selección de la carpeta actual. **Implementada.**
 - **Etapa 2.5** — Persistencia del árbol (carpeta seleccionada y estado
   de expansión).
 - **Etapa 2.6** — Escaneo automático al seleccionar carpeta (preferencia
@@ -90,9 +90,10 @@ pequeña, verificable y acumulativa:
 -   ~~Opción de incluir o excluir subcarpetas en el escaneo.~~ Implementada
     con persistencia de la preferencia entre ejecuciones.
 -   ~~Infraestructura de paneles (QSplitter).~~ Implementada.
--   ~~Árbol de carpetas en el panel izquierdo.~~ Implementadas las Etapas 2.1, 2.2
-    y 2.3 (árbol con "Este equipo", discos, carpetas con carga diferida y
-    selección funcional); el bloque de trabajo 2 continúa.
+-   ~~Árbol de carpetas en el panel izquierdo.~~ Implementadas las Etapas 2.1 a
+    2.4 (árbol con "Este equipo", discos, carpetas con carga diferida,
+    selección funcional e integración con la carpeta activa de la aplicación);
+    el bloque de trabajo 2 continúa.
 -   Paginación completa automática del catálogo — scroll infinito,
     búsqueda en SQL desde la interfaz y ordenamiento configurable. La
     carga manual de una página adicional con el botón "Cargar más" ya

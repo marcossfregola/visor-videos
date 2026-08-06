@@ -13,22 +13,28 @@ y persistencia de la última carpeta seleccionada.
 
 ## Último commit aprobado
 
-**Mensaje:** Implementar seleccion funcional en el arbol de navegacion (Etapa 2.3)
+**Mensaje:** Integrar la seleccion del arbol con la carpeta activa de la aplicacion (Etapa 2.4)
 
-**Etapa:** Navegación funcional del árbol (Etapa 2.3 del Bloque de trabajo 2):
-- `arbol_navegacion.py` — `SingleSelection` (reemplaza `NoSelection`); método público
-  `carpeta_actual()` como interfaz oficial de consulta; señal `ruta_seleccionada = Signal(str)`
-  solo notificadora; raíz "Este equipo" y placeholders nunca son selección válida; conservación de
-  `_ruta_actual` al contraer/expandir sin emisiones duplicadas. El árbol sigue desacoplado del
-  catálogo (la señal no está conectada a nada).
-- `prueba_seleccion_arbol.py` — 24 verificaciones de la etapa.
-- `prueba_expansion_carpetas.py` — aserción de modo de selección actualizada a `SingleSelection`.
+**Etapa:** Selección de la carpeta actual (Etapa 2.4 del Bloque de trabajo 2):
+- `visor_videos.py` — el árbol se guarda como `self.arbol_navegacion` y su señal `ruta_seleccionada`
+  se conecta al nuevo handler `_al_carpeta_actual_arbol` (valida, ignora repeticiones, asigna
+  `carpeta_seleccionada`, actualiza `etiqueta_carpeta`, limpia mensaje y rearma botones; sin
+  persistencia, tareas ni catálogo). `carpeta_seleccionada` es la única fuente de verdad. El diálogo
+  "Seleccionar carpeta" conserva su comportamiento intacto y sincroniza el árbol con
+  `seleccionar_ruta`; lo mismo en la restauración de arranque.
+- `arbol_navegacion.py` — nuevo método público `seleccionar_ruta(ruta)`: busca solo entre nodos ya
+  cargados (sin recorrer el sistema de archivos), expande ancestros cargados y selecciona; si la ruta
+  no está cargada, no modifica la selección.
+- `prueba_carpeta_actual.py` — 17 verificaciones de la etapa.
+- Suites actualizadas por el cambio de comportamiento intencional: `prueba_seleccion_arbol.py`,
+  `prueba_expansion_carpetas.py` y `prueba_arbol_navegacion.py`.
 
-**Pruebas superadas:** `prueba_seleccion_arbol.py` 24/24 (selección de disco/carpeta, visualización,
-señal válida, raíz y placeholder excluidos, conservación al contraer/expandir sin emisiones, ausencia
-de interacción con el catálogo); regresiones `prueba_expansion_carpetas.py` 33/33,
-`prueba_arbol_navegacion.py` OK, `prueba_smoke.py` OK, `prueba_escaneo_interfaz.py` 36/36.
-Ejecución real de `visor_videos.py` con cierre limpio (exit 0).
+**Pruebas superadas:** `prueba_carpeta_actual.py` 17/17 (árbol → app, sin escaneo, repetición sin
+cambios, `seleccionar_ruta` sin carga/recorrido, sincronización árbol ↔ diálogo, diálogo intacto,
+botón "Escanear carpeta" solo visual); regresiones `prueba_seleccion_arbol.py` 24/24,
+`prueba_expansion_carpetas.py` 34/34, `prueba_arbol_navegacion.py` OK, `prueba_seleccion_carpeta.py`
+26/26, `prueba_smoke.py` OK, `prueba_escaneo_interfaz.py` 36/36. Ejecución real de `visor_videos.py`
+con cierre limpio (exit 0).
 
 ## Hitos completados
 
@@ -71,6 +77,7 @@ Ejecución real de `visor_videos.py` con cierre limpio (exit 0).
 - Árbol de navegación en el panel izquierdo (Etapa 2.1: nodo "Este equipo" + discos del sistema, puramente visual y sin navegación).
 - Expansión de discos y carpetas con carga diferida (Etapa 2.2: un solo nivel por expansión, estado de carga en el nodo, ruta absoluta en cada nodo, árbol desacoplado del catálogo).
 - Selección funcional del árbol de navegación (Etapa 2.3: `carpeta_actual()` como interfaz oficial, señal `ruta_seleccionada` notificadora, raíz y placeholders excluidos, selección conservada al contraer/expandir).
+- Integración de la selección del árbol con la carpeta activa de la aplicación (Etapa 2.4: `carpeta_seleccionada` como única fuente de verdad, handler `_al_carpeta_actual_arbol`, sincronización árbol ↔ diálogo con `seleccionar_ruta`, sin escaneo ni catálogo).
 
 ## Pendientes prioritarios
 
@@ -99,10 +106,11 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
 
 ## Próxima etapa
 
-**Etapa 2.4 del Bloque de trabajo 2 (selección de la carpeta actual).**
-Con la navegación funcional del árbol ya implementada (Etapa 2.3), la próxima
-etapa es la selección de la carpeta actual del catálogo desde el árbol,
-siguiendo la dirección definida en `VISION_PRODUCTO.md` y `ROADMAP.md`.
+**Etapa 2.5 del Bloque de trabajo 2 (persistencia del árbol).**
+Con la integración de la selección del árbol con la carpeta activa ya
+implementada (Etapa 2.4), la próxima etapa es la persistencia del árbol
+(carpeta seleccionada y estado de expansión), siguiendo la dirección definida
+en `VISION_PRODUCTO.md` y `ROADMAP.md`.
 
 ## Documentos del proyecto
 

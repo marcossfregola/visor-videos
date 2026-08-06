@@ -5,6 +5,56 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 50. Integración de la selección del árbol con la carpeta activa de la aplicación (Etapa 2.4)
+
+- **Fecha:** 2026-08-06
+- **Objetivo:** Integrar la selección del árbol con el concepto de carpeta actual de la aplicación
+  (`carpeta_seleccionada` como única fuente de verdad), reflejándola en la interfaz, sin iniciar
+  escaneos ni modificar el catálogo ni el panel derecho.
+- **Archivos creados:**
+  - `prueba_carpeta_actual.py` — 17 verificaciones: selección en el árbol → carpeta y etiqueta de la
+    app actualizadas, sin escaneo, tarjetas intactas; repetición de la misma carpeta sin cambios
+    (guard directo); `seleccionar_ruta` sobre ruta no cargada sin excepción ni cambios y sobre ruta
+    cargada con sincronización; diálogo (cancelación conserva, ruta inválida con mensaje,
+    persistencia intacta, sincroniza el árbol); botón "Escanear carpeta" solo visual; `_total_catalogo`
+    intacto; botón "Seleccionar carpeta" funcional.
+- **Archivos modificados:**
+  - `visor_videos.py` — árbol guardado como `self.arbol_navegacion`; señal `ruta_seleccionada`
+    conectada a `_al_carpeta_actual_arbol` (valida `os.path.isdir`, ignora repeticiones, asigna
+    `carpeta_seleccionada`, actualiza `etiqueta_carpeta`, limpia mensaje, rearma botones; sin
+    persistencia, tareas ni catálogo). `seleccionar_carpeta()` (diálogo) conserva su comportamiento
+    e incorpora `self.arbol_navegacion.seleccionar_ruta(ruta_absoluta)`; la restauración de arranque
+    también sincroniza el árbol.
+  - `arbol_navegacion.py` — método público `seleccionar_ruta(ruta)`: busca solo entre nodos ya
+    cargados (`_buscar_ruta`, recursión en memoria sin tocar el sistema de archivos), expande
+    ancestros cargados y selecciona; si no está, no modifica la selección ni lanza. Docstring
+    actualizado a la Etapa 2.4.
+  - `prueba_seleccion_arbol.py`, `prueba_expansion_carpetas.py`, `prueba_arbol_navegacion.py` —
+    actualizadas por el cambio de comportamiento intencional (seleccionar en el árbol ahora
+    establece la carpeta de la app).
+  - `DOCUMENTO_TECNICO.md` — módulo y visor documentados con la integración, `seleccionar_ruta` y la
+    fuente única de verdad; dirección futura y árbol de directorios actualizados.
+  - `ESTADO_PROYECTO.md` — última etapa aprobada y próxima etapa actualizadas; nuevo hito.
+  - `ROADMAP.md` — Etapa 2.4 marcada como implementada.
+- **Pruebas:** `prueba_carpeta_actual.py` 17/17. Regresiones: `prueba_seleccion_arbol.py` 24/24,
+  `prueba_expansion_carpetas.py` 34/34, `prueba_arbol_navegacion.py` OK, `prueba_seleccion_carpeta.py`
+  26/26, `prueba_smoke.py` OK, `prueba_escaneo_interfaz.py` 36/36. Ejecución real de `visor_videos.py`
+  con cierre limpio (`exit 0`): selección de `C:\Users\Marcos Casa` reflejada en etiqueta sin escaneo.
+- **Resultado:** Seleccionar una carpeta en el árbol actualiza la carpeta activa de la aplicación y
+  la etiqueta; el diálogo sigue funcionando igual y sincroniza el árbol cuando el nodo está cargado;
+  no se inicia ningún escaneo y el catálogo, SQLite y el panel derecho permanecen intactos.
+- **Commit:** "Integrar la seleccion del arbol con la carpeta activa de la aplicacion (Etapa 2.4)"
+- **Decisiones importantes:**
+  1. **`carpeta_seleccionada` como única fuente de verdad**: el árbol la cambia y la refleja, pero
+     `carpeta_actual()` solo representa el estado interno del widget; no hay copia paralela.
+  2. **`seleccionar_ruta` sin tocar el disco**: solo busca entre nodos ya cargados; no expande ramas
+     inexistentes, no carga carpetas nuevas ni recorre el sistema de archivos.
+  3. **Sin efectos secundarios**: el handler actualiza únicamente el estado visual y de botones; no
+     inicia tareas, no emite señales adicionales y no toca catálogo, tarjetas ni SQLite.
+  4. **Guard de repetición**: ignorar selecciones repetidas evita trabajo innecesario.
+
+---
+
 ## 49. Selección funcional del árbol de navegación (Etapa 2.3)
 
 - **Fecha:** 2026-08-06

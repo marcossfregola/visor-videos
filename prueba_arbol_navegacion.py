@@ -99,8 +99,8 @@ def main():
         )
         QApplication.processEvents()
         print(f"clic_current_item_cambio={arbol.currentItem() is not None}")
-        print(f"clic_carpeta_cambio={ventana.carpeta_seleccionada != carpeta_antes}")
-        print(f"clic_etiqueta_cambio={ventana.etiqueta_carpeta.text() != etiqueta_antes}")
+        print(f"clic_carpeta_actualizada={ventana.carpeta_seleccionada == item.text(0)}")
+        print(f"clic_etiqueta_actualizada={ventana.etiqueta_carpeta.text() == item.text(0)}")
         print(f"clic_gestor_activo={ventana.gestor.activo}")
         pendientes_despues = (
             ventana._escaneo_pendiente

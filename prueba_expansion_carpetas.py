@@ -236,7 +236,11 @@ def main():
             arbol_v.viewport(), Qt.LeftButton, Qt.NoModifier, rect.center()
         )
         QApplication.processEvents()
-        registrar("integracion_clic_sin_accion", ventana.carpeta_seleccionada == carpeta_antes)
+        registrar(
+            "integracion_clic_actualiza_carpeta",
+            ventana.carpeta_seleccionada == os.path.join(tmp.name, "b"),
+        )
+        registrar("integracion_clic_sin_escaneo", not ventana.gestor.activo)
 
         splitter = ventana.centralWidget()
         splitter.setSizes([300, 620])

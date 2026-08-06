@@ -423,8 +423,11 @@ class VisorVideos(QMainWindow):
         panel_izquierdo.setStyleSheet("background-color: #e8e8e8;")
         layout_izquierdo = QVBoxLayout(panel_izquierdo)
         layout_izquierdo.setContentsMargins(0, 0, 0, 0)
-        arbol_navegacion = ArbolNavegacion()
-        layout_izquierdo.addWidget(arbol_navegacion)
+        self.arbol_navegacion = ArbolNavegacion()
+        self.arbol_navegacion.ruta_seleccionada.connect(
+            self._al_carpeta_actual_arbol
+        )
+        layout_izquierdo.addWidget(self.arbol_navegacion)
 
         splitter = QSplitter(Qt.Horizontal)
         splitter.setHandleWidth(8)
@@ -457,6 +460,7 @@ class VisorVideos(QMainWindow):
             self.carpeta_seleccionada = carpeta_guardada
             self.etiqueta_carpeta.setText(carpeta_guardada)
             self._actualizar_botones_carpeta()
+            self.arbol_navegacion.seleccionar_ruta(carpeta_guardada)
         self.incluir_subcarpetas.setChecked(
             obtener_preferencia_subcarpetas(self._ruta_config)
         )
@@ -508,6 +512,19 @@ class VisorVideos(QMainWindow):
         self.etiqueta_carpeta.setText(ruta_absoluta)
         self.mensaje_carpeta.clear()
         guardar_ultima_carpeta(ruta_absoluta, self._ruta_config)
+        self.arbol_navegacion.seleccionar_ruta(ruta_absoluta)
+        self._actualizar_botones_carpeta()
+
+    def _al_carpeta_actual_arbol(self, ruta):
+        if not isinstance(ruta, str) or not ruta:
+            return
+        if not os.path.isdir(ruta):
+            return
+        if self.carpeta_seleccionada == ruta:
+            return
+        self.carpeta_seleccionada = ruta
+        self.etiqueta_carpeta.setText(ruta)
+        self.mensaje_carpeta.clear()
         self._actualizar_botones_carpeta()
 
     def _actualizar_botones_carpeta(self):

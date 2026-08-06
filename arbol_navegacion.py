@@ -39,16 +39,20 @@ def carpetas_de(ruta):
 
 
 class ArbolNavegacion(QTreeWidget):
-    """Arbol del centro de navegacion (Etapa 2.3).
+    """Arbol del centro de navegacion (Etapa 2.4).
 
     Muestra "Este equipo", los discos y sus carpetas con carga diferida
-    por nivel. Permite la seleccion funcional de discos y carpetas:
-    la carpeta actual queda almacenada en el propio arbol y se consulta
-    mediante `carpeta_actual()`. La señal `ruta_seleccionada` solo
-    notifica cambios de seleccion. El arbol sigue desacoplado del
-    catalogo: no escanea, no modifica la carpeta de la aplicacion y no
-    esta integrado con el panel derecho. El nodo raiz "Este equipo" y
-    los placeholders internos nunca son selecciones validas.
+    por nivel y permite la seleccion funcional de discos y carpetas. La
+    carpeta actual queda almacenada en el propio arbol y se consulta
+    mediante `carpeta_actual()`; la señal `ruta_seleccionada` solo
+    notifica cambios de seleccion. `seleccionar_ruta()` sincroniza la
+    seleccion del arbol con la carpeta actual de la aplicacion (solo
+    entre nodos ya cargados, sin recorrer el sistema de archivos). El
+    arbol no es la fuente de verdad de la carpeta activa de la
+    aplicacion: puede cambiarla y reflejarla, pero `carpeta_actual()`
+    representa únicamente el estado interno del widget. El nodo raiz
+    "Este equipo" y los placeholders internos nunca son selecciones
+    validas.
     """
 
     ruta_seleccionada = Signal(str)
@@ -68,6 +72,35 @@ class ArbolNavegacion(QTreeWidget):
     def carpeta_actual(self):
         """Devuelve la ruta absoluta seleccionada o None si no hay ninguna."""
         return self._ruta_actual
+
+    def seleccionar_ruta(self, ruta):
+        """Selecciona en el arbol el nodo ya cargado cuya ruta coincide.
+
+        Busca únicamente entre los nodos actualmente cargados (sin
+        recorrer el sistema de archivos ni cargar carpetas nuevas). Si
+        el nodo no esta presente, no modifica la seleccion existente.
+        """
+        if not isinstance(ruta, str) or not ruta:
+            return
+        nodo = self._buscar_ruta(self.topLevelItem(0), ruta)
+        if nodo is None:
+            return
+        padre = nodo.parent()
+        while padre is not None:
+            padre.setExpanded(True)
+            padre = padre.parent()
+        self.setCurrentItem(nodo)
+
+    def _buscar_ruta(self, item, ruta):
+        if item is None:
+            return None
+        if item.data(0, ROL_RUTA) == ruta:
+            return item
+        for indice in range(item.childCount()):
+            encontrado = self._buscar_ruta(item.child(indice), ruta)
+            if encontrado is not None:
+                return encontrado
+        return None
 
     def _ruta_valida(self, item):
         if item is None:
