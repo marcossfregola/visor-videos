@@ -5,6 +5,20 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 40. Copiar rutas de los seleccionados al portapapeles
+
+- **Fecha:** 2026-08-05
+- **Objetivo:** Agregar al menú contextual una cuarta acción que copie al portapapeles las rutas completas de todos los videos seleccionados, constituyendo la primera operación real sobre una selección múltiple.
+- **Archivos modificados:**
+  - `visor_videos.py` — cuarta acción "Copiar rutas de los seleccionados" en `_mostrar_menu_contextual`; nuevo método `_copiar_rutas_seleccionados` que itera `self.tarjetas_visibles()`, filtra por `self._nombres_seleccionados`, construye las rutas absolutas y las copia al portapapeles separadas por `\n`; el método existente `_copiar_ruta` permanece sin cambios.
+  - `DOCUMENTO_TECNICO.md` — menú contextual documentado con 4 acciones; agregado `prueba_copiar_rutas_seleccionados.py` al árbol.
+- **Archivos creados:**
+  - `prueba_copiar_rutas_seleccionados.py` — 8 pruebas: elemento único, múltiples con orden visible, sin carpeta, sin selección, "Copiar ruta" original intacto, todos seleccionados, existencia del método.
+- **Pruebas:** `prueba_copiar_rutas_seleccionados.py` 8/8, `prueba_menu_contextual.py` 18/18, `prueba_shift_clic.py` 28/28, `prueba_seleccion.py` 28/28, `prueba_doble_clic.py` 14/14, `prueba_smoke.py` OK.
+- **Resultado:** Cuarta acción en el menú contextual funcional. Las rutas se copian en orden visible, una por línea. La acción original "Copiar ruta" sigue copiando únicamente la ruta del video sobre el que se abrió el menú. Sin exportación a archivos, copiar nombres ni metadatos.
+- **Commit:** "Agregar acción "Copiar rutas de los seleccionados" al menú contextual"
+- **Decisiones importantes:** Separación clara entre "Copiar ruta" (individual, la del video cliqueado) y "Copiar rutas de los seleccionados" (colectiva, por selección). La nueva acción es la primera operación real sobre selección múltiple en el proyecto.
+
 ## 39. Selección por rango con Shift+clic
 
 - **Fecha:** 2026-08-05

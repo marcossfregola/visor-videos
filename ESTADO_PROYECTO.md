@@ -13,19 +13,17 @@ y persistencia de la última carpeta seleccionada.
 
 ## Último commit aprobado
 
-**Mensaje:** Agregar selección por rango con Shift+clic
+**Mensaje:** Agregar acción "Copiar rutas de los seleccionados" al menú contextual
 
-**Etapa:** Selección por rango mediante Shift+clic — comportamiento estándar
-de Windows:
-- Shift+clic selecciona todas las filas entre el ancla (`_ancla_seleccion`) y
-  la fila clickeada, según el orden visible (`self.visibles`).
-- Si no existe ancla o el ancla no está visible, equivale a un clic normal.
-- El ancla se actualiza en cada selección simple y Ctrl+clic; no se modifica
-  durante el rango.
-- Compatible con la selección existente, el menú contextual y el doble clic.
-- Sin Ctrl+Shift+clic, selección con teclado ni atajos adicionales.
+**Etapa:** Ampliación del menú contextual — nueva cuarta acción que copia al
+portapapeles las rutas de todos los videos seleccionados:
+- Si hay un único video seleccionado, copia su ruta.
+- Si hay varios, copia todas las rutas, una por línea, respetando el orden visible.
+- La acción original "Copiar ruta" permanece intacta (copia solo la ruta del
+  video sobre el que se abrió el menú).
+- Sin exportación a archivos, copiar nombres ni metadatos.
 
-**Pruebas superadas:** `prueba_shift_clic.py` 28/28, `prueba_seleccion.py` 28/28, `prueba_restauracion_seleccion.py` 15/15, `prueba_menu_contextual.py` 18/18, `prueba_doble_clic.py` 14/14, `prueba_smoke.py` OK.
+**Pruebas superadas:** `prueba_copiar_rutas_seleccionados.py` 8/8, `prueba_menu_contextual.py` 18/18, `prueba_shift_clic.py` 28/28, `prueba_seleccion.py` 28/28, `prueba_doble_clic.py` 14/14, `prueba_smoke.py` OK.
 
 **SHA:** consultar con `git log -1`.
 
@@ -63,7 +61,8 @@ de Windows:
 - Menú contextual con clic derecho sobre filas de videos (abrir, abrir carpeta, copiar ruta).
 - Restauración automática de la selección tras reconstruir la lista de tarjetas.
 - Selección por rango con Shift+clic basada en un ancla de selección y el orden visible.
-- Validación manual con videos reales: selección conservada tras reescaneo, menú contextual y doble clic funcionales, Shift+clic hacia arriba y hacia abajo.
+- Copia de rutas de los seleccionados mediante menú contextual (primera operación sobre selección múltiple).
+- Validación manual con videos reales: copia individual y múltiple, orden correcto, menú contextual y doble clic funcionales.
 ## Pendientes prioritarios
 
 1. ~~Mejorar el feedback visual del procesamiento (barra de progreso,~~

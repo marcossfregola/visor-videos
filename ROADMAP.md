@@ -28,8 +28,9 @@ arquitectónicas.
 -   ~~Barra de progreso.~~ Implementada.
 -   ~~Selección visual de filas (simple, Ctrl+clic y Shift+clic).~~ Implementada.
     Incluye acciones básicas mediante menú contextual (abrir, abrir carpeta,
-    copiar ruta), restauración automática de la selección tras reconstruir
-    tarjetas y selección por rango con Shift+clic basada en ancla y orden visible.
+    copiar ruta, copiar rutas de los seleccionados), restauración automática
+    de la selección tras reconstruir tarjetas y selección por rango con
+    Shift+clic basada en ancla y orden visible.
 -   Cancelación de tareas.
 -   Reanudación de trabajos.
 -   Configuración persistente.

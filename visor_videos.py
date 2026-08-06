@@ -1009,9 +1009,11 @@ class VisorVideos(QMainWindow):
         accion_abrir = menu.addAction("Abrir")
         accion_abrir_carpeta = menu.addAction("Abrir carpeta")
         accion_copiar_ruta = menu.addAction("Copiar ruta")
+        accion_copiar_seleccionados = menu.addAction("Copiar rutas de los seleccionados")
         accion_abrir.triggered.connect(lambda: self._abrir_video(nombre))
         accion_abrir_carpeta.triggered.connect(lambda: self._abrir_carpeta(nombre))
         accion_copiar_ruta.triggered.connect(lambda: self._copiar_ruta(nombre))
+        accion_copiar_seleccionados.triggered.connect(self._copiar_rutas_seleccionados)
         menu.exec(QCursor.pos())
 
     def _abrir_carpeta(self, nombre):
@@ -1024,6 +1026,17 @@ class VisorVideos(QMainWindow):
         if carpeta and os.path.isdir(carpeta):
             ruta = os.path.abspath(os.path.join(carpeta, nombre))
             QApplication.clipboard().setText(ruta)
+
+    def _copiar_rutas_seleccionados(self):
+        carpeta = self.carpeta_seleccionada
+        if not carpeta or not os.path.isdir(carpeta):
+            return
+        rutas = []
+        for nombre in self.tarjetas_visibles():
+            if nombre in self._nombres_seleccionados:
+                rutas.append(os.path.abspath(os.path.join(carpeta, nombre)))
+        if rutas:
+            QApplication.clipboard().setText("\n".join(rutas))
 
     def filtrar(self, texto):
         texto = texto.lower()
