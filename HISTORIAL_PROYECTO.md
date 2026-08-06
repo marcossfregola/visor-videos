@@ -5,6 +5,22 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 38. Restauración automática de la selección tras reconstruir la lista de tarjetas
+
+- **Fecha:** 2026-08-05
+- **Objetivo:** Restaurar la selección visual después de `_reemplazar_tarjetas` (recarga tras sincronización) sin perder el estado de selección del usuario.
+- **Archivos modificados:**
+  - `visor_videos.py` — `_reemplazar_tarjetas` ahora preserva `_nombres_seleccionados` antes de limpiar y, tras crear las nuevas tarjetas, restaura solo los nombres que siguen existiendo (filtrados contra `nombres_nuevos`). Los nombres que desaparecieron del catálogo se descartan silenciosamente.
+  - `prueba_seleccion.py` — antiguo test "`_reemplazar_tarjetas` limpia la selección" reemplazado por 3 verificaciones de restauración (28 pruebas totales).
+  - `DOCUMENTO_TECNICO.md` — actualizada la descripción de persistencia de selección y agregado `prueba_restauracion_seleccion.py` al árbol.
+  - `ESTADO_PROYECTO.md` — deuda técnica actualizada.
+- **Archivos creados:**
+  - `prueba_restauracion_seleccion.py` — 15 pruebas: restauración simple, múltiple, sin selección previa, nombre ausente, verificación de estilo visual.
+- **Pruebas:** `prueba_restauracion_seleccion.py` 15/15, `prueba_seleccion.py` 28/28, `prueba_menu_contextual.py` 18/18, `prueba_doble_clic.py` 14/14, `prueba_smoke.py` OK.
+- **Resultado:** La selección se conserva automáticamente al reconstruir la lista de tarjetas. Sin persistencia en disco ni entre ejecuciones. Sin modificar el comportamiento de clic simple, Ctrl+clic, doble clic ni menú contextual.
+- **Commit:** "Restaurar automáticamente la selección tras reconstruir la lista de tarjetas"
+- **Decisiones importantes:** Se reutiliza `_nombres_seleccionados` y `_marcar_tarjeta` sin nuevas estructuras de datos. El filtrado contra `nombres_nuevos` evita marcas huérfanas. Los nombres desaparecidos se descartan sin error.
+
 ## 37. Menú contextual con acciones básicas (abrir, abrir carpeta, copiar ruta)
 
 - **Fecha:** 2026-08-05

@@ -29,7 +29,8 @@ arquitectónicas.
 -   ~~Selección visual de filas (simple y Ctrl+clic).~~ Implementada.
     ~~Pendiente: acciones sobre elementos seleccionados y restauración
     automática tras reconstrucción de tarjetas.~~ Implementadas acciones
-    básicas mediante menú contextual (abrir, abrir carpeta, copiar ruta).
+    básicas mediante menú contextual (abrir, abrir carpeta, copiar ruta)
+    y restauración automática de la selección tras reconstruir tarjetas.
 -   Cancelación de tareas.
 -   Reanudación de trabajos.
 -   Configuración persistente.

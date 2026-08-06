@@ -13,18 +13,17 @@ y persistencia de la última carpeta seleccionada.
 
 ## Último commit aprobado
 
-**Mensaje:** Incorporar menú contextual con acciones básicas (abrir, abrir carpeta, copiar ruta)
+**Mensaje:** Restaurar automáticamente la selección tras reconstruir la lista de tarjetas
 
-**Etapa:** Menú contextual sobre filas de videos — clic derecho con tres
-acciones:
-1. **Abrir** — reutiliza el mecanismo existente de doble clic (`_abrir_video`).
-2. **Abrir carpeta** — abre el Explorador de Windows con la carpeta seleccionada (`os.startfile`).
-3. **Copiar ruta** — copia la ruta completa del video al portapapeles (`QApplication.clipboard().setText`).
+**Etapa:** Restauración automática de la selección — al reconstruir completamente
+la lista de tarjetas (tras un reescaneo y sincronización), la selección previa
+se conserva:
+- Se reutiliza el conjunto `_nombres_seleccionados` ya existente.
+- Solo se restauran los nombres que siguen presentes en el nuevo catálogo.
+- Los nombres desaparecidos se descartan sin error.
+- Sin persistencia en disco ni entre ejecuciones.
 
-Comportamiento de selección: si la fila no estaba seleccionada, pasa a ser
-la única seleccionada. Si pertenece a una selección múltiple, se conserva.
-
-**Pruebas superadas:** `prueba_menu_contextual.py` 18/18, `prueba_seleccion.py` 26/26, `prueba_seleccion_visual.py` OK, `prueba_doble_clic.py` 14/14, `prueba_smoke.py` OK.
+**Pruebas superadas:** `prueba_restauracion_seleccion.py` 15/15, `prueba_seleccion.py` 28/28, `prueba_menu_contextual.py` 18/18, `prueba_doble_clic.py` 14/14, `prueba_smoke.py` OK.
 
 **SHA:** consultar con `git log -1`.
 
@@ -60,7 +59,8 @@ la única seleccionada. Si pertenece a una selección múltiple, se conserva.
 - Feedback visual del procesamiento (barra de progreso indeterminada con texto de etapa).
 - Selección visual de filas (simple y múltiple con Ctrl+clic). Base preparada para futuras acciones sobre elementos seleccionados sin agregar menús ni botones todavía.
 - Menú contextual con clic derecho sobre filas de videos (abrir, abrir carpeta, copiar ruta).
-- Validación manual con videos reales: menú funcional sobre filas no seleccionadas, sobre selección múltiple y las tres acciones.
+- Restauración automática de la selección tras reconstruir la lista de tarjetas.
+- Validación manual con videos reales: selección conservada tras reescaneo, menú contextual y doble clic funcionales.
 ## Pendientes prioritarios
 
 1. ~~Mejorar el feedback visual del procesamiento (barra de progreso,~~
@@ -82,9 +82,9 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
 - Pendiente documental: reducir progresivamente el nivel de detalle de
   implementación en `DOCUMENTO_TECNICO.md`, conservando la información
   arquitectónica pero eliminando detalles que ya refleja el código fuente.
-- La selección no se restaura automáticamente después de reconstruir
-  completamente las tarjetas (`_reemplazar_tarjetas`, p.ej. tras un
-  reescaneo).
+- La selección se restaura automáticamente después de reconstruir
+  completamente las tarjetas (`_reemplazar_tarjetas`), pero solo para
+  los nombres que siguen existiendo en el nuevo conjunto.
 
 ## Próxima etapa
 

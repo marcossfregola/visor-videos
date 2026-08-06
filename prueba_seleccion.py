@@ -273,11 +273,20 @@ def main():
         "seleccion persiste tras filtrar",
     )
 
-    # --- _reemplazar_tarjetas limpia seleccion ---
-    ventana._reemplazar_tarjetas([])
+    # --- _reemplazar_tarjetas restaura la seleccion ---
+    ventana._al_seleccionar_tarjeta(nombres_tarjetas[0], False)
+    ventana._reemplazar_tarjetas([(nombres_tarjetas[0], None, None, None, None, None, None)])
     verifica(
-        len(ventana._nombres_seleccionados) == 0,
-        "_reemplazar_tarjetas limpia la seleccion",
+        len(ventana._nombres_seleccionados) == 1,
+        "_reemplazar_tarjetas restaura la seleccion",
+    )
+    verifica(
+        nombres_tarjetas[0] in ventana._nombres_seleccionados,
+        "_reemplazar_tarjetas: nombre restaurado correcto",
+    )
+    verifica(
+        ventana.tarjetas[0][1]._seleccionada,
+        "_reemplazar_tarjetas: tarjeta restaurada marcada",
     )
 
     ventana.close()

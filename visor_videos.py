@@ -775,6 +775,7 @@ class VisorVideos(QMainWindow):
         self._actualizar_botones_carpeta()
 
     def _reemplazar_tarjetas(self, filas):
+        seleccion_previa = set(self._nombres_seleccionados)
         self._limpiar_seleccion()
         for nombre, tarjeta in self.tarjetas:
             self.cuadricula.removeWidget(tarjeta)
@@ -782,6 +783,11 @@ class VisorVideos(QMainWindow):
         self.tarjetas = []
         self.visibles = []
         self._crear_tarjetas(filas)
+        nombres_nuevos = {nombre for nombre, _ in self.tarjetas}
+        for nombre in seleccion_previa:
+            if nombre in nombres_nuevos:
+                self._nombres_seleccionados.add(nombre)
+                self._marcar_tarjeta(nombre, True)
 
     def cargar_mas(self):
         if self.gestor.activo:
