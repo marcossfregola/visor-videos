@@ -334,6 +334,7 @@ class VisorVideos(QMainWindow):
         self._sincronizacion_pendiente = False
         self.tarea_sincronizacion = None
         self.resultado_sincronizacion = None
+        self.carpetas_escaneadas = set()
         self._recarga_catalogo_pendiente = False
         self.tarea_recarga_catalogo = None
         self._pagina_pendiente = False
@@ -908,6 +909,10 @@ class VisorVideos(QMainWindow):
         self.estado_escaneo.setText(
             texto_resumen_sincronizacion(resultado.get("resumen"))
         )
+        carpeta = resultado.get("diferencias", {}).get("carpeta")
+        if isinstance(carpeta, str) and carpeta:
+            self.carpetas_escaneadas.add(carpeta)
+            self.arbol_navegacion.marcar_carpeta_escaneada(carpeta)
         self._recarga_catalogo_pendiente = True
         self._actualizar_botones_carpeta()
 

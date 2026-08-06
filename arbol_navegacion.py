@@ -1,13 +1,35 @@
 import os
 import string
+from enum import IntEnum
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QAbstractItemView, QTreeWidget, QTreeWidgetItem
+from PySide6.QtGui import QIcon
+from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QStyle,
+    QTreeWidget,
+    QTreeWidgetItem,
+)
 
 TEXTO_RAIZ = "Este equipo"
 ROL_RUTA = Qt.UserRole + 1
 ROL_CARGADO = Qt.UserRole + 2
 ROL_PLACEHOLDER = Qt.UserRole + 3
+ROL_ESTADO = Qt.UserRole + 4
+
+
+class EstadoNodo(IntEnum):
+    """Estados visuales posibles de un nodo del arbol.
+
+    Por ahora solo se utilizan SIN_ESCANEAR y ESCANEADA; los restantes
+    quedan preparados para etapas futuras sin cambiar la API publica.
+    """
+
+    SIN_ESCANEAR = 0
+    ESCANEADA = 1
+    PARCIAL = 2
+    CAMBIOS_PENDIENTES = 3
+    ERROR = 4
 
 
 def discos_disponibles():
@@ -39,7 +61,7 @@ def carpetas_de(ruta):
 
 
 class ArbolNavegacion(QTreeWidget):
-    """Arbol del centro de navegacion (Etapa 2.5).
+    """Arbol del centro de navegacion (Etapa 2.9).
 
     Muestra "Este equipo", los discos y sus carpetas con carga diferida
     por nivel y permite la seleccion funcional de discos y carpetas. La
@@ -49,11 +71,14 @@ class ArbolNavegacion(QTreeWidget):
     seleccion con nodos ya cargados (sin cargar carpetas nuevas);
     `revelar_ruta()` reconstruye incrementalmente la rama necesaria para
     mostrar una carpeta persistida (expandendo nivel por nivel con la
-    carga diferida existente). El arbol no es la fuente de verdad de la
-    carpeta activa de la aplicacion: puede cambiarla y reflejarla, pero
-    `carpeta_actual()` representa únicamente el estado interno del
-    widget. El nodo raiz "Este equipo" y los placeholders internos nunca
-    son selecciones validas.
+    carga diferida existente). `marcar_carpeta_escaneada()` actualiza el
+    **indicador visual** de una carpeta escaneada (estado por nodo en
+    `ROL_ESTADO` mediante `EstadoNodo`), sin cambiar el comportamiento de
+    navegacion. El arbol no es la fuente de verdad de la carpeta activa
+    de la aplicacion: puede cambiarla y reflejarla, pero `carpeta_actual()`
+    representa únicamente el estado interno del widget. El nodo raiz
+    "Este equipo" y los placeholders internos nunca son selecciones
+    validas.
     """
 
     ruta_seleccionada = Signal(str)
@@ -63,6 +88,7 @@ class ArbolNavegacion(QTreeWidget):
         self.setHeaderHidden(True)
         self.setSelectionMode(QAbstractItemView.SingleSelection)
         self._ruta_actual = None
+        self._carpetas_escaneadas = set()
         self.currentItemChanged.connect(self._al_cambiar_actual)
         self.itemExpanded.connect(self._al_expandir)
         raiz = QTreeWidgetItem(self, [TEXTO_RAIZ])
@@ -73,6 +99,35 @@ class ArbolNavegacion(QTreeWidget):
     def carpeta_actual(self):
         """Devuelve la ruta absoluta seleccionada o None si no hay ninguna."""
         return self._ruta_actual
+
+    def marcar_carpeta_escaneada(self, ruta):
+        """Marca una carpeta como escaneada y actualiza su indicador visual.
+
+        Solo afecta el estado visual del nodo; no altera la seleccion, la
+        expansion ni la navegacion. Si el nodo aun no esta cargado, se
+        marcara al crearse (la pertenencia se consulta en `_estado_de`).
+        """
+        if not isinstance(ruta, str) or not ruta:
+            return
+        self._carpetas_escaneadas.add(ruta)
+        nodo = self._buscar_ruta(self.topLevelItem(0), ruta)
+        if nodo is not None:
+            self._aplicar_indicador(nodo)
+
+    def _estado_de(self, item):
+        if item.data(0, ROL_RUTA) in self._carpetas_escaneadas:
+            return EstadoNodo.ESCANEADA
+        return EstadoNodo.SIN_ESCANEAR
+
+    def _aplicar_indicador(self, item):
+        estado = self._estado_de(item)
+        item.setData(0, ROL_ESTADO, int(estado))
+        item.setIcon(0, self._icono_para(estado))
+
+    def _icono_para(self, estado):
+        if estado == EstadoNodo.ESCANEADA:
+            return self.style().standardIcon(QStyle.SP_DialogApplyButton)
+        return QIcon()
 
     def seleccionar_ruta(self, ruta):
         """Selecciona en el arbol el nodo ya cargado cuya ruta coincide.
@@ -200,6 +255,7 @@ class ArbolNavegacion(QTreeWidget):
         item = QTreeWidgetItem(padre, [disco])
         item.setData(0, ROL_RUTA, disco)
         self._agregar_placeholder(item)
+        self._aplicar_indicador(item)
 
     def _crear_nodo_carpeta(self, padre, ruta):
         item = QTreeWidgetItem(
@@ -207,6 +263,7 @@ class ArbolNavegacion(QTreeWidget):
         )
         item.setData(0, ROL_RUTA, ruta)
         self._agregar_placeholder(item)
+        self._aplicar_indicador(item)
 
     def _agregar_placeholder(self, item):
         placeholder = QTreeWidgetItem(item)

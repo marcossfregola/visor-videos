@@ -5,6 +5,54 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 55. Indicadores visuales de carpetas escaneadas (Etapa 2.9)
+
+- **Fecha:** 2026-08-06
+- **Objetivo:** Mostrar un indicador visual en el árbol para identificar las carpetas que ya fueron
+  escaneadas e incorporadas al catálogo, únicamente visual, manteniendo el árbol completamente
+  desacoplado de SQLite y reutilizando la información del pipeline de escaneo.
+- **Archivos creados:**
+  - `prueba_indicador_escaneado.py` — 14 verificaciones: enum de estados; carpeta nunca escaneada
+    (`SIN_ESCANEAR` + ícono nulo) y ya escaneada (`ESCANEADA` + ícono); `ROL_ESTADO` almacena `int`
+    (no `QIcon`); marcar no altera selección/expansión/`carpeta_actual()`/hijos; carga diferida
+    (marcar antes de expandir → el nodo nace `ESCANEADA`); AST sin `sqlite3`/`conectar_bd` en el
+    árbol; flujo real (escaneo → nodo `ESCANEADA`).
+- **Archivos modificados:**
+  - `arbol_navegacion.py` — `EstadoNodo(IntEnum)` (SIN_ESCANEAR/ESCANEADA/PARCIAL/CAMBIOS_PENDIENTES/
+    ERROR; solo se usan los dos primeros); `ROL_ESTADO = Qt.UserRole + 4`; `_carpetas_escaneadas`;
+    método público `marcar_carpeta_escaneada(ruta)`; `_estado_de` / `_aplicar_indicador` /
+    `_icono_para` (guardan solo el valor del estado y calculan el ícono con `QStyle.SP_DialogApplyButton`); se aplica al crear nodos (discos y carpetas, incluida la carga diferida). El árbol no conoce
+    SQLite ni el catálogo.
+  - `visor_videos.py` — `self.carpetas_escaneadas = set()`; en `_al_resultado_sincronizacion` agrega la
+    carpeta escaneada (`resultado["diferencias"]["carpeta"]`) y llama
+    `self.arbol_navegacion.marcar_carpeta_escaneada(carpeta)`. Sin consultas nuevas.
+  - `DOCUMENTO_TECNICO.md` — `EstadoNodo`, `ROL_ESTADO` e indicadores documentados; `visor` y
+    `_al_resultado_sincronizacion` actualizados; dirección futura, árbol de directorios y **problema 14
+    en §8** (deuda técnica del estado por sesión).
+  - `ESTADO_PROYECTO.md` — última etapa aprobada, hitos, deuda técnica y próxima etapa actualizados.
+  - `ROADMAP.md` — Etapa 2.9 marcada como implementada.
+- **Pruebas:** `prueba_indicador_escaneado.py` 14/14; regresiones `prueba_arbol_navegacion.py` OK,
+  `prueba_expansion_carpetas.py` 35/35, `prueba_seleccion_arbol.py` 25/25, `prueba_escaneo_arbol.py`
+  11/11, `prueba_escaneo_automatico.py` 19/19, `prueba_subcarpetas_arbol.py` 15/15,
+  `prueba_carpeta_actual.py` 19/19, `prueba_persistencia_arbol.py` 15/15, `prueba_escaneo_interfaz.py`
+  36/36, `prueba_smoke.py` OK. Ejecución real de `visor_videos.py`: escaneo de `C:\prueba\videos_prueba`
+  → el nodo pasa de `SIN_ESCANEAR` (0) a `ESCANEADA` (1) con ícono presente; cierre limpio (`exit 0`).
+- **Resultado:** El árbol muestra un indicador visual en las carpetas escaneadas (actualizado al
+  completar cada escaneo, incluida la carga diferida), sin alterar la navegación, la selección ni la
+  expansión, y sin acceder a SQLite.
+- **Commit:** "Agregar indicadores visuales de carpetas escaneadas en el arbol (Etapa 2.9)"
+- **Decisiones importantes:**
+  1. **API preparada para crecer**: `EstadoNodo` (IntEnum) con cinco estados (solo se usan dos) y
+     mapeo visual centralizado en `_icono_para(estado)`; los datos del nodo guardan solo el valor
+     (`ROL_ESTADO`), nunca `QIcon`.
+  2. **Desacoplamiento total**: el árbol recibe un conjunto de rutas (`marcar_carpeta_escaneada`); no
+     consulta SQLite ni conoce el catálogo. El dato proviene del resultado del pipeline de escaneo.
+  3. **Solo visual**: marcar una carpeta no modifica selección, expansión ni navegación.
+  4. **Carga diferida compatible**: el indicador se aplica al crear cada nodo por pertenencia al
+     conjunto.
+
+---
+
 ## 54. Preferencia independiente de escaneo automático al seleccionar carpeta (Etapa 2.8)
 
 - **Fecha:** 2026-08-06

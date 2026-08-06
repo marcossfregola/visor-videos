@@ -13,29 +13,27 @@ y persistencia de la última carpeta seleccionada.
 
 ## Último commit aprobado
 
-**Mensaje:** Agregar preferencia independiente de escaneo automatico al seleccionar carpeta (Etapa 2.8)
+**Mensaje:** Agregar indicadores visuales de carpetas escaneadas en el arbol (Etapa 2.9)
 
-**Etapa:** Preferencia independiente de escaneo automático (Etapa 2.8 del Bloque de trabajo 2):
-- `configuracion.py` — `CLAVE_ESCANEO_AUTOMATICO = "escaneo_automatico"`,
-  `guardar_preferencia_escaneo_automatico` y `obtener_preferencia_escaneo_automatico` (mismo patrón
-  atómico; **default `True`** para compatibilidad con configuraciones antiguas sin la clave).
-- `visor_videos.py` — nueva casilla "Escaneo automático" en `fila_carpeta` (junto a "Incluir
-  subcarpetas"); restauración de la preferencia antes de la interacción; persistencia inmediata al
-  cambiar la casilla; **decisión única** `_disparar_escaneo_si_automatico()` usada por el árbol
-  (`_al_carpeta_actual_arbol`) y el diálogo (`seleccionar_carpeta`). El botón "Escanear carpeta"
-  sigue usando `iniciar_escaneo()` incondicionalmente.
-- `prueba_escaneo_automatico.py` — 19 verificaciones de la etapa.
+**Etapa:** Indicadores visuales de carpetas escaneadas (Etapa 2.9 del Bloque de trabajo 2):
+- `arbol_navegacion.py` — `EstadoNodo(IntEnum)` (SIN_ESCANEAR/ESCANEADA/PARCIAL/CAMBIOS_PENDIENTES/ERROR,
+  solo se usan los dos primeros); `ROL_ESTADO = Qt.UserRole + 4`; `_carpetas_escaneadas`; método público
+  `marcar_carpeta_escaneada(ruta)`; `_aplicar_indicador` guarda **solo el valor del estado** y calcula
+  el ícono con `_icono_para(estado)` (checkmark `QStyle.SP_DialogApplyButton`); se aplica al crear nodos
+  (incluida la carga diferida). El árbol **no conoce SQLite ni el catálogo** (solo recibe un conjunto de rutas).
+- `visor_videos.py` — `self.carpetas_escaneadas = set()`; en `_al_resultado_sincronizacion` marca la
+  carpeta escaneada (`resultado["diferencias"]["carpeta"]`) y llama `marcar_carpeta_escaneada`. Sin
+  consultas nuevas (el dato proviene del pipeline existente).
+- `prueba_indicador_escaneado.py` — 14 verificaciones de la etapa.
 
-**Pruebas superadas:** `prueba_escaneo_automatico.py` 19/19 (persistencia, default True, config
-antigua sin clave → True, restauración de la casilla, persistencia al cambiar, gating árbol/diálogo,
-botón idéntico con preferencia ON/OFF, cuatro combinaciones); regresiones `prueba_escaneo_arbol.py`
-11/11, `prueba_subcarpetas_arbol.py` 15/15, `prueba_escaneo_interfaz.py` 36/36,
-`prueba_seleccion_carpeta.py` 26/26, `prueba_carpeta_actual.py` 19/19, `prueba_persistencia_arbol.py`
-15/15, `prueba_persistencia_subcarpetas.py` 10/10, `prueba_escaneo_guardado.py` 24/24,
-`prueba_sincronizacion_interfaz.py` 18/18, `prueba_recarga_catalogo.py` 20/20, `prueba_escaneo.py`
-12/12, `prueba_progreso_visual.py` OK, `prueba_smoke.py` OK. Ejecución real de `visor_videos.py`:
-preferencia OFF → selección en el árbol sin escaneo + botón escanea; preferencia ON → la selección
-escanea; cierre limpio (exit 0).
+**Pruebas superadas:** `prueba_indicador_escaneado.py` 14/14 (enum, nunca/ya escaneada, solo visual sin
+alterar selección/expansión/navegación, carga diferida, `ROL_ESTADO` como `int`, sin `QIcon` en datos,
+AST sin sqlite, flujo real); regresiones `prueba_arbol_navegacion.py` OK, `prueba_expansion_carpetas.py`
+35/35, `prueba_seleccion_arbol.py` 25/25, `prueba_escaneo_arbol.py` 11/11, `prueba_escaneo_automatico.py`
+19/19, `prueba_subcarpetas_arbol.py` 15/15, `prueba_carpeta_actual.py` 19/19,
+`prueba_persistencia_arbol.py` 15/15, `prueba_escaneo_interfaz.py` 36/36, `prueba_smoke.py` OK.
+Ejecución real de `visor_videos.py`: escaneo de `C:\prueba\videos_prueba` → el nodo pasa de `SIN_ESCANEAR`
+a `ESCANEADA` con ícono; cierre limpio (exit 0).
 
 ## Hitos completados
 
@@ -83,6 +81,7 @@ escanea; cierre limpio (exit 0).
 - Integración del árbol con el flujo de escaneo (Etapa 2.6: seleccionar una carpeta válida en el árbol o por el diálogo inicia automáticamente el escaneo mediante `iniciar_escaneo()`, el mismo punto de entrada del botón; un único disparo por acción; restauración inicial sin escaneo).
 - Verificación de la paridad de "Incluir subcarpetas" (Etapa 2.7: etapa de validación sin cambios de producción; árbol, botón y diálogo respetan de forma idéntica la casilla, confirmado por `prueba_subcarpetas_arbol.py`).
 - Preferencia independiente de escaneo automático (Etapa 2.8: casilla "Escaneo automático" junto a "Incluir subcarpetas", persistida en `configuracion.json` con default `True`; decisión única `_disparar_escaneo_si_automatico()`; el botón "Escanear carpeta" ignora la preferencia; cuatro combinaciones soportadas).
+- Indicadores visuales de carpetas escaneadas (Etapa 2.9: `EstadoNodo` + `ROL_ESTADO` + `_icono_para`, marcado por el pipeline al sincronizar; únicamente visual, sin alterar selección/expansión/navegación; el árbol no conoce SQLite).
 
 ## Pendientes prioritarios
 
@@ -122,15 +121,20 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
   Etapa 2.6); la suite no modifica ese subsistema y el resto del pipeline
   funciona correctamente. Revisar el contrato de T15 o aislarlo de la base
   real en una etapa futura.
+- **Estado de "escaneada" por sesión** (Etapa 2.9): el indicador de carpetas
+  escaneadas vive en memoria (`carpetas_escaneadas` del visor) y se pierde al
+  reiniciar; no se persiste ni se deriva del catálogo (requeriría cambios de
+  esquema o en módulos restringidos). La API (`EstadoNodo` + `_icono_para`) ya
+  está preparada para futuros estados; documentada como deuda técnica para una
+  etapa específica de persistencia del estado (registrada también en
+  `DOCUMENTO_TECNICO.md` §8, problema 14).
 
 ## Próxima etapa
 
-**Etapa 2.9 del Bloque de trabajo 2 (indicadores visuales de carpetas
-escaneadas).** Con la preferencia de escaneo automático y las cuatro
-combinaciones implementadas (Etapa 2.8), la próxima etapa es la incorporación
-de indicadores visuales en el árbol para distinguir las carpetas ya
-escaneadas, siguiendo la dirección definida en `VISION_PRODUCTO.md` y
-`ROADMAP.md`.
+**Etapa 2.10 del Bloque de trabajo 2 (filtrado del catálogo desde el
+árbol).** Con los indicadores visuales de carpetas escaneadas ya implementados
+(Etapa 2.9), la próxima etapa es el filtrado del catálogo desde el árbol,
+siguiendo la dirección definida en `VISION_PRODUCTO.md` y `ROADMAP.md`.
 
 ## Documentos del proyecto
 
