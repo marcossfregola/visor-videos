@@ -13,19 +13,21 @@ y persistencia de la última carpeta seleccionada.
 
 ## Último commit aprobado
 
-**Mensaje:** Incorporar infraestructura de paneles con QSplitter (panel izquierdo placeholder + panel derecho con interfaz existente)
+**Mensaje:** Implementar arbol de navegacion en el panel izquierdo (Etapa 2.1: Este equipo y discos)
 
-**Etapa:** Infraestructura de paneles (QSplitter) — la ventana principal se divide en dos paneles
-permanentes mediante un `QSplitter` horizontal:
-- Panel izquierdo: placeholder visual (`QLabel` "Panel de navegacion") sin lógica, minWidth=80, maxWidth=400.
-- Panel derecho: clase `PanelPrincipal(QWidget)` que contiene toda la interfaz existente sin cambios.
-- `PanelPrincipal` redefine `minimumSizeHint()` a `QSize(0, 0)` para evitar que el `minimumSizeHint`
-  calculado por defecto (~720 px, dominado por la barra de herramientas de 8 widgets) bloquee el
-  arrastre del divisor.
-- `handleWidth=8` para usabilidad, cursor `Qt.SplitHCursor` exclusivamente sobre el `QSplitterHandle`.
-- Estilo visual nativo de Windows, sin colores ni estilos personalizados.
+**Etapa:** Árbol de navegación (Etapa 2.1 del Bloque de trabajo 2) — reemplazo del placeholder del panel
+izquierdo por un árbol real:
+- Nuevo módulo `arbol_navegacion.py` con `ArbolNavegacion(QTreeWidget)` (raíz "Este equipo" expandida +
+  discos del sistema como hijos) y `discos_disponibles()` (enumeración por `os.path.exists` sobre A–Z, solo Windows).
+- Árbol puramente visual y completamente pasivo: `setHeaderHidden(True)`, `setSelectionMode(NoSelection)`,
+  sin señales ni slots, sin navegación, sin escaneo, sin modificación de carpeta y sin integración con lógica existente.
+- `visor_videos.py` reemplaza el `QLabel` placeholder por `ArbolNavegacion()` en el panel izquierdo del QSplitter.
+  Sin cambios en el panel derecho ni en el pipeline.
 
-**Pruebas superadas:** `prueba_smoke.py` OK (7 secciones: paginación, escaneo, previews, doble clic, persistencia, selección carpeta, filtro). Verificación manual: splitter arrastrable con el mouse, cursor cambia solo sobre el handle, sin regresiones.
+**Pruebas superadas:** `prueba_arbol_navegacion.py` OK (raíz, discos, placeholder eliminado, panel derecho
+funcional, splitter redimensionable, clic sin acción); regresiones `prueba_smoke.py` OK, `prueba_escaneo_interfaz.py`
+36/36, `prueba_persistencia_carpeta.py` 20/20, `prueba_cantidad_previews.py` 14/14, `prueba_seleccion_visual.py` OK.
+Ejecución real de `visor_videos.py` con cierre limpio (exit 0).
 
 ## Hitos completados
 
@@ -65,6 +67,7 @@ permanentes mediante un `QSplitter` horizontal:
 - Apertura de carpetas de los seleccionados mediante menú contextual (deduplicación de carpetas).
 - Cantidad configurable de previews visibles (3/5/7/9) con persistencia y actualización inmediata de la interfaz.
 - Infraestructura de paneles con QSplitter (panel izquierdo placeholder + panel derecho con interfaz existente, PanelPrincipal con minimumSizeHint anulado).
+- Árbol de navegación en el panel izquierdo (Etapa 2.1: nodo "Este equipo" + discos del sistema, puramente visual y sin navegación).
 
 ## Pendientes prioritarios
 
@@ -93,10 +96,10 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
 
 ## Próxima etapa
 
-**Infraestructura de navegación (árbol de carpetas).** Con la arquitectura
-de paneles ya establecida, la próxima etapa es implementar el árbol de
-carpetas en el panel izquierdo como mecanismo principal de navegación,
-siguiendo la dirección definida en `VISION_PRODUCTO.md` y `ROADMAP.md`.
+**Etapa 2.2 del Bloque de trabajo 2 (expandir discos y mostrar carpetas).**
+Con el árbol base ya implementado (Etapa 2.1: "Este equipo" y discos), la
+próxima etapa es expandir los discos para mostrar las carpetas, siguiendo la
+dirección definida en `VISION_PRODUCTO.md` y `ROADMAP.md`.
 
 ## Documentos del proyecto
 

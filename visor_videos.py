@@ -40,6 +40,7 @@ from escanear_videos import (
 from rutas import ruta_carpeta_miniaturas, ruta_configuracion
 from tareas import Estado, GestorTareas
 from apertura_videos import abrir_video_con_aplicacion_predeterminada
+from arbol_navegacion import ArbolNavegacion
 from tareas_videos import (
     TareaEscaneo,
     TareaFFprobe,
@@ -422,10 +423,8 @@ class VisorVideos(QMainWindow):
         panel_izquierdo.setStyleSheet("background-color: #e8e8e8;")
         layout_izquierdo = QVBoxLayout(panel_izquierdo)
         layout_izquierdo.setContentsMargins(0, 0, 0, 0)
-        placeholder = QLabel("Panel de navegacion")
-        placeholder.setAlignment(Qt.AlignCenter)
-        placeholder.setStyleSheet("color: #888; font-size: 14px; background-color: #e8e8e8;")
-        layout_izquierdo.addWidget(placeholder)
+        arbol_navegacion = ArbolNavegacion()
+        layout_izquierdo.addWidget(arbol_navegacion)
 
         splitter = QSplitter(Qt.Horizontal)
         splitter.setHandleWidth(8)

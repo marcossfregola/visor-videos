@@ -5,6 +5,51 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 47. Árbol de navegación en el panel izquierdo (Etapa 2.1)
+
+- **Fecha:** 2026-08-06
+- **Objetivo:** Reemplazar el placeholder del panel izquierdo por un árbol real que constituya la
+  infraestructura inicial del futuro Centro de Navegación. Mostrar únicamente el nodo raíz "Este
+  equipo" y los discos disponibles del sistema. Sin navegación, sin escaneo, sin selección
+  funcional y sin integración con lógica existente.
+- **Archivos creados:**
+  - `arbol_navegacion.py` — módulo de interfaz con `discos_disponibles()` (enumeración por
+    `os.path.exists` sobre A–Z, solo Windows, sin dependencias externas ni lógica de UI) y
+    `ArbolNavegacion(QTreeWidget)` (header oculto, `NoSelection`, raíz "Este equipo" expandida y un
+    hijo por disco). Árbol completamente pasivo: sin señales, sin slots y sin navegación.
+  - `prueba_arbol_navegacion.py` — verificación de la etapa: raíz "Este equipo", discos
+    coincidentes con el sistema, placeholder eliminado, panel derecho funcional, splitter
+    redimensionable, clic sobre disco sin ninguna acción y captura de pantalla.
+- **Archivos modificados:**
+  - `visor_videos.py` — import de `ArbolNavegacion` y reemplazo del `QLabel` placeholder por
+    `ArbolNavegacion()` en el panel izquierdo del QSplitter. Sin cambios en el panel derecho ni en
+    el pipeline.
+  - `DOCUMENTO_TECNICO.md` — nuevo módulo documentado; infraestructura de paneles y constructor
+    actualizados con el árbol; sección de dirección futura actualizada; árbol de directorios
+    actualizado.
+  - `ESTADO_PROYECTO.md` — etapa registrada como completada, actualizadas última etapa aprobada y
+    próxima etapa.
+  - `ROADMAP.md` — Etapa 2.1 marcada como implementada.
+- **Pruebas:** `prueba_arbol_navegacion.py` OK. Regresiones: `prueba_smoke.py` OK,
+  `prueba_escaneo_interfaz.py` 36/36, `prueba_persistencia_carpeta.py` 20/20,
+  `prueba_cantidad_previews.py` 14/14, `prueba_seleccion_visual.py` OK. Ejecución real de
+  `visor_videos.py` con cierre limpio (`exit 0`) y captura programática.
+- **Resultado:** El placeholder desapareció y el panel izquierdo muestra el árbol real ("Este
+  equipo" → `C:\`) sin ninguna acción al hacer clic. El panel derecho funciona igual y el splitter
+  se redimensiona normalmente. Sin carpetas, sin navegación, sin escaneo ni integración (etapas
+  siguientes).
+- **Commit:** "Implementar arbol de navegacion en el panel izquierdo (Etapa 2.1: Este equipo y discos)"
+- **Decisiones importantes:**
+  1. **Módulo propio `arbol_navegacion.py`** — infraestructura nueva, no refactorización:
+     encapsula la enumeración de discos (lógica pura, sin Qt) y el widget, respetando la
+     separación interfaz/lógica (Regla 7) y dejando la base extensible del Centro de Navegación.
+  2. **Enumeración por `os.path.exists` sobre A–Z** (no `GetLogicalDrives`): mecanismo stdlib,
+     sin dependencias externas, separado de la interfaz.
+  3. **Árbol pasivo con `NoSelection`**: el clic no produce ninguna acción funcional; el
+     `currentItem` interno de Qt puede cambiar pero no hay highlight ni señales conectadas.
+
+---
+
 ## 46. Infraestructura de paneles (QSplitter)
 
 - **Fecha:** 2026-08-06
