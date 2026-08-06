@@ -13,15 +13,18 @@ y persistencia de la última carpeta seleccionada.
 
 ## Último commit aprobado
 
-**Mensaje:** Estabilizar la Beta 1.0 (consola, reescaneo de previews y layout definitivo)
+**Mensaje:** Incorporar menú contextual con acciones básicas (abrir, abrir carpeta, copiar ruta)
 
-**Etapa:** Estabilización de la Beta 1.0 — tres correcciones validadas
-con 23 videos reales:
-1. Eliminación de ventanas de consola de FFmpeg/FFprobe.
-2. Conservación de previews tras reescaneo.
-3. Layout definitivo de tarjetas: `[Datos (maxWidth=240)] [miniatura + 3 previews] [addStretch]`.
+**Etapa:** Menú contextual sobre filas de videos — clic derecho con tres
+acciones:
+1. **Abrir** — reutiliza el mecanismo existente de doble clic (`_abrir_video`).
+2. **Abrir carpeta** — abre el Explorador de Windows con la carpeta seleccionada (`os.startfile`).
+3. **Copiar ruta** — copia la ruta completa del video al portapapeles (`QApplication.clipboard().setText`).
 
-**Pruebas superadas:** 8 suites, 168/169 pruebas (T13 de recarga preexistente), sin regresiones.
+Comportamiento de selección: si la fila no estaba seleccionada, pasa a ser
+la única seleccionada. Si pertenece a una selección múltiple, se conserva.
+
+**Pruebas superadas:** `prueba_menu_contextual.py` 18/18, `prueba_seleccion.py` 26/26, `prueba_seleccion_visual.py` OK, `prueba_doble_clic.py` 14/14, `prueba_smoke.py` OK.
 
 **SHA:** consultar con `git log -1`.
 
@@ -56,7 +59,8 @@ con 23 videos reales:
 - Instalador Beta funcional (Inno Setup, sin permisos de administrador).
 - Feedback visual del procesamiento (barra de progreso indeterminada con texto de etapa).
 - Selección visual de filas (simple y múltiple con Ctrl+clic). Base preparada para futuras acciones sobre elementos seleccionados sin agregar menús ni botones todavía.
-
+- Menú contextual con clic derecho sobre filas de videos (abrir, abrir carpeta, copiar ruta).
+- Validación manual con videos reales: menú funcional sobre filas no seleccionadas, sobre selección múltiple y las tres acciones.
 ## Pendientes prioritarios
 
 1. ~~Mejorar el feedback visual del procesamiento (barra de progreso,~~
@@ -89,7 +93,8 @@ externos, lo que dio origen a las correcciones de estabilización ya
 implementadas. La fase actual se centra en mejorar la experiencia de
 uso basada en pruebas reales, continuando con la optimización de
 rendimiento con colecciones grandes y las acciones sobre los elementos
-seleccionados.
+seleccionados. El menú contextual con acciones básicas (abrir, abrir
+carpeta, copiar ruta) ya está funcional.
 
 ## Documentos del proyecto
 

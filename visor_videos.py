@@ -2,7 +2,7 @@ import os
 import sys
 
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QPixmap
+from PySide6.QtGui import QCursor, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMainWindow,
+    QMenu,
     QProgressBar,
     QPushButton,
     QScrollArea,
@@ -125,6 +126,7 @@ ESTILO_SELECCIONADA = "Tarjeta { border: 3px solid #2196F3; }"
 class Tarjeta(QFrame):
     doble_clic = Signal(str)
     seleccionada = Signal(str, bool)
+    menu_contextual = Signal(str)
 
     def __init__(self, fila, parent=None):
         super().__init__(parent)
@@ -206,6 +208,10 @@ class Tarjeta(QFrame):
         if event.button() == Qt.LeftButton:
             ctrl = bool(event.modifiers() & Qt.ControlModifier)
             self.seleccionada.emit(self._nombre, ctrl)
+        elif event.button() == Qt.RightButton:
+            if not self._seleccionada:
+                self.seleccionada.emit(self._nombre, False)
+            self.menu_contextual.emit(self._nombre)
         super().mousePressEvent(event)
 
     def mouseDoubleClickEvent(self, event):
@@ -887,6 +893,7 @@ class VisorVideos(QMainWindow):
             tarjeta = Tarjeta(fila)
             tarjeta.doble_clic.connect(self._abrir_video)
             tarjeta.seleccionada.connect(self._al_seleccionar_tarjeta)
+            tarjeta.menu_contextual.connect(self._mostrar_menu_contextual)
             self.tarjetas.append((fila[0], tarjeta))
             self.visibles.append(fila[0])
             self.cuadricula.addWidget(tarjeta, posicion, 0)
@@ -945,6 +952,7 @@ class VisorVideos(QMainWindow):
             tarjeta = Tarjeta(fila)
             tarjeta.doble_clic.connect(self._abrir_video)
             tarjeta.seleccionada.connect(self._al_seleccionar_tarjeta)
+            tarjeta.menu_contextual.connect(self._mostrar_menu_contextual)
             self.tarjetas.append((fila[0], tarjeta))
             self.visibles.append(fila[0])
             self.cuadricula.addWidget(tarjeta, indice, 0)
@@ -961,6 +969,27 @@ class VisorVideos(QMainWindow):
             self.mensaje_carpeta.setText(MENSAJE_ERROR_ABRIR)
             return
         self.mensaje_carpeta.clear()
+
+    def _mostrar_menu_contextual(self, nombre):
+        menu = QMenu(self)
+        accion_abrir = menu.addAction("Abrir")
+        accion_abrir_carpeta = menu.addAction("Abrir carpeta")
+        accion_copiar_ruta = menu.addAction("Copiar ruta")
+        accion_abrir.triggered.connect(lambda: self._abrir_video(nombre))
+        accion_abrir_carpeta.triggered.connect(lambda: self._abrir_carpeta(nombre))
+        accion_copiar_ruta.triggered.connect(lambda: self._copiar_ruta(nombre))
+        menu.exec(QCursor.pos())
+
+    def _abrir_carpeta(self, nombre):
+        carpeta = self.carpeta_seleccionada
+        if carpeta and os.path.isdir(carpeta):
+            os.startfile(carpeta)
+
+    def _copiar_ruta(self, nombre):
+        carpeta = self.carpeta_seleccionada
+        if carpeta and os.path.isdir(carpeta):
+            ruta = os.path.abspath(os.path.join(carpeta, nombre))
+            QApplication.clipboard().setText(ruta)
 
     def filtrar(self, texto):
         texto = texto.lower()

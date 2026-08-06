@@ -458,7 +458,7 @@ def test_14():
         arbol = ast.parse(f.read(), ruta)
 
     def _referencia_os(attr):
-        if attr.attr not in ("isfile", "startfile"):
+        if attr.attr not in ("isfile",):
             return False
         valor = attr.value
         if isinstance(valor, ast.Name):

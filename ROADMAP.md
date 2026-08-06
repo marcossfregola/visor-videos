@@ -27,8 +27,9 @@ arquitectónicas.
 
 -   ~~Barra de progreso.~~ Implementada.
 -   ~~Selección visual de filas (simple y Ctrl+clic).~~ Implementada.
-    Pendiente: acciones sobre elementos seleccionados y restauración
-    automática tras reconstrucción de tarjetas.
+    ~~Pendiente: acciones sobre elementos seleccionados y restauración
+    automática tras reconstrucción de tarjetas.~~ Implementadas acciones
+    básicas mediante menú contextual (abrir, abrir carpeta, copiar ruta).
 -   Cancelación de tareas.
 -   Reanudación de trabajos.
 -   Configuración persistente.

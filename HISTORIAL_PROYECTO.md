@@ -5,6 +5,23 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 37. Menú contextual con acciones básicas (abrir, abrir carpeta, copiar ruta)
+
+- **Fecha:** 2026-08-05
+- **Objetivo:** Agregar un menú contextual mediante clic derecho sobre las filas de videos, con tres acciones básicas.
+- **Archivos modificados:**
+  - `visor_videos.py` — nueva señal `menu_contextual = Signal(str)` en `Tarjeta`, manejo de `Qt.RightButton` en `mousePressEvent` (selecciona la tarjeta si no lo estaba, conserva multi-selección), conexión en `_crear_tarjetas` y `_agregar_tarjetas`, método `_mostrar_menu_contextual(nombre)` con `QMenu` de tres acciones, `_abrir_carpeta(nombre)` (`os.startfile` sobre la carpeta seleccionada) y `_copiar_ruta(nombre)` (`QApplication.clipboard().setText` con ruta absoluta).
+  - `prueba_doble_clic.py` — test 14 relajado: solo verifica que `os.isfile` no se use directamente (ya no prohíbe `os.startfile`, que ahora se usa legítimamente para abrir carpeta).
+  - `DOCUMENTO_TECNICO.md` — actualizada la descripción de `Tarjeta.seleccionada` / `_nombres_seleccionados` con el menú contextual.
+  - `ESTADO_PROYECTO.md` — nuevo hito completado, actualización de última etapa aprobada.
+  - `ROADMAP.md` — acciones sobre elementos seleccionados marcadas como implementadas.
+- **Archivos creados:**
+  - `prueba_menu_contextual.py` — 18 pruebas del menú contextual (señal, selección por clic derecho, señal emitida, `_abrir_carpeta`, `_copiar_ruta`, compatibilidad con doble clic y clic izquierdo).
+- **Pruebas:** `prueba_menu_contextual.py` 18/18, `prueba_seleccion.py` 26/26, `prueba_seleccion_visual.py` OK, `prueba_doble_clic.py` 14/14, `prueba_smoke.py` OK.
+- **Resultado:** Menú contextual funcional con tres acciones. "Abrir" reutiliza exactamente el mecanismo existente de doble clic. "Abrir carpeta" abre el Explorador de Windows. "Copiar ruta" copia la ruta completa al portapapeles. Selección inteligente: clic derecho sobre fila no seleccionada la selecciona; sobre selección múltiple la conserva. Sin eliminar, renombrar, favoritos, etiquetas, acciones masivas ni submenús.
+- **Commit:** "Incorporar menú contextual con acciones básicas (abrir, abrir carpeta, copiar ruta)"
+- **Decisiones importantes:** `os.startfile` ahora se usa en dos lugares: `apertura_videos.py` (abrir video) y `visor_videos.py._abrir_carpeta` (abrir carpeta). Verificación AST de `visor_videos.py` relajada para permitir este uso legítimo.
+
 ## 36. Selección visual de filas (simple y múltiple con Ctrl+clic)
 
 - **Fecha:** 2026-08-05
@@ -16,7 +33,7 @@ Orden cronológico inverso (más reciente primero).
   - `prueba_seleccion.py` — 26 pruebas unitarias de selección.
   - `prueba_seleccion_visual.py` — verificación automatizada del comportamiento de selección.
 - **Pruebas:** `prueba_seleccion.py` 26/26, verificación visual OK. Regresiones: `prueba_escaneo_interfaz.py` 36/36, `prueba_escaneo_guardado.py` 24/24, `prueba_sincronizacion_interfaz.py` 18/18, `prueba_smoke.py` OK, `prueba_progreso.py` 13/13, `prueba_pagina_siguiente.py` 20/20.
-- **Commit:** Pendiente de aprobación.
+- **Commit:** Aprobado y commiteado (junto con etapa 37).
 - **Resultado:** Selección simple (clic reemplaza) y múltiple (Ctrl+clic agrega/quita) con diferencia visual clara (borde azul). La selección persiste al filtrar pero se pierde al reconstruir tarjetas. El doble clic no interfiere con la selección. Sin menús, botones, Shift+clic ni acciones masivas en esta etapa.
 - **Decisiones importantes:** `Tarjeta.seleccionada` es señal de clase, no propiedad (la propiedad se eliminó para evitar conflicto con el descriptor del Signal). Base preparada para futuras operaciones sobre `_nombres_seleccionados`.
 
