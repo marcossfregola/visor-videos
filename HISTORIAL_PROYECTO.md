@@ -5,6 +5,54 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 48. Expansión de discos y carpetas con carga diferida (Etapa 2.2)
+
+- **Fecha:** 2026-08-06
+- **Objetivo:** Permitir expandir los discos y visualizar las carpetas contenidas en cada disco,
+  manteniendo el árbol pasivo y desacoplado del catálogo. Carga diferida estricta: al expandir un
+  nodo se consultan únicamente sus hijos inmediatos, sin recorrer el árbol completo al iniciar la
+  aplicación.
+- **Archivos creados:**
+  - `prueba_expansion_carpetas.py` — 33 verificaciones: `carpetas_de` (solo directorios, orden
+    insensible a mayúsculas, vacío/inexistente/archivo/permiso denegado → `[]`); widget con disco
+    simulado (carga diferida real: 0 llamadas al construir, placeholder previo, un nivel por
+    expansión, re-expansión sin duplicados ni recarga, carpeta vacía sin hijos, raíz sin recarga,
+    `NoSelection`, carpeta inaccesible sin excepción); integración en `VisorVideos` (expansión sin
+    cambio de carpeta/etiqueta, gestor inactivo, sin pendientes, tarjetas intactas, clic sin acción,
+    splitter redimensionable) y medición del tiempo de apertura.
+- **Archivos modificados:**
+  - `arbol_navegacion.py` — nueva función pura `carpetas_de(ruta)` (subdirectorios inmediatos
+    ordenados con `sorted(..., key=str.lower)`; `[]` ante cualquier `OSError`); `ArbolNavegacion`
+    con **carga diferida por placeholder** (`itemExpanded` interno → `_al_expandir`/`_cargar`, un
+    solo nivel por expansión), estado de carga en el nodo (`ROL_CARGADO = Qt.UserRole + 2`, no en
+    `id(item)`), ruta absoluta por nodo (`ROL_RUTA = Qt.UserRole + 1`) y placeholder marcado
+    (`ROL_PLACEHOLDER = Qt.UserRole + 3`); protección defensiva ante `OSError` en `_cargar`;
+    `NoSelection` y pasividad conservadas.
+  - `DOCUMENTO_TECNICO.md` — módulo documentado con `carpetas_de`, roles y mecanismo de carga
+    diferida; infraestructura de paneles, dirección futura y árbol de directorios actualizados.
+  - `ESTADO_PROYECTO.md` — última etapa aprobada y próxima etapa actualizadas; nuevo hito.
+  - `ROADMAP.md` — Etapa 2.2 marcada como implementada.
+- **Pruebas:** `prueba_expansion_carpetas.py` 33/33. Regresiones: `prueba_arbol_navegacion.py` OK,
+  `prueba_smoke.py` OK, `prueba_escaneo_interfaz.py` 36/36. Ejecución real de `visor_videos.py` con
+  cierre limpio (`exit 0`) y apertura en ~0.5 s (sin escaneo de directorios al iniciar).
+- **Resultado:** Los discos se expanden mostrando solo sus carpetas de primer nivel; cada carpeta
+  se expande a su vez cargando solo su nivel; re-expandir no duplica; carpetas vacías e inaccesibles
+  no rompen la exploración; el árbol no dispara ninguna acción sobre el catálogo. El panel derecho
+  funciona igual y el splitter se redimensiona normalmente.
+- **Commit:** "Implementar expansion de discos y carpetas con carga diferida (Etapa 2.2)"
+- **Decisiones importantes:**
+  1. **Estado de carga en el nodo** (`ROL_CARGADO`), no en `id(item)`: el estado pertenece al item y
+     no a la identidad temporal del objeto Python.
+  2. **Un solo nivel por expansión**: `_cargar` consulta solo los hijos inmediatos; nunca recorre el
+     árbol completo ni precalcula niveles posteriores.
+  3. **Tolerancia total a `OSError`**: `carpetas_de` devuelve `[]` ante cualquier error de acceso y
+     `_cargar` protege además la llamada.
+  4. **Orden consistente**: orden alfabético insensible a mayúsculas (`sorted(..., key=str.lower)`).
+  5. **Ruta absoluta por nodo en `ROL_RUTA`**: base preparada para las Etapas 2.3 (navegación) y 2.4
+     (selección de carpeta).
+
+---
+
 ## 47. Árbol de navegación en el panel izquierdo (Etapa 2.1)
 
 - **Fecha:** 2026-08-06

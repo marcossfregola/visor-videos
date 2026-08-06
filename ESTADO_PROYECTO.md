@@ -13,21 +13,20 @@ y persistencia de la última carpeta seleccionada.
 
 ## Último commit aprobado
 
-**Mensaje:** Implementar arbol de navegacion en el panel izquierdo (Etapa 2.1: Este equipo y discos)
+**Mensaje:** Implementar expansion de discos y carpetas con carga diferida (Etapa 2.2)
 
-**Etapa:** Árbol de navegación (Etapa 2.1 del Bloque de trabajo 2) — reemplazo del placeholder del panel
-izquierdo por un árbol real:
-- Nuevo módulo `arbol_navegacion.py` con `ArbolNavegacion(QTreeWidget)` (raíz "Este equipo" expandida +
-  discos del sistema como hijos) y `discos_disponibles()` (enumeración por `os.path.exists` sobre A–Z, solo Windows).
-- Árbol puramente visual y completamente pasivo: `setHeaderHidden(True)`, `setSelectionMode(NoSelection)`,
-  sin señales ni slots, sin navegación, sin escaneo, sin modificación de carpeta y sin integración con lógica existente.
-- `visor_videos.py` reemplaza el `QLabel` placeholder por `ArbolNavegacion()` en el panel izquierdo del QSplitter.
-  Sin cambios en el panel derecho ni en el pipeline.
+**Etapa:** Expansión de discos y visualización de carpetas (Etapa 2.2 del Bloque de trabajo 2):
+- `arbol_navegacion.py` — nueva función pura `carpetas_de(ruta)` (subdirectorios inmediatos ordenados,
+  tolerante a `OSError`); `ArbolNavegacion` con **carga diferida por placeholder** (`itemExpanded`
+  interno → un solo nivel por expansión), estado de carga en el nodo (`ROL_CARGADO = Qt.UserRole + 2`)
+  y ruta absoluta por nodo (`ROL_RUTA = Qt.UserRole + 1`). El árbol sigue pasivo y desacoplado del catálogo.
+- `prueba_expansion_carpetas.py` — 33 verificaciones de la etapa.
 
-**Pruebas superadas:** `prueba_arbol_navegacion.py` OK (raíz, discos, placeholder eliminado, panel derecho
-funcional, splitter redimensionable, clic sin acción); regresiones `prueba_smoke.py` OK, `prueba_escaneo_interfaz.py`
-36/36, `prueba_persistencia_carpeta.py` 20/20, `prueba_cantidad_previews.py` 14/14, `prueba_seleccion_visual.py` OK.
-Ejecución real de `visor_videos.py` con cierre limpio (exit 0).
+**Pruebas superadas:** `prueba_expansion_carpetas.py` 33/33 (carga diferida sin recorrido al iniciar,
+un nivel por expansión, re-expansión sin duplicados, carpetas vacías/inaccesibles sin romper la
+exploración, sin acción sobre el catálogo, splitter redimensionable); regresiones `prueba_arbol_navegacion.py`
+OK, `prueba_smoke.py` OK, `prueba_escaneo_interfaz.py` 36/36. Ejecución real de `visor_videos.py` con
+cierre limpio (exit 0) y apertura en ~0.5 s (sin escaneo de directorios al iniciar).
 
 ## Hitos completados
 
@@ -68,6 +67,7 @@ Ejecución real de `visor_videos.py` con cierre limpio (exit 0).
 - Cantidad configurable de previews visibles (3/5/7/9) con persistencia y actualización inmediata de la interfaz.
 - Infraestructura de paneles con QSplitter (panel izquierdo placeholder + panel derecho con interfaz existente, PanelPrincipal con minimumSizeHint anulado).
 - Árbol de navegación en el panel izquierdo (Etapa 2.1: nodo "Este equipo" + discos del sistema, puramente visual y sin navegación).
+- Expansión de discos y carpetas con carga diferida (Etapa 2.2: un solo nivel por expansión, estado de carga en el nodo, ruta absoluta en cada nodo, árbol desacoplado del catálogo).
 
 ## Pendientes prioritarios
 
@@ -96,10 +96,10 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
 
 ## Próxima etapa
 
-**Etapa 2.2 del Bloque de trabajo 2 (expandir discos y mostrar carpetas).**
-Con el árbol base ya implementado (Etapa 2.1: "Este equipo" y discos), la
-próxima etapa es expandir los discos para mostrar las carpetas, siguiendo la
-dirección definida en `VISION_PRODUCTO.md` y `ROADMAP.md`.
+**Etapa 2.3 del Bloque de trabajo 2 (navegación completa del árbol).**
+Con la expansión de discos y carpetas ya implementada (Etapa 2.2), la próxima
+etapa es la navegación completa del árbol, siguiendo la dirección definida en
+`VISION_PRODUCTO.md` y `ROADMAP.md`.
 
 ## Documentos del proyecto
 
