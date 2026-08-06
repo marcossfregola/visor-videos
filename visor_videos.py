@@ -2,7 +2,7 @@ import escanear_videos
 import os
 import sys
 
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QCursor, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QScrollArea,
+    QSplitter,
     QVBoxLayout,
     QWidget,
 )
@@ -281,6 +282,26 @@ class Tarjeta(QFrame):
         self.actualizar_previews(existentes[:cantidad])
 
 
+class PanelPrincipal(QWidget):
+    """Panel derecho del QSplitter que contiene toda la interfaz principal.
+
+    Redefine minimumSizeHint() para devolver QSize(0, 0) porque el
+    minimumSizeHint calculado por defecto (~720 px) esta dominado por
+    la barra de herramientas (fila_carpeta) que contiene 8 widgets.
+
+    Si no se anula, el QSplitter usa ese valor como tamano minimo
+    efectivo del panel derecho, lo que bloquea el arrastre del divisor
+    hacia la derecha porque el panel ya esta en su minimo.
+
+    Al devolver (0, 0), el QSplitter solo respeta el minimumWidth
+    explicito del panel izquierdo (80 px), permitiendo que el divisor
+    se arrastre libremente en ambas direcciones.
+    """
+
+    def minimumSizeHint(self):
+        return QSize(0, 0)
+
+
 class VisorVideos(QMainWindow):
     def __init__(self, ruta_db=None, parent=None, ruta_config=None):
         super().__init__(parent)
@@ -388,13 +409,34 @@ class VisorVideos(QMainWindow):
         self.area.setWidgetResizable(True)
         self.area.setWidget(self.contenedor)
 
-        raiz = QWidget()
+        raiz = PanelPrincipal()
         layout = QVBoxLayout(raiz)
         layout.addLayout(fila_carpeta)
         layout.addLayout(barra)
         layout.addWidget(self.barra_progreso)
         layout.addWidget(self.area)
-        self.setCentralWidget(raiz)
+
+        panel_izquierdo = QWidget()
+        panel_izquierdo.setMinimumWidth(80)
+        panel_izquierdo.setMaximumWidth(400)
+        panel_izquierdo.setStyleSheet("background-color: #e8e8e8;")
+        layout_izquierdo = QVBoxLayout(panel_izquierdo)
+        layout_izquierdo.setContentsMargins(0, 0, 0, 0)
+        placeholder = QLabel("Panel de navegacion")
+        placeholder.setAlignment(Qt.AlignCenter)
+        placeholder.setStyleSheet("color: #888; font-size: 14px; background-color: #e8e8e8;")
+        layout_izquierdo.addWidget(placeholder)
+
+        splitter = QSplitter(Qt.Horizontal)
+        splitter.setHandleWidth(8)
+        splitter.addWidget(panel_izquierdo)
+        splitter.addWidget(raiz)
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
+        splitter.setSizes([220, 680])
+        splitter.setCollapsible(0, False)
+        splitter.handle(1).setCursor(Qt.SplitHCursor)
+        self.setCentralWidget(splitter)
 
         self.gestor = GestorTareas(self)
         self.gestor.tarea_resultado.connect(self._al_resultado)

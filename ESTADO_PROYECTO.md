@@ -13,25 +13,19 @@ y persistencia de la última carpeta seleccionada.
 
 ## Último commit aprobado
 
-**Mensaje:** Agregar cantidad configurable de previews visibles (3/5/7/9) con persistencia
+**Mensaje:** Incorporar infraestructura de paneles con QSplitter (panel izquierdo placeholder + panel derecho con interfaz existente)
 
-**Etapa:** Cantidad configurable de previews — el usuario puede elegir cuántas
-previews mostrar por video mediante un `QComboBox` con opciones 3, 5, 7 y 9:
-- La preferencia se persiste en `configuracion.json` y se restaura al iniciar.
-- La interfaz se actualiza inmediatamente al cambiar la cantidad sin requerir
-  reescaneo (`Tarjeta.ajustar_previews` muestra/oculta etiquetas y recarga
-  desde caché).
-- La generación de nuevos previews respeta la cantidad configurada (sin forzar
-  regeneración de los ya existentes).
-- `_nombre_seguro` aplicado en `_es_archivo_preview`, `contar_miniaturas` y
-  `miniatura_reutilizable` para consistencia con nombres de video que incluyen
-  subcarpetas.
-- `_encolar_previews` corregido: usa `len(existentes) >= CANTIDAD_PREVIEWS`
-  como criterio de completitud (no «algún preview»).
+**Etapa:** Infraestructura de paneles (QSplitter) — la ventana principal se divide en dos paneles
+permanentes mediante un `QSplitter` horizontal:
+- Panel izquierdo: placeholder visual (`QLabel` "Panel de navegacion") sin lógica, minWidth=80, maxWidth=400.
+- Panel derecho: clase `PanelPrincipal(QWidget)` que contiene toda la interfaz existente sin cambios.
+- `PanelPrincipal` redefine `minimumSizeHint()` a `QSize(0, 0)` para evitar que el `minimumSizeHint`
+  calculado por defecto (~720 px, dominado por la barra de herramientas de 8 widgets) bloquee el
+  arrastre del divisor.
+- `handleWidth=8` para usabilidad, cursor `Qt.SplitHCursor` exclusivamente sobre el `QSplitterHandle`.
+- Estilo visual nativo de Windows, sin colores ni estilos personalizados.
 
-**Pruebas superadas:** `prueba_cantidad_previews.py` 14/14, `prueba_previews_progresivas.py` 16/16, `prueba_smoke.py` OK.
-
-**SHA:** consultar con `git log -1`.
+**Pruebas superadas:** `prueba_smoke.py` OK (7 secciones: paginación, escaneo, previews, doble clic, persistencia, selección carpeta, filtro). Verificación manual: splitter arrastrable con el mouse, cursor cambia solo sobre el handle, sin regresiones.
 
 ## Hitos completados
 
@@ -70,7 +64,8 @@ previews mostrar por video mediante un `QComboBox` con opciones 3, 5, 7 y 9:
 - Copia de rutas de los seleccionados mediante menú contextual (primera operación sobre selección múltiple).
 - Apertura de carpetas de los seleccionados mediante menú contextual (deduplicación de carpetas).
 - Cantidad configurable de previews visibles (3/5/7/9) con persistencia y actualización inmediata de la interfaz.
-- Validación manual con videos reales: cambio entre cantidades sin reescaneo, persistencia correcta, sin regresiones.
+- Infraestructura de paneles con QSplitter (panel izquierdo placeholder + panel derecho con interfaz existente, PanelPrincipal con minimumSizeHint anulado).
+
 ## Pendientes prioritarios
 
 1. ~~Mejorar el feedback visual del procesamiento (barra de progreso,~~
@@ -98,14 +93,10 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
 
 ## Próxima etapa
 
-**Mejora continua de la Beta.** La Beta 1.0 fue validada en equipos
-externos, lo que dio origen a las correcciones de estabilización ya
-implementadas. La fase actual se centra en mejorar la experiencia de
-uso basada en pruebas reales, continuando con la optimización de
-rendimiento con colecciones grandes. El sistema completo de selección
-ya está funcional: simple, Ctrl+clic, Shift+clic, restauración tras
-reescaneo y menú contextual con acciones básicas (abrir, abrir carpeta,
-copiar ruta).
+**Infraestructura de navegación (árbol de carpetas).** Con la arquitectura
+de paneles ya establecida, la próxima etapa es implementar el árbol de
+carpetas en el panel izquierdo como mecanismo principal de navegación,
+siguiendo la dirección definida en `VISION_PRODUCTO.md` y `ROADMAP.md`.
 
 ## Documentos del proyecto
 

@@ -5,6 +5,54 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 46. Infraestructura de paneles (QSplitter)
+
+- **Fecha:** 2026-08-06
+- **Objetivo:** Implementar la infraestructura de la nueva interfaz mediante un QSplitter
+  horizontal que divida la ventana en panel izquierdo de navegación (placeholder) y panel
+  derecho con la interfaz actual completa. Etapa exclusivamente estructural, sin
+  funcionalidades nuevas.
+- **Archivos modificados:**
+  - `visor_videos.py` — agregado `QSplitter` y `QSize` a los imports; nueva clase
+    `PanelPrincipal(QWidget)` con `minimumSizeHint()` anulado a `QSize(0, 0)` (ver decisión
+    arquitectónica abajo); constructor de `VisorVideos` modificado para crear el QSplitter
+    con panel izquierdo placeholder (`QWidget`, minWidth=80, maxWidth=400, `QLabel` "Panel
+    de navegacion") y panel derecho `PanelPrincipal`; `setHandleWidth(8)` para usabilidad;
+    `splitter.handle(1).setCursor(Qt.SplitHCursor)` exclusivamente sobre el handle.
+  - `DOCUMENTO_TECNICO.md` — documentada la infraestructura de paneles, `PanelPrincipal` y
+    la decisión de anular `minimumSizeHint`.
+  - `ESTADO_PROYECTO.md` — etapa registrada como completada, actualizada última etapa
+    aprobada y próxima etapa.
+- **Pruebas:** `prueba_smoke.py` OK (7 secciones sin regresiones). Verificación manual:
+  splitter arrastrable con el mouse, cursor cambia solo sobre el handle, estilo visual
+  nativo de Windows, sin scroll horizontal innecesario, catálogo funcionando exactamente
+  igual.
+- **Resultado:** QSplitter funcional integrado como infraestructura permanente. Panel
+  izquierdo placeholder sin lógica. Panel derecho conserva el 100% del comportamiento
+  existente. Barra divisoria cómoda de agarrar (8 px) con cursor de redimensionamiento.
+  Sin colores ni estilos personalizados.
+- **Commit:** "Incorporar infraestructura de paneles con QSplitter (panel izquierdo placeholder + PanelPrincipal)"
+- **Decisiones importantes:**
+  1. **`PanelPrincipal.minimumSizeHint()` → `QSize(0, 0)`:** El `minimumSizeHint` por
+     defecto del panel derecho (~720 px) está dominado por la barra de herramientas
+     `fila_carpeta` (8 widgets: botones, checkbox, combo, labels) cuyo `minimumSizeHint`
+     combinado fuerza un mínimo de ~703 px + márgenes. Sin la anulación, el QSplitter usa
+     ese valor como tamaño mínimo efectivo, bloqueando el arrastre del divisor hacia la
+     derecha porque el panel ya está en su mínimo. La anulación a `(0, 0)` permite que el
+     splitter solo respete el `minimumWidth` del panel izquierdo (80 px), habilitando el
+     arrastre libre en ambas direcciones. Se evaluaron y descartaron dos alternativas:
+     `setMinimumWidth(0)` (no funciona porque Qt usa `max(minimumSizeHint, minimumWidth)`)
+     y `QSizePolicy.Ignored` (tiene efectos laterales sobre cualquier layout padre, no
+     solo el splitter).
+  2. **`handleWidth=8` (no 5):** El ancho predeterminado de 5 px resultó demasiado
+     delgado para tomar con el mouse en Windows 11/PySide6 6.11.1. Ocho píxeles conserva
+     el estilo nativo y es cómodo de agarrar.
+  3. **Cursor exclusivo sobre el handle:** `splitter.handle(1).setCursor(Qt.SplitHCursor)`
+     asigna el cursor de redimensionamiento únicamente al `QSplitterHandle`, no al splitter
+     completo, evitando que el cursor ↔ aparezca sobre toda la aplicación.
+
+---
+
 ## 45. Redefinición de la dirección futura de la interfaz
 
 - **Fecha:** 2026-08-05
