@@ -5,6 +5,7 @@ from rutas import ruta_configuracion
 
 CLAVE_CARPETA = "ultima_carpeta"
 CLAVE_SUBCARPETAS = "incluir_subcarpetas"
+CLAVE_CANTIDAD_PREVIEWS = "cantidad_previews"
 VARIABLE_ENTORNO = "VISOR_CONFIG"
 
 
@@ -84,3 +85,22 @@ def obtener_preferencia_subcarpetas(ruta_config=None):
     if not isinstance(valor, bool):
         return False
     return valor
+
+
+def guardar_cantidad_previews(n, ruta_config=None):
+    datos = _leer(ruta_config) or {}
+    if isinstance(n, int) and n > 0:
+        datos[CLAVE_CANTIDAD_PREVIEWS] = n
+    else:
+        datos.pop(CLAVE_CANTIDAD_PREVIEWS, None)
+    _escribir(datos, ruta_config)
+
+
+def obtener_cantidad_previews(ruta_config=None):
+    datos = _leer(ruta_config)
+    if datos is None:
+        return 3
+    valor = datos.get(CLAVE_CANTIDAD_PREVIEWS)
+    if isinstance(valor, int) and valor > 0:
+        return valor
+    return 3

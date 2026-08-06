@@ -13,18 +13,23 @@ y persistencia de la última carpeta seleccionada.
 
 ## Último commit aprobado
 
-**Mensaje:** Persistir preferencia "Incluir subcarpetas" entre ejecuciones
+**Mensaje:** Agregar cantidad configurable de previews visibles (3/5/7/9) con persistencia
 
-**Etapa:** Persistencia de la preferencia de subcarpetas — el estado de la
-casilla "Incluir subcarpetas" se guarda y restaura automáticamente:
-- Al modificar la casilla, se persiste inmediatamente en `configuracion.json`
-  mediante `guardar_preferencia_subcarpetas` (escritura atómica `.tmp` + `os.replace`).
-- Al iniciar la aplicación, se restaura el último valor con
-  `obtener_preferencia_subcarpetas` (devuelve `False` por defecto).
-- Mismo patrón que `ultima_carpeta`: clave `incluir_subcarpetas` como booleano
-  en el JSON compartido.
+**Etapa:** Cantidad configurable de previews — el usuario puede elegir cuántas
+previews mostrar por video mediante un `QComboBox` con opciones 3, 5, 7 y 9:
+- La preferencia se persiste en `configuracion.json` y se restaura al iniciar.
+- La interfaz se actualiza inmediatamente al cambiar la cantidad sin requerir
+  reescaneo (`Tarjeta.ajustar_previews` muestra/oculta etiquetas y recarga
+  desde caché).
+- La generación de nuevos previews respeta la cantidad configurada (sin forzar
+  regeneración de los ya existentes).
+- `_nombre_seguro` aplicado en `_es_archivo_preview`, `contar_miniaturas` y
+  `miniatura_reutilizable` para consistencia con nombres de video que incluyen
+  subcarpetas.
+- `_encolar_previews` corregido: usa `len(existentes) >= CANTIDAD_PREVIEWS`
+  como criterio de completitud (no «algún preview»).
 
-**Pruebas superadas:** `prueba_persistencia_subcarpetas.py` 10/10, `prueba_escaneo_subcarpetas.py` 12/12, `prueba_escaneo_interfaz.py` 36/36, `prueba_persistencia_carpeta.py` 20/20, `prueba_smoke.py` OK.
+**Pruebas superadas:** `prueba_cantidad_previews.py` 14/14, `prueba_previews_progresivas.py` 16/16, `prueba_smoke.py` OK.
 
 **SHA:** consultar con `git log -1`.
 
@@ -64,8 +69,8 @@ casilla "Incluir subcarpetas" se guarda y restaura automáticamente:
 - Selección por rango con Shift+clic basada en un ancla de selección y el orden visible.
 - Copia de rutas de los seleccionados mediante menú contextual (primera operación sobre selección múltiple).
 - Apertura de carpetas de los seleccionados mediante menú contextual (deduplicación de carpetas).
-- Escaneo opcional de subcarpetas con persistencia de la preferencia "Incluir subcarpetas".
-- Validación manual con videos reales: escaneo con y sin subcarpetas, diferencia en cantidad de videos detectados, sin regresiones.
+- Cantidad configurable de previews visibles (3/5/7/9) con persistencia y actualización inmediata de la interfaz.
+- Validación manual con videos reales: cambio entre cantidades sin reescaneo, persistencia correcta, sin regresiones.
 ## Pendientes prioritarios
 
 1. ~~Mejorar el feedback visual del procesamiento (barra de progreso,~~

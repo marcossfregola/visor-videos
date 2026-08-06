@@ -14,7 +14,14 @@ _ARGS_SIN_CONSOLA = (
 
 EXTENSIONES = {".mp4", ".mkv", ".avi"}
 EXTENSION_MINIATURA = ".jpg"
-CANTIDAD_PREVIEWS = 3
+CANTIDAD_PREVIEWS_POR_DEFECTO = 3
+CANTIDAD_PREVIEWS = CANTIDAD_PREVIEWS_POR_DEFECTO
+
+
+def configurar_cantidad_previews(n):
+    global CANTIDAD_PREVIEWS
+    if isinstance(n, int) and n > 0:
+        CANTIDAD_PREVIEWS = n
 COLUMNAS_EXTRA = [
     ("duracion_segundos", "REAL"),
     ("ancho", "INTEGER"),
@@ -246,7 +253,7 @@ def ruta_preview(video, indice):
 
 def _es_archivo_preview(nombre, video):
     return os.path.splitext(nombre)[0].startswith(
-        f"{os.path.splitext(video)[0]}_preview_"
+        f"{_nombre_seguro(os.path.splitext(video)[0])}_preview_"
     )
 
 def calcular_tiempo_miniatura(duracion):
@@ -287,7 +294,7 @@ def siguiente_indice_libre(video):
     return indice
 
 def miniatura_reutilizable(video, ruta_video):
-    prefijo = os.path.splitext(video)[0]
+    prefijo = _nombre_seguro(os.path.splitext(video)[0])
     carpeta = ruta_carpeta_miniaturas()
     if not os.path.isdir(carpeta):
         return None
@@ -346,7 +353,7 @@ def asegurar_miniaturas(videos, carpeta):
     }
 
 def contar_miniaturas(video):
-    prefijo = os.path.splitext(video)[0]
+    prefijo = _nombre_seguro(os.path.splitext(video)[0])
     carpeta = ruta_carpeta_miniaturas()
     if not os.path.isdir(carpeta):
         return 0

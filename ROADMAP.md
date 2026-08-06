@@ -45,7 +45,8 @@ arquitectónicas.
 -   Evitar fundidos.
 -   Evitar créditos.
 -   Evitar imágenes repetidas.
--   Cantidad configurable de miniaturas.
+-   ~~Cantidad configurable de miniaturas.~~ Implementada mediante combo box 3/5/7/9
+    con persistencia y actualización inmediata de la interfaz.
 
 ------------------------------------------------------------------------
 

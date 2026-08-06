@@ -1,3 +1,4 @@
+import escanear_videos
 import os
 import sys
 
@@ -6,6 +7,7 @@ from PySide6.QtGui import QCursor, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
+    QComboBox,
     QFileDialog,
     QFrame,
     QGridLayout,
@@ -22,17 +24,22 @@ from PySide6.QtWidgets import (
 )
 
 from configuracion import (
+    guardar_cantidad_previews,
     guardar_preferencia_subcarpetas,
     guardar_ultima_carpeta,
+    obtener_cantidad_previews,
     obtener_preferencia_subcarpetas,
     obtener_ultima_carpeta,
 )
-from escanear_videos import _nombre_seguro, configurar_escaneo_recursivo
+from escanear_videos import (
+    _nombre_seguro,
+    configurar_cantidad_previews,
+    configurar_escaneo_recursivo,
+)
 from rutas import ruta_carpeta_miniaturas, ruta_configuracion
 from tareas import Estado, GestorTareas
 from apertura_videos import abrir_video_con_aplicacion_predeterminada
 from tareas_videos import (
-    CANTIDAD_PREVIEWS,
     TareaEscaneo,
     TareaFFprobe,
     TareaGuardarVideos,
@@ -197,7 +204,7 @@ class Tarjeta(QFrame):
             recuadro.setStyleSheet("background-color: #e0e0e0; border: 1px solid #999;")
             contenedor_imagenes.addWidget(recuadro)
 
-        for _ in range(CANTIDAD_PREVIEWS):
+        for _ in range(escanear_videos.CANTIDAD_PREVIEWS):
             etiqueta = QLabel("Generando preview…")
             etiqueta.setFixedHeight(ALTO_TARJETA)
             etiqueta.setAlignment(Qt.AlignCenter)
@@ -267,6 +274,12 @@ class Tarjeta(QFrame):
                 actualizado = True
         return actualizado
 
+    def ajustar_previews(self, cantidad):
+        existentes = previews_de(self._nombre) or []
+        for i, etiqueta in enumerate(self._etiquetas_previews):
+            etiqueta.setVisible(i < cantidad)
+        self.actualizar_previews(existentes[:cantidad])
+
 
 class VisorVideos(QMainWindow):
     def __init__(self, ruta_db=None, parent=None, ruta_config=None):
@@ -331,6 +344,13 @@ class VisorVideos(QMainWindow):
         self.incluir_subcarpetas = QCheckBox("Incluir subcarpetas")
         self.incluir_subcarpetas.stateChanged.connect(self._al_cambiar_subcarpetas)
 
+        self.etiqueta_cantidad_previews = QLabel("Previews:")
+        self.combo_cantidad_previews = QComboBox()
+        self.combo_cantidad_previews.addItems(["3", "5", "7", "9"])
+        self.combo_cantidad_previews.currentIndexChanged.connect(
+            self._al_cambiar_cantidad_previews
+        )
+
         self.boton_cargar_mas = QPushButton("Cargar más")
         self.boton_cargar_mas.setEnabled(False)
         self.boton_cargar_mas.clicked.connect(self.cargar_mas)
@@ -347,6 +367,8 @@ class VisorVideos(QMainWindow):
         fila_carpeta.addWidget(self.boton_seleccionar_carpeta)
         fila_carpeta.addWidget(self.boton_escanear)
         fila_carpeta.addWidget(self.incluir_subcarpetas)
+        fila_carpeta.addWidget(self.etiqueta_cantidad_previews)
+        fila_carpeta.addWidget(self.combo_cantidad_previews)
         fila_carpeta.addWidget(self.etiqueta_carpeta, 1)
         fila_carpeta.addWidget(self.estado_escaneo)
         fila_carpeta.addWidget(self.mensaje_carpeta)
@@ -397,6 +419,11 @@ class VisorVideos(QMainWindow):
         self.incluir_subcarpetas.setChecked(
             obtener_preferencia_subcarpetas(self._ruta_config)
         )
+        cantidad = obtener_cantidad_previews(self._ruta_config)
+        idx = self.combo_cantidad_previews.findText(str(cantidad))
+        if idx >= 0:
+            self.combo_cantidad_previews.setCurrentIndex(idx)
+        configurar_cantidad_previews(cantidad)
         self._iniciar_carga()
 
     def _iniciar_carga(self):
@@ -407,6 +434,17 @@ class VisorVideos(QMainWindow):
         guardar_preferencia_subcarpetas(
             self.incluir_subcarpetas.isChecked(), self._ruta_config
         )
+
+    def _al_cambiar_cantidad_previews(self, _indice):
+        texto = self.combo_cantidad_previews.currentText()
+        try:
+            n = int(texto)
+        except (ValueError, TypeError):
+            return
+        guardar_cantidad_previews(n, self._ruta_config)
+        configurar_cantidad_previews(n)
+        for _, tarjeta in self.tarjetas:
+            tarjeta.ajustar_previews(n)
 
     def _crear_tarea_lectura(self, desplazamiento=0):
         return TareaLecturaCatalogoPaginada(
@@ -889,7 +927,8 @@ class VisorVideos(QMainWindow):
     def _encolar_previews(self, nombres):
         con_previews = set()
         for nombre, _ in self.tarjetas:
-            if previews_de(nombre):
+            existentes = previews_de(nombre) or []
+            if len(existentes) >= escanear_videos.CANTIDAD_PREVIEWS:
                 con_previews.add(nombre)
         pendientes = set(self._cola_previews)
         for nombre in nombres:

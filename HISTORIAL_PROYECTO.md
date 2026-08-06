@@ -5,6 +5,26 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 44. Cantidad configurable de previews visibles (3/5/7/9)
+
+- **Fecha:** 2026-08-05
+- **Objetivo:** Permitir al usuario elegir cuántas previews mostrar por video (3, 5, 7 o 9), con persistencia y actualización inmediata de la interfaz sin requerir reescaneo.
+- **Archivos modificados:**
+  - `escanear_videos.py` — `CANTIDAD_PREVIEWS` de constante `3` a mutable con valor por defecto `CANTIDAD_PREVIEWS_POR_DEFECTO`; setter `configurar_cantidad_previews(n)`; `_nombre_seguro` aplicado en `_es_archivo_preview`, `contar_miniaturas` y `miniatura_reutilizable` (corrección de bug colateral de la etapa de subcarpetas).
+  - `configuracion.py` — clave `CLAVE_CANTIDAD_PREVIEWS`; `guardar_cantidad_previews(n, ruta_config)` y `obtener_cantidad_previews(ruta_config)` (default 3, mismo patrón atómico que las demás preferencias).
+  - `visor_videos.py` — `QComboBox` con opciones 3/5/7/9; restauración al iniciar mediante `obtener_cantidad_previews` y configuración de `CANTIDAD_PREVIEWS`; handler `_al_cambiar_cantidad_previews` que persiste y actualiza la interfaz; método `Tarjeta.ajustar_previews(cantidad)` que muestra/oculta etiquetas y recarga previews desde caché instantáneamente; `_encolar_previews` corregido para usar `len(existentes) >= CANTIDAD_PREVIEWS` como criterio de completitud; `Tarjeta.__init__` usa `escanear_videos.CANTIDAD_PREVIEWS` dinámicamente.
+  - `DOCUMENTO_TECNICO.md` — `CANTIDAD_PREVIEWS` documentado como configurable; `configuracion.py` documentado con `cantidad_previews`.
+- **Archivos creados:**
+  - `prueba_cantidad_previews.py` — 14 pruebas: mutable, `previews_existentes` con nueva cantidad, persistencia, default, UI con combo, restauración, escenarios 9→3, 3→7, 9→5→9, 9→9 (sin reescaneo en todos los casos).
+- **Pruebas:** `prueba_cantidad_previews.py` 14/14, `prueba_previews_progresivas.py` 16/16, `prueba_smoke.py` OK.
+- **Correcciones durante la etapa:**
+  1. `_encolar_previews` usaba «tiene algún preview» como criterio → cambiado a «tiene todos los previews configurados», evitando que labels sobrantes quedaran en «Generando preview…» indefinidamente.
+  2. `_es_archivo_preview`, `contar_miniaturas` y `miniatura_reutilizable` no usaban `_nombre_seguro`, causando mismatch con nombres de archivo sanitizados para videos en subcarpetas.
+  3. La interfaz requería reescaneo para reflejar el cambio de cantidad → `Tarjeta.ajustar_previews` aplica el cambio inmediatamente mostrando/ocultando etiquetas y recargando desde caché.
+- **Resultado:** Cantidad configurable con cambio visual inmediato. Separación clara entre cantidad visible (controlada por el usuario) y cantidad generada (controlada por el pipeline). Sin regeneración automática en segundo plano. Sin límites artificiales.
+- **Commit:** "Agregar cantidad configurable de previews visibles (3/5/7/9) con persistencia"
+- **Decisiones importantes:** `CANTIDAD_PREVIEWS` como variable de módulo mutable permite que `previews_existentes` y `previews_faltantes` se adapten automáticamente. `ajustar_previews` usa `setVisible(i < cantidad)` para ocultar/mostrar etiquetas sin reconstruir la tarjeta.
+
 ## 43. Persistencia de la preferencia "Incluir subcarpetas"
 
 - **Fecha:** 2026-08-05
