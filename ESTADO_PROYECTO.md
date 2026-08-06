@@ -13,18 +13,18 @@ y persistencia de la última carpeta seleccionada.
 
 ## Último commit aprobado
 
-**Mensaje:** Agregar escaneo recursivo opcional de subcarpetas
+**Mensaje:** Persistir preferencia "Incluir subcarpetas" entre ejecuciones
 
-**Etapa:** Escaneo opcional de subcarpetas — casilla "Incluir subcarpetas" que
-controla si el escaneo recorre recursivamente todas las subcarpetas:
-- Activada: `escanear_videos` usa `os.walk` y devuelve rutas relativas.
-- Desactivada: solo analiza la carpeta raíz con `os.listdir` (comportamiento original).
-- `_nombre_seguro` reemplaza separadores de ruta por `_` para que miniaturas
-  y previews sigan siendo planos con nombres de video que incluyen subcarpetas.
-- El estado se comunica mediante `configurar_escaneo_recursivo()` desde la interfaz.
-- Limitación: usa un flag global a nivel módulo (un solo escaneo a la vez).
+**Etapa:** Persistencia de la preferencia de subcarpetas — el estado de la
+casilla "Incluir subcarpetas" se guarda y restaura automáticamente:
+- Al modificar la casilla, se persiste inmediatamente en `configuracion.json`
+  mediante `guardar_preferencia_subcarpetas` (escritura atómica `.tmp` + `os.replace`).
+- Al iniciar la aplicación, se restaura el último valor con
+  `obtener_preferencia_subcarpetas` (devuelve `False` por defecto).
+- Mismo patrón que `ultima_carpeta`: clave `incluir_subcarpetas` como booleano
+  en el JSON compartido.
 
-**Pruebas superadas:** `prueba_escaneo_subcarpetas.py` 12/12, `prueba_escaneo.py` 12/12, `prueba_escaneo_interfaz.py` 36/36, `prueba_smoke.py` OK.
+**Pruebas superadas:** `prueba_persistencia_subcarpetas.py` 10/10, `prueba_escaneo_subcarpetas.py` 12/12, `prueba_escaneo_interfaz.py` 36/36, `prueba_persistencia_carpeta.py` 20/20, `prueba_smoke.py` OK.
 
 **SHA:** consultar con `git log -1`.
 
@@ -64,7 +64,7 @@ controla si el escaneo recorre recursivamente todas las subcarpetas:
 - Selección por rango con Shift+clic basada en un ancla de selección y el orden visible.
 - Copia de rutas de los seleccionados mediante menú contextual (primera operación sobre selección múltiple).
 - Apertura de carpetas de los seleccionados mediante menú contextual (deduplicación de carpetas).
-- Escaneo opcional de subcarpetas mediante casilla "Incluir subcarpetas" (nombres seguros para miniaturas).
+- Escaneo opcional de subcarpetas con persistencia de la preferencia "Incluir subcarpetas".
 - Validación manual con videos reales: escaneo con y sin subcarpetas, diferencia en cantidad de videos detectados, sin regresiones.
 ## Pendientes prioritarios
 

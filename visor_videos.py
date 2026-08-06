@@ -21,7 +21,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from configuracion import guardar_ultima_carpeta, obtener_ultima_carpeta
+from configuracion import (
+    guardar_preferencia_subcarpetas,
+    guardar_ultima_carpeta,
+    obtener_preferencia_subcarpetas,
+    obtener_ultima_carpeta,
+)
 from escanear_videos import _nombre_seguro, configurar_escaneo_recursivo
 from rutas import ruta_carpeta_miniaturas, ruta_configuracion
 from tareas import Estado, GestorTareas
@@ -324,6 +329,7 @@ class VisorVideos(QMainWindow):
         self.boton_escanear.clicked.connect(self.iniciar_escaneo)
 
         self.incluir_subcarpetas = QCheckBox("Incluir subcarpetas")
+        self.incluir_subcarpetas.stateChanged.connect(self._al_cambiar_subcarpetas)
 
         self.boton_cargar_mas = QPushButton("Cargar más")
         self.boton_cargar_mas.setEnabled(False)
@@ -388,11 +394,19 @@ class VisorVideos(QMainWindow):
             self.carpeta_seleccionada = carpeta_guardada
             self.etiqueta_carpeta.setText(carpeta_guardada)
             self._actualizar_botones_carpeta()
+        self.incluir_subcarpetas.setChecked(
+            obtener_preferencia_subcarpetas(self._ruta_config)
+        )
         self._iniciar_carga()
 
     def _iniciar_carga(self):
         self.tarea_lectura = self._crear_tarea_lectura()
         self.gestor.iniciar(self.tarea_lectura)
+
+    def _al_cambiar_subcarpetas(self, _estado):
+        guardar_preferencia_subcarpetas(
+            self.incluir_subcarpetas.isChecked(), self._ruta_config
+        )
 
     def _crear_tarea_lectura(self, desplazamiento=0):
         return TareaLecturaCatalogoPaginada(

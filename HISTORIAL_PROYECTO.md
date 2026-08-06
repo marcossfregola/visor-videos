@@ -5,6 +5,21 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 43. Persistencia de la preferencia "Incluir subcarpetas"
+
+- **Fecha:** 2026-08-05
+- **Objetivo:** Persistir la preferencia de la casilla "Incluir subcarpetas" entre ejecuciones de la aplicación, reutilizando el sistema de configuración existente.
+- **Archivos modificados:**
+  - `configuracion.py` — nueva clave `CLAVE_SUBCARPETAS = "incluir_subcarpetas"`; `guardar_preferencia_subcarpetas(activado, ruta_config)` persiste el booleano en el JSON compartido (misma escritura atómica `.tmp` + `os.replace`); `obtener_preferencia_subcarpetas(ruta_config)` restaura el valor (devuelve `False` por defecto si el archivo no existe, la clave falta o el valor no es booleano).
+  - `visor_videos.py` — importa `guardar_preferencia_subcarpetas` y `obtener_preferencia_subcarpetas`; conecta `stateChanged` del checkbox a `_al_cambiar_subcarpetas`; restaura el estado del checkbox al iniciar con `obtener_preferencia_subcarpetas(self._ruta_config)`; método `_al_cambiar_subcarpetas` persiste inmediatamente el nuevo estado.
+  - `DOCUMENTO_TECNICO.md` — `configuracion.py` documentado con `incluir_subcarpetas`; checkbox documentado con persistencia y restauración; `prueba_persistencia_subcarpetas.py` agregado al árbol.
+- **Archivos creados:**
+  - `prueba_persistencia_subcarpetas.py` — 10 pruebas: guardar True/False en JSON, obtener sin archivo, obtener sin clave, round-trip, restauración al iniciar True/False, persistencia al cambiar checkbox.
+- **Pruebas:** `prueba_persistencia_subcarpetas.py` 10/10, `prueba_escaneo_subcarpetas.py` 12/12, `prueba_escaneo_interfaz.py` 36/36, `prueba_persistencia_carpeta.py` 20/20, `prueba_smoke.py` OK.
+- **Resultado:** Preferencia persistida y restaurada correctamente. La casilla conserva su estado entre ejecuciones. Integración limpia con el sistema JSON existente (misma escritura atómica, misma clave). Sin perfiles de usuario, múltiples configuraciones ni otras preferencias en esta etapa.
+- **Commit:** "Persistir preferencia 'Incluir subcarpetas' entre ejecuciones"
+- **Decisiones importantes:** Mismo patrón que `ultima_carpeta`: clave en el mismo JSON compartido, escritura atómica con `.tmp` + `os.replace`, restauración tolerante (devuelve `False` ante cualquier anomalía). La conexión `stateChanged` persiste inmediatamente sin esperar al escaneo.
+
 ## 42. Escaneo opcional de subcarpetas
 
 - **Fecha:** 2026-08-05

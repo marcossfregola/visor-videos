@@ -4,6 +4,7 @@ import os
 from rutas import ruta_configuracion
 
 CLAVE_CARPETA = "ultima_carpeta"
+CLAVE_SUBCARPETAS = "incluir_subcarpetas"
 VARIABLE_ENTORNO = "VISOR_CONFIG"
 
 
@@ -67,3 +68,19 @@ def obtener_ultima_carpeta(ruta_config=None):
     if not os.path.isdir(ruta_absoluta):
         return None
     return ruta_absoluta
+
+
+def guardar_preferencia_subcarpetas(activado, ruta_config=None):
+    datos = _leer(ruta_config) or {}
+    datos[CLAVE_SUBCARPETAS] = bool(activado)
+    _escribir(datos, ruta_config)
+
+
+def obtener_preferencia_subcarpetas(ruta_config=None):
+    datos = _leer(ruta_config)
+    if datos is None:
+        return False
+    valor = datos.get(CLAVE_SUBCARPETAS)
+    if not isinstance(valor, bool):
+        return False
+    return valor

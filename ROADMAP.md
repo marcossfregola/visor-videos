@@ -12,8 +12,7 @@ arquitectónicas.
 # Prioridad inmediata
 
 -   ~~Opción de incluir o excluir subcarpetas en el escaneo.~~ Implementada
-    mediante casilla "Incluir subcarpetas" con flag global `_ESCANEO_RECURSIVO`
-    y nombres seguros para miniaturas. Pendiente: persistencia de la preferencia.
+    con persistencia de la preferencia entre ejecuciones.
 -   Paginación completa automática del catálogo — scroll infinito,
     búsqueda en SQL desde la interfaz y ordenamiento configurable. La
     carga manual de una página adicional con el botón "Cargar más" ya
