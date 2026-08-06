@@ -5,6 +5,60 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 54. Preferencia independiente de escaneo automático al seleccionar carpeta (Etapa 2.8)
+
+- **Fecha:** 2026-08-06
+- **Objetivo:** Incorporar una preferencia independiente "Escaneo automático al seleccionar carpeta"
+  que decide si seleccionar una carpeta desde el Centro de Navegación inicia inmediatamente un
+  escaneo o simplemente establece la carpeta activa, soportando las cuatro combinaciones con "Incluir
+  subcarpetas" y manteniendo el flujo manual del botón "Escanear carpeta".
+- **Archivos creados:**
+  - `prueba_escaneo_automatico.py` — 19 verificaciones: persistencia (guardar True/False), default
+    `True`, config antigua sin la clave → `True`, valor no-booleano → `True`, restauración de la
+    casilla y persistencia inmediata al cambiar; gating árbol/diálogo con la preferencia ON/OFF;
+    botón "Escanear carpeta" idéntico con preferencia ON y OFF; cuatro combinaciones (escaneo
+    automático × subcarpetas) con resultados reales.
+- **Archivos modificados:**
+  - `configuracion.py` — `CLAVE_ESCANEO_AUTOMATICO = "escaneo_automatico"`,
+    `guardar_preferencia_escaneo_automatico(activado, ruta_config)` y
+    `obtener_preferencia_escaneo_automatico(ruta_config)` (default `True`; mismo patrón atómico
+    `.tmp` + `os.replace`; sin mecanismo paralelo).
+  - `visor_videos.py` — casilla `QCheckBox "Escaneo automático"` en `fila_carpeta`; restauración de la
+    preferencia antes de `_iniciar_carga()` (la casilla refleja el valor cargado antes de la
+    interacción); handler `_al_cambiar_escaneo_automatico` que persiste inmediatamente; método único
+    `_disparar_escaneo_si_automatico()` (única decisión `if escaneo_automatico.isChecked()`) usado por
+    `_al_carpeta_actual_arbol` y `seleccionar_carpeta`; el botón "Escanear carpeta" conserva
+    `iniciar_escaneo()` incondicional.
+  - `DOCUMENTO_TECNICO.md` — `configuracion.py` documentado con la nueva preferencia; visor
+    documentado con la casilla, la decisión única y el botón incondicional; dirección futura y árbol
+    de directorios actualizados.
+  - `ESTADO_PROYECTO.md` — última etapa aprobada, hitos y próxima etapa actualizados.
+  - `ROADMAP.md` — Etapa 2.8 marcada como implementada.
+- **Pruebas:** `prueba_escaneo_automatico.py` 19/19; regresiones `prueba_escaneo_arbol.py` 11/11,
+  `prueba_subcarpetas_arbol.py` 15/15, `prueba_escaneo_interfaz.py` 36/36, `prueba_seleccion_carpeta.py`
+  26/26, `prueba_carpeta_actual.py` 19/19, `prueba_persistencia_arbol.py` 15/15,
+  `prueba_persistencia_subcarpetas.py` 10/10, `prueba_escaneo_guardado.py` 24/24,
+  `prueba_sincronizacion_interfaz.py` 18/18, `prueba_recarga_catalogo.py` 20/20, `prueba_escaneo.py`
+  12/12, `prueba_progreso_visual.py` OK, `prueba_smoke.py` OK. Ejecución real de `visor_videos.py`:
+  preferencia OFF → selección en el árbol sin escaneo (solo establece la carpeta) + botón escanea;
+  preferencia ON → la selección escanea automáticamente; cierre limpio (`exit 0`).
+- **Resultado:** La preferencia independiente permite al usuario decidir si la selección de una
+  carpeta escanea automáticamente o solo establece la carpeta activa; las cuatro combinaciones con
+  "Incluir subcarpetas" funcionan correctamente; el botón manual ignora la preferencia; compatibilidad
+  hacia atrás garantizada por el default `True`.
+- **Commit:** "Agregar preferencia independiente de escaneo automatico al seleccionar carpeta (Etapa 2.8)"
+- **Decisiones importantes:**
+  1. **Preferencia independiente**: nueva clave en el JSON compartido, mismo patrón atómico; default
+     `True` (sin migraciones).
+  2. **Decisión única**: `_disparar_escaneo_si_automatico()` centraliza el `if` de la preferencia;
+     árbol y diálogo la invocan, el botón no.
+  3. **Botón incondicional**: "Escanear carpeta" usa `iniciar_escaneo()` directamente, ignorando la
+     preferencia.
+  4. **Restauración previa a la interacción**: la casilla refleja el valor cargado antes de mostrar la
+     ventana.
+
+---
+
 ## 53. Verificación de la paridad de "Incluir subcarpetas" entre árbol, botón y diálogo (Etapa 2.7)
 
 - **Fecha:** 2026-08-06

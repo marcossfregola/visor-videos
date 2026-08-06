@@ -26,9 +26,11 @@ from PySide6.QtWidgets import (
 
 from configuracion import (
     guardar_cantidad_previews,
+    guardar_preferencia_escaneo_automatico,
     guardar_preferencia_subcarpetas,
     guardar_ultima_carpeta,
     obtener_cantidad_previews,
+    obtener_preferencia_escaneo_automatico,
     obtener_preferencia_subcarpetas,
     obtener_ultima_carpeta,
 )
@@ -366,6 +368,11 @@ class VisorVideos(QMainWindow):
         self.incluir_subcarpetas = QCheckBox("Incluir subcarpetas")
         self.incluir_subcarpetas.stateChanged.connect(self._al_cambiar_subcarpetas)
 
+        self.escaneo_automatico = QCheckBox("Escaneo automático")
+        self.escaneo_automatico.stateChanged.connect(
+            self._al_cambiar_escaneo_automatico
+        )
+
         self.etiqueta_cantidad_previews = QLabel("Previews:")
         self.combo_cantidad_previews = QComboBox()
         self.combo_cantidad_previews.addItems(["3", "5", "7", "9"])
@@ -389,6 +396,7 @@ class VisorVideos(QMainWindow):
         fila_carpeta.addWidget(self.boton_seleccionar_carpeta)
         fila_carpeta.addWidget(self.boton_escanear)
         fila_carpeta.addWidget(self.incluir_subcarpetas)
+        fila_carpeta.addWidget(self.escaneo_automatico)
         fila_carpeta.addWidget(self.etiqueta_cantidad_previews)
         fila_carpeta.addWidget(self.combo_cantidad_previews)
         fila_carpeta.addWidget(self.etiqueta_carpeta, 1)
@@ -466,6 +474,9 @@ class VisorVideos(QMainWindow):
         self.incluir_subcarpetas.setChecked(
             obtener_preferencia_subcarpetas(self._ruta_config)
         )
+        self.escaneo_automatico.setChecked(
+            obtener_preferencia_escaneo_automatico(self._ruta_config)
+        )
         cantidad = obtener_cantidad_previews(self._ruta_config)
         idx = self.combo_cantidad_previews.findText(str(cantidad))
         if idx >= 0:
@@ -480,6 +491,11 @@ class VisorVideos(QMainWindow):
     def _al_cambiar_subcarpetas(self, _estado):
         guardar_preferencia_subcarpetas(
             self.incluir_subcarpetas.isChecked(), self._ruta_config
+        )
+
+    def _al_cambiar_escaneo_automatico(self, _estado):
+        guardar_preferencia_escaneo_automatico(
+            self.escaneo_automatico.isChecked(), self._ruta_config
         )
 
     def _al_cambiar_cantidad_previews(self, _indice):
@@ -516,7 +532,11 @@ class VisorVideos(QMainWindow):
         guardar_ultima_carpeta(ruta_absoluta, self._ruta_config)
         self.arbol_navegacion.seleccionar_ruta(ruta_absoluta)
         self._actualizar_botones_carpeta()
-        self.iniciar_escaneo()
+        self._disparar_escaneo_si_automatico()
+
+    def _disparar_escaneo_si_automatico(self):
+        if self.escaneo_automatico.isChecked():
+            self.iniciar_escaneo()
 
     def _al_carpeta_actual_arbol(self, ruta):
         if not isinstance(ruta, str) or not ruta:
@@ -530,7 +550,7 @@ class VisorVideos(QMainWindow):
         self.mensaje_carpeta.clear()
         guardar_ultima_carpeta(ruta, self._ruta_config)
         self._actualizar_botones_carpeta()
-        self.iniciar_escaneo()
+        self._disparar_escaneo_si_automatico()
 
     def _actualizar_botones_carpeta(self):
         carpeta_valida = (

@@ -13,20 +13,29 @@ y persistencia de la última carpeta seleccionada.
 
 ## Último commit aprobado
 
-**Mensaje:** Verificar la paridad de "Incluir subcarpetas" entre arbol, boton y dialogo (Etapa 2.7)
+**Mensaje:** Agregar preferencia independiente de escaneo automatico al seleccionar carpeta (Etapa 2.8)
 
-**Etapa:** Verificación arquitectónica (Etapa 2.7 del Bloque de trabajo 2) — **sin cambios de producción**:
-- La Etapa 2.6 ya garantizaba automáticamente la paridad: botón, árbol y diálogo convergen en
-  `iniciar_escaneo()`, que ejecuta `configurar_escaneo_recursivo(self.incluir_subcarpetas.isChecked())`.
-- `prueba_subcarpetas_arbol.py` — 15 verificaciones que demuestran la equivalencia objetiva de los tres
-  orígenes en ambos estados de la casilla (resultados idénticos y valor de `configurar_escaneo_recursivo`
-  correcto).
+**Etapa:** Preferencia independiente de escaneo automático (Etapa 2.8 del Bloque de trabajo 2):
+- `configuracion.py` — `CLAVE_ESCANEO_AUTOMATICO = "escaneo_automatico"`,
+  `guardar_preferencia_escaneo_automatico` y `obtener_preferencia_escaneo_automatico` (mismo patrón
+  atómico; **default `True`** para compatibilidad con configuraciones antiguas sin la clave).
+- `visor_videos.py` — nueva casilla "Escaneo automático" en `fila_carpeta` (junto a "Incluir
+  subcarpetas"); restauración de la preferencia antes de la interacción; persistencia inmediata al
+  cambiar la casilla; **decisión única** `_disparar_escaneo_si_automatico()` usada por el árbol
+  (`_al_carpeta_actual_arbol`) y el diálogo (`seleccionar_carpeta`). El botón "Escanear carpeta"
+  sigue usando `iniciar_escaneo()` incondicionalmente.
+- `prueba_escaneo_automatico.py` — 19 verificaciones de la etapa.
 
-**Pruebas superadas:** `prueba_subcarpetas_arbol.py` 15/15 (árbol/botón/diálogo × activado/desactivado,
-igualdad off y on, diferencia off vs on); regresiones `prueba_escaneo_subcarpetas.py` 12/12,
-`prueba_escaneo_arbol.py` 11/11, `prueba_escaneo.py` 12/12, `prueba_escaneo_interfaz.py` 36/36,
-`prueba_smoke.py` OK. Ejecución real de `visor_videos.py` con una carpeta con subcarpetas: off → solo
-nivel superior, on → incluye subcarpetas; cierre limpio (exit 0).
+**Pruebas superadas:** `prueba_escaneo_automatico.py` 19/19 (persistencia, default True, config
+antigua sin clave → True, restauración de la casilla, persistencia al cambiar, gating árbol/diálogo,
+botón idéntico con preferencia ON/OFF, cuatro combinaciones); regresiones `prueba_escaneo_arbol.py`
+11/11, `prueba_subcarpetas_arbol.py` 15/15, `prueba_escaneo_interfaz.py` 36/36,
+`prueba_seleccion_carpeta.py` 26/26, `prueba_carpeta_actual.py` 19/19, `prueba_persistencia_arbol.py`
+15/15, `prueba_persistencia_subcarpetas.py` 10/10, `prueba_escaneo_guardado.py` 24/24,
+`prueba_sincronizacion_interfaz.py` 18/18, `prueba_recarga_catalogo.py` 20/20, `prueba_escaneo.py`
+12/12, `prueba_progreso_visual.py` OK, `prueba_smoke.py` OK. Ejecución real de `visor_videos.py`:
+preferencia OFF → selección en el árbol sin escaneo + botón escanea; preferencia ON → la selección
+escanea; cierre limpio (exit 0).
 
 ## Hitos completados
 
@@ -73,6 +82,7 @@ nivel superior, on → incluye subcarpetas; cierre limpio (exit 0).
 - Persistencia y restauración del Centro de Navegación (Etapa 2.5: la carpeta seleccionada se persiste con `guardar_ultima_carpeta` y se reconstruye al iniciar con `revelar_ruta`, expandiendo solo la rama necesaria; restauración tolerante).
 - Integración del árbol con el flujo de escaneo (Etapa 2.6: seleccionar una carpeta válida en el árbol o por el diálogo inicia automáticamente el escaneo mediante `iniciar_escaneo()`, el mismo punto de entrada del botón; un único disparo por acción; restauración inicial sin escaneo).
 - Verificación de la paridad de "Incluir subcarpetas" (Etapa 2.7: etapa de validación sin cambios de producción; árbol, botón y diálogo respetan de forma idéntica la casilla, confirmado por `prueba_subcarpetas_arbol.py`).
+- Preferencia independiente de escaneo automático (Etapa 2.8: casilla "Escaneo automático" junto a "Incluir subcarpetas", persistida en `configuracion.json` con default `True`; decisión única `_disparar_escaneo_si_automatico()`; el botón "Escanear carpeta" ignora la preferencia; cuatro combinaciones soportadas).
 
 ## Pendientes prioritarios
 
@@ -115,12 +125,12 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
 
 ## Próxima etapa
 
-**Etapa 2.8 del Bloque de trabajo 2 (integración con "Incluir subcarpetas",
-cuatro combinaciones).** Con la paridad árbol/botón/diálogo verificada
-(Etapa 2.7), la próxima etapa es incorporar la **preferencia independiente de
-"escaneo automático"** al seleccionar carpeta, habilitando las cuatro
-combinaciones (escaneo automático × "Incluir subcarpetas") descritas en
-`VISION_PRODUCTO.md`, siguiendo la dirección definida en `ROADMAP.md`.
+**Etapa 2.9 del Bloque de trabajo 2 (indicadores visuales de carpetas
+escaneadas).** Con la preferencia de escaneo automático y las cuatro
+combinaciones implementadas (Etapa 2.8), la próxima etapa es la incorporación
+de indicadores visuales en el árbol para distinguir las carpetas ya
+escaneadas, siguiendo la dirección definida en `VISION_PRODUCTO.md` y
+`ROADMAP.md`.
 
 ## Documentos del proyecto
 

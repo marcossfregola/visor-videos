@@ -6,6 +6,7 @@ from rutas import ruta_configuracion
 CLAVE_CARPETA = "ultima_carpeta"
 CLAVE_SUBCARPETAS = "incluir_subcarpetas"
 CLAVE_CANTIDAD_PREVIEWS = "cantidad_previews"
+CLAVE_ESCANEO_AUTOMATICO = "escaneo_automatico"
 VARIABLE_ENTORNO = "VISOR_CONFIG"
 
 
@@ -84,6 +85,22 @@ def obtener_preferencia_subcarpetas(ruta_config=None):
     valor = datos.get(CLAVE_SUBCARPETAS)
     if not isinstance(valor, bool):
         return False
+    return valor
+
+
+def guardar_preferencia_escaneo_automatico(activado, ruta_config=None):
+    datos = _leer(ruta_config) or {}
+    datos[CLAVE_ESCANEO_AUTOMATICO] = bool(activado)
+    _escribir(datos, ruta_config)
+
+
+def obtener_preferencia_escaneo_automatico(ruta_config=None):
+    datos = _leer(ruta_config)
+    if datos is None:
+        return True
+    valor = datos.get(CLAVE_ESCANEO_AUTOMATICO)
+    if not isinstance(valor, bool):
+        return True
     return valor
 
 
