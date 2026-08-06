@@ -7,6 +7,12 @@ Videos. No representa el estado actual del proyecto, sino la dirección
 de desarrollo. El orden podrá cambiar según las decisiones
 arquitectónicas.
 
+> **Estado (Beta 2):** el desarrollo funcional está **pausado** mientras
+> dure la validación de la Beta 2 en fase de pruebas reales. Durante esta
+> fase no se implementarán funcionalidades nuevas; únicamente se corregirán
+> errores detectados mediante el uso. El Bloque de trabajo 2 (Centro de
+> Navegación) quedó completado y aprobado.
+
 ------------------------------------------------------------------------
 
 # Próximas líneas de trabajo previstas
@@ -85,6 +91,13 @@ pequeña, verificable y acumulativa:
   **Implementada.**
 - **Etapa 2.10** — Filtrado del catálogo desde el árbol.
 
+**Estado:** El Bloque de trabajo 2 quedó **completado** (Etapas 2.1 a 2.9,
+incluida la verificación de la Etapa 2.7) y el Centro de Navegación fue
+aprobado. La **Beta 2 queda congelada** y entra en fase de pruebas reales:
+durante la validación **no se implementarán funcionalidades nuevas**;
+únicamente se corregirán errores detectados mediante el uso. La Etapa 2.10
+(filtrado del catálogo desde el árbol) se retomará al finalizar la validación.
+
 ---
 
 # Prioridad inmediata
@@ -97,8 +110,9 @@ pequeña, verificable y acumulativa:
     selección funcional, integración con la carpeta activa, persistencia,
     escaneo automático al seleccionar, verificación de la paridad de
     subcarpetas, preferencia independiente de escaneo automático con las
-    cuatro combinaciones e indicadores visuales de carpetas escaneadas); el
-    bloque de trabajo 2 continúa.
+     cuatro combinaciones e indicadores visuales de carpetas escaneadas). El
+     bloque de trabajo 2 queda **completado**; el desarrollo funcional está
+     **pausado** durante la validación de la Beta 2 (solo correcciones por uso).
 -   Paginación completa automática del catálogo — scroll infinito,
     búsqueda en SQL desde la interfaz y ordenamiento configurable. La
     carga manual de una página adicional con el botón "Cargar más" ya

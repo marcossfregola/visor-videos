@@ -599,4 +599,11 @@ catálogo desde el árbol y la persistencia del estado de escaneado. La
 arquitectura deberá permitir incorporar posteriormente nuevos paneles
 (propiedades, favoritos, etiquetas, IA) sin rediseñar la interfaz. Esta
 dirección está documentada en detalle en `VISION_PRODUCTO.md` y `ROADMAP.md`.
+
+**Estado de la Beta 2:** el Bloque de trabajo 2 quedó **completado** y el
+Centro de Navegación fue aprobado. La **Beta 2 queda congelada** y entra en
+fase de pruebas reales en distintas computadoras. Durante la validación **no
+se implementarán funcionalidades nuevas**; únicamente se corregirán errores
+detectados mediante el uso. El desarrollo funcional se reanudará al finalizar
+la validación.
 | 13 | Baja | El pipeline limitado escribía registros **básicos** (nombre, ruta absoluta, extensión, fecha de importación) sin ejecutar FFprobe; los videos quedaban sin duración, resolución ni codec. **Resuelto**: FFprobe se integró en el pipeline (`TareaEscaneo` → `TareaFFprobe` → `combinar_registros_con_ffprobe` → `TareaGuardarVideos`) y los registros se guardan con los metadatos disponibles (`NULL` ante vacíos, incompletos o fallos individuales). |

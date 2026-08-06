@@ -5,6 +5,39 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 56. Cierre y congelamiento de la Beta 2 (fase de pruebas reales)
+
+- **Fecha:** 2026-08-06
+- **Tipo:** Cierre de fase y congelamiento de versión — **sin cambios de código** (documentación).
+- **Objetivo:** Congelar la Beta 2 del Visor de Videos: dejar una versión documentada y lista para
+  distribuir e instalar en distintas computadoras para comenzar la fase de uso real.
+- **Contexto:** El **Bloque de trabajo 2** (Centro de Navegación) quedó **completado** y aprobado
+  (Etapas 2.1 a 2.9, incluida la verificación de la Etapa 2.7). El núcleo funcional del proyecto
+  está estabilizado y el divisor del `QSplitter` funciona correctamente (la llamada redundante
+  `splitter.handle(1).setCursor(Qt.SplitHCursor)` fue eliminada durante la limpieza del bloque).
+- **Documentos actualizados:**
+  - `ESTADO_PROYECTO.md` — fase actual actualizada a Beta 2 congelada en fase de pruebas reales;
+    nuevo hito de cierre del Bloque 2; próxima etapa pasa a ser la **validación de la Beta 2** (con
+    desarrollo pausado) y la Etapa 2.10 se retomará al finalizar la validación.
+  - `ROADMAP.md` — nota de estado en el encabezado (desarrollo funcional pausado durante la
+    validación de la Beta 2, solo correcciones por uso); Bloque de trabajo 2 marcado como
+    **completado**; Etapa 2.10 queda pendiente de la validación.
+  - `DOCUMENTO_TECNICO.md` — sección 9 (dirección futura) con la nota de estado de la Beta 2:
+    sin nuevas funcionalidades durante la validación, solo correcciones por uso.
+- **Alcance de la fase:** durante la validación de la Beta 2 **no se implementarán funcionalidades
+  nuevas**; únicamente se corregirán errores detectados mediante el uso real en distintas
+  computadoras.
+- **Resultado:** La Beta 2 queda congelada y documentada como lista para distribuir e instalar,
+  dando inicio a la fase de uso real.
+- **Commit:** pendiente de aprobación (cierre documental del Bloque de trabajo 2).
+- **Decisiones importantes:**
+  1. **Congelamiento funcional**: no se agregan funcionalidades durante la validación de la Beta 2;
+     el desarrollo se reanudará al finalizar la validación.
+  2. **Solo correcciones por uso**: los únicos cambios admitidos durante la fase serán correcciones
+     de errores detectados mediante el uso.
+
+---
+
 ## 55. Indicadores visuales de carpetas escaneadas (Etapa 2.9)
 
 - **Fecha:** 2026-08-06

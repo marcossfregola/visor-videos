@@ -5,11 +5,12 @@
 Proyecto de escritorio profesional para Windows orientado a explorar
 grandes colecciones de videos mediante miniaturas representativas.
 
-**Fase actual:** Beta 1.0 estabilizada. Ejecutable portable e instalador
-de Windows funcionales. Arquitectura base consolidada con pipeline
-asíncrono completo (escaneo, tamaños, FFprobe, miniaturas, guardado,
-sincronización, recarga), previews progresivos, apertura por doble clic
-y persistencia de la última carpeta seleccionada.
+**Fase actual:** Beta 2 congelada, documentada y lista para distribuir e
+instalar en distintas computadoras para comenzar la **fase de uso real**. El
+**Bloque de trabajo 2** (Centro de Navegación) quedó completamente finalizado
+y aprobado (Etapas 2.1 a 2.9, incluida la verificación de la Etapa 2.7).
+Durante la validación de la Beta 2 **no se agregarán funcionalidades nuevas**:
+únicamente se corregirán errores detectados mediante el uso.
 
 ## Último commit aprobado
 
@@ -82,6 +83,7 @@ a `ESCANEADA` con ícono; cierre limpio (exit 0).
 - Verificación de la paridad de "Incluir subcarpetas" (Etapa 2.7: etapa de validación sin cambios de producción; árbol, botón y diálogo respetan de forma idéntica la casilla, confirmado por `prueba_subcarpetas_arbol.py`).
 - Preferencia independiente de escaneo automático (Etapa 2.8: casilla "Escaneo automático" junto a "Incluir subcarpetas", persistida en `configuracion.json` con default `True`; decisión única `_disparar_escaneo_si_automatico()`; el botón "Escanear carpeta" ignora la preferencia; cuatro combinaciones soportadas).
 - Indicadores visuales de carpetas escaneadas (Etapa 2.9: `EstadoNodo` + `ROL_ESTADO` + `_icono_para`, marcado por el pipeline al sincronizar; únicamente visual, sin alterar selección/expansión/navegación; el árbol no conoce SQLite).
+- **Cierre del Bloque de trabajo 2 y aprobación del Centro de Navegación.** La **Beta 2 queda congelada** y entra en fase de pruebas reales: sin nuevas funcionalidades, únicamente correcciones de errores detectados mediante el uso.
 
 ## Pendientes prioritarios
 
@@ -131,9 +133,11 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
 
 ## Próxima etapa
 
-**Etapa 2.10 del Bloque de trabajo 2 (filtrado del catálogo desde el
-árbol).** Con los indicadores visuales de carpetas escaneadas ya implementados
-(Etapa 2.9), la próxima etapa es el filtrado del catálogo desde el árbol,
+**Fase de pruebas reales de la Beta 2.** El desarrollo funcional queda
+**pausado** mientras dure la validación de la Beta 2 en distintas
+computadoras. Durante esta fase únicamente se corregirán errores detectados
+mediante el uso. Al finalizar la validación se retomará el desarrollo con la
+**Etapa 2.10 del Bloque de trabajo 2** (filtrado del catálogo desde el árbol),
 siguiendo la dirección definida en `VISION_PRODUCTO.md` y `ROADMAP.md`.
 
 ## Documentos del proyecto

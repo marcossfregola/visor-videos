@@ -446,7 +446,6 @@ class VisorVideos(QMainWindow):
         splitter.setStretchFactor(1, 1)
         splitter.setSizes([220, 680])
         splitter.setCollapsible(0, False)
-        splitter.handle(1).setCursor(Qt.SplitHCursor)
         self.setCentralWidget(splitter)
 
         self.gestor = GestorTareas(self)
