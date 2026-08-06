@@ -13,20 +13,22 @@ y persistencia de la última carpeta seleccionada.
 
 ## Último commit aprobado
 
-**Mensaje:** Implementar expansion de discos y carpetas con carga diferida (Etapa 2.2)
+**Mensaje:** Implementar seleccion funcional en el arbol de navegacion (Etapa 2.3)
 
-**Etapa:** Expansión de discos y visualización de carpetas (Etapa 2.2 del Bloque de trabajo 2):
-- `arbol_navegacion.py` — nueva función pura `carpetas_de(ruta)` (subdirectorios inmediatos ordenados,
-  tolerante a `OSError`); `ArbolNavegacion` con **carga diferida por placeholder** (`itemExpanded`
-  interno → un solo nivel por expansión), estado de carga en el nodo (`ROL_CARGADO = Qt.UserRole + 2`)
-  y ruta absoluta por nodo (`ROL_RUTA = Qt.UserRole + 1`). El árbol sigue pasivo y desacoplado del catálogo.
-- `prueba_expansion_carpetas.py` — 33 verificaciones de la etapa.
+**Etapa:** Navegación funcional del árbol (Etapa 2.3 del Bloque de trabajo 2):
+- `arbol_navegacion.py` — `SingleSelection` (reemplaza `NoSelection`); método público
+  `carpeta_actual()` como interfaz oficial de consulta; señal `ruta_seleccionada = Signal(str)`
+  solo notificadora; raíz "Este equipo" y placeholders nunca son selección válida; conservación de
+  `_ruta_actual` al contraer/expandir sin emisiones duplicadas. El árbol sigue desacoplado del
+  catálogo (la señal no está conectada a nada).
+- `prueba_seleccion_arbol.py` — 24 verificaciones de la etapa.
+- `prueba_expansion_carpetas.py` — aserción de modo de selección actualizada a `SingleSelection`.
 
-**Pruebas superadas:** `prueba_expansion_carpetas.py` 33/33 (carga diferida sin recorrido al iniciar,
-un nivel por expansión, re-expansión sin duplicados, carpetas vacías/inaccesibles sin romper la
-exploración, sin acción sobre el catálogo, splitter redimensionable); regresiones `prueba_arbol_navegacion.py`
-OK, `prueba_smoke.py` OK, `prueba_escaneo_interfaz.py` 36/36. Ejecución real de `visor_videos.py` con
-cierre limpio (exit 0) y apertura en ~0.5 s (sin escaneo de directorios al iniciar).
+**Pruebas superadas:** `prueba_seleccion_arbol.py` 24/24 (selección de disco/carpeta, visualización,
+señal válida, raíz y placeholder excluidos, conservación al contraer/expandir sin emisiones, ausencia
+de interacción con el catálogo); regresiones `prueba_expansion_carpetas.py` 33/33,
+`prueba_arbol_navegacion.py` OK, `prueba_smoke.py` OK, `prueba_escaneo_interfaz.py` 36/36.
+Ejecución real de `visor_videos.py` con cierre limpio (exit 0).
 
 ## Hitos completados
 
@@ -68,6 +70,7 @@ cierre limpio (exit 0) y apertura en ~0.5 s (sin escaneo de directorios al inici
 - Infraestructura de paneles con QSplitter (panel izquierdo placeholder + panel derecho con interfaz existente, PanelPrincipal con minimumSizeHint anulado).
 - Árbol de navegación en el panel izquierdo (Etapa 2.1: nodo "Este equipo" + discos del sistema, puramente visual y sin navegación).
 - Expansión de discos y carpetas con carga diferida (Etapa 2.2: un solo nivel por expansión, estado de carga en el nodo, ruta absoluta en cada nodo, árbol desacoplado del catálogo).
+- Selección funcional del árbol de navegación (Etapa 2.3: `carpeta_actual()` como interfaz oficial, señal `ruta_seleccionada` notificadora, raíz y placeholders excluidos, selección conservada al contraer/expandir).
 
 ## Pendientes prioritarios
 
@@ -96,10 +99,10 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
 
 ## Próxima etapa
 
-**Etapa 2.3 del Bloque de trabajo 2 (navegación completa del árbol).**
-Con la expansión de discos y carpetas ya implementada (Etapa 2.2), la próxima
-etapa es la navegación completa del árbol, siguiendo la dirección definida en
-`VISION_PRODUCTO.md` y `ROADMAP.md`.
+**Etapa 2.4 del Bloque de trabajo 2 (selección de la carpeta actual).**
+Con la navegación funcional del árbol ya implementada (Etapa 2.3), la próxima
+etapa es la selección de la carpeta actual del catálogo desde el árbol,
+siguiendo la dirección definida en `VISION_PRODUCTO.md` y `ROADMAP.md`.
 
 ## Documentos del proyecto
 

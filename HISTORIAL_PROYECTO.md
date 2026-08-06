@@ -5,6 +5,54 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 49. Selección funcional del árbol de navegación (Etapa 2.3)
+
+- **Fecha:** 2026-08-06
+- **Objetivo:** Implementar la navegación funcional del árbol: seleccionar discos y carpetas con
+  resaltado visual, conservar la carpeta actual dentro del propio árbol y exponerla mediante una
+  interfaz limpia (`carpeta_actual()`), manteniendo el árbol completamente desacoplado del catálogo.
+- **Archivos creados:**
+  - `prueba_seleccion_arbol.py` — 24 verificaciones: selección de disco y carpeta (ruta, visual y
+    señal), `carpeta_actual()` inicial `None`, modo `SingleSelection`, raíz "Este equipo" y
+    placeholder excluidos (no modifican ni emiten), selección profunda, conservación al
+    contraer/expandir sin emisiones duplicadas, señal siempre con rutas válidas; integración en
+    `VisorVideos` (sin cambio de carpeta/etiqueta, gestor inactivo, sin pendientes, tarjetas
+    intactas, splitter redimensionable).
+- **Archivos modificados:**
+  - `arbol_navegacion.py` — `SingleSelection` (reemplaza `NoSelection`); señal de clase
+    `ruta_seleccionada = Signal(str)` (solo notificación); método público `carpeta_actual()` y
+    estado `_ruta_actual`; handler `_al_cambiar_actual` conectado a `currentItemChanged` con
+    `_ruta_valida()` (excluye raíz sin `ROL_RUTA` y placeholders con `ROL_PLACEHOLDER`); al
+    contraer un ancestro, si el ítem anterior quedó oculto (`anterior.isHidden()`) se conserva
+    `_ruta_actual` sin reemitir. Sin restauración visual automática de la selección (decisión de
+    diseño).
+  - `prueba_expansion_carpetas.py` — aserción `widget_sin_seleccion` (NoSelection) actualizada a
+    `widget_seleccion_simple` (SingleSelection).
+  - `DOCUMENTO_TECNICO.md` — módulo documentado con selección funcional, señal, `carpeta_actual()`
+    y exclusión de raíz/placeholders; infraestructura de paneles, dirección futura y árbol de
+    directorios actualizados.
+  - `ESTADO_PROYECTO.md` — última etapa aprobada y próxima etapa actualizadas; nuevo hito.
+  - `ROADMAP.md` — Etapa 2.3 marcada como implementada.
+- **Pruebas:** `prueba_seleccion_arbol.py` 24/24. Regresiones: `prueba_expansion_carpetas.py`
+  33/33, `prueba_arbol_navegacion.py` OK, `prueba_smoke.py` OK, `prueba_escaneo_interfaz.py`
+  36/36. Ejecución real de `visor_videos.py` con cierre limpio (`exit 0`): selección de `C:\Users`
+  con `carpeta_actual()=C:\Users`, panel derecho sin cambios.
+- **Resultado:** El usuario puede seleccionar discos y carpetas con resaltado visual; la carpeta
+  actual queda en el árbol (`carpeta_actual()`); expandir/contraer conserva la selección; la raíz y
+  los placeholders nunca son carpetas válidas; la señal no está conectada a nada y el catálogo, el
+  panel derecho, SQLite y el pipeline no sufren ningún cambio.
+- **Commit:** "Implementar seleccion funcional en el arbol de navegacion (Etapa 2.3)"
+- **Decisiones importantes:**
+  1. **`carpeta_actual()` como interfaz oficial**: la señal `ruta_seleccionada` es solo notificación;
+     las etapas futuras consultarán el estado mediante el método.
+  2. **Simplicidad sobre restauración preventiva**: no se implementa búsqueda/restauración visual de
+     la selección al re-expandir; basta conservar `_ruta_actual` (si Qt pierde la selección visual,
+     el estado interno queda correcto).
+  3. **Raíz y placeholders excluidos**: `_ruta_valida()` solo acepta nodos con `ROL_RUTA` real y sin
+     `ROL_PLACEHOLDER`.
+
+---
+
 ## 48. Expansión de discos y carpetas con carga diferida (Etapa 2.2)
 
 - **Fecha:** 2026-08-06

@@ -131,8 +131,8 @@ def main():
         )
 
         registrar(
-            "widget_sin_seleccion",
-            arbol.selectionMode() == QAbstractItemView.NoSelection,
+            "widget_seleccion_simple",
+            arbol.selectionMode() == QAbstractItemView.SingleSelection,
         )
 
     # --- widget: carpeta inaccesible (carpetas_de devuelve vacio / lanza) ---

@@ -1,7 +1,7 @@
 import os
 import string
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QAbstractItemView, QTreeWidget, QTreeWidgetItem
 
 TEXTO_RAIZ = "Este equipo"
@@ -39,25 +39,58 @@ def carpetas_de(ruta):
 
 
 class ArbolNavegacion(QTreeWidget):
-    """Arbol visual del centro de navegacion (Etapa 2.2).
+    """Arbol del centro de navegacion (Etapa 2.3).
 
-    Muestra el nodo raiz "Este equipo", los discos y sus carpetas. Las
-    carpetas se cargan de forma diferida: al expandir un nodo se
-    consultan unicamente sus hijos inmediatos (un solo nivel, sin
-    recorrer el arbol completo). Sigue siendo pasivo: no conecta senales
-    hacia el exterior, no implementa navegacion ni seleccion funcional y
-    no esta integrado con el catalogo.
+    Muestra "Este equipo", los discos y sus carpetas con carga diferida
+    por nivel. Permite la seleccion funcional de discos y carpetas:
+    la carpeta actual queda almacenada en el propio arbol y se consulta
+    mediante `carpeta_actual()`. La señal `ruta_seleccionada` solo
+    notifica cambios de seleccion. El arbol sigue desacoplado del
+    catalogo: no escanea, no modifica la carpeta de la aplicacion y no
+    esta integrado con el panel derecho. El nodo raiz "Este equipo" y
+    los placeholders internos nunca son selecciones validas.
     """
+
+    ruta_seleccionada = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setHeaderHidden(True)
-        self.setSelectionMode(QAbstractItemView.NoSelection)
+        self.setSelectionMode(QAbstractItemView.SingleSelection)
+        self._ruta_actual = None
+        self.currentItemChanged.connect(self._al_cambiar_actual)
         self.itemExpanded.connect(self._al_expandir)
         raiz = QTreeWidgetItem(self, [TEXTO_RAIZ])
         raiz.setExpanded(True)
         for disco in discos_disponibles():
             self._crear_nodo_disco(raiz, disco)
+
+    def carpeta_actual(self):
+        """Devuelve la ruta absoluta seleccionada o None si no hay ninguna."""
+        return self._ruta_actual
+
+    def _ruta_valida(self, item):
+        if item is None:
+            return None
+        if item.data(0, ROL_PLACEHOLDER):
+            return None
+        ruta = item.data(0, ROL_RUTA)
+        if isinstance(ruta, str) and ruta:
+            return ruta
+        return None
+
+    def _al_cambiar_actual(self, actual, anterior):
+        if (
+            anterior is not None
+            and anterior.data(0, ROL_RUTA) == self._ruta_actual
+            and anterior.isHidden()
+        ):
+            return
+        ruta = self._ruta_valida(actual)
+        if ruta is None:
+            return
+        self._ruta_actual = ruta
+        self.ruta_seleccionada.emit(ruta)
 
     def _crear_nodo_disco(self, padre, disco):
         item = QTreeWidgetItem(padre, [disco])
