@@ -29,3 +29,9 @@ configuracion.json
 
 # Artefactos de distribución de la Beta (instalador + app portable)
 VisorVideoBeta1/
+
+# Artefactos locales de trabajo (no versionar)
+Distribucion/
+AUDITORIA_CLAUDE/
+Videos de muestra/
+Visor.rar
