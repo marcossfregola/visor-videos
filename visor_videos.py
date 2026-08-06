@@ -1010,10 +1010,12 @@ class VisorVideos(QMainWindow):
         accion_abrir_carpeta = menu.addAction("Abrir carpeta")
         accion_copiar_ruta = menu.addAction("Copiar ruta")
         accion_copiar_seleccionados = menu.addAction("Copiar rutas de los seleccionados")
+        accion_abrir_seleccionados = menu.addAction("Abrir carpetas de los seleccionados")
         accion_abrir.triggered.connect(lambda: self._abrir_video(nombre))
         accion_abrir_carpeta.triggered.connect(lambda: self._abrir_carpeta(nombre))
         accion_copiar_ruta.triggered.connect(lambda: self._copiar_ruta(nombre))
         accion_copiar_seleccionados.triggered.connect(self._copiar_rutas_seleccionados)
+        accion_abrir_seleccionados.triggered.connect(self._abrir_carpetas_seleccionados)
         menu.exec(QCursor.pos())
 
     def _abrir_carpeta(self, nombre):
@@ -1037,6 +1039,18 @@ class VisorVideos(QMainWindow):
                 rutas.append(os.path.abspath(os.path.join(carpeta, nombre)))
         if rutas:
             QApplication.clipboard().setText("\n".join(rutas))
+
+    def _abrir_carpetas_seleccionados(self):
+        carpeta = self.carpeta_seleccionada
+        if not carpeta or not os.path.isdir(carpeta):
+            return
+        carpetas = []
+        for nombre in self.tarjetas_visibles():
+            if nombre in self._nombres_seleccionados:
+                ruta = os.path.abspath(os.path.join(carpeta, nombre))
+                carpetas.append(os.path.dirname(ruta))
+        for c in dict.fromkeys(carpetas):
+            os.startfile(c)
 
     def filtrar(self, texto):
         texto = texto.lower()

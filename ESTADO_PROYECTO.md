@@ -13,17 +13,18 @@ y persistencia de la última carpeta seleccionada.
 
 ## Último commit aprobado
 
-**Mensaje:** Agregar acción "Copiar rutas de los seleccionados" al menú contextual
+**Mensaje:** Agregar accion: abrir carpetas de los seleccionados al menu contextual
 
-**Etapa:** Ampliación del menú contextual — nueva cuarta acción que copia al
-portapapeles las rutas de todos los videos seleccionados:
-- Si hay un único video seleccionado, copia su ruta.
-- Si hay varios, copia todas las rutas, una por línea, respetando el orden visible.
-- La acción original "Copiar ruta" permanece intacta (copia solo la ruta del
+**Etapa:** Ampliación del menú contextual — quinta acción que abre las carpetas
+de todos los videos seleccionados:
+- Si hay un único video, abre su carpeta.
+- Si hay varios, abre cada carpeta distinta una sola vez (deduplicación con
+  `dict.fromkeys` sobre `os.path.dirname` de cada ruta).
+- La acción original "Abrir carpeta" permanece intacta (solo la carpeta del
   video sobre el que se abrió el menú).
-- Sin exportación a archivos, copiar nombres ni metadatos.
+- Sin confirmaciones ni límites artificiales.
 
-**Pruebas superadas:** `prueba_copiar_rutas_seleccionados.py` 8/8, `prueba_menu_contextual.py` 18/18, `prueba_shift_clic.py` 28/28, `prueba_seleccion.py` 28/28, `prueba_doble_clic.py` 14/14, `prueba_smoke.py` OK.
+**Pruebas superadas:** `prueba_abrir_carpetas_seleccionados.py` 10/10, `prueba_menu_contextual.py` 18/18, `prueba_copiar_rutas_seleccionados.py` 8/8, `prueba_shift_clic.py` 28/28, `prueba_smoke.py` OK.
 
 **SHA:** consultar con `git log -1`.
 
@@ -62,7 +63,8 @@ portapapeles las rutas de todos los videos seleccionados:
 - Restauración automática de la selección tras reconstruir la lista de tarjetas.
 - Selección por rango con Shift+clic basada en un ancla de selección y el orden visible.
 - Copia de rutas de los seleccionados mediante menú contextual (primera operación sobre selección múltiple).
-- Validación manual con videos reales: copia individual y múltiple, orden correcto, menú contextual y doble clic funcionales.
+- Apertura de carpetas de los seleccionados mediante menú contextual (deduplicación de carpetas).
+- Validación manual con videos reales: apertura única y múltiple de carpetas, deduplicación correcta, resto del menú contextual funcional.
 ## Pendientes prioritarios
 
 1. ~~Mejorar el feedback visual del procesamiento (barra de progreso,~~

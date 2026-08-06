@@ -5,6 +5,20 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 41. Abrir carpetas de los seleccionados
+
+- **Fecha:** 2026-08-05
+- **Objetivo:** Agregar al menú contextual una quinta acción que abra las carpetas contenedoras de todos los videos seleccionados, con deduplicación para no abrir la misma carpeta más de una vez.
+- **Archivos modificados:**
+  - `visor_videos.py` — quinta acción "Abrir carpetas de los seleccionados" en `_mostrar_menu_contextual`; nuevo método `_abrir_carpetas_seleccionados` que itera `self.tarjetas_visibles()`, filtra por `_nombres_seleccionados`, calcula `os.path.dirname` de cada ruta, deduplica con `dict.fromkeys` (preserva orden de primera aparición) y abre cada carpeta única con `os.startfile`.
+  - `DOCUMENTO_TECNICO.md` — menú contextual documentado con 5 acciones; agregado `prueba_abrir_carpetas_seleccionados.py` al árbol.
+- **Archivos creados:**
+  - `prueba_abrir_carpetas_seleccionados.py` — 10 pruebas: existencia del método, único seleccionado, múltiples misma carpeta (1 sola apertura), sin carpeta, sin selección, "Abrir carpeta" original intacta, 5 seleccionados deduplicados a 1.
+- **Pruebas:** `prueba_abrir_carpetas_seleccionados.py` 10/10, `prueba_menu_contextual.py` 18/18, `prueba_copiar_rutas_seleccionados.py` 8/8, `prueba_shift_clic.py` 28/28, `prueba_smoke.py` OK.
+- **Resultado:** Quinta acción en el menú contextual funcional. Carpetas abiertas una sola vez cada una mediante `dict.fromkeys`. La acción original "Abrir carpeta" permanece intacta. Sin confirmaciones ni límites artificiales.
+- **Commit:** "Agregar accion: abrir carpetas de los seleccionados al menu contextual"
+- **Decisiones importantes:** `dict.fromkeys` preserva el orden visible (primera aparición) y elimina duplicados de forma natural. La deduplicación opera sobre `os.path.dirname` de las rutas absolutas.
+
 ## 40. Copiar rutas de los seleccionados al portapapeles
 
 - **Fecha:** 2026-08-05
