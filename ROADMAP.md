@@ -140,6 +140,10 @@ No se implementará ninguna mejora fuera de este alcance.
   **Implementada (Etapa B3.6).**
 - Tamaño configurable de la vista ampliada (factores 1.2/1.6/2.0/2.5, default 1.6) —
   ampliación de A4. **Implementada (Etapa B3.7).**
+- Generación automática de previews faltantes al aumentar la cantidad configurada —
+  ampliación de A1. **Implementada (Etapa B3.8).** Al incrementar la cantidad (p. ej.
+  3→5), la aplicación genera únicamente las previews inexistentes en segundo plano y
+  actualiza las tarjetas afectadas, sin volver a escanear; al disminuir solo oculta.
 
 ### B. Selección y operaciones
 
@@ -228,6 +232,7 @@ Quedan fuera del alcance de la Beta 3 y no se implementarán en ella:
 | A5 | Preferencias relacionadas con miniaturas | A | Implementada |
 | A6 | Tamaño "Muy grande" (ampliación de A3) | A | Implementada |
 | A7 | Tamaño configurable de la vista ampliada (ampliación de A4) | A | Implementada |
+| A8 | Generación automática de previews faltantes (ampliación de A1) | A | Implementada |
 | B1 | Modo selección | B | Pendiente |
 | B2 | Checks por fila | B | Pendiente |
 | B3 | Copiar | B | Pendiente |

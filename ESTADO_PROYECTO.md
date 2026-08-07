@@ -11,42 +11,41 @@ marcha**: el **Bloque A — Experiencia visual** quedó **completo** con las
 mejoras B3.1 ("Tiempo sobre las miniaturas de preview"), B3.2 ("Duración
 simplificada"), B3.3 ("Tamaño configurable de miniaturas"), B3.4 ("Vista
 ampliada al posar el mouse") y B3.5 ("Preferencias relacionadas con
-miniaturas"), más las ampliaciones **B3.6** (tamaño "Muy grande" 512×288) y
-**B3.7** (tamaño configurable de la vista ampliada, factores 1.2/1.6/2.0/2.5),
-ambas incorporadas solo ampliando la configuración. El plan de trabajo se
-documenta en `ROADMAP.md` (Bloque de trabajo 3). La Beta 2 permanece como la
-última versión estable publicada.
+miniaturas"), más las ampliaciones **B3.6** (tamaño "Muy grande" 512×288),
+**B3.7** (tamaño configurable de la vista ampliada) y **B3.8** (generación
+automática de previews faltantes al aumentar la cantidad). El plan de trabajo
+se documenta en `ROADMAP.md` (Bloque de trabajo 3). La Beta 2 permanece como
+la última versión estable publicada.
 
 ## Último commit aprobado
 
-**Mensaje:** Agregar tamaño configurable de la vista ampliada (Etapa B3.7)
+**Mensaje:** Agregar generación automática de previews faltantes al aumentar la cantidad (Etapa B3.8)
 
-**Etapa:** Tamaño configurable de la vista ampliada (B3.7, ampliación del Bloque A — Experiencia visual):
-- `visor_videos.py` — factor configurable (`FACTOR_VISTA_AMPLIADA_ACTUAL` +
-  `configurar_factor_vista_ampliada`); `VistaAmpliada.preparar` usa el factor vigente
-  (proporcional al tamaño de la miniatura); segundo control en `PreferenciasDialog`
-  ("Tamaño de la vista ampliada": 1.2x/1.6x/2.0x/2.5x, default 1.6);
-  `_aplicar_tamano_vista_ampliada` y restauración al iniciar. Sin cambios
-  estructurales; comportamiento por defecto idéntico al previo.
-- `configuracion.py` — `CLAVE_TAMANO_VISTA_AMPLIADA`, `guardar_tamano_vista_ampliada`
-  y `obtener_tamano_vista_ampliada` (default 1.6; aditivo, sin migración).
-- `prueba_tamano_vista_ampliada.py` — 35 verificaciones de la etapa.
+**Etapa:** Generación automática de previews faltantes (B3.8, ampliación del Bloque A — Experiencia visual):
+- `visor_videos.py` — `Tarjeta._asegurar_slots_previews(cantidad)` (crea `PreviewConTiempo`
+  adicionales con `eventFilter` y tamaño vigente, antes del `addStretch()`, sin reconstruir
+  la tarjeta); `ajustar_previews` crece los slots; `_al_cambiar_cantidad_previews` llama
+  `_programar_previews()` al final (reutiliza la cola y el gestor existentes; solo genera
+  los índices faltantes vía `generar_previews_faltantes`). Sin escaneo, sin pipeline de
+  catálogo; disminuir solo oculta.
+- `prueba_previews_automaticas.py` — 22 verificaciones de la etapa.
 
-**Pruebas superadas:** `prueba_tamano_vista_ampliada.py` 35/35 (persistencia y
-tolerancia, `configurar_factor_vista_ampliada`, `preparar` con cada factor, diálogo
-default/mapeo, flujo aceptar/cancelar, restauración al iniciar, integración con
-selección/scroll, acotado a pantalla); regresiones `prueba_vista_ampliada.py` 24/24,
-`prueba_preferencias_miniaturas.py` 31/31, `prueba_tamano_miniaturas.py` 32/32,
-`prueba_tamano_muy_grande.py` 27/27, `prueba_tiempo_previews.py` 35/35,
-`prueba_filas_horizontales.py` 16/16, `prueba_cantidad_previews.py` 14/14,
-`prueba_recarga_catalogo.py` 20/20, `prueba_pagina_siguiente.py` 20/20,
-`prueba_seleccion_visual.py` OK, `prueba_shift_clic.py` 28/28, `prueba_seleccion.py`
-28/28, `prueba_restauracion_seleccion.py` 15/15, `prueba_smoke.py` OK,
-`prueba_doble_clic.py` 14/14, `prueba_tamano_archivo.py` 15/15. Ejecución real de
-`visor_videos.py` con `biblioteca.db`: cuatro factores (384/512/640/800 × …), factor
-2.0 correcto sobre los cuatro tamaños de miniatura, acotado a pantalla con 2.5,
-diálogo (aceptar aplica y persiste), persistencia tras reiniciar, sin regeneración
-(488 → 488), fluidez (~1-3 ms por factor), cierre limpio (exit 0).
+**Pruebas superadas:** `prueba_previews_automaticas.py` 22/22 (crecimiento dinámico y
+conservación de eventFilter/overlay/tamaño, generación solo de índices faltantes 4-5/6-7/8-9,
+sin regenerar existentes, sin escaneo, actualización incremental de la tarjeta, disminuir sin
+trabajo, selección y scroll conservados); regresiones `prueba_previews_progresivas.py` 16/16,
+`prueba_cantidad_previews.py` 14/14, `prueba_vista_ampliada.py` 24/24,
+`prueba_tiempo_previews.py` 35/35, `prueba_tamano_miniaturas.py` 32/32,
+`prueba_tamano_muy_grande.py` 27/27, `prueba_tamano_vista_ampliada.py` 35/35,
+`prueba_preferencias_miniaturas.py` 31/31, `prueba_recarga_catalogo.py` 20/20,
+`prueba_pagina_siguiente.py` 20/20, `prueba_lectura_paginada.py` 32/32,
+`prueba_filas_horizontales.py` 16/16, `prueba_seleccion_visual.py` OK,
+`prueba_shift_clic.py` 28/28, `prueba_seleccion.py` 28/28,
+`prueba_restauracion_seleccion.py` 15/15, `prueba_smoke.py` OK, `prueba_doble_clic.py` 14/14,
+`prueba_tamano_archivo.py` 15/15. Ejecución manual del flujo real en entorno controlado:
+3→5 (solo [4,5]), 5→7 (solo [6,7]), 7→9 (solo [8,9]), disminuir sin trabajo, tarjetas
+actualizadas, sin escaneo, selección y scroll conservados, fluidez ~155-185 ms, cierre limpio
+(exit 0).
 
 ## Hitos completados
 
@@ -134,6 +133,10 @@ diálogo (aceptar aplica y persiste), persistencia tras reiniciar, sin regenerac
   "Preferencias", aplicado de inmediato y persistido con la infraestructura existente;
   la ampliación sigue siendo proporcional al tamaño de la miniatura y el
   comportamiento por defecto es idéntico al previo.
+- **Generación automática de previews faltantes (Etapa B3.8).** Al aumentar la
+  cantidad de previews, las tarjetas crecen dinámicamente (sin reconstruirse) y la
+  cola existente genera únicamente los índices faltantes en segundo plano, actualizando
+  solo las tarjetas afectadas; sin escaneo ni pipeline. Al disminuir solo se ocultan.
 
 ## Pendientes prioritarios
 
@@ -190,9 +193,9 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
 
 ## Próxima etapa
 
-**Etapa B3.8** — primera etapa del siguiente bloque de trabajo de la Beta 3.
+**Etapa B3.9** — primera etapa del siguiente bloque de trabajo de la Beta 3.
 Su definición detallada se acordará recién después del cierre documental de la
-B3.7 y la aprobación del commit, siguiendo el plan de trabajo de `ROADMAP.md`
+B3.8 y la aprobación del commit, siguiendo el plan de trabajo de `ROADMAP.md`
 (Bloque de trabajo 3), en bloques pequeños, verificables y acumulativos, sin
 adelantar funcionalidades excluidas del alcance ni agregar funcionalidades
 nuevas fuera del plan aprobado.

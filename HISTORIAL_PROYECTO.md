@@ -5,6 +5,68 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 65. Generación automática de previews faltantes al aumentar la cantidad (Etapa B3.8)
+
+- **Fecha:** 2026-08-06
+- **Objetivo:** Eliminar la fricción de volver a presionar "Escanear" al aumentar la
+  cantidad de previews: al incrementar la cantidad, la aplicación detecta los índices
+  faltantes, genera únicamente esas imágenes en segundo plano y actualiza las tarjetas
+  afectadas, sin escanear de nuevo ni reconstruir la interfaz.
+- **Archivos creados:**
+  - `prueba_previews_automaticas.py` — 22 verificaciones: crecimiento dinámico de
+    slots (3→5→9, disminuir solo oculta); slot nuevo con `eventFilter` y pixmap
+    original; `aplicar_tamano` reescala también los slots nuevos; integración:
+    3→5 genera solo [4,5], 5→7 solo [6,7], sin regenerar existentes, tarjeta crece y
+    se actualiza, overlays presentes, selección y scroll conservados, sin escaneo ni
+    pipeline, gestor inactivo, disminuir sin trabajo en segundo plano.
+- **Archivos modificados:**
+  - `visor_videos.py` — `Tarjeta.__init__` guarda `self._contenedor_imagenes`;
+    `Tarjeta._asegurar_slots_previews(cantidad)` crea `PreviewConTiempo` adicionales
+    (con `dimensiones_miniatura()`, `eventFilter`, insertados antes del `addStretch()`)
+    sin reconstruir la tarjeta; `ajustar_previews` invoca el crecimiento;
+    `_al_cambiar_cantidad_previews` llama `_programar_previews()` al final (reutiliza
+    la cola y el gestor existentes; `generar_previews_faltantes` genera solo los
+    índices inexistentes). Sin cambios en `escanear_videos.py`, `tareas_videos.py`,
+    `configuracion.py` ni en el pipeline.
+  - `DOCUMENTO_TECNICO.md` — `_encolar_previews` y el crecimiento dinámico de slots
+    documentados (B3.8).
+  - `ROADMAP.md` — ampliación A8 incorporada al Bloque A como implementada, con la
+    nota explícita de que la generación es automática al incrementar la cantidad.
+  - `ESTADO_PROYECTO.md` — última etapa aprobada, fase actual, hitos y próxima etapa
+    actualizados.
+  - `HISTORIAL_PROYECTO.md` — este documento (registro de la etapa).
+- **Pruebas:** `prueba_previews_automaticas.py` 22/22; regresiones
+  `prueba_previews_progresivas.py` 16/16, `prueba_cantidad_previews.py` 14/14,
+  `prueba_vista_ampliada.py` 24/24, `prueba_tiempo_previews.py` 35/35,
+  `prueba_tamano_miniaturas.py` 32/32, `prueba_tamano_muy_grande.py` 27/27,
+  `prueba_tamano_vista_ampliada.py` 35/35, `prueba_preferencias_miniaturas.py` 31/31,
+  `prueba_recarga_catalogo.py` 20/20, `prueba_pagina_siguiente.py` 20/20,
+  `prueba_lectura_paginada.py` 32/32, `prueba_filas_horizontales.py` 16/16,
+  `prueba_seleccion_visual.py` OK, `prueba_shift_clic.py` 28/28, `prueba_seleccion.py`
+  28/28, `prueba_restauracion_seleccion.py` 15/15, `prueba_smoke.py` OK,
+  `prueba_doble_clic.py` 14/14, `prueba_tamano_archivo.py` 15/15. Ejecución manual del
+  flujo real en entorno controlado (sin escribir en `miniaturas/` de producción):
+  3→5 (solo [4,5]), 5→7 (solo [6,7]), 7→9 (solo [8,9]), disminuir a 3 sin trabajo,
+  tarjetas actualizadas automáticamente, sin escaneo, selección y scroll conservados,
+  fluidez ~155-185 ms, cierre limpio (exit 0).
+- **Resultado:** La cantidad de previews pasa a comportarse de forma natural: al
+  aumentar solo se generan las imágenes faltantes en segundo plano y se actualizan las
+  tarjetas afectadas, sin escanear ni reconstruir; al disminuir solo se ocultan.
+- **Commit:** "Agregar generación automática de previews faltantes al aumentar la cantidad (Etapa B3.8)"
+- **Decisiones importantes:**
+  1. **Reutilización total**: se usa la cola y el gestor existentes
+     (`_cola_previews` + `gestor_previews` + `TareaPreviewsProgresivas`); sin segundo
+     mecanismo ni duplicación de lógica.
+  2. **Crecimiento sin reconstrucción**: `_asegurar_slots_previews` agrega slots
+     `PreviewConTiempo` en el layout existente; se conservan selección, overlays,
+     tamaño, vista ampliada y eventFilter.
+  3. **Solo índices faltantes**: `generar_previews_faltantes` y `_encolar_previews`
+     garantizan que nunca se regeneren ni sobrescriban previews existentes.
+  4. **Disminuir = ocultar**: sin trabajo en segundo plano.
+  5. **Sin escaneo**: no se toca `iniciar_escaneo` ni el pipeline del catálogo.
+
+---
+
 ## 64. Tamaño configurable de la vista ampliada (Etapa B3.7)
 
 - **Fecha:** 2026-08-06

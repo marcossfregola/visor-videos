@@ -472,6 +472,7 @@ class Tarjeta(QFrame):
         contenedor_imagenes = QHBoxLayout()
         contenedor_imagenes.setContentsMargins(0, 0, 0, 0)
         contenedor_imagenes.setSpacing(6)
+        self._contenedor_imagenes = contenedor_imagenes
 
         ancho, alto = dimensiones_miniatura()
         ruta_miniatura = miniatura_principal(nombre)
@@ -570,7 +571,18 @@ class Tarjeta(QFrame):
                 actualizado = True
         return actualizado
 
+    def _asegurar_slots_previews(self, cantidad):
+        while len(self._etiquetas_previews) < cantidad:
+            etiqueta = PreviewConTiempo()
+            etiqueta.setText("Generando preview…")
+            etiqueta.installEventFilter(self)
+            self._etiquetas_previews.append(etiqueta)
+            self._contenedor_imagenes.insertWidget(
+                self._contenedor_imagenes.count() - 1, etiqueta
+            )
+
     def ajustar_previews(self, cantidad):
+        self._asegurar_slots_previews(cantidad)
         existentes = previews_de(self._nombre) or []
         for i, etiqueta in enumerate(self._etiquetas_previews):
             etiqueta.setVisible(i < cantidad)
@@ -874,6 +886,7 @@ class VisorVideos(QMainWindow):
         configurar_cantidad_previews(n)
         for _, tarjeta in self.tarjetas:
             tarjeta.ajustar_previews(n)
+        self._programar_previews()
 
     def _al_cambiar_tamano_miniaturas(self, _indice):
         nombre = clave_tamano_miniaturas(
