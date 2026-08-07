@@ -3,9 +3,10 @@ import string
 from enum import IntEnum
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QIcon
+from PySide6.QtGui import QCursor, QIcon
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QMenu,
     QStyle,
     QTreeWidget,
     QTreeWidgetItem,
@@ -83,16 +84,23 @@ class ArbolNavegacion(QTreeWidget):
 
     ruta_seleccionada = Signal(str)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, seleccion=None):
         super().__init__(parent)
         self.setHeaderHidden(True)
         self.setSelectionMode(QAbstractItemView.SingleSelection)
         self._ruta_actual = None
         self._carpetas_escaneadas = set()
+        self._seleccion = seleccion
+        self._modo_seleccion = False
+        self._sincronizando_checks = False
         self.currentItemChanged.connect(self._al_cambiar_actual)
         self.itemExpanded.connect(self._al_expandir)
+        self.itemChanged.connect(self._al_item_cambiado)
+        self.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.customContextMenuRequested.connect(self._al_menu_contextual)
         raiz = QTreeWidgetItem(self, [TEXTO_RAIZ])
         raiz.setExpanded(True)
+        self._aplicar_check(raiz)
         for disco in discos_disponibles():
             self._crear_nodo_disco(raiz, disco)
 
@@ -251,19 +259,246 @@ class ArbolNavegacion(QTreeWidget):
         self._ruta_actual = ruta
         self.ruta_seleccionada.emit(ruta)
 
+    def set_modo_seleccion(self, activo):
+        """Activa o desactiva el modo de seleccion de carpetas.
+
+        Con el modo activo, cada carpeta cargada muestra un checkbox cuyo
+        estado refleja exclusivamente `SeleccionCarpetas`; marcarlo o
+        desmarcarlo modifica unicamente el conjunto seleccionado, sin
+        cambiar la carpeta activa, sin iniciar escaneos y sin alterar la
+        navegacion. Con el modo desactivado el arbol se comporta
+        exactamente como antes (sin checkboxes).
+        """
+        self._modo_seleccion = bool(activo)
+        self._reaplicar_checks_a_todos()
+
+    def _reaplicar_checks_a_todos(self):
+        raiz = self.topLevelItem(0)
+        if raiz is None:
+            return
+        for indice in range(raiz.childCount()):
+            self._reaplicar_checks_en(raiz.child(indice))
+
+    def _reaplicar_checks_en(self, item):
+        if item is None:
+            return
+        self._aplicar_check(item)
+        for indice in range(item.childCount()):
+            self._reaplicar_checks_en(item.child(indice))
+
+    def _aplicar_check(self, item):
+        if item is None:
+            return
+        ruta = self._ruta_valida(item)
+        self._sincronizando_checks = True
+        try:
+            if self._modo_seleccion and ruta is not None and self._seleccion is not None:
+                item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+                marcado = ruta in self._seleccion.obtener_seleccion()
+                item.setCheckState(
+                    0, Qt.Checked if marcado else Qt.Unchecked
+                )
+            else:
+                item.setFlags(item.flags() & ~Qt.ItemIsUserCheckable)
+        finally:
+            self._sincronizando_checks = False
+
+    def _al_item_cambiado(self, item, columna):
+        if self._sincronizando_checks:
+            return
+        if columna != 0:
+            return
+        if not self._modo_seleccion:
+            return
+        if self._seleccion is None:
+            return
+        if not (item.flags() & Qt.ItemIsUserCheckable):
+            return
+        ruta = self._ruta_valida(item)
+        if ruta is None:
+            return
+        seleccion_actual = self._seleccion.obtener_seleccion()
+        esperado = Qt.Checked if ruta in seleccion_actual else Qt.Unchecked
+        if item.checkState(0) == esperado:
+            return
+        if item.checkState(0) == Qt.Checked:
+            self._seleccion.seleccionar(ruta)
+        else:
+            self._seleccion.deseleccionar(ruta)
+
+    def _hijos_ordenados(self, item):
+        """Devuelve los nodos de carpetas cargados de un nivel, en orden visual."""
+        if item is None:
+            return []
+        hijos = []
+        for indice in range(item.childCount()):
+            hijo = item.child(indice)
+            if self._ruta_valida(hijo) is not None:
+                hijos.append(hijo)
+        return hijos
+
+    @staticmethod
+    def _rutas_de(nodos):
+        return [nodo.data(0, ROL_RUTA) for nodo in nodos]
+
+    def _reemplazar_seleccion(self, rutas):
+        self._seleccion.limpiar()
+        self._seleccion.seleccionar_todas(rutas)
+
+    def _refrescar_checks(self, nodos):
+        for nodo in nodos:
+            self._aplicar_check(nodo)
+
+    def _nivel_actual(self):
+        item = self.currentItem()
+        if item is None or self._ruta_valida(item) is None:
+            return None
+        return item
+
+    def _rango_hasta(self, nodo):
+        hermanos = self._hijos_ordenados(nodo.parent())
+        try:
+            indice = hermanos.index(nodo)
+        except ValueError:
+            return []
+        return hermanos[: indice + 1]
+
+    def _rango_desde(self, nodo):
+        hermanos = self._hijos_ordenados(nodo.parent())
+        try:
+            indice = hermanos.index(nodo)
+        except ValueError:
+            return []
+        return hermanos[indice:]
+
+    def seleccionar_todas_nivel(self):
+        """Selecciona todas las subcarpetas cargadas del nivel actual."""
+        if self._seleccion is None:
+            return
+        nivel = self._nivel_actual()
+        if nivel is None:
+            return
+        nodos = self._hijos_ordenados(nivel)
+        if not nodos:
+            return
+        self._seleccion.seleccionar_todas(self._rutas_de(nodos))
+        self._refrescar_checks(nodos)
+
+    def deseleccionar_todas(self):
+        """Vacía por completo la selección de carpetas."""
+        if self._seleccion is None:
+            return
+        self._seleccion.limpiar()
+        self._reaplicar_checks_a_todos()
+
+    def invertir_nivel(self):
+        """Invierte la selección dentro del nivel actual (conserva lo externo)."""
+        if self._seleccion is None:
+            return
+        nivel = self._nivel_actual()
+        if nivel is None:
+            return
+        nodos = self._hijos_ordenados(nivel)
+        if not nodos:
+            return
+        actual = self._seleccion.obtener_seleccion()
+        rutas = set(self._rutas_de(nodos))
+        final = (actual - rutas) | (rutas - actual)
+        self._reemplazar_seleccion(final)
+        self._refrescar_checks(nodos)
+
+    def seleccionar_hasta(self, nodo):
+        if self._seleccion is None or nodo is None:
+            return
+        nodos = self._rango_hasta(nodo)
+        if not nodos:
+            return
+        self._seleccion.seleccionar_todas(self._rutas_de(nodos))
+        self._refrescar_checks(nodos)
+
+    def deseleccionar_hasta(self, nodo):
+        if self._seleccion is None or nodo is None:
+            return
+        nodos = self._rango_hasta(nodo)
+        if not nodos:
+            return
+        quitar = set(self._rutas_de(nodos))
+        actual = self._seleccion.obtener_seleccion()
+        self._reemplazar_seleccion(actual - quitar)
+        self._refrescar_checks(nodos)
+
+    def seleccionar_desde(self, nodo):
+        if self._seleccion is None or nodo is None:
+            return
+        nodos = self._rango_desde(nodo)
+        if not nodos:
+            return
+        self._seleccion.seleccionar_todas(self._rutas_de(nodos))
+        self._refrescar_checks(nodos)
+
+    def deseleccionar_desde(self, nodo):
+        if self._seleccion is None or nodo is None:
+            return
+        nodos = self._rango_desde(nodo)
+        if not nodos:
+            return
+        quitar = set(self._rutas_de(nodos))
+        actual = self._seleccion.obtener_seleccion()
+        self._reemplazar_seleccion(actual - quitar)
+        self._refrescar_checks(nodos)
+
+    def _al_menu_contextual(self, pos):
+        if not self._modo_seleccion:
+            return
+        item = self.itemAt(pos)
+        if item is None or self._ruta_valida(item) is None:
+            return
+        menu = QMenu(self)
+        accion_seleccionar_hasta = menu.addAction("Seleccionar hasta aquí")
+        accion_seleccionar_desde = menu.addAction(
+            "Seleccionar desde aquí hasta el final"
+        )
+        accion_deseleccionar_hasta = menu.addAction(
+            "Deseleccionar hasta aquí"
+        )
+        accion_deseleccionar_desde = menu.addAction(
+            "Deseleccionar desde aquí hasta el final"
+        )
+        elegida = menu.exec(QCursor.pos())
+        if elegida == accion_seleccionar_hasta:
+            self.seleccionar_hasta(item)
+        elif elegida == accion_seleccionar_desde:
+            self.seleccionar_desde(item)
+        elif elegida == accion_deseleccionar_hasta:
+            self.deseleccionar_hasta(item)
+        elif elegida == accion_deseleccionar_desde:
+            self.deseleccionar_desde(item)
+
     def _crear_nodo_disco(self, padre, disco):
-        item = QTreeWidgetItem(padre, [disco])
-        item.setData(0, ROL_RUTA, disco)
-        self._agregar_placeholder(item)
-        self._aplicar_indicador(item)
+        self._sincronizando_checks = True
+        try:
+            item = QTreeWidgetItem(padre, [disco])
+            item.setData(0, ROL_RUTA, disco)
+            self._agregar_placeholder(item)
+            self._aplicar_indicador(item)
+            self._aplicar_check(item)
+        finally:
+            self._sincronizando_checks = False
+        return item
 
     def _crear_nodo_carpeta(self, padre, ruta):
-        item = QTreeWidgetItem(
-            padre, [os.path.basename(os.path.normpath(ruta))]
-        )
-        item.setData(0, ROL_RUTA, ruta)
-        self._agregar_placeholder(item)
-        self._aplicar_indicador(item)
+        self._sincronizando_checks = True
+        try:
+            item = QTreeWidgetItem(
+                padre, [os.path.basename(os.path.normpath(ruta))]
+            )
+            item.setData(0, ROL_RUTA, ruta)
+            self._agregar_placeholder(item)
+            self._aplicar_indicador(item)
+            self._aplicar_check(item)
+        finally:
+            self._sincronizando_checks = False
+        return item
 
     def _agregar_placeholder(self, item):
         placeholder = QTreeWidgetItem(item)

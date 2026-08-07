@@ -937,9 +937,38 @@ class VisorVideos(QMainWindow):
         panel_izquierdo.setStyleSheet("background-color: #e8e8e8;")
         layout_izquierdo = QVBoxLayout(panel_izquierdo)
         layout_izquierdo.setContentsMargins(0, 0, 0, 0)
-        self.arbol_navegacion = ArbolNavegacion()
+        self.toggle_modo_seleccion = QCheckBox("Modo selección")
+        self.toggle_modo_seleccion.stateChanged.connect(
+            self._al_cambiar_modo_seleccion_arbol
+        )
+        layout_izquierdo.addWidget(self.toggle_modo_seleccion)
+
+        self.contenedor_acciones_seleccion = QWidget()
+        fila_acciones_seleccion = QHBoxLayout(self.contenedor_acciones_seleccion)
+        fila_acciones_seleccion.setContentsMargins(4, 0, 4, 4)
+        self.boton_seleccionar_todas = QPushButton("Seleccionar todas")
+        self.boton_deseleccionar_todas = QPushButton("Deseleccionar todas")
+        self.boton_invertir_seleccion = QPushButton("Invertir")
+        fila_acciones_seleccion.addWidget(self.boton_seleccionar_todas)
+        fila_acciones_seleccion.addWidget(self.boton_deseleccionar_todas)
+        fila_acciones_seleccion.addWidget(self.boton_invertir_seleccion)
+        self.contenedor_acciones_seleccion.setVisible(False)
+        layout_izquierdo.addWidget(self.contenedor_acciones_seleccion)
+
+        self.arbol_navegacion = ArbolNavegacion(
+            seleccion=self.seleccion_carpetas
+        )
         self.arbol_navegacion.ruta_seleccionada.connect(
             self._al_carpeta_actual_arbol
+        )
+        self.boton_seleccionar_todas.clicked.connect(
+            self.arbol_navegacion.seleccionar_todas_nivel
+        )
+        self.boton_deseleccionar_todas.clicked.connect(
+            self.arbol_navegacion.deseleccionar_todas
+        )
+        self.boton_invertir_seleccion.clicked.connect(
+            self.arbol_navegacion.invertir_nivel
         )
         layout_izquierdo.addWidget(self.arbol_navegacion)
 
@@ -1163,6 +1192,10 @@ class VisorVideos(QMainWindow):
     def _disparar_escaneo_si_automatico(self):
         if self.escaneo_automatico.isChecked():
             self.iniciar_escaneo()
+
+    def _al_cambiar_modo_seleccion_arbol(self, activo):
+        self.arbol_navegacion.set_modo_seleccion(bool(activo))
+        self.contenedor_acciones_seleccion.setVisible(bool(activo))
 
     def _al_carpeta_actual_arbol(self, ruta):
         if not isinstance(ruta, str) or not ruta:

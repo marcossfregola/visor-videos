@@ -359,8 +359,7 @@ actual" / "Carpeta actual y todas las subcarpetas" / "Selección personalizada�
 | Etapa | Contenido |
 | --- | --- |
 | 1 | **Infraestructura de selección** — conjunto de rutas (única fuente de verdad), persistencia en configuración, restauración al iniciar con descarte de rutas inexistentes, API `seleccionar`/`deseleccionar`/`alternar`/`limpiar`/`seleccionar_todas`/`obtener_seleccion`. Sin árbol, sin UI, sin cambios en escaneo/SQLite/pipeline. **Implementada.** |
-| 2 | **Modo de selección en el árbol** — toggle de modo, checks por nodo, estado visual "seleccionada" distinto de "activa", barra de conteo, orden natural de hermanos, restauración. |
-| 3 | **Herramientas de selección rápida** — acciones masivas y menú contextual; materializan rutas en el conjunto. |
+| 2-3 | **Modo de selección en el árbol + herramientas de selección rápida** — entrega conjunta (Etapas 2 y 3). Modo de selección (toggle) con checks por nodo que reflejan `SeleccionCarpetas`, estado "seleccionada" distinto de "activa", sin alterar navegación ni carpeta activa; acciones masivas (Seleccionar todas del nivel, Deseleccionar todas, Invertir nivel) y menú contextual (Seleccionar/Deseleccionar: hasta aquí, desde aquí hasta el final). Las acciones materializan rutas en el conjunto, sin intervalos ni estructuras paralelas. **Implementada (entrega conjunta Etapas 2-3).** |
 | 4 | **Escaneo de la selección** — `iniciar_escaneo` soporta los tres modos; pipeline sobre la unión de la selección; progreso "carpeta N de M". Requiere resolver la deduplicación de nombres. |
 | 5 | **Sincronización de la selección** — reconciliación por carpeta del alcance; indicadores por carpeta. |
 | 6 | **Selector de modo** — reemplazo del checkbox "Incluir subcarpetas" con migración retrocompatible. |

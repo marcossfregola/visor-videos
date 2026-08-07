@@ -13,44 +13,24 @@ técnicamente** (B3.1 a B3.9, más las ampliaciones **B3.14a** "Desactivado" y
 Selección y operaciones** quedó **completo** (B3.11 a B3.17 más la corrección
 técnica **B3.18**) y el **Bloque C — Progreso** quedó **completo**
 (**B3.20–B3.23**), con lo que la **Beta 3 queda funcionalmente cerrada**
-salvo problemas en las pruebas finales. Además se inició el **Bloque de
-trabajo 4 — Catálogo por selección de carpetas** con la **Etapa 1 —
-Infraestructura de selección** implementada. El plan de trabajo se documenta
-en `ROADMAP.md` (Bloques de trabajo 3 y 4). La Beta 2 permanece como la
-última versión estable publicada.
+salvo problemas en las pruebas finales. Además está en marcha el **Bloque de
+trabajo 4 — Catálogo por selección de carpetas**: implementadas la **Etapa 1
+— Infraestructura de selección** y la **entrega conjunta Etapas 2-3 — Modo
+de selección del árbol y herramientas de selección rápida**. El plan de
+trabajo se documenta en `ROADMAP.md` (Bloques de trabajo 3 y 4). La Beta 2
+permanece como la última versión estable publicada.
 
 ## Último commit aprobado
 
-**Mensaje:** Agregar infraestructura de selección de carpetas por rutas (Selección personalizada)
+**Mensaje:** Integrar el modo de selección de carpetas y las herramientas de selección rápida en el árbol (Etapas 2-3, Bloque 4)
 
-**Etapa:** Infraestructura de selección de carpetas (Bloque de trabajo 4, Etapa 1):
-- `seleccion_carpetas.py` — clase pura `SeleccionCarpetas(ruta_config=None)`: conjunto de
-  rutas absolutas como **única fuente de verdad**, sin árbol ni Qt. API
-  `seleccionar`/`deseleccionar`/`alternar`/`limpiar`/`seleccionar_todas`/`obtener_seleccion`
-  (esta última devuelve una copia). Persiste tras cada cambio real y **restaura en el
-  constructor descartando rutas inexistentes**. Sin intervalos internos, sin UI, sin cambios
-  en escaneo/SQLite/pipeline.
-- `configuracion.py` — clave `carpetas_seleccionadas` + `guardar_seleccion_carpetas`
-  (normaliza, deduplica, conserva las demás claves) y `obtener_seleccion_carpetas` (descarta
-  inexistentes; configs anteriores/inválidas → lista vacía).
-- `visor_videos.py` — restauración al iniciar: `self.seleccion_carpetas = SeleccionCarpetas(...)`
-  (una línea, sin cambio de comportamiento).
-- `prueba_seleccion_carpetas.py` — 22 verificaciones de la etapa (nuevo).
+**Etapa:** Modo de selección del árbol + herramientas de selección rápida (Bloque de trabajo 4, **entrega conjunta Etapas 2-3**):
+- `arbol_navegacion.py` — `ArbolNavegacion(seleccion=...)` enlazado a `SeleccionCarpetas`; `set_modo_seleccion(activo)` con checkboxes por nodo que reflejan el conjunto (`_aplicar_check`, guard `_sincronizando_checks`, nodos envueltos en el guard en `_crear_nodo_disco`/`_crear_nodo_carpeta`); `_al_item_cambiado` sincroniza checkbox ↔ conjunto solo si difieren (sin cambiar carpeta activa, sin escaneos, sin alterar navegación); con el modo desactivado el árbol es idéntico al actual. **Herramientas rápidas**: `seleccionar_todas_nivel`, `deseleccionar_todas`, `invertir_nivel` (conserva lo externo), y menú contextual (solo en modo selección) `seleccionar_hasta`/`deseleccionar_hasta`/`seleccionar_desde`/`deseleccionar_desde` sobre los hermanos ordenados (`_hijos_ordenados`); todas materializan **rutas** en el conjunto, sin intervalos ni estructuras paralelas.
+- `visor_videos.py` — pasa `seleccion=self.seleccion_carpetas` al árbol; toggle "Modo selección" y fila de acciones rápidas (oculta salvo en modo selección).
+- `prueba_modo_seleccion_arbol.py` — 16 verificaciones de la Etapa 2 (nuevo).
+- `prueba_herramientas_seleccion_arbol.py` — 20 verificaciones de la Etapa 3 (nuevo).
 
-**Pruebas superadas:** `prueba_seleccion_carpetas.py` 22/22 (API del conjunto, descarte de
-inexistentes/inválidos, sin duplicados, persistencia entre instancias, restauración con
-descarte, copia de `obtener_seleccion`, capa de config y restauración al iniciar la
-aplicación); regresiones relevantes OK: `prueba_preferencias_miniaturas.py` 31/31,
-`prueba_persistencia_arbol.py` 15/15, `prueba_persistencia_subcarpetas.py` 10/10,
-`prueba_escaneo_automatico.py` 19/19, `prueba_seleccion_carpeta.py` 26/26,
-`prueba_carpeta_actual.py` 19/19, `prueba_expansion_carpetas.py` 35/35,
-`prueba_tamano_miniaturas.py` 32/32, `prueba_escaneo_interfaz.py` 36/36,
-`prueba_progreso_pipeline.py` 11/11, `prueba_progreso_operaciones.py` 12/12,
-`prueba_progreso_visual_pulido.py` 7/7, `prueba_recarga_catalogo.py` 20/20,
-`prueba_interfaz_asincrona.py` 29/29, `prueba_atajos_operaciones.py` 16/16,
-`prueba_seleccion.py` 28/28, `prueba_restauracion_seleccion.py` 15/15, `prueba_smoke.py` OK.
-`prueba_persistencia_carpeta.py` 18/20: **falla preexistente documentada** (T11/T16,
-verificada en HEAD con `git stash`), no atribuible a esta etapa.
+**Pruebas superadas:** `prueba_modo_seleccion_arbol.py` 16/16 (toggle, árbol idéntico con modo desactivado, checks solo en modo, sincronización checkbox↔conjunto, persistencia tras reconstrucción/expansión, carpeta activa independiente, sin escaneos, restauración al iniciar); `prueba_herramientas_seleccion_arbol.py` 20/20 (todas las acciones rápidas, orden visual, checks restaurados, conjunto persistido como única fuente de verdad, carpeta activa intacta, no-op sin hijos, botones visibles/ocultos, sin escaneos); regresiones relevantes OK: `prueba_arbol_navegacion.py`, `prueba_seleccion_carpetas.py` 22/22, `prueba_seleccion_arbol.py` 25/25, `prueba_seleccion_carpeta.py` 26/26, `prueba_persistencia_arbol.py` 15/15, `prueba_persistencia_subcarpetas.py` 10/10, `prueba_expansion_carpetas.py` 35/35, `prueba_escaneo_automatico.py` 19/19, `prueba_escaneo_interfaz.py` 36/36, `prueba_carpeta_actual.py` 19/19, `prueba_recarga_catalogo.py` 20/20, `prueba_interfaz_asincrona.py` 29/29, `prueba_progreso_visual_pulido.py` 7/7, `prueba_restauracion_seleccion.py` 15/15, `prueba_atajos_operaciones.py` 16/16, `prueba_seleccion.py` 28/28, `prueba_seleccion_visual.py` OK, `prueba_smoke.py` OK.
 
 ## Hitos completados
 
@@ -239,6 +219,14 @@ verificada en HEAD con `git stash`), no atribuible a esta etapa.
   rutas inexistentes y API `seleccionar`/`deseleccionar`/`alternar`/`limpiar`/`seleccionar_todas`/
   `obtener_seleccion`. Sin árbol, sin UI, sin cambios en escaneo/SQLite/pipeline. Es la base de
   la "Selección personalizada" del Bloque de trabajo 4.
+- **Modo de selección del árbol y herramientas de selección rápida (Bloque 4, entrega conjunta
+  Etapas 2-3).** `ArbolNavegacion` se enlaza a `SeleccionCarpetas`: toggle "Modo selección" que
+  muestra checks por nodo sincronizados con el conjunto (sin alterar carpeta activa, navegación
+  ni escaneos; con el modo desactivado el árbol es idéntico al actual). Herramientas rápidas:
+  "Seleccionar todas" del nivel, "Deseleccionar todas", "Invertir" y menú contextual
+  (Seleccionar/Deseleccionar: hasta aquí, desde aquí hasta el final) sobre los hermanos
+  ordenados. Todas materializan **rutas** en `SeleccionCarpetas`, sin intervalos ni estructuras
+  paralelas.
 
 ## Pendientes prioritarios
 
@@ -295,14 +283,13 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
 
 ## Próxima etapa
 
-**Integración con el árbol de navegación — modo de selección de carpetas** (Bloque de trabajo 4,
-Etapa 2). Sobre la infraestructura de selección recién implementada, agregar el modo de
-selección en el árbol: toggle de modo, checks por nodo, estado visual "seleccionada" distinto de
-"activa", barra de conteo y restauración, **sin modificar todavía el motor de escaneo
-multicarpeta**, según `ROADMAP.md` (Bloque de trabajo 4). Su definición detallada se realizará
-con la inspección técnica previa, en bloques pequeños, verificables y acumulativos, sin
-adelantar funcionalidades excluidas del alcance ni agregar funcionalidades nuevas fuera del
-plan aprobado.
+**Etapa 4 — Escaneo de la selección** (Bloque de trabajo 4). Hacer que `iniciar_escaneo`
+soporte los tres modos (solo carpeta actual, carpeta + subcarpetas, selección personalizada)
+y que el pipeline procese la unión de la selección con progreso "carpeta N de M". Requiere
+resolver previamente la **deduplicación de nombres de archivo entre carpetas** (`nombre`
+UNIQUE). Su definición detallada se realizará con la inspección técnica previa, en bloques
+pequeños, verificables y acumulativos, sin adelantar funcionalidades excluidas del alcance ni
+agregar funcionalidades nuevas fuera del plan aprobado.
 
 ## Documentos del proyecto
 

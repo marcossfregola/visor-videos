@@ -5,6 +5,63 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 83. Modo de selección del árbol y herramientas de selección rápida (Bloque 4, Etapas 2-3)
+
+- **Fecha:** 2026-08-07
+- **Objetivo:** Entrega conjunta (Etapas 2-3 del Bloque de trabajo 4) de la **integración de
+  `SeleccionCarpetas` con el árbol de navegación**: un modo de selección dedicado con checks por
+  nodo y las primeras herramientas de selección masiva, sin modificar escaneo, SQLite, pipeline
+  ni sincronización multicarpeta. `SeleccionCarpetas` sigue siendo la única fuente de verdad;
+  ninguna acción guarda intervalos ni estructuras paralelas.
+- **Archivos creados:**
+  - `prueba_modo_seleccion_arbol.py` — 16 verificaciones (Etapa 2): toggle, árbol idéntico con
+    modo desactivado, checks solo en modo, sincronización checkbox↔conjunto, persistencia tras
+    reconstrucción/expansión, carpeta activa independiente, sin escaneos, restauración al
+    iniciar.
+  - `prueba_herramientas_seleccion_arbol.py` — 20 verificaciones (Etapa 3): todas las acciones
+    rápidas (todas del nivel, deseleccionar todas, invertir con conservación de lo externo,
+    hasta aquí / desde aquí hasta el final en sus variantes seleccionar/deseleccionar), orden
+    visual de hermanos, checks restaurados, conjunto persistido como única fuente de verdad,
+    carpeta activa intacta, no-op sin hijos, botones visibles/ocultos, sin escaneos.
+- **Archivos modificados:**
+  - `arbol_navegacion.py` — `ArbolNavegacion(parent=None, seleccion=None)`; `set_modo_seleccion`
+    con checkboxes por nodo (`_aplicar_check` con guard `_sincronizando_checks`; los nodos se
+    crean dentro del guard porque `QTreeWidgetItem` nace checkable por defecto); `_al_item_cambiado`
+    sincroniza solo cuando el estado difiere del conjunto; con el modo desactivado el árbol es
+    idéntico al actual. Herramientas rápidas: `seleccionar_todas_nivel`, `deseleccionar_todas`,
+    `invertir_nivel`, y menú contextual (solo en modo selección) `seleccionar_hasta`/
+    `deseleccionar_hasta`/`seleccionar_desde`/`deseleccionar_desde` sobre `_hijos_ordenados`
+    (orden visual = orden de `carpetas_de`, alfabético case-insensitive). Primitivas compartidas:
+    `_hijos_ordenados`, `_rutas_de`, `_reemplazar_seleccion`, `_refrescar_checks`.
+  - `visor_videos.py` — pasa `seleccion=self.seleccion_carpetas` al árbol; toggle "Modo
+    selección" y fila de acciones rápidas (oculta salvo en modo selección).
+  - `ROADMAP.md` — Bloque de trabajo 4: fila 2-3 marcada como entrega conjunta implementada.
+  - `DOCUMENTO_TECNICO.md` — modo de selección y herramientas rápidas documentados en
+    `ArbolNavegacion` y en el panel izquierdo.
+  - `ESTADO_PROYECTO.md` — última entrega aprobada, fase actual, hitos y próxima etapa (Etapa 4).
+  - `HISTORIAL_PROYECTO.md` — este documento (registro de la entrega).
+- **Pruebas:** `prueba_modo_seleccion_arbol.py` 16/16 y `prueba_herramientas_seleccion_arbol.py`
+  20/20; regresiones relevantes OK (`prueba_arbol_navegacion.py`, `prueba_seleccion_carpetas.py`
+  22/22, `prueba_seleccion_arbol.py` 25/25, `prueba_seleccion_carpeta.py` 26/26,
+  `prueba_persistencia_arbol.py` 15/15, `prueba_persistencia_subcarpetas.py` 10/10,
+  `prueba_expansion_carpetas.py` 35/35, `prueba_escaneo_automatico.py` 19/19,
+  `prueba_escaneo_interfaz.py` 36/36, `prueba_carpeta_actual.py` 19/19,
+  `prueba_recarga_catalogo.py` 20/20, `prueba_interfaz_asincrona.py` 29/29,
+  `prueba_progreso_visual_pulido.py` 7/7, `prueba_restauracion_seleccion.py` 15/15,
+  `prueba_atajos_operaciones.py` 16/16, `prueba_seleccion.py` 28/28, `prueba_seleccion_visual.py`
+  OK, `prueba_smoke.py` OK).
+- **Commit:** Aprobado y commiteado como **entrega conjunta única** (Etapas 2-3) por decisión de
+  la auditoría, para no mezclar etapas en un mismo commit ni fragmentar una funcionalidad
+  integrada.
+- **Resultado:** el árbol soporta la selección personalizada de carpetas: modo dedicado con
+  checks sincronizados y herramientas de selección rápida que materializan rutas en
+  `SeleccionCarpetas` sin tocar la carpeta activa ni el escaneo.
+- **Decisiones importantes:** `SeleccionCarpetas` única fuente de verdad (sin intervalos);
+  acciones sobre la lista ordenada de hermanos; menú contextual restringido al modo selección;
+  entrega documental conjunta de las Etapas 2-3.
+
+---
+
 ## 82. Agregar infraestructura de selección de carpetas por rutas (Selección personalizada)
 
 - **Fecha:** 2026-08-07
