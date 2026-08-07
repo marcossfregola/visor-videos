@@ -5,6 +5,59 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 80. Implementar progreso real en las operaciones de archivos (Etapa B3.22)
+
+- **Fecha:** 2026-08-07
+- **Objetivo:** Incorporar progreso real a Copiar, Pegar y Eliminar reutilizando
+  íntegramente la infraestructura creada en B3.20 (y el patrón de callbacks de B3.21), sin
+  lógica paralela y sin modificar la lógica funcional de las operaciones.
+- **Archivos creados:**
+  - `prueba_progreso_operaciones.py` — 12 verificaciones: callbacks de las tres funciones
+    puras emiten `(1..N, N)` (incluye omitidos) y conservan el resultado sin callback; las
+    tres tareas reenvían el progreso vía `gestor_operaciones`; la barra de la ventana se
+    vuelve determinada durante Copiar `[(3,1),(3,2),(3,3)]`, Pegar `[(2,1),(2,2)]` y Eliminar
+    `[(2,1),(2,2)]`; exclusión mutua: con el pipeline activo los botones se deshabilitan y
+    los atajos no hacen nada.
+- **Archivos modificados:**
+  - `operaciones.py` — parámetro opcional `on_progreso=None` en `copiar_archivos`,
+    `pegar_archivos` y `eliminar_archivos`; emiten `on_progreso(indice + 1, total)` **una vez
+    por archivo** (incluyendo omitidos y errores); sin callback, comportamiento idéntico.
+    Sin Qt y sin modificar la lógica funcional.
+  - `visor_videos.py` — las tres tareas (`TareaCopiarArchivos`, `TareaPegarArchivos`,
+    `TareaEliminarArchivos`) pasan `self.reportar_progreso`; conexión
+    `gestor_operaciones.tarea_progreso → _al_progreso_pipeline` (mismo handler del pipeline,
+    sin segundo handler); **exclusión mutua**: guard `if self.gestor_operaciones.activo or
+    self.gestor.activo: return` en `_iniciar_copia/pegar/eliminar` y condición
+    `not self.gestor.activo` reflejada en `_actualizar_boton_copiar/pegar/eliminar`.
+  - `DOCUMENTO_TECNICO.md` — callbacks de `operaciones.py`, conexión de `gestor_operaciones`
+    y exclusión mutua documentados.
+  - `ROADMAP.md` — B3.22 marcada como implementada.
+  - `ESTADO_PROYECTO.md` — última etapa aprobada, fase actual, hitos y próxima etapa (B3.23).
+  - `HISTORIAL_PROYECTO.md` — este documento (registro de la etapa).
+- **Pruebas:** `prueba_progreso_operaciones.py` 12/12; regresiones relevantes OK
+  (`prueba_copiar_archivos.py` 15/15, `prueba_pegar_archivos.py` 15/15,
+  `prueba_eliminar_archivos.py` 18/18, `prueba_atajos_operaciones.py` 16/16,
+  `prueba_resincronizacion_incremental.py` 9/9, `prueba_progreso_pipeline.py` 11/11,
+  `prueba_infraestructura_progreso.py` 9/9, `prueba_tareas.py` 13/13,
+  `prueba_escaneo_interfaz.py` 36/36, `prueba_sincronizacion_interfaz.py` 18/18,
+  `prueba_recarga_catalogo.py` 20/20, `prueba_progreso.py` 13/13, `prueba_progreso_visual.py`
+  OK, `prueba_interfaz_asincrona.py` 29/29, `prueba_guardar.py` 19/19, `prueba_ffprobe.py`
+  12/12, `prueba_seleccion.py` 28/28, `prueba_modo_seleccion.py` 20/20,
+  `prueba_resumen_seleccion.py` 17/17, `prueba_smoke.py` OK; adicionales OK:
+  `prueba_escaneo_guardado.py` 24/24, `prueba_sincronizacion_asincrona.py` 27/27,
+  `prueba_lectura_paginada.py` 32/32, `prueba_seleccion_carpeta.py` 26/26,
+  `prueba_carpeta_actual.py` 19/19, `prueba_previews_automaticas.py` 22/22,
+  `prueba_pulido_bloque_a.py` 29/29).
+- **Commit:** Aprobado y commiteado.
+- **Resultado:** Copiar, Pegar y Eliminar muestran progreso real por archivo reutilizando la
+  infraestructura de B3.20; la barra es compartida con el pipeline mediante el mismo handler
+  y la exclusión mutua evita interferencias.
+- **Decisiones importantes:** callbacks opcionales en `operaciones.py` (sin Qt); mismo handler
+  `_al_progreso_pipeline` para ambos gestores; exclusión mutua operaciones ↔ pipeline en
+  handlers y habilitación de botones.
+
+---
+
 ## 79. Implementar progreso real del pipeline de escaneo (Etapa B3.21)
 
 - **Fecha:** 2026-08-07

@@ -12,46 +12,44 @@ técnicamente** (B3.1 a B3.9, más las ampliaciones **B3.14a** "Desactivado" y
 **B3.14b** "tamaños 3.0x/3.5x" de la vista ampliada), el **Bloque B —
 Selección y operaciones** quedó **completo** (B3.11 a B3.17 más la corrección
 técnica **B3.18**) y el **Bloque C — Progreso** está en marcha con
-**B3.20 — Infraestructura de progreso** y **B3.21 — Progreso real del
-pipeline de escaneo** implementadas. El plan de trabajo se documenta en
-`ROADMAP.md` (Bloque de trabajo 3). La Beta 2 permanece como la última
-versión estable publicada.
+**B3.20 — Infraestructura de progreso**, **B3.21 — Progreso real del
+pipeline de escaneo** y **B3.22 — Progreso real de las operaciones de
+archivos** implementadas. El plan de trabajo se documenta en `ROADMAP.md`
+(Bloque de trabajo 3). La Beta 2 permanece como la última versión estable
+publicada.
 
 ## Último commit aprobado
 
-**Mensaje:** Implementar progreso real del pipeline de escaneo (Etapa B3.21)
+**Mensaje:** Implementar progreso real en las operaciones de archivos (Etapa B3.22)
 
-**Etapa:** Progreso real del pipeline de escaneo (B3.21, Bloque C):
-- `escanear_videos.py` — **callbacks opcionales de progreso** en las funciones puras (sin Qt y
-  sin mover bucles): `obtener_tamanos_archivos(videos, carpeta, on_progreso=None)`,
-  `asegurar_miniaturas(videos, carpeta, on_progreso=None)` y
-  `guardar_videos(datos_videos, ruta_db=None, on_progreso=None)`; sin callback, comportamiento
-  idéntico.
-- `tareas_videos.py` — las tareas pasan `self.reportar_progreso`: `TareaTamanosArchivos`,
-  `TareaMiniaturas` y `TareaGuardarVideos`; `TareaFFprobe` recorre las rutas con un bucle
-  explícito y emite `reportar_progreso(indice + 1, total)`.
-- `visor_videos.py` — conexión `self.gestor.tarea_progreso → _al_progreso_pipeline`;
-  `_mostrar_progreso()` restablece siempre `setRange(0,0)` (no arrastra el rango de una etapa
-  previa); `_al_progreso_pipeline(procesado, total)` fija `setRange(0, total)` + `setValue`.
-  Escaneo, sincronización y recarga permanecen **indeterminados** por decisión.
-- `prueba_escaneo_guardado.py` — actualizados los spies de paso a través de T07/T09 para
-  aceptar y reenviar `on_progreso` (incompatibilidad objetiva demostrable).
-- `prueba_progreso_pipeline.py` — 11 verificaciones de la etapa (nuevo).
+**Etapa:** Progreso real en Copiar, Pegar y Eliminar (B3.22, Bloque C):
+- `operaciones.py` — parámetro opcional `on_progreso=None` en `copiar_archivos`,
+  `pegar_archivos` y `eliminar_archivos`; emite `on_progreso(indice + 1, total)` **una vez por
+  archivo** (incluyendo omitidos y errores); sin callback, comportamiento idéntico. Sin Qt.
+- `visor_videos.py` — las tres tareas pasan `self.reportar_progreso`; conexión
+  `gestor_operaciones.tarea_progreso → _al_progreso_pipeline` (mismo handler del pipeline, sin
+  lógica paralela); **exclusión mutua**: guard `if self.gestor_operaciones.activo or
+  self.gestor.activo: return` en `_iniciar_copia/pegar/eliminar` y condición `not
+  self.gestor.activo` reflejada en `_actualizar_boton_copiar/pegar/eliminar`.
+- `prueba_progreso_operaciones.py` — 12 verificaciones de la etapa (nuevo).
 
-**Pruebas superadas:** `prueba_progreso_pipeline.py` 11/11 (callbacks de las tres funciones
-puras emiten `(1..N, N)` y conservan el resultado sin callback; las cuatro tareas reenvían el
-progreso por unidad; `_mostrar_progreso` deja la barra indeterminada y no arrastra rango;
-`_al_progreso_pipeline` convierte `(procesado,total)` en rango/valor; integración: el progreso
-de una tarea actualiza la barra de la ventana `[(3,1),(3,2),(3,3)]`); regresiones relevantes
-OK: `prueba_tareas.py` 13/13, `prueba_infraestructura_progreso.py` 9/9, `prueba_ffprobe.py`
-12/12, `prueba_tamano_archivo.py` 15/15, `prueba_escaneo_guardado.py` 24/24,
-`prueba_guardar_videos.py` 34/34, `prueba_guardar.py` 19/19, `prueba_escaneo.py` 12/12,
-`prueba_escaneo_interfaz.py` 36/36, `prueba_sincronizacion_interfaz.py` 18/18,
-`prueba_recarga_catalogo.py` 20/20, `prueba_progreso.py` 13/13, `prueba_progreso_visual.py`
-OK, `prueba_interfaz_asincrona.py` 29/29, `prueba_lectura.py` 15/15,
-`prueba_lectura_paginada.py` 32/32, `prueba_sincronizacion_asincrona.py` 27/27,
-`prueba_previews_automaticas.py` 22/22, `prueba_previews_progresivas.py` 16/16,
-`prueba_smoke.py` OK.
+**Pruebas superadas:** `prueba_progreso_operaciones.py` 12/12 (callbacks de las tres funciones
+puras emiten `(1..N, N)` incluyendo omitidos y conservan el resultado sin callback; las tres
+tareas reenvían el progreso; la barra se vuelve determinada durante Copiar `[(3,1),(3,2),(3,3)]`,
+Pegar `[(2,1),(2,2)]` y Eliminar `[(2,1),(2,2)]`; exclusión mutua: con el pipeline activo los
+botones se deshabilitan y los atajos no hacen nada); regresiones relevantes OK: `prueba_copiar_archivos.py`
+15/15, `prueba_pegar_archivos.py` 15/15, `prueba_eliminar_archivos.py` 18/18,
+`prueba_atajos_operaciones.py` 16/16, `prueba_resincronizacion_incremental.py` 9/9,
+`prueba_progreso_pipeline.py` 11/11, `prueba_infraestructura_progreso.py` 9/9,
+`prueba_tareas.py` 13/13, `prueba_escaneo_interfaz.py` 36/36,
+`prueba_sincronizacion_interfaz.py` 18/18, `prueba_recarga_catalogo.py` 20/20,
+`prueba_progreso.py` 13/13, `prueba_progreso_visual.py` OK, `prueba_interfaz_asincrona.py`
+29/29, `prueba_guardar.py` 19/19, `prueba_ffprobe.py` 12/12, `prueba_seleccion.py` 28/28,
+`prueba_modo_seleccion.py` 20/20, `prueba_resumen_seleccion.py` 17/17, `prueba_smoke.py` OK;
+adicionales OK: `prueba_escaneo_guardado.py` 24/24, `prueba_sincronizacion_asincrona.py` 27/27,
+`prueba_lectura_paginada.py` 32/32, `prueba_seleccion_carpeta.py` 26/26,
+`prueba_carpeta_actual.py` 19/19, `prueba_previews_automaticas.py` 22/22,
+`prueba_pulido_bloque_a.py` 29/29.
 
 ## Hitos completados
 
@@ -221,6 +219,12 @@ OK, `prueba_interfaz_asincrona.py` 29/29, `prueba_lectura.py` 15/15,
   siempre el modo indeterminado y `_al_progreso_pipeline` (conectado a `gestor.tarea_progreso`)
   fija `setRange(0, total)` + `setValue(procesado)`. Escaneo, sincronización y recarga
   permanecen indeterminados por decisión.
+- **Progreso real de las operaciones de archivos (Etapa B3.22).** Copiar, Pegar y Eliminar
+  informan progreso real por archivo: callbacks opcionales `on_progreso` en las tres funciones
+  puras de `operaciones.py` (sin Qt; incluye omitidos y errores); las tres tareas pasan
+  `self.reportar_progreso`; `gestor_operaciones.tarea_progreso` se conecta al **mismo handler**
+  `_al_progreso_pipeline` (sin lógica paralela). Se incorpora la **exclusión mutua** entre
+  operaciones y pipeline principal (guard en los handlers y en la habilitación de los botones).
 
 ## Pendientes prioritarios
 
@@ -277,13 +281,13 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
 
 ## Próxima etapa
 
-**Etapa B3.22 — Progreso real de las operaciones de archivos (Copiar, Pegar y Eliminar)**
-(Bloque C). Reutilizar exactamente la infraestructura de B3.20/B3.21 en `gestor_operaciones`
-para que Copiar, Pegar y Eliminar reporten progreso real por archivo, sin lógica paralela,
-según `ROADMAP.md` (Bloque de trabajo 3, "Orden de implementación del Bloque C"). Su
-definición detallada se realizará con la inspección técnica previa, en bloques pequeños,
-verificables y acumulativos, sin adelantar funcionalidades excluidas del alcance ni agregar
-funcionalidades nuevas fuera del plan aprobado.
+**Etapa B3.23 — Pulido visual del sistema de progreso** (Bloque C). Revisar la consistencia
+entre la barra y los mensajes de estado, evitar mensajes que se pisan (p. ej. los resúmenes de
+Pegar/Eliminar reemplazados por "Sincronizando…") y unificar el comportamiento visual, según
+`ROADMAP.md` (Bloque de trabajo 3, "Orden de implementación del Bloque C"). Su definición
+detallada se realizará con la inspección técnica previa, en bloques pequeños, verificables y
+acumulativos, sin adelantar funcionalidades excluidas del alcance ni agregar funcionalidades
+nuevas fuera del plan aprobado.
 
 ## Documentos del proyecto
 

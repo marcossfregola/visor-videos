@@ -53,7 +53,7 @@ def _enviar_a_papelera(ruta):
         )
 
 
-def copiar_archivos(origen, archivos, destino):
+def copiar_archivos(origen, archivos, destino, on_progreso=None):
     if not isinstance(origen, str) or not origen:
         raise ValueError("origen debe ser una ruta de texto no vacía")
     if not isinstance(destino, str) or not destino:
@@ -67,23 +67,27 @@ def copiar_archivos(origen, archivos, destino):
     copiados = []
     omitidos = []
     errores = []
-    for nombre in lista:
-        if not isinstance(nombre, str) or not nombre:
-            continue
-        ruta = os.path.join(origen, nombre)
-        if not os.path.isfile(ruta):
-            errores.append((ruta, "archivo no encontrado"))
-            continue
-        destino_archivo = os.path.join(destino, nombre)
-        if os.path.exists(destino_archivo):
-            omitidos.append(ruta)
-            continue
-        try:
-            os.makedirs(os.path.dirname(destino_archivo), exist_ok=True)
-            shutil.copy2(ruta, destino_archivo)
-            copiados.append(ruta)
-        except OSError as exc:
-            errores.append((ruta, str(exc)))
+    total = len(lista)
+    for indice, nombre in enumerate(lista):
+        if isinstance(nombre, str) and nombre:
+            ruta = os.path.join(origen, nombre)
+            if not os.path.isfile(ruta):
+                errores.append((ruta, "archivo no encontrado"))
+            else:
+                destino_archivo = os.path.join(destino, nombre)
+                if os.path.exists(destino_archivo):
+                    omitidos.append(ruta)
+                else:
+                    try:
+                        os.makedirs(
+                            os.path.dirname(destino_archivo), exist_ok=True
+                        )
+                        shutil.copy2(ruta, destino_archivo)
+                        copiados.append(ruta)
+                    except OSError as exc:
+                        errores.append((ruta, str(exc)))
+        if on_progreso is not None:
+            on_progreso(indice + 1, total)
     return {
         "copiados": copiados,
         "omitidos": omitidos,
@@ -91,7 +95,7 @@ def copiar_archivos(origen, archivos, destino):
     }
 
 
-def pegar_archivos(archivos, destino):
+def pegar_archivos(archivos, destino, on_progreso=None):
     if not isinstance(destino, str) or not destino:
         raise ValueError("destino debe ser una ruta de texto no vacía")
     if isinstance(archivos, (str, bytes, bytearray)):
@@ -103,21 +107,23 @@ def pegar_archivos(archivos, destino):
     copiados = []
     omitidos = []
     errores = []
-    for ruta in lista:
-        if not isinstance(ruta, str) or not ruta:
-            continue
-        if not os.path.isfile(ruta):
-            errores.append((ruta, "archivo no encontrado"))
-            continue
-        destino_archivo = os.path.join(destino, os.path.basename(ruta))
-        if os.path.exists(destino_archivo):
-            omitidos.append(ruta)
-            continue
-        try:
-            shutil.copy2(ruta, destino_archivo)
-            copiados.append(ruta)
-        except OSError as exc:
-            errores.append((ruta, str(exc)))
+    total = len(lista)
+    for indice, ruta in enumerate(lista):
+        if isinstance(ruta, str) and ruta:
+            if not os.path.isfile(ruta):
+                errores.append((ruta, "archivo no encontrado"))
+            else:
+                destino_archivo = os.path.join(destino, os.path.basename(ruta))
+                if os.path.exists(destino_archivo):
+                    omitidos.append(ruta)
+                else:
+                    try:
+                        shutil.copy2(ruta, destino_archivo)
+                        copiados.append(ruta)
+                    except OSError as exc:
+                        errores.append((ruta, str(exc)))
+        if on_progreso is not None:
+            on_progreso(indice + 1, total)
     return {
         "copiados": copiados,
         "omitidos": omitidos,
@@ -125,7 +131,7 @@ def pegar_archivos(archivos, destino):
     }
 
 
-def eliminar_archivos(archivos):
+def eliminar_archivos(archivos, on_progreso=None):
     if isinstance(archivos, (str, bytes, bytearray)):
         raise TypeError("archivos debe ser una colección de rutas, no texto")
     try:
@@ -135,17 +141,19 @@ def eliminar_archivos(archivos):
     eliminados = []
     omitidos = []
     errores = []
-    for ruta in lista:
-        if not isinstance(ruta, str) or not ruta:
-            continue
-        if not os.path.isfile(ruta):
-            errores.append((ruta, "archivo no encontrado"))
-            continue
-        try:
-            _enviar_a_papelera(ruta)
-            eliminados.append(ruta)
-        except OSError as exc:
-            errores.append((ruta, str(exc)))
+    total = len(lista)
+    for indice, ruta in enumerate(lista):
+        if isinstance(ruta, str) and ruta:
+            if not os.path.isfile(ruta):
+                errores.append((ruta, "archivo no encontrado"))
+            else:
+                try:
+                    _enviar_a_papelera(ruta)
+                    eliminados.append(ruta)
+                except OSError as exc:
+                    errores.append((ruta, str(exc)))
+        if on_progreso is not None:
+            on_progreso(indice + 1, total)
     return {
         "eliminados": eliminados,
         "omitidos": omitidos,

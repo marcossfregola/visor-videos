@@ -476,7 +476,7 @@ class TareaCopiarArchivos(TareaBase):
 
     def _trabajo(self):
         return operaciones.copiar_archivos(
-            self._origen, self._archivos, self._destino
+            self._origen, self._archivos, self._destino, self.reportar_progreso
         )
 
 
@@ -495,7 +495,9 @@ class TareaPegarArchivos(TareaBase):
         return self._destino
 
     def _trabajo(self):
-        return operaciones.pegar_archivos(self._archivos, self._destino)
+        return operaciones.pegar_archivos(
+            self._archivos, self._destino, self.reportar_progreso
+        )
 
 
 class TareaEliminarArchivos(TareaBase):
@@ -508,7 +510,7 @@ class TareaEliminarArchivos(TareaBase):
         return list(self._archivos)
 
     def _trabajo(self):
-        return operaciones.eliminar_archivos(self._archivos)
+        return operaciones.eliminar_archivos(self._archivos, self.reportar_progreso)
 
 
 class Tarjeta(QFrame):
@@ -966,6 +968,9 @@ class VisorVideos(QMainWindow):
         self.gestor_operaciones.tarea_error.connect(
             self._al_error_operaciones
         )
+        self.gestor_operaciones.tarea_progreso.connect(
+            self._al_progreso_pipeline
+        )
 
         self._timer_previews = QTimer(self)
         self._timer_previews.setSingleShot(True)
@@ -1313,13 +1318,14 @@ class VisorVideos(QMainWindow):
         habilitado = (
             bool(self._nombres_seleccionados)
             and (gestor_op is None or not gestor_op.activo)
+            and not self.gestor.activo
             and self.carpeta_seleccionada is not None
             and os.path.isdir(self.carpeta_seleccionada)
         )
         self.boton_copiar.setEnabled(habilitado)
 
     def _iniciar_copia(self):
-        if self.gestor_operaciones.activo:
+        if self.gestor_operaciones.activo or self.gestor.activo:
             return
         seleccion = list(self._nombres_seleccionados)
         if not seleccion:
@@ -1380,13 +1386,14 @@ class VisorVideos(QMainWindow):
         habilitado = (
             bool(self._portapapeles)
             and (gestor_op is None or not gestor_op.activo)
+            and not self.gestor.activo
             and self.carpeta_seleccionada is not None
             and os.path.isdir(self.carpeta_seleccionada)
         )
         self.boton_pegar.setEnabled(habilitado)
 
     def _iniciar_pegar(self):
-        if self.gestor_operaciones.activo:
+        if self.gestor_operaciones.activo or self.gestor.activo:
             return
         if not self._portapapeles:
             return
@@ -1474,13 +1481,14 @@ class VisorVideos(QMainWindow):
         habilitado = (
             bool(self._nombres_seleccionados)
             and (gestor_op is None or not gestor_op.activo)
+            and not self.gestor.activo
             and self.carpeta_seleccionada is not None
             and os.path.isdir(self.carpeta_seleccionada)
         )
         self.boton_eliminar.setEnabled(habilitado)
 
     def _iniciar_eliminar(self):
-        if self.gestor_operaciones.activo:
+        if self.gestor_operaciones.activo or self.gestor.activo:
             return
         seleccion = list(self._nombres_seleccionados)
         if not seleccion:
