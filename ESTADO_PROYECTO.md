@@ -9,38 +9,36 @@ grandes colecciones de videos mediante miniaturas representativas.
 exclusivamente documental) y la **implementación de la Beta 3 está en
 marcha**: el **Bloque A — Experiencia visual** quedó **completo funcional y
 técnicamente** (B3.1 a B3.9, más las ampliaciones **B3.14a** "Desactivado" y
-**B3.14b** "tamaños 3.0x/3.5x" de la vista ampliada) y el **Bloque B —
-Selección y operaciones** quedó **completo** (B3.11 — Resumen, B3.12 — Modo
-selección + Checks, B3.13 — Atajos básicos, B3.14 — Copiar, B3.15 — Pegar,
-B3.16 — Eliminar, B3.17 — Atajos de operaciones, más la **corrección técnica
-B3.18** de la resincronización incremental). El plan de trabajo se
-documenta en `ROADMAP.md` (Bloque de trabajo 3). La Beta 2 permanece como la
-última versión estable publicada.
+**B3.14b** "tamaños 3.0x/3.5x" de la vista ampliada), el **Bloque B —
+Selección y operaciones** quedó **completo** (B3.11 a B3.17 más la corrección
+técnica **B3.18**) y el **Bloque C — Progreso** está en marcha con la
+**Etapa B3.20 — Infraestructura de progreso** implementada. El plan de
+trabajo se documenta en `ROADMAP.md` (Bloque de trabajo 3). La Beta 2
+permanece como la última versión estable publicada.
 
 ## Último commit aprobado
 
-**Mensaje:** Corregir la captura de carpeta en la resincronización incremental (Etapa B3.18)
+**Mensaje:** Incorporar infraestructura reutilizable de progreso para tareas (Etapa B3.20)
 
-**Etapa:** Corrección técnica del Bloque B (B3.18, punto I1 de la auditoría):
-- `visor_videos.py` — override temporal `_carpeta_sincronizacion` (inicializado a `None` en
-  `__init__` y reseteado en `iniciar_escaneo`/`_limpiar_cadena`). `_procesar_archivos_pegados`
-  y `_procesar_archivos_eliminados` **capturan la carpeta al inicio** de la operación y la
-  fijan en el override. `_iniciar_sincronizacion(carpeta=None)` resuelve la carpeta por
-  **parámetro → override → carpeta actual**, consume y limpia el override en el arranque.
-- `prueba_resincronizacion_incremental.py` — 9 verificaciones de la etapa (nuevo).
+**Etapa:** Infraestructura de progreso (B3.20, Bloque C):
+- `tareas.py` — cambio **aditivo**: `TareaBase.progreso = Signal(int, int)` con semántica
+  `(procesado, total)` (`total <= 0` = indeterminado); helper `TareaBase.reportar_progreso`
+  (convierte a `int`, ignora inválidos, ignora `total <= 0`, acota `procesado` a `[0, total]`
+  y emite); `GestorTareas.tarea_progreso = Signal(int, int)`; `_RelayTarea.al_progreso` con el
+  mismo criterio del token `_vigente`; conexión `tarea.progreso → relay.al_progreso` en
+  `iniciar()`. `ejecutar()` intacto; ninguna tarea emite progreso todavía (sin cambio visible).
+- `prueba_infraestructura_progreso.py` — 9 verificaciones de la etapa (nuevo).
 
-**Pruebas superadas:** `prueba_resincronizacion_incremental.py` 9/9 (la sincronización usa la
-carpeta capturada y no la actual; override consumido y limpio; se marca escaneada la carpeta
-original y no la nueva; sin override usa la carpeta actual; Pegar con cambio de carpeta a mitad
-de cadena no elimina el archivo pegado ni sincroniza la nueva; regresiones de Pegar y Eliminar
-normales); regresiones relevantes OK: `prueba_pegar_archivos.py` 15/15,
-`prueba_eliminar_archivos.py` 18/18, `prueba_sincronizacion_interfaz.py` 18/18,
-`prueba_sincronizacion_asincrona.py` 27/27, `prueba_recarga_catalogo.py` 20/20,
-`prueba_escaneo_interfaz.py` 36/36, `prueba_interfaz_asincrona.py` 29/29,
-`prueba_atajos_operaciones.py` 16/16, `prueba_copiar_archivos.py` 15/15,
-`prueba_seleccion.py` 28/28, `prueba_modo_seleccion.py` 20/20,
-`prueba_resumen_seleccion.py` 17/17, `prueba_guardar.py` 19/19,
-`prueba_lectura_paginada.py` 32/32, `prueba_pulido_bloque_a.py` 29/29, `prueba_smoke.py` OK.
+**Pruebas superadas:** `prueba_infraestructura_progreso.py` 9/9 (existencia de señales; relay a
+través de `GestorTareas` con valores intactos, en orden y en el hilo principal; orden
+`inicio → progreso(s) → resultado → finalizada` con helper y con `self.progreso.emit` directo;
+tarea sin progreso conserva `inicio/resultado/finalizada`; helper con clamp y casos
+indeterminados/inválidos; descarte por `_vigente`; ciclo de vida/`activo`/hilos inalterados);
+regresiones relevantes OK: `prueba_tareas.py` 13/13, `prueba_sincronizacion_asincrona.py` 27/27,
+`prueba_interfaz_asincrona.py` 29/29, `prueba_smoke.py` OK, y las equivalentes a
+`prueba_tareas_videos.py` (inexistente): `prueba_ffprobe.py` 12/12,
+`prueba_guardar_videos.py` 34/34, `prueba_lectura.py` 15/15, `prueba_lectura_paginada.py` 32/32,
+`prueba_escaneo.py` 12/12, `prueba_escaneo_guardado.py` 24/24.
 
 ## Hitos completados
 
@@ -197,6 +195,12 @@ normales); regresiones relevantes OK: `prueba_pegar_archivos.py` 15/15,
   cadena. El override se limpia automáticamente (`_iniciar_sincronizacion`, `_limpiar_cadena`
   e `iniciar_escaneo`), evitando reutilizaciones accidentales y sin modificar el
   comportamiento normal del pipeline.
+- **Infraestructura de progreso (Etapa B3.20).** Primera etapa del Bloque C: cambio
+  **aditivo** en `tareas.py` — `TareaBase.progreso = Signal(int, int)` (`(procesado, total)`,
+  `total <= 0` = indeterminado), helper `reportar_progreso`, `GestorTareas.tarea_progreso`
+  con reenvío por `_RelayTarea` y el mismo criterio del token `_vigente` (descarta emisiones
+  tardías). `ejecutar()` intacto y ninguna tarea emite progreso todavía: sin cambio visible.
+  La señal queda desacoplada de la interfaz para su uso en B3.21 y B3.22.
 
 ## Pendientes prioritarios
 
@@ -253,12 +257,13 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
 
 ## Próxima etapa
 
-**Bloque C — Progreso** (siguiente bloque del plan). Con el **Bloque B completo**,
-la próxima etapa corresponderá al Bloque C — Progreso (barra de progreso real,
-cantidad de videos procesados y porcentaje, según `ROADMAP.md`, Bloque de trabajo 3).
-Su definición detallada se realizará con la inspección técnica previa, en bloques
-pequeños, verificables y acumulativos, sin adelantar funcionalidades excluidas del
-alcance ni agregar funcionalidades nuevas fuera del plan aprobado.
+**Etapa B3.21 — Progreso real del pipeline de escaneo** (Bloque C). Usar la
+infraestructura de B3.20 en la cadena principal (tamaños, FFprobe, miniaturas, guardado,
+sincronización y recarga) para reportar avance por unidad, según `ROADMAP.md` (Bloque de
+trabajo 3, "Orden de implementación del Bloque C"). Su definición detallada se realizará
+con la inspección técnica previa, en bloques pequeños, verificables y acumulativos, sin
+adelantar funcionalidades excluidas del alcance ni agregar funcionalidades nuevas fuera
+del plan aprobado.
 
 ## Documentos del proyecto
 

@@ -5,6 +5,49 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 78. Incorporar infraestructura reutilizable de progreso para tareas (Etapa B3.20)
+
+- **Fecha:** 2026-08-07
+- **Objetivo:** Agregar una infraestructura reutilizable de progreso en `TareaBase` y
+  `GestorTareas`, **aditiva** y con compatibilidad total con las tareas actuales, sin
+  modificar el comportamiento visible de la aplicación. Es la primera etapa del Bloque C
+  (Progreso) y habilita B3.21 (pipeline) y B3.22 (Copiar/Pegar/Eliminar).
+- **Archivos creados:**
+  - `prueba_infraestructura_progreso.py` — 9 verificaciones: existencia de las señales
+    nuevas; relay correcto a través de `GestorTareas` (`(procesado, total)` intactos, en
+    orden y en el hilo principal); orden `inicio → progreso(s) → resultado → finalizada`
+    (con el helper y con `self.progreso.emit` directo); compatibilidad con tareas que nunca
+    emiten progreso; comportamiento del helper `reportar_progreso` (clamp, `total <= 0`
+    indeterminado, valores no numéricos ignorados); descarte por `_vigente`; y ciclo de
+    vida/`activo`/hilos inalterados.
+- **Archivos modificados:**
+  - `tareas.py` — `TareaBase.progreso = Signal(int, int)` con semántica `(procesado, total)`
+    (`total <= 0` = indeterminado); `TareaBase.reportar_progreso(procesado, total)` (helper
+    mínimo: convierte a `int`, ignora inválidos, ignora `total <= 0`, acota `procesado` a
+    `[0, total]` y emite); `GestorTareas.tarea_progreso = Signal(int, int)`; método
+    `_RelayTarea.al_progreso(procesado, total)` con el **mismo criterio del token
+    `_vigente`** que `al_resultado`; conexión `tarea.progreso → relay.al_progreso` en
+    `iniciar()`. **`ejecutar()` sin cambios** y ninguna tarea existente emite progreso.
+  - `DOCUMENTO_TECNICO.md` — señales nuevas y helper documentados en `TareaBase`/`GestorTareas`.
+  - `ROADMAP.md` — "Orden de implementación del Bloque C" (B3.20–B3.25) incorporado y B3.20
+    marcada como implementada.
+  - `ESTADO_PROYECTO.md` — última etapa aprobada, fase actual, hitos y próxima etapa (B3.21).
+  - `HISTORIAL_PROYECTO.md` — este documento (registro de la etapa).
+- **Pruebas:** `prueba_infraestructura_progreso.py` 9/9; regresiones relevantes OK
+  (`prueba_tareas.py` 13/13, `prueba_sincronizacion_asincrona.py` 27/27,
+  `prueba_interfaz_asincrona.py` 29/29, `prueba_smoke.py` OK, y las equivalentes a
+  `prueba_tareas_videos.py`, inexistente en el repo: `prueba_ffprobe.py` 12/12,
+  `prueba_guardar_videos.py` 34/34, `prueba_lectura.py` 15/15, `prueba_lectura_paginada.py`
+  32/32, `prueba_escaneo.py` 12/12, `prueba_escaneo_guardado.py` 24/24).
+- **Commit:** Aprobado y commiteado.
+- **Resultado:** infraestructura de progreso disponible y desacoplada de la interfaz, lista
+  para ser usada en B3.21 y B3.22; sin cambios de comportamiento.
+- **Decisiones importantes:** emisión opcional y manual por tarea (sin auto-emisión en
+  `ejecutar()`); reenvío con token `_vigente` para descartar emisiones tardías; helper
+  `reportar_progreso` mínimo sin lógica adicional.
+
+---
+
 ## 77. Corregir la captura de carpeta en la resincronización incremental (Etapa B3.18)
 
 - **Fecha:** 2026-08-07

@@ -182,6 +182,17 @@ No se implementará ninguna mejora fuera de este alcance.
 - Cancelación del escaneo — **pendiente de evaluación técnica**; no es una
   mejora aprobada.
 
+#### Orden de implementación del Bloque C (aprobado en B3.19)
+
+| Etapa | Contenido |
+| --- | --- |
+| B3.20 | **Infraestructura de progreso** — señal `progreso` en `TareaBase` y `tarea_progreso` en `GestorTareas`, reenvío por `_RelayTarea` con token `_vigente`, helper `reportar_progreso`; cambio aditivo sin modificar `ejecutar()` ni el comportamiento visible. **Implementada (Etapa B3.20).** |
+| B3.21 | **Progreso real del pipeline de escaneo** — usar la infraestructura en la cadena principal (tamaños, FFprobe, miniaturas, guardado, sincronización, recarga). |
+| B3.22 | **Progreso de Copiar, Pegar y Eliminar** — reutilizar la misma infraestructura, sin lógica paralela. |
+| B3.23 | **Pulido visual del sistema de progreso** — consistencia barra ↔ mensajes de estado, evitar mensajes pisados, unificar comportamiento visual. |
+| B3.24 | **Limpieza técnica** — deuda que continúe siendo necesaria (`_pipeline_activo`, helpers repetidos, etc.). |
+| B3.25 | **Feedback de previews** — diferido; solo si continúa aportando valor tras el resto del Bloque C. |
+
 ### D. Navegación
 
 - Reinicio de indicadores de carpetas escaneadas.

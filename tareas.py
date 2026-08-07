@@ -15,10 +15,25 @@ class TareaBase(QObject):
     finalizada = Signal()
     error = Signal(str)
     resultado = Signal(object)
+    progreso = Signal(int, int)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._iniciada = False
+
+    def reportar_progreso(self, procesado, total):
+        try:
+            procesado = int(procesado)
+            total = int(total)
+        except (TypeError, ValueError):
+            return
+        if total <= 0:
+            return
+        if procesado < 0:
+            procesado = 0
+        elif procesado > total:
+            procesado = total
+        self.progreso.emit(procesado, total)
 
     def ejecutar(self):
         self._iniciada = True
@@ -58,6 +73,10 @@ class _RelayTarea(QObject):
         if self._vigente():
             self._gestor.tarea_resultado.emit(valor)
 
+    def al_progreso(self, procesado, total):
+        if self._vigente():
+            self._gestor.tarea_progreso.emit(procesado, total)
+
     def al_error(self, mensaje):
         if self._vigente():
             self._gestor.tarea_error.emit(mensaje)
@@ -68,6 +87,7 @@ class GestorTareas(QObject):
     tarea_finalizada = Signal()
     tarea_error = Signal(str)
     tarea_resultado = Signal(object)
+    tarea_progreso = Signal(int, int)
     actividad_cambiada = Signal(bool)
 
     def __init__(self, parent=None):
@@ -124,6 +144,7 @@ class GestorTareas(QObject):
         tarea.finalizada.connect(hilo.quit)
         tarea.inicio.connect(relay.al_inicio)
         tarea.resultado.connect(relay.al_resultado)
+        tarea.progreso.connect(relay.al_progreso)
         tarea.error.connect(relay.al_error)
         hilo.finished.connect(self._al_hilo_finalizado)
 
