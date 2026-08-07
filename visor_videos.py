@@ -792,6 +792,7 @@ class VisorVideos(QMainWindow):
         self._modo_seleccion = False
         self._portapapeles = []
         self._operacion_archivos = None
+        self._carpeta_sincronizacion = None
 
         self.busqueda = QLineEdit()
         self.busqueda.setPlaceholderText("Buscar por nombre...")
@@ -1435,6 +1436,7 @@ class VisorVideos(QMainWindow):
         carpeta = self.carpeta_seleccionada
         if not carpeta or not os.path.isdir(carpeta):
             return
+        self._carpeta_sincronizacion = carpeta
         self._escaneo_pendiente = False
         self._tamanos_pendiente = True
         self._ffprobe_pendiente = False
@@ -1524,6 +1526,7 @@ class VisorVideos(QMainWindow):
         carpeta = self.carpeta_seleccionada
         if not carpeta or not os.path.isdir(carpeta):
             return
+        self._carpeta_sincronizacion = carpeta
         self._escaneo_pendiente = False
         self._tamanos_pendiente = False
         self._ffprobe_pendiente = False
@@ -1573,6 +1576,7 @@ class VisorVideos(QMainWindow):
         self._sincronizacion_pendiente = False
         self._recarga_catalogo_pendiente = False
         self._pagina_pendiente = False
+        self._carpeta_sincronizacion = None
         self.registros_guardados = None
         self.resultado_sincronizacion = None
         self.tarea_escaneo = None
@@ -1604,6 +1608,7 @@ class VisorVideos(QMainWindow):
         self._sincronizacion_pendiente = False
         self._recarga_catalogo_pendiente = False
         self._pagina_pendiente = False
+        self._carpeta_sincronizacion = None
         self.tarea_escaneo = None
         self.tarea_tamanos = None
         self.tarea_ffprobe = None
@@ -1804,8 +1809,12 @@ class VisorVideos(QMainWindow):
             self._iniciar_recarga_catalogo()
             return
 
-    def _iniciar_sincronizacion(self):
-        carpeta = self.carpeta_seleccionada
+    def _iniciar_sincronizacion(self, carpeta=None):
+        if carpeta is None and self._carpeta_sincronizacion is not None:
+            carpeta = self._carpeta_sincronizacion
+        self._carpeta_sincronizacion = None
+        if carpeta is None:
+            carpeta = self.carpeta_seleccionada
         if not carpeta or not os.path.isdir(carpeta):
             self._limpiar_cadena()
             self._actualizar_botones_carpeta()

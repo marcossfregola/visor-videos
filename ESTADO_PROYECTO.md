@@ -12,35 +12,35 @@ técnicamente** (B3.1 a B3.9, más las ampliaciones **B3.14a** "Desactivado" y
 **B3.14b** "tamaños 3.0x/3.5x" de la vista ampliada) y el **Bloque B —
 Selección y operaciones** quedó **completo** (B3.11 — Resumen, B3.12 — Modo
 selección + Checks, B3.13 — Atajos básicos, B3.14 — Copiar, B3.15 — Pegar,
-B3.16 — Eliminar, B3.17 — Atajos de operaciones). El plan de trabajo se
+B3.16 — Eliminar, B3.17 — Atajos de operaciones, más la **corrección técnica
+B3.18** de la resincronización incremental). El plan de trabajo se
 documenta en `ROADMAP.md` (Bloque de trabajo 3). La Beta 2 permanece como la
 última versión estable publicada.
 
 ## Último commit aprobado
 
-**Mensaje:** Agregar atajos de teclado para las operaciones (Etapa B3.17)
+**Mensaje:** Corregir la captura de carpeta en la resincronización incremental (Etapa B3.18)
 
-**Etapa:** Atajos de operaciones (B3.17, Bloque B):
-- `visor_videos.py` — tres `QShortcut` (patrón B3.13): **Ctrl+C** → `_atajo_operacion_copiar`,
-  **Ctrl+V** → `_atajo_operacion_pegar`, **Supr** (`QKeySequence("Del")`) →
-  `_atajo_operacion_eliminar`. Cada handler **reutiliza directamente** `_iniciar_copia()`,
-  `_iniciar_pegar()` y `_iniciar_eliminar()` (sin lógica paralela ni validaciones
-  duplicadas). Con foco en la búsqueda se **preserva el comportamiento nativo del
-  `QLineEdit`** (`copy()`/`paste()`/`del_()`) y no se inicia ninguna operación.
-- `prueba_atajos_operaciones.py` — 16 verificaciones de la etapa (nuevo).
+**Etapa:** Corrección técnica del Bloque B (B3.18, punto I1 de la auditoría):
+- `visor_videos.py` — override temporal `_carpeta_sincronizacion` (inicializado a `None` en
+  `__init__` y reseteado en `iniciar_escaneo`/`_limpiar_cadena`). `_procesar_archivos_pegados`
+  y `_procesar_archivos_eliminados` **capturan la carpeta al inicio** de la operación y la
+  fijan en el override. `_iniciar_sincronizacion(carpeta=None)` resuelve la carpeta por
+  **parámetro → override → carpeta actual**, consume y limpia el override en el arranque.
+- `prueba_resincronizacion_incremental.py` — 9 verificaciones de la etapa (nuevo).
 
-**Pruebas superadas:** `prueba_atajos_operaciones.py` 16/16 (reutilización de handlers vía
-spies; Ctrl+C inicia Copiar; Ctrl+V inicia Pegar; Supr inicia Eliminar; sin selección/sin
-portapapeles no ocurre nada; gestor ocupado bloquea los tres atajos; foco en la búsqueda
-replica el comportamiento nativo sin operación; compatibilidad con Ctrl+A/Esc de B3.13);
-regresiones relevantes OK: `prueba_copiar_archivos.py` 15/15,
-`prueba_pegar_archivos.py` 15/15, `prueba_eliminar_archivos.py` 18/18,
-`prueba_seleccion.py` 28/28, `prueba_resumen_seleccion.py` 17/17,
-`prueba_modo_seleccion.py` 20/20, `prueba_atajos_basicos.py` 13/13,
-`prueba_escaneo_interfaz.py` 36/36, `prueba_recarga_catalogo.py` 20/20,
-`prueba_sincronizacion_interfaz.py` 18/18, `prueba_seleccion_carpeta.py` 26/26,
-`prueba_pulido_bloque_a.py` 29/29, `prueba_lectura_paginada.py` 32/32,
-`prueba_interfaz_asincrona.py` 29/29, `prueba_guardar.py` 19/19, `prueba_smoke.py` OK.
+**Pruebas superadas:** `prueba_resincronizacion_incremental.py` 9/9 (la sincronización usa la
+carpeta capturada y no la actual; override consumido y limpio; se marca escaneada la carpeta
+original y no la nueva; sin override usa la carpeta actual; Pegar con cambio de carpeta a mitad
+de cadena no elimina el archivo pegado ni sincroniza la nueva; regresiones de Pegar y Eliminar
+normales); regresiones relevantes OK: `prueba_pegar_archivos.py` 15/15,
+`prueba_eliminar_archivos.py` 18/18, `prueba_sincronizacion_interfaz.py` 18/18,
+`prueba_sincronizacion_asincrona.py` 27/27, `prueba_recarga_catalogo.py` 20/20,
+`prueba_escaneo_interfaz.py` 36/36, `prueba_interfaz_asincrona.py` 29/29,
+`prueba_atajos_operaciones.py` 16/16, `prueba_copiar_archivos.py` 15/15,
+`prueba_seleccion.py` 28/28, `prueba_modo_seleccion.py` 20/20,
+`prueba_resumen_seleccion.py` 17/17, `prueba_guardar.py` 19/19,
+`prueba_lectura_paginada.py` 32/32, `prueba_pulido_bloque_a.py` 29/29, `prueba_smoke.py` OK.
 
 ## Hitos completados
 
@@ -188,6 +188,15 @@ regresiones relevantes OK: `prueba_copiar_archivos.py` 15/15,
   duplicadas (las existentes cubren sin selección, sin portapapeles y gestor ocupado).
   Con foco en la búsqueda se **preserva el comportamiento nativo del `QLineEdit`**
   (`copy()`/`paste()`/`del_()`), replicando el criterio de Ctrl+A.
+- **Corrección técnica del Bloque B (Etapa B3.18).** Corrige la condición de carrera
+  detectada en la auditoría (punto I1): `_procesar_archivos_pegados` y
+  `_procesar_archivos_eliminados` **capturan la carpeta al inicio** de la operación y la
+  fijan en el override temporal `_carpeta_sincronizacion`; `_iniciar_sincronizacion(carpeta=None)`
+  resuelve la carpeta por **parámetro → override → carpeta actual** y la sincronización usa
+  exactamente la carpeta de la operación aunque el usuario cambie de carpeta durante la
+  cadena. El override se limpia automáticamente (`_iniciar_sincronizacion`, `_limpiar_cadena`
+  e `iniciar_escaneo`), evitando reutilizaciones accidentales y sin modificar el
+  comportamiento normal del pipeline.
 
 ## Pendientes prioritarios
 

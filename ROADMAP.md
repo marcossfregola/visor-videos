@@ -168,6 +168,11 @@ No se implementará ninguna mejora fuera de este alcance.
 - Eliminar. **Implementada (Etapa B3.16).**
 - Resumen de selección.
 - Atajos de teclado. **Implementada (Etapa B3.17).**
+- Corrección técnica del Bloque B (punto I1 de la auditoría). **Completada (Etapa B3.18).**
+  Captura de la carpeta al inicio de la resincronización incremental de Pegar/Eliminar
+  (override `_carpeta_sincronizacion` consumido por `_iniciar_sincronizacion`), eliminando
+  la condición de carrera detectada en la auditoría del Bloque B sin modificar el
+  comportamiento normal del pipeline.
 
 ### C. Progreso
 
@@ -283,6 +288,7 @@ intacto el comportamiento del modo normal.
 | B3.15 | **Pegar** (B4) — pegar en la carpeta actual los archivos copiados internamente, con confirmación de colisión. **Implementada (Etapa B3.15).** |
 | B3.16 | **Eliminar** (B5) — mover a la Papelera de reciclaje (nunca borrado permanente) con confirmación y resumen. **Implementada (Etapa B3.16).** |
 | B3.17 | **Atajos de operaciones** (B7, parcial) — Ctrl+C / Ctrl+V / Supr vinculados a Copiar/Pegar/Eliminar. **Implementada (Etapa B3.17).** |
+| B3.18 | **Corrección técnica del Bloque B** — capturar la carpeta en la resincronización incremental de Pegar/Eliminar (override `_carpeta_sincronizacion`). **Implementada (Etapa B3.18).** |
 
 ### Dependencias
 

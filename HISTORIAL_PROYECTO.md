@@ -5,6 +5,55 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 77. Corregir la captura de carpeta en la resincronización incremental (Etapa B3.18)
+
+- **Fecha:** 2026-08-07
+- **Objetivo:** Corregir la única corrección considerada imprescindible por la auditoría del
+  Bloque B (punto I1): capturar correctamente la carpeta utilizada durante la
+  resincronización incremental de Pegar y Eliminar, evitando que un cambio de carpeta del
+  usuario durante la operación haga que la sincronización se ejecute sobre una carpeta
+  distinta (riesgo: un Pegar elimina del catálogo los registros recién incorporados, o un
+  Eliminar sincroniza una carpeta distinta).
+- **Archivos creados:**
+  - `prueba_resincronizacion_incremental.py` — 9 verificaciones: la sincronización usa la
+    carpeta capturada y no la actual; el override se consume y se limpia; se marca escaneada
+    la carpeta original y no la nueva; sin override usa la carpeta actual; **Pegar con cambio
+    de carpeta a mitad de cadena no elimina el archivo pegado del catálogo ni sincroniza la
+    carpeta nueva**; regresiones de Pegar y Eliminar normales.
+- **Archivos modificados:**
+  - `visor_videos.py` — override temporal `_carpeta_sincronizacion` (inicializado en `__init__`,
+    reseteado también en `iniciar_escaneo` y `_limpiar_cadena`). `_procesar_archivos_pegados`
+    y `_procesar_archivos_eliminados` **capturan la carpeta al inicio** de la operación y la
+    fijan en el override. `_iniciar_sincronizacion(carpeta=None)` resuelve la carpeta por
+    **parámetro → override → carpeta actual** y **consume y limpia el override en el arranque**
+    (evita reutilizaciones accidentales).
+  - `DOCUMENTO_TECNICO.md` — criterio de resolución de carpeta y corrección documentados.
+  - `ROADMAP.md` — corrección técnica B3.18 incorporada al Bloque B.
+  - `ESTADO_PROYECTO.md` — última etapa aprobada, fase actual, hitos y próxima etapa
+    actualizados.
+  - `HISTORIAL_PROYECTO.md` — este documento (registro de la etapa).
+- **Justificación:** la sincronización de Pegar se inicia vía el routing genérico de la
+  cadena (`_al_tarea_finalizada` → `_iniciar_sincronizacion()` sin argumentos); un estado
+  temporal + parámetro opcional es el mínimo cambio para transportar la carpeta capturada sin
+  tocar el pipeline ni contratos públicos.
+- **Pruebas:** `prueba_resincronizacion_incremental.py` 9/9; regresiones relevantes OK
+  (`prueba_pegar_archivos.py` 15/15, `prueba_eliminar_archivos.py` 18/18,
+  `prueba_sincronizacion_interfaz.py` 18/18, `prueba_sincronizacion_asincrona.py` 27/27,
+  `prueba_recarga_catalogo.py` 20/20, `prueba_escaneo_interfaz.py` 36/36,
+  `prueba_interfaz_asincrona.py` 29/29, `prueba_atajos_operaciones.py` 16/16,
+  `prueba_copiar_archivos.py` 15/15, `prueba_seleccion.py` 28/28,
+  `prueba_modo_seleccion.py` 20/20, `prueba_resumen_seleccion.py` 17/17,
+  `prueba_guardar.py` 19/19, `prueba_lectura_paginada.py` 32/32,
+  `prueba_pulido_bloque_a.py` 29/29, `prueba_smoke.py` OK).
+- **Commit:** Aprobado y commiteado.
+- **Resultado:** eliminada la condición de carrera de la auditoría del Bloque B; el pipeline
+  normal queda sin cambios (sin override, la sincronización usa la carpeta actual como antes).
+- **Decisiones importantes:** estado temporal `_carpeta_sincronizacion` + parámetro opcional
+  en `_iniciar_sincronizacion`; limpieza automática del override en `_iniciar_sincronizacion`,
+  `_limpiar_cadena` e `iniciar_escaneo`. No se implementaron las recomendaciones R1–R7.
+
+---
+
 ## 76. Agregar atajos de teclado para las operaciones (Etapa B3.17)
 
 - **Fecha:** 2026-08-07
