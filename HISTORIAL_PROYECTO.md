@@ -5,6 +5,71 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 61. Vista ampliada al posar el mouse sobre una miniatura (Etapa B3.4)
+
+- **Fecha:** 2026-08-06
+- **Objetivo:** Mostrar una vista ampliada (~1.6× del tamaño configurado) al posar el
+  mouse sobre la miniatura principal o cualquier preview, con una única instancia de
+  popup por ventana, reutilizando exclusivamente los pixmaps ya cargados en memoria
+  (sin lecturas de disco, sin procesos externos, sin regeneración ni reescaneo).
+- **Archivos creados:**
+  - `prueba_vista_ampliada.py` — 24 verificaciones: instancia única y aislada de la
+    tarjeta (el popup no es hijo de la tarjeta, no rompe helpers de test); reutilización
+    del pixmap original sin construir `QPixmap` nuevos; retardo (pendiente sin mostrar,
+    visible al vencer) y cancelación/ocultado al salir; miniatura principal y previews
+    con el mismo comportamiento (emiten el pixmap original); ocultado por scroll y por
+    reconstrucción del catálogo; posicionamiento acotado a pantalla; tamaño ~1.6×;
+    integración con catálogo.
+- **Archivos modificados:**
+  - `visor_videos.py` — `VistaAmpliada(QFrame)` (flags `Qt.ToolTip | Frameless |
+    StaysOnTop`, `QLabel` interno, `preparar()` que reutiliza y `ocultar()`);
+    `RETARDO_VISTA_AMPLIADA_MS = 400`, `RETARDO_OCULTAR_VISTA_MS = 150`,
+    `FACTOR_VISTA_AMPLIADA = 1.6`; `Tarjeta` instala `installEventFilter(self)` sobre
+    `_imagen_miniatura` y las previews y emite `vista_solicitada(pixmap_original)` /
+    `vista_abandonada()`; `VisorVideos` crea el popup único, los timers single-shot de
+    mostrar/ocultar, conecta el scrollbar y `_reemplazar_tarjetas`, y maneja
+    `_mostrar_vista_diferida` / `_ocultar_vista` / `_posicion_vista` (offset respecto
+    del cursor y acotado a la pantalla). Sin cambios de SQLite, pipeline, FFprobe ni
+    miniaturas.
+  - `DOCUMENTO_TECNICO.md` — `VistaAmpliada` y el mecanismo de la etapa documentados.
+  - `ROADMAP.md` — mejora A4 marcada como implementada.
+  - `ESTADO_PROYECTO.md` — última etapa aprobada, fase actual, hitos y próxima etapa
+    actualizados.
+  - `HISTORIAL_PROYECTO.md` — este documento (registro de la etapa).
+- **Pruebas:** `prueba_vista_ampliada.py` 24/24; regresiones `prueba_tiempo_previews.py`
+  35/35, `prueba_tamano_miniaturas.py` 32/32, `prueba_filas_horizontales.py` 16/16,
+  `prueba_previews_progresivas.py` 16/16, `prueba_seleccion_visual.py` OK,
+  `prueba_shift_clic.py` 28/28, `prueba_seleccion.py` 28/28,
+  `prueba_restauracion_seleccion.py` 15/15, `prueba_cantidad_previews.py` 14/14,
+  `prueba_recarga_catalogo.py` 20/20, `prueba_pagina_siguiente.py` 20/20,
+  `prueba_lectura_paginada.py` 32/32, `prueba_smoke.py` OK, `prueba_doble_clic.py` 14/14,
+  `prueba_tamano_archivo.py` 15/15. Ejecución real de `visor_videos.py` con
+  `biblioteca.db`: 24 tarjetas, popup tras el retardo, ocultado por salida/scroll/
+  reconstrucción, funcionamiento sobre miniatura principal y previews, **0 lecturas de
+  disco**, sin parpadeos, sin regeneración de miniaturas (348 → 348), cierre limpio
+  (exit 0).
+- **Resultado:** Al posar el mouse sobre la miniatura principal o una preview, tras un
+  retardo configurable se muestra una vista ampliada que reutiliza el pixmap original
+  en memoria; desaparece automáticamente al salir, al hacer scroll, al reconstruirse el
+  catálogo o al cerrar; el popup es único y se reutiliza en toda la sesión.
+- **Commit:** "Agregar vista ampliada al posar el mouse sobre una miniatura (Etapa B3.4)"
+- **Decisiones importantes:**
+  1. **Popup único por ventana**: nunca se crea ni destruye por hover; `preparar()`
+     reutiliza si ya muestra el mismo pixmap (sin parpadeos).
+  2. **Reutilización en memoria**: amplía `_miniatura_original` / `_pixmap_original`
+     (verificado: 0 `QPixmap` nuevos durante el flujo).
+  3. **Comportamiento idéntico** para miniatura principal y previews (un único
+     `eventFilter` por tarjeta).
+  4. **Sin popup colgado**: ocultado por salida (retardo corto), scroll, reconstrucción
+     y cierre; posicionamiento con offset y acotado a pantalla.
+  5. **Correcciones de implementación**: (1) se reubicó la instalación de los
+     `eventFilter` de las previews (se instalaban antes de crearlas); (2) se eliminó la
+     referencia textual a FFmpeg del docstring para respetar la separación
+     arquitectónica verificada por `prueba_filas_horizontales.py` T15 (AST sin
+     ffmpeg/ffprobe en la interfaz). Ambas aprobadas por la auditoría.
+
+---
+
 ## 60. Tamaño configurable de miniaturas (Etapa B3.3)
 
 - **Fecha:** 2026-08-06

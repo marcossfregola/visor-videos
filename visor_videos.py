@@ -2,7 +2,7 @@ import escanear_videos
 import os
 import sys
 
-from PySide6.QtCore import QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QPoint, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QCursor, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
@@ -70,6 +70,9 @@ ANCHO_PREVIEW = ANCHO_TARJETA // 3
 ALTO_PREVIEW = ALTO_TARJETA // 3
 TAMANIO_PAGINA_INICIAL = 100
 TAMANIO_LOTE_PREVIEWS = 3
+RETARDO_VISTA_AMPLIADA_MS = 400
+RETARDO_OCULTAR_VISTA_MS = 150
+FACTOR_VISTA_AMPLIADA = 1.6
 
 TAMANIOS_MINIATURAS = {
     "pequeno": (260, 146),
@@ -264,11 +267,67 @@ class PreviewConTiempo(QLabel):
         pintor.end()
 
 
+class VistaAmpliada(QFrame):
+    """Popup de vista ampliada al posar el mouse sobre una miniatura (Etapa B3.4).
+
+    Ventana de nivel superior única por `VisorVideos` (nunca se crea ni destruye
+    por hover). Muestra el pixmap original ya cargado en memoria, escalado a
+    ~1.6x del tamaño configurado, sin leer disco ni regenerar miniaturas.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(
+            parent,
+            Qt.ToolTip | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint,
+        )
+        self._pixmap = None
+        self._tam_amp = None
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self._etiqueta = QLabel()
+        self._etiqueta.setStyleSheet(
+            "border: 2px solid #333; background-color: #ffffff;"
+        )
+        self._etiqueta.setAlignment(Qt.AlignCenter)
+        layout.addWidget(self._etiqueta)
+        self.hide()
+
+    def preparar(self, pixmap):
+        ancho, alto = dimensiones_miniatura()
+        ancho_amp = int(ancho * FACTOR_VISTA_AMPLIADA)
+        alto_amp = int(alto * FACTOR_VISTA_AMPLIADA)
+        if (
+            self._pixmap is pixmap
+            and self.isVisible()
+            and self._tam_amp == (ancho_amp, alto_amp)
+        ):
+            return True
+        self._pixmap = pixmap
+        self._tam_amp = (ancho_amp, alto_amp)
+        self._etiqueta.setPixmap(
+            pixmap.scaled(
+                ancho_amp,
+                alto_amp,
+                Qt.KeepAspectRatio,
+                Qt.SmoothTransformation,
+            )
+        )
+        self.adjustSize()
+        return False
+
+    def ocultar(self):
+        self._pixmap = None
+        self._tam_amp = None
+        self.hide()
+
+
 class Tarjeta(QFrame):
     doble_clic = Signal(str)
     seleccionada = Signal(str, bool)
     seleccion_por_rango = Signal(str)
     menu_contextual = Signal(str)
+    vista_solicitada = Signal(object)
+    vista_abandonada = Signal()
 
     def __init__(self, fila, parent=None):
         super().__init__(parent)
@@ -353,6 +412,11 @@ class Tarjeta(QFrame):
             self._etiquetas_previews.append(etiqueta)
             contenedor_imagenes.addWidget(etiqueta)
 
+        if self._imagen_miniatura is not None:
+            self._imagen_miniatura.installEventFilter(self)
+        for etiqueta in self._etiquetas_previews:
+            etiqueta.installEventFilter(self)
+
         contenedor_imagenes.addStretch()
         layout.addLayout(contenedor_imagenes, 1)
 
@@ -435,6 +499,22 @@ class Tarjeta(QFrame):
             self._recuadro_sin_miniatura.setFixedSize(ancho, alto)
         for etiqueta in self._etiquetas_previews:
             etiqueta.reajustar()
+
+    def _pixmap_ampliada(self, objeto):
+        if objeto is self._imagen_miniatura:
+            return self._miniatura_original
+        if isinstance(objeto, PreviewConTiempo):
+            return objeto._pixmap_original
+        return None
+
+    def eventFilter(self, objeto, evento):
+        if evento.type() == QEvent.Enter:
+            pixmap = self._pixmap_ampliada(objeto)
+            if pixmap is not None:
+                self.vista_solicitada.emit(pixmap)
+        elif evento.type() == QEvent.Leave:
+            self.vista_abandonada.emit()
+        return super().eventFilter(objeto, evento)
 
 
 class PanelPrincipal(QWidget):
@@ -626,6 +706,18 @@ class VisorVideos(QMainWindow):
         self._timer_previews.setSingleShot(True)
         self._timer_previews.setInterval(300)
         self._timer_previews.timeout.connect(self._iniciar_previews)
+
+        self._vista = VistaAmpliada(self)
+        self._vista_pendiente = None
+        self._timer_vista_mostrar = QTimer(self)
+        self._timer_vista_mostrar.setSingleShot(True)
+        self._timer_vista_mostrar.setInterval(RETARDO_VISTA_AMPLIADA_MS)
+        self._timer_vista_mostrar.timeout.connect(self._mostrar_vista_diferida)
+        self._timer_vista_ocultar = QTimer(self)
+        self._timer_vista_ocultar.setSingleShot(True)
+        self._timer_vista_ocultar.setInterval(RETARDO_OCULTAR_VISTA_MS)
+        self._timer_vista_ocultar.timeout.connect(self._vista.ocultar)
+        self.area.verticalScrollBar().valueChanged.connect(self._ocultar_vista)
         carpeta_guardada = obtener_ultima_carpeta(self._ruta_config)
         if carpeta_guardada is not None:
             self.carpeta_seleccionada = carpeta_guardada
@@ -689,6 +781,50 @@ class VisorVideos(QMainWindow):
         guardar_tamano_miniaturas(nombre, self._ruta_config)
         for _, tarjeta in self.tarjetas:
             tarjeta.aplicar_tamano()
+
+    def _al_vista_solicitada(self, pixmap):
+        if pixmap is None or pixmap.isNull():
+            return
+        self._timer_vista_ocultar.stop()
+        self._vista_pendiente = pixmap
+        self._timer_vista_mostrar.start()
+
+    def _al_vista_abandonada(self):
+        self._timer_vista_mostrar.stop()
+        self._vista_pendiente = None
+        self._timer_vista_ocultar.start()
+
+    def _mostrar_vista_diferida(self):
+        pixmap = self._vista_pendiente
+        if pixmap is None or pixmap.isNull():
+            return
+        reutilizada = self._vista.preparar(pixmap)
+        self._vista.move(self._posicion_vista())
+        if not reutilizada:
+            self._vista.show()
+            self._vista.raise_()
+
+    def _posicion_vista(self):
+        cursor = QCursor.pos()
+        pantalla = QApplication.primaryScreen().availableGeometry()
+        margen = 16
+        ancho = self._vista.width()
+        alto = self._vista.height()
+        x = cursor.x() + margen
+        y = cursor.y() + margen
+        if x + ancho > pantalla.right():
+            x = cursor.x() - ancho - margen
+        if y + alto > pantalla.bottom():
+            y = cursor.y() - alto - margen
+        x = max(pantalla.left(), min(x, pantalla.right() - ancho))
+        y = max(pantalla.top(), min(y, pantalla.bottom() - alto))
+        return QPoint(x, y)
+
+    def _ocultar_vista(self, _valor=None):
+        self._timer_vista_mostrar.stop()
+        self._timer_vista_ocultar.stop()
+        self._vista_pendiente = None
+        self._vista.ocultar()
 
     def _crear_tarea_lectura(self, desplazamiento=0):
         return TareaLecturaCatalogoPaginada(
@@ -1126,6 +1262,7 @@ class VisorVideos(QMainWindow):
         self._actualizar_botones_carpeta()
 
     def _reemplazar_tarjetas(self, filas):
+        self._ocultar_vista()
         seleccion_previa = set(self._nombres_seleccionados)
         self._limpiar_seleccion()
         self._ancla_seleccion = None
@@ -1254,6 +1391,8 @@ class VisorVideos(QMainWindow):
             tarjeta.seleccionada.connect(self._al_seleccionar_tarjeta)
             tarjeta.seleccion_por_rango.connect(self._al_seleccion_por_rango)
             tarjeta.menu_contextual.connect(self._mostrar_menu_contextual)
+            tarjeta.vista_solicitada.connect(self._al_vista_solicitada)
+            tarjeta.vista_abandonada.connect(self._al_vista_abandonada)
             self.tarjetas.append((fila[0], tarjeta))
             self.visibles.append(fila[0])
             self.cuadricula.addWidget(tarjeta, posicion, 0)
@@ -1314,6 +1453,8 @@ class VisorVideos(QMainWindow):
             tarjeta.seleccionada.connect(self._al_seleccionar_tarjeta)
             tarjeta.seleccion_por_rango.connect(self._al_seleccion_por_rango)
             tarjeta.menu_contextual.connect(self._mostrar_menu_contextual)
+            tarjeta.vista_solicitada.connect(self._al_vista_solicitada)
+            tarjeta.vista_abandonada.connect(self._al_vista_abandonada)
             self.tarjetas.append((fila[0], tarjeta))
             self.visibles.append(fila[0])
             self.cuadricula.addWidget(tarjeta, indice, 0)
@@ -1400,6 +1541,7 @@ class VisorVideos(QMainWindow):
 
     def closeEvent(self, event):
         self._timer_previews.stop()
+        self._ocultar_vista()
         self.gestor.cerrar()
         if self.gestor_previews is not None:
             self.gestor_previews.cerrar()

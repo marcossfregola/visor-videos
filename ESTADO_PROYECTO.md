@@ -8,39 +8,41 @@ grandes colecciones de videos mediante miniaturas representativas.
 **Fase actual:** quedó **aprobado el alcance de la Beta 3** (Etapa B3.0,
 exclusivamente documental) y la **implementación de la Beta 3 está en
 marcha**: las mejoras B3.1 ("Tiempo sobre las miniaturas de preview"), B3.2
-("Duración simplificada") y B3.3 ("Tamaño configurable de miniaturas") del
-Bloque A quedaron implementadas. El plan de trabajo se documenta en
-`ROADMAP.md` (Bloque de trabajo 3). La Beta 2 permanece como la última
-versión estable publicada.
+("Duración simplificada"), B3.3 ("Tamaño configurable de miniaturas") y B3.4
+("Vista ampliada al posar el mouse") del Bloque A quedaron implementadas. El
+plan de trabajo se documenta en `ROADMAP.md` (Bloque de trabajo 3). La Beta 2
+permanece como la última versión estable publicada.
 
 ## Último commit aprobado
 
-**Mensaje:** Agregar tamaño configurable de miniaturas (Etapa B3.3)
+**Mensaje:** Agregar vista ampliada al posar el mouse sobre una miniatura (Etapa B3.4)
 
-**Etapa:** Tamaño configurable de miniaturas (B3.3, Bloque A — Experiencia visual):
-- `visor_videos.py` — presets Pequeño (260×146) / Mediano (320×180, default) /
-  Grande (400×225); `configurar_tamano_miniaturas`/`dimensiones_miniatura`; el
-  escalado de miniatura principal y previews usa `dimensiones_miniatura()`;
-  `PreviewConTiempo` guarda el pixmap original y `reajustar()` reescala en memoria;
-  `Tarjeta.aplicar_tamano()`; combo "Tamaño" en `fila_carpeta` + handler +
-  restauración con `blockSignals`. Cambio **solo en memoria**: sin FFmpeg, sin
-  relectura de disco, sin regeneración, sin reescaneo ni cambios de SQLite/pipeline.
-- `configuracion.py` — `CLAVE_TAMANIO_MINIATURAS`, `guardar_tamano_miniaturas` y
-  `obtener_tamano_miniaturas` (default y fallback "mediano"; patrón atómico existente).
-- `prueba_tamano_miniaturas.py` — 32 verificaciones de la etapa.
+**Etapa:** Vista ampliada al posar el mouse (B3.4, Bloque A — Experiencia visual):
+- `visor_videos.py` — `VistaAmpliada(QFrame)` (popup único por ventana, flags
+  `Qt.ToolTip|Frameless|StaysOnTop`, `QLabel` interno, `preparar()` reutiliza y
+  `ocultar()`); constantes `RETARDO_VISTA_AMPLIADA_MS` (400) y
+  `RETARDO_OCULTAR_VISTA_MS` (150); `Tarjeta` instala `eventFilter` sobre la
+  miniatura principal y las previews y emite `vista_solicitada`/`vista_abandonada`;
+  `VisorVideos` maneja retardo, ocultado por salida/scroll/reconstrucción/cierre y
+  posicionamiento con offset acotado a pantalla. Ampliación ~1.6× reutilizando los
+  pixmaps originales en memoria: sin lecturas de disco, sin procesos externos, sin
+  SQLite ni pipeline. Comportamiento idéntico para miniatura principal y previews.
+- `prueba_vista_ampliada.py` — 24 verificaciones de la etapa.
 
-**Pruebas superadas:** `prueba_tamano_miniaturas.py` 32/32 (presets, persistencia y
-fallback, cambio en memoria sin crear `QPixmap` nuevos, overlay conservado, integración
-con selección/scroll/persistencia); regresiones `prueba_filas_horizontales.py` 16/16,
-`prueba_previews_progresivas.py` 16/16, `prueba_cantidad_previews.py` 14/14,
-`prueba_tiempo_previews.py` 35/35, `prueba_seleccion_visual.py` OK,
-`prueba_shift_clic.py` 28/28, `prueba_seleccion.py` 28/28,
-`prueba_restauracion_seleccion.py` 15/15, `prueba_recarga_catalogo.py` 20/20,
-`prueba_pagina_siguiente.py` 20/20, `prueba_persistencia_subcarpetas.py` 10/10,
-`prueba_smoke.py` OK, `prueba_tamano_archivo.py` 15/15, `prueba_doble_clic.py` 14/14.
-Ejecución real de `visor_videos.py` con `biblioteca.db`: cambio inmediato
-Pequeño/Mediano/Grande, selección y scroll conservados, overlays posicionados,
-persistencia tras reinicio, sin regeneración (348 → 348), cierre limpio (exit 0).
+**Pruebas superadas:** `prueba_vista_ampliada.py` 24/24 (instancia única aislada de la
+tarjeta, reutilización del pixmap original sin `QPixmap` nuevos, retardo y cancelación
+al salir, miniatura principal y previews con mismo comportamiento, ocultado por
+scroll/reconstrucción, posicionamiento acotado, integración); regresiones
+`prueba_tiempo_previews.py` 35/35, `prueba_tamano_miniaturas.py` 32/32,
+`prueba_filas_horizontales.py` 16/16, `prueba_previews_progresivas.py` 16/16,
+`prueba_seleccion_visual.py` OK, `prueba_shift_clic.py` 28/28, `prueba_seleccion.py`
+28/28, `prueba_restauracion_seleccion.py` 15/15, `prueba_cantidad_previews.py` 14/14,
+`prueba_recarga_catalogo.py` 20/20, `prueba_pagina_siguiente.py` 20/20,
+`prueba_lectura_paginada.py` 32/32, `prueba_smoke.py` OK, `prueba_doble_clic.py` 14/14,
+`prueba_tamano_archivo.py` 15/15. Ejecución real de `visor_videos.py` con
+`biblioteca.db`: popup tras el retardo, ocultado por salida/scroll/reconstrucción,
+funcionamiento sobre miniatura principal y previews, 0 lecturas de disco, sin
+parpadeos, sin regeneración (348 → 348), cierre limpio (exit 0).
 
 ## Hitos completados
 
@@ -108,6 +110,11 @@ persistencia tras reinicio, sin regeneración (348 → 348), cierre limpio (exit
   sin relectura de disco, sin regeneración ni reescaneo); cambio inmediato
   conservando selección, scroll y overlays; preferencia persistida con default
   "Mediano".
+- **Vista ampliada al posar el mouse (Etapa B3.4).** Popup único por ventana que
+  amplía (~1.6×) la miniatura principal o cualquier preview reutilizando el pixmap
+  original en memoria (sin lecturas de disco ni procesos externos); aparece tras un
+  retardo, se oculta al salir/scroll/reconstrucción/cierre y se posiciona dentro de
+  la pantalla.
 
 ## Pendientes prioritarios
 
@@ -164,9 +171,10 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
 
 ## Próxima etapa
 
-**Etapa B3.4** — **Vista ampliada al posar el mouse** (Bloque A): cuarta
-mejora de la Beta 3. Su definición detallada se acordará recién después del
-cierre documental de la B3.3, siguiendo el plan de trabajo de `ROADMAP.md`
+**Etapa B3.5** — **Preferencias relacionadas con miniaturas** (Bloque A): quinta
+mejora de la Beta 3 (incluirá, entre otras, la configuración del retardo y del
+tamaño de la vista ampliada). Su definición detallada se acordará recién después
+del cierre documental de la B3.4, siguiendo el plan de trabajo de `ROADMAP.md`
 (Bloque de trabajo 3), en bloques pequeños, verificables y acumulativos, sin
 adelantar funcionalidades excluidas del alcance ni agregar funcionalidades
 nuevas fuera del plan aprobado.
