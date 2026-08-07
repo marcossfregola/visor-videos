@@ -5,6 +5,62 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 64. Tamaño configurable de la vista ampliada (Etapa B3.7)
+
+- **Fecha:** 2026-08-06
+- **Objetivo:** Permitir elegir el tamaño de la vista ampliada al posar el mouse sobre
+  una miniatura, mediante factores discretos aplicados al tamaño de la miniatura,
+  ampliando la infraestructura de B3.4 y B3.5 sin cambios estructurales.
+- **Archivos creados:**
+  - `prueba_tamano_vista_ampliada.py` — 35 verificaciones: persistencia y tolerancia
+    (1.2/1.6/2.0/2.5; inválidos → default 1.6); `configurar_factor_vista_ampliada`;
+    `preparar` con cada factor sobre miniatura mediana; diálogo default/mapeo; flujo
+    aceptar/cancelar; restauración al iniciar; integración con selección/scroll;
+    acotado a pantalla con factor 2.5.
+- **Archivos modificados:**
+  - `visor_videos.py` — `FACTOR_VISTA_AMPLIADA_ACTUAL` + `configurar_factor_vista_ampliada(f)`
+    (valida `1.2/1.6/2.0/2.5`); `VistaAmpliada.preparar` usa el factor vigente
+    (ampliación = tamaño de miniatura × factor); `PreferenciasDialog` con el segundo
+    control "Tamaño de la vista ampliada" (`combo_factor_vista`,
+    `factor_vista_seleccionado()`, `_indice_factor()`); `_aplicar_tamano_vista_ampliada`
+    y restauración al iniciar. Sin cambios en pipeline, SQLite ni recursos.
+  - `configuracion.py` — `CLAVE_TAMANO_VISTA_AMPLIADA`, `guardar_tamano_vista_ampliada`
+    y `obtener_tamano_vista_ampliada` (default 1.6; aditivo, sin migración).
+  - `DOCUMENTO_TECNICO.md` — `VistaAmpliada` y `PreferenciasDialog` actualizados; clave
+    del factor documentada.
+  - `ROADMAP.md` — ampliación A7 "Tamaño configurable de la vista ampliada" incorporada
+    al Bloque A como implementada.
+  - `ESTADO_PROYECTO.md` — última etapa aprobada, fase actual, hitos y próxima etapa
+    actualizados.
+  - `HISTORIAL_PROYECTO.md` — este documento (registro de la etapa).
+- **Pruebas:** `prueba_tamano_vista_ampliada.py` 35/35; regresiones
+  `prueba_vista_ampliada.py` 24/24, `prueba_preferencias_miniaturas.py` 31/31,
+  `prueba_tamano_miniaturas.py` 32/32, `prueba_tamano_muy_grande.py` 27/27,
+  `prueba_tiempo_previews.py` 35/35, `prueba_filas_horizontales.py` 16/16,
+  `prueba_cantidad_previews.py` 14/14, `prueba_recarga_catalogo.py` 20/20,
+  `prueba_pagina_siguiente.py` 20/20, `prueba_seleccion_visual.py` OK,
+  `prueba_shift_clic.py` 28/28, `prueba_seleccion.py` 28/28,
+  `prueba_restauracion_seleccion.py` 15/15, `prueba_smoke.py` OK,
+  `prueba_doble_clic.py` 14/14, `prueba_tamano_archivo.py` 15/15. Ejecución real de
+  `visor_videos.py` con `biblioteca.db`: cuatro factores sobre miniatura mediana,
+  factor 2.0 correcto sobre los cuatro tamaños de miniatura, acotado a pantalla con
+  2.5, diálogo (aceptar aplica y persiste), persistencia tras reiniciar (2.5), sin
+  regeneración (488 → 488), fluidez (~1-3 ms por factor), cierre limpio (exit 0).
+- **Resultado:** El tamaño de la vista ampliada es configurable (factores
+  1.2/1.6/2.0/2.5, default 1.6) desde el diálogo "Preferencias", con aplicación
+  inmediata y persistencia sin migración; la ampliación continúa siendo proporcional
+  al tamaño de la miniatura y el comportamiento por defecto es idéntico al previo.
+- **Commit:** "Agregar tamaño configurable de la vista ampliada (Etapa B3.7)"
+- **Decisiones importantes:**
+  1. **Proporcionalidad mantenida**: ampliación = tamaño de miniatura × factor
+     configurado; sin tamaños absolutos (decisión de la auditoría).
+  2. **Solo configuración**: el factor pasa de constante a configurable sin cambios
+     estructurales; se confirma la separación configuración/lógica de presentación.
+  3. **Default 1.6**: comportamiento idéntico al previo si el usuario nunca cambia la
+     preferencia; clave aditiva; inválido/inexistente → 1.6.
+
+---
+
 ## 63. Tamaño "Muy grande" para las miniaturas (Etapa B3.6)
 
 - **Fecha:** 2026-08-06

@@ -138,6 +138,8 @@ No se implementará ninguna mejora fuera de este alcance.
 - Preferencias relacionadas con miniaturas. **Implementada (Etapa B3.5).**
 - Tamaño "Muy grande" (512×288) — ampliación del tamaño configurable.
   **Implementada (Etapa B3.6).**
+- Tamaño configurable de la vista ampliada (factores 1.2/1.6/2.0/2.5, default 1.6) —
+  ampliación de A4. **Implementada (Etapa B3.7).**
 
 ### B. Selección y operaciones
 
@@ -225,6 +227,7 @@ Quedan fuera del alcance de la Beta 3 y no se implementarán en ella:
 | A4 | Vista ampliada al posar el mouse | A | Implementada |
 | A5 | Preferencias relacionadas con miniaturas | A | Implementada |
 | A6 | Tamaño "Muy grande" (ampliación de A3) | A | Implementada |
+| A7 | Tamaño configurable de la vista ampliada (ampliación de A4) | A | Implementada |
 | B1 | Modo selección | B | Pendiente |
 | B2 | Checks por fila | B | Pendiente |
 | B3 | Copiar | B | Pendiente |

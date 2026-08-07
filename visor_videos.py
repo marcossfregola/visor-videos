@@ -32,12 +32,14 @@ from configuracion import (
     guardar_preferencia_subcarpetas,
     guardar_retardo_vista_ampliada,
     guardar_tamano_miniaturas,
+    guardar_tamano_vista_ampliada,
     guardar_ultima_carpeta,
     obtener_cantidad_previews,
     obtener_preferencia_escaneo_automatico,
     obtener_preferencia_subcarpetas,
     obtener_retardo_vista_ampliada,
     obtener_tamano_miniaturas,
+    obtener_tamano_vista_ampliada,
     obtener_ultima_carpeta,
 )
 from escanear_videos import (
@@ -77,6 +79,15 @@ TAMANIO_LOTE_PREVIEWS = 3
 RETARDO_VISTA_AMPLIADA_MS = 400
 RETARDO_OCULTAR_VISTA_MS = 150
 FACTOR_VISTA_AMPLIADA = 1.6
+FACTORES_VISTA_AMPLIADA = (1.2, 1.6, 2.0, 2.5)
+TEXTOS_FACTOR_VISTA_AMPLIADA = ("1.2x", "1.6x", "2.0x", "2.5x")
+FACTOR_VISTA_AMPLIADA_ACTUAL = FACTOR_VISTA_AMPLIADA
+
+
+def configurar_factor_vista_ampliada(factor):
+    global FACTOR_VISTA_AMPLIADA_ACTUAL
+    if isinstance(factor, float) and factor in FACTORES_VISTA_AMPLIADA:
+        FACTOR_VISTA_AMPLIADA_ACTUAL = factor
 
 TAMANIOS_MINIATURAS = {
     "pequeno": (260, 146),
@@ -300,8 +311,8 @@ class VistaAmpliada(QFrame):
 
     def preparar(self, pixmap):
         ancho, alto = dimensiones_miniatura()
-        ancho_amp = int(ancho * FACTOR_VISTA_AMPLIADA)
-        alto_amp = int(alto * FACTOR_VISTA_AMPLIADA)
+        ancho_amp = int(ancho * FACTOR_VISTA_AMPLIADA_ACTUAL)
+        alto_amp = int(alto * FACTOR_VISTA_AMPLIADA_ACTUAL)
         if (
             self._pixmap is pixmap
             and self.isVisible()
@@ -361,6 +372,18 @@ class PreferenciasDialog(QDialog):
         fila.addWidget(self.combo_retardo)
         fila.addStretch()
         layout.addLayout(fila)
+        fila2 = QHBoxLayout()
+        fila2.addWidget(QLabel("Tamaño de la vista ampliada:"))
+        self.combo_factor_vista = QComboBox()
+        self.combo_factor_vista.addItems(list(TEXTOS_FACTOR_VISTA_AMPLIADA))
+        self.combo_factor_vista.setCurrentIndex(
+            self._indice_factor(
+                obtener_tamano_vista_ampliada(ruta_config)
+            )
+        )
+        fila2.addWidget(self.combo_factor_vista)
+        fila2.addStretch()
+        layout.addLayout(fila2)
         botones = QDialogButtonBox(
             QDialogButtonBox.Ok | QDialogButtonBox.Cancel
         )
@@ -378,6 +401,17 @@ class PreferenciasDialog(QDialog):
         if 0 <= indice < len(RETARDOS_VISTA_AMPLIADA):
             return RETARDOS_VISTA_AMPLIADA[indice]
         return 400
+
+    def _indice_factor(self, factor):
+        if factor in FACTORES_VISTA_AMPLIADA:
+            return FACTORES_VISTA_AMPLIADA.index(factor)
+        return FACTORES_VISTA_AMPLIADA.index(1.6)
+
+    def factor_vista_seleccionado(self):
+        indice = self.combo_factor_vista.currentIndex()
+        if 0 <= indice < len(FACTORES_VISTA_AMPLIADA):
+            return FACTORES_VISTA_AMPLIADA[indice]
+        return 1.6
 
 
 class Tarjeta(QFrame):
@@ -777,6 +811,9 @@ class VisorVideos(QMainWindow):
         self._timer_vista_mostrar.setInterval(
             obtener_retardo_vista_ampliada(self._ruta_config)
         )
+        configurar_factor_vista_ampliada(
+            obtener_tamano_vista_ampliada(self._ruta_config)
+        )
         self._timer_vista_mostrar.timeout.connect(self._mostrar_vista_diferida)
         self._timer_vista_ocultar = QTimer(self)
         self._timer_vista_ocultar.setSingleShot(True)
@@ -895,10 +932,17 @@ class VisorVideos(QMainWindow):
         dialogo = PreferenciasDialog(self._ruta_config, self)
         if dialogo.exec() == QDialog.Accepted:
             self._aplicar_retardo_vista_ampliada(dialogo.retardo_seleccionado())
+            self._aplicar_tamano_vista_ampliada(
+                dialogo.factor_vista_seleccionado()
+            )
 
     def _aplicar_retardo_vista_ampliada(self, ms):
         guardar_retardo_vista_ampliada(ms, self._ruta_config)
         self._timer_vista_mostrar.setInterval(ms)
+
+    def _aplicar_tamano_vista_ampliada(self, factor):
+        guardar_tamano_vista_ampliada(factor, self._ruta_config)
+        configurar_factor_vista_ampliada(factor)
 
     def _crear_tarea_lectura(self, desplazamiento=0):
         return TareaLecturaCatalogoPaginada(

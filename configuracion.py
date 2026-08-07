@@ -11,6 +11,8 @@ CLAVE_TAMANIO_MINIATURAS = "tamano_miniaturas"
 TAMANIOS_VALIDOS_MINIATURAS = {"pequeno", "mediano", "grande", "muy_grande"}
 CLAVE_RETARDO_VISTA_AMPLIADA = "retardo_vista_ampliada_ms"
 RETARDOS_VALIDOS_VISTA_AMPLIADA = (0, 250, 400, 600)
+CLAVE_TAMANO_VISTA_AMPLIADA = "tamano_vista_ampliada"
+FACTORES_VALIDOS_VISTA_AMPLIADA = (1.2, 1.6, 2.0, 2.5)
 VARIABLE_ENTORNO = "VISOR_CONFIG"
 
 
@@ -170,4 +172,31 @@ def obtener_retardo_vista_ampliada(ruta_config=None):
         or valor not in RETARDOS_VALIDOS_VISTA_AMPLIADA
     ):
         return 400
+    return valor
+
+
+def guardar_tamano_vista_ampliada(factor, ruta_config=None):
+    if (
+        not isinstance(factor, float)
+        or isinstance(factor, bool)
+        or factor not in FACTORES_VALIDOS_VISTA_AMPLIADA
+    ):
+        return None
+    datos = _leer(ruta_config) or {}
+    datos[CLAVE_TAMANO_VISTA_AMPLIADA] = factor
+    _escribir(datos, ruta_config)
+    return factor
+
+
+def obtener_tamano_vista_ampliada(ruta_config=None):
+    datos = _leer(ruta_config)
+    if datos is None:
+        return 1.6
+    valor = datos.get(CLAVE_TAMANO_VISTA_AMPLIADA)
+    if (
+        not isinstance(valor, float)
+        or isinstance(valor, bool)
+        or valor not in FACTORES_VALIDOS_VISTA_AMPLIADA
+    ):
+        return 1.6
     return valor
