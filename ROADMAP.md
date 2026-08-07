@@ -133,7 +133,7 @@ No se implementará ninguna mejora fuera de este alcance.
 
 - Tiempo sobre las miniaturas. **Implementada (Etapa B3.1).**
 - Duración simplificada. **Implementada (Etapa B3.2).**
-- Tamaño configurable de miniaturas.
+- Tamaño configurable de miniaturas. **Implementada (Etapa B3.3).**
 - Vista ampliada al posar el mouse.
 - Preferencias relacionadas con miniaturas.
 
@@ -219,7 +219,7 @@ Quedan fuera del alcance de la Beta 3 y no se implementarán en ella:
 | --- | --- | --- | --- |
 | A1 | Tiempo sobre las miniaturas | A | Implementada |
 | A2 | Duración simplificada | A | Implementada |
-| A3 | Tamaño configurable de miniaturas | A | Pendiente |
+| A3 | Tamaño configurable de miniaturas | A | Implementada |
 | A4 | Vista ampliada al posar el mouse | A | Pendiente |
 | A5 | Preferencias relacionadas con miniaturas | A | Pendiente |
 | B1 | Modo selección | B | Pendiente |

@@ -5,6 +5,78 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 60. Tamaño configurable de miniaturas (Etapa B3.3)
+
+- **Fecha:** 2026-08-06
+- **Objetivo:** Permitir elegir el tamaño de visualización de las imágenes de la
+  tarjeta (Pequeño / Mediano / Grande) con cambio inmediato, escalando **solo en
+  memoria** los pixmaps ya cargados, sin regenerar miniaturas, sin FFmpeg, sin
+  relectura de disco, sin reescaneo y sin modificar el layout.
+- **Archivos creados:**
+  - `prueba_tamano_miniaturas.py` — 32 verificaciones: presets y default mediano;
+    mapeo texto↔clave; persistencia round-trip y fallback a "mediano" (incluido
+    valor almacenado inválido); cambio de tamaño **sin crear `QPixmap` nuevos**
+    (reescalado de los originales ya cargados); overlay de B3.1 conservado y
+    renderizado en los tres tamaños; integración con `VisorVideos` (cambio
+    inmediato, selección y scroll conservados, sin escaneo, persistencia).
+- **Archivos modificados:**
+  - `visor_videos.py` — presets `TAMANIOS_MINIATURAS` (pequeno 260×146, mediano
+    320×180 default, grande 400×225), `configurar_tamano_miniaturas`,
+    `dimensiones_miniatura`, `texto_tamano_miniaturas` y `clave_tamano_miniaturas`;
+    miniatura principal y previews escalan con `dimensiones_miniatura()`;
+    `PreviewConTiempo` guarda `_pixmap_original` y añade `reajustar()` (reescala en
+    memoria y actualiza alturas, también de placeholders); `Tarjeta` guarda
+    `_imagen_miniatura`/`_miniatura_original`/`_recuadro_sin_miniatura` y añade
+    `aplicar_tamano()`; combo "Tamaño" en `fila_carpeta`, handler
+    `_al_cambiar_tamano_miniaturas` y restauración con `blockSignals` (evita escribir
+    configuración en el arranque). Sin cambios de SQLite, pipeline, FFprobe ni
+    miniaturas.
+  - `configuracion.py` — `CLAVE_TAMANIO_MINIATURAS`, `guardar_tamano_miniaturas` y
+    `obtener_tamano_miniaturas` (default y fallback "mediano"; mismo patrón atómico).
+  - `DOCUMENTO_TECNICO.md` — presets/helpers, `PreviewConTiempo` (reajustar),
+    `Tarjeta` (aplicar_tamano) y `configuracion.py` (tamano_miniaturas) documentados.
+  - `ROADMAP.md` — mejora A3 marcada como implementada.
+  - `ESTADO_PROYECTO.md` — última etapa aprobada, fase actual, hitos, deuda técnica
+    y próxima etapa actualizados.
+  - `HISTORIAL_PROYECTO.md` — este documento (registro de la etapa).
+- **Pruebas:** `prueba_tamano_miniaturas.py` 32/32; regresiones
+  `prueba_filas_horizontales.py` 16/16, `prueba_previews_progresivas.py` 16/16,
+  `prueba_cantidad_previews.py` 14/14, `prueba_tiempo_previews.py` 35/35,
+  `prueba_seleccion_visual.py` OK, `prueba_shift_clic.py` 28/28, `prueba_seleccion.py`
+  28/28, `prueba_restauracion_seleccion.py` 15/15, `prueba_recarga_catalogo.py` 20/20,
+  `prueba_pagina_siguiente.py` 20/20, `prueba_persistencia_subcarpetas.py` 10/10,
+  `prueba_smoke.py` OK, `prueba_tamano_archivo.py` 15/15, `prueba_doble_clic.py` 14/14.
+  Ejecución real de `visor_videos.py` con `biblioteca.db`: 24 tarjetas, cambio
+  inmediato Pequeño/Mediano/Grande, selección y scroll conservados, overlays
+  posicionados (verificación por píxeles), persistencia tras reinicio (Grande),
+  sin regeneración de miniaturas (348 → 348), cierre limpio (exit 0).
+- **Observación (deuda técnica preexistente):** durante la etapa se detectó que
+  `prueba_persistencia_carpeta.py` **T11 y T16** fallan (18/20). Se verificó que la
+  falla **existe en HEAD limpio** (anterior a B3.3) y **no es atribuible a esta
+  etapa**: los tests asumen que iniciar sin preferencias no crea `configuracion.json`,
+  pero la restauración de `escaneo_automatico` (default `True`, Etapa 2.8) escribe el
+  archivo en el arranque. Clasificada como **deuda técnica** para una futura etapa
+  específica; no se corrigió en B3.3.
+- **Resultado:** El tamaño de las imágenes de la tarjeta es configurable entre
+  Pequeño, Mediano (default) y Grande, con cambio inmediato que reutiliza los pixmaps
+  en memoria (sin regenerar, sin FFmpeg, sin relectura de disco, sin reescaneo),
+  conservando selección, scroll y overlays, y con la preferencia persistida.
+- **Commit:** "Agregar tamaño configurable de miniaturas (Etapa B3.3)"
+- **Decisiones importantes:**
+  1. **Escalado solo en memoria**: se reutilizan los pixmaps ya cargados
+     (`_pixmap_original` por preview y `_miniatura_original` de la tarjeta); verificado
+     por prueba objetiva (0 construcciones nuevas de `QPixmap` durante el cambio).
+  2. **Tres presets discretos**: Pequeño/Mediano/Grande (default Mediano); sin
+     deslizador ni tamaños personalizados; layout, separación y scroll intactos.
+  3. **Cambio inmediato no destructivo**: sin reescaneo, sin reconstrucción; se
+     conservan selección, scroll y overlays.
+  4. **Restauración sin escrituras**: `blockSignals` en el arranque evita crear la
+     configuración sin necesidad (compatibilidad con el contrato de persistencia).
+  5. **Persistencia reutilizando la infraestructura existente**: clave
+     `tamano_miniaturas`, default y fallback "mediano".
+
+---
+
 ## 59. Duración simplificada en las tarjetas (Etapa B3.2)
 
 - **Fecha:** 2026-08-06

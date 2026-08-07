@@ -7,6 +7,8 @@ CLAVE_CARPETA = "ultima_carpeta"
 CLAVE_SUBCARPETAS = "incluir_subcarpetas"
 CLAVE_CANTIDAD_PREVIEWS = "cantidad_previews"
 CLAVE_ESCANEO_AUTOMATICO = "escaneo_automatico"
+CLAVE_TAMANIO_MINIATURAS = "tamano_miniaturas"
+TAMANIOS_VALIDOS_MINIATURAS = {"pequeno", "mediano", "grande"}
 VARIABLE_ENTORNO = "VISOR_CONFIG"
 
 
@@ -121,3 +123,22 @@ def obtener_cantidad_previews(ruta_config=None):
     if isinstance(valor, int) and valor > 0:
         return valor
     return 3
+
+
+def guardar_tamano_miniaturas(nombre, ruta_config=None):
+    if not isinstance(nombre, str) or nombre not in TAMANIOS_VALIDOS_MINIATURAS:
+        return None
+    datos = _leer(ruta_config) or {}
+    datos[CLAVE_TAMANIO_MINIATURAS] = nombre
+    _escribir(datos, ruta_config)
+    return nombre
+
+
+def obtener_tamano_miniaturas(ruta_config=None):
+    datos = _leer(ruta_config)
+    if datos is None:
+        return "mediano"
+    valor = datos.get(CLAVE_TAMANIO_MINIATURAS)
+    if not isinstance(valor, str) or valor not in TAMANIOS_VALIDOS_MINIATURAS:
+        return "mediano"
+    return valor

@@ -7,38 +7,40 @@ grandes colecciones de videos mediante miniaturas representativas.
 
 **Fase actual:** quedó **aprobado el alcance de la Beta 3** (Etapa B3.0,
 exclusivamente documental) y la **implementación de la Beta 3 está en
-marcha**: las mejoras B3.1 ("Tiempo sobre las miniaturas de preview") y B3.2
-("Duración simplificada") del Bloque A quedaron implementadas. El plan de
-trabajo se documenta en `ROADMAP.md` (Bloque de trabajo 3). La Beta 2
-permanece como la última versión estable publicada.
+marcha**: las mejoras B3.1 ("Tiempo sobre las miniaturas de preview"), B3.2
+("Duración simplificada") y B3.3 ("Tamaño configurable de miniaturas") del
+Bloque A quedaron implementadas. El plan de trabajo se documenta en
+`ROADMAP.md` (Bloque de trabajo 3). La Beta 2 permanece como la última
+versión estable publicada.
 
 ## Último commit aprobado
 
-**Mensaje:** Simplificar la duración mostrada en las tarjetas (Etapa B3.2)
+**Mensaje:** Agregar tamaño configurable de miniaturas (Etapa B3.3)
 
-**Etapa:** Duración simplificada (B3.2, Bloque A — Experiencia visual):
-- `visor_videos.py` — el campo "Duración" de la tarjeta se presenta con
-  `formatear_tiempo(duracion)` (reutiliza la función de B3.1): `m:ss` si es menor a
-  una hora, `h:mm:ss` si es una hora o más, y `"No disponible"` si la duración no
-  existe o no es válida. Cambio solo de presentación: `duracion_segundos` permanece
-  numérico; sin cambios de SQLite, esquema, consultas, pipeline, FFprobe ni
-  miniaturas.
-- `prueba_duracion_simplificada.py` — 23 verificaciones de la etapa.
-- `prueba_filas_horizontales.py` y `prueba_recarga_catalogo.py` — aserción de
-  duración actualizada al nuevo contrato visual ("5" → "0:05").
+**Etapa:** Tamaño configurable de miniaturas (B3.3, Bloque A — Experiencia visual):
+- `visor_videos.py` — presets Pequeño (260×146) / Mediano (320×180, default) /
+  Grande (400×225); `configurar_tamano_miniaturas`/`dimensiones_miniatura`; el
+  escalado de miniatura principal y previews usa `dimensiones_miniatura()`;
+  `PreviewConTiempo` guarda el pixmap original y `reajustar()` reescala en memoria;
+  `Tarjeta.aplicar_tamano()`; combo "Tamaño" en `fila_carpeta` + handler +
+  restauración con `blockSignals`. Cambio **solo en memoria**: sin FFmpeg, sin
+  relectura de disco, sin regeneración, sin reescaneo ni cambios de SQLite/pipeline.
+- `configuracion.py` — `CLAVE_TAMANIO_MINIATURAS`, `guardar_tamano_miniaturas` y
+  `obtener_tamano_miniaturas` (default y fallback "mediano"; patrón atómico existente).
+- `prueba_tamano_miniaturas.py` — 32 verificaciones de la etapa.
 
-**Pruebas superadas:** `prueba_duracion_simplificada.py` 23/23 (formato m:ss y
-h:mm:ss, "No disponible" ante duración inexistente/inválida, integración con
-catálogo); regresiones `prueba_filas_horizontales.py` 16/16,
-`prueba_recarga_catalogo.py` 20/20, `prueba_smoke.py` OK,
-`prueba_tiempo_previews.py` 35/35, `prueba_cantidad_previews.py` 14/14,
-`prueba_previews_progresivas.py` 16/16, `prueba_pagina_siguiente.py` 20/20,
-`prueba_seleccion_visual.py` OK, `prueba_shift_clic.py` 28/28,
-`prueba_seleccion.py` 28/28, `prueba_restauracion_seleccion.py` 15/15,
-`prueba_tamano_archivo.py` 15/15, `prueba_doble_clic.py` 14/14. Ejecución real de
-`visor_videos.py` con `biblioteca.db`: duraciones reales correctas (23/23) y casos
-representativos pocos segundos/varios minutos/una hora o más/desconocida, cierre
-limpio (exit 0).
+**Pruebas superadas:** `prueba_tamano_miniaturas.py` 32/32 (presets, persistencia y
+fallback, cambio en memoria sin crear `QPixmap` nuevos, overlay conservado, integración
+con selección/scroll/persistencia); regresiones `prueba_filas_horizontales.py` 16/16,
+`prueba_previews_progresivas.py` 16/16, `prueba_cantidad_previews.py` 14/14,
+`prueba_tiempo_previews.py` 35/35, `prueba_seleccion_visual.py` OK,
+`prueba_shift_clic.py` 28/28, `prueba_seleccion.py` 28/28,
+`prueba_restauracion_seleccion.py` 15/15, `prueba_recarga_catalogo.py` 20/20,
+`prueba_pagina_siguiente.py` 20/20, `prueba_persistencia_subcarpetas.py` 10/10,
+`prueba_smoke.py` OK, `prueba_tamano_archivo.py` 15/15, `prueba_doble_clic.py` 14/14.
+Ejecución real de `visor_videos.py` con `biblioteca.db`: cambio inmediato
+Pequeño/Mediano/Grande, selección y scroll conservados, overlays posicionados,
+persistencia tras reinicio, sin regeneración (348 → 348), cierre limpio (exit 0).
 
 ## Hitos completados
 
@@ -101,6 +103,11 @@ limpio (exit 0).
   presenta con `formatear_tiempo` (m:ss / h:mm:ss / "No disponible"), reutilizando
   la función de B3.1; cambio solo de presentación, sin tocar el valor numérico,
   SQLite, consultas, pipeline ni miniaturas.
+- **Tamaño configurable de miniaturas (Etapa B3.3).** Presets Pequeño/Mediano/Grande
+  con escalado exclusivamente en memoria (reutiliza los pixmaps cargados, sin FFmpeg,
+  sin relectura de disco, sin regeneración ni reescaneo); cambio inmediato
+  conservando selección, scroll y overlays; preferencia persistida con default
+  "Mediano".
 
 ## Pendientes prioritarios
 
@@ -147,12 +154,19 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
   está preparada para futuros estados; documentada como deuda técnica para una
   etapa específica de persistencia del estado (registrada también en
   `DOCUMENTO_TECNICO.md` §8, problema 14).
+- **`prueba_persistencia_carpeta.py` T11 y T16** — falla **preexistente** (detectada
+  en la Etapa B3.3, verificada también en HEAD limpio): los tests asumen que al
+  iniciar la aplicación sin preferencias no se crea `configuracion.json`, pero la
+  restauración de `escaneo_automatico` (default `True`, Etapa 2.8) escribe el
+  archivo en el arranque. No atribuible a B3.3 ni a etapas recientes; corregir en
+  una futura etapa específica (p. ej. alinear la restauración con `blockSignals` o
+  actualizar el contrato de los tests).
 
 ## Próxima etapa
 
-**Etapa B3.3** — **Tamaño configurable de miniaturas** (Bloque A): tercera
+**Etapa B3.4** — **Vista ampliada al posar el mouse** (Bloque A): cuarta
 mejora de la Beta 3. Su definición detallada se acordará recién después del
-cierre documental de la B3.2, siguiendo el plan de trabajo de `ROADMAP.md`
+cierre documental de la B3.3, siguiendo el plan de trabajo de `ROADMAP.md`
 (Bloque de trabajo 3), en bloques pequeños, verificables y acumulativos, sin
 adelantar funcionalidades excluidas del alcance ni agregar funcionalidades
 nuevas fuera del plan aprobado.

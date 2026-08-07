@@ -28,10 +28,12 @@ from configuracion import (
     guardar_cantidad_previews,
     guardar_preferencia_escaneo_automatico,
     guardar_preferencia_subcarpetas,
+    guardar_tamano_miniaturas,
     guardar_ultima_carpeta,
     obtener_cantidad_previews,
     obtener_preferencia_escaneo_automatico,
     obtener_preferencia_subcarpetas,
+    obtener_tamano_miniaturas,
     obtener_ultima_carpeta,
 )
 from escanear_videos import (
@@ -68,6 +70,39 @@ ANCHO_PREVIEW = ANCHO_TARJETA // 3
 ALTO_PREVIEW = ALTO_TARJETA // 3
 TAMANIO_PAGINA_INICIAL = 100
 TAMANIO_LOTE_PREVIEWS = 3
+
+TAMANIOS_MINIATURAS = {
+    "pequeno": (260, 146),
+    "mediano": (320, 180),
+    "grande": (400, 225),
+}
+TAMANIO_MINIATURAS_ACTUAL = "mediano"
+TEXTO_TAMANO_MINIATURAS = {
+    "pequeno": "Pequeño",
+    "mediano": "Mediano",
+    "grande": "Grande",
+}
+
+
+def configurar_tamano_miniaturas(nombre):
+    global TAMANIO_MINIATURAS_ACTUAL
+    if isinstance(nombre, str) and nombre in TAMANIOS_MINIATURAS:
+        TAMANIO_MINIATURAS_ACTUAL = nombre
+
+
+def dimensiones_miniatura():
+    return TAMANIOS_MINIATURAS[TAMANIO_MINIATURAS_ACTUAL]
+
+
+def texto_tamano_miniaturas(nombre):
+    return TEXTO_TAMANO_MINIATURAS.get(nombre, "Mediano")
+
+
+def clave_tamano_miniaturas(texto):
+    for clave, valor in TEXTO_TAMANO_MINIATURAS.items():
+        if valor == texto:
+            return clave
+    return "mediano"
 
 MENSAJE_CARGANDO = "Cargando catálogo…"
 MENSAJE_ERROR = "No se pudo cargar el catálogo"
@@ -170,26 +205,37 @@ class PreviewConTiempo(QLabel):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._pixmap_original = None
         self._tiempo = None
-        self.setFixedHeight(ALTO_TARJETA)
+        self.setFixedHeight(dimensiones_miniatura()[1])
         self.setAlignment(Qt.AlignCenter)
         self.setStyleSheet(self.ESTILO_BASE)
 
     def poner_preview(self, pixmap, tiempo=None):
         if pixmap is None or pixmap.isNull():
             return False
+        self._pixmap_original = pixmap
+        self._tiempo = tiempo
+        ancho, alto = dimensiones_miniatura()
+        self.setFixedHeight(alto)
         self.setPixmap(
             pixmap.scaled(
-                ANCHO_TARJETA,
-                ALTO_TARJETA,
+                ancho,
+                alto,
                 Qt.KeepAspectRatio,
                 Qt.SmoothTransformation,
             )
         )
-        self._tiempo = tiempo
         self.setText("")
         self.update()
         return True
+
+    def reajustar(self):
+        ancho, alto = dimensiones_miniatura()
+        self.setFixedHeight(alto)
+        if self._pixmap_original is None or self._pixmap_original.isNull():
+            return False
+        return self.poner_preview(self._pixmap_original, self._tiempo)
 
     def paintEvent(self, event):
         if self.pixmap() is None or self.pixmap().isNull():
@@ -267,31 +313,38 @@ class Tarjeta(QFrame):
         self._duracion = duracion
         self._seleccionada = False
         self._etiquetas_previews = []
+        self._imagen_miniatura = None
+        self._miniatura_original = None
+        self._recuadro_sin_miniatura = None
 
         contenedor_imagenes = QHBoxLayout()
         contenedor_imagenes.setContentsMargins(0, 0, 0, 0)
         contenedor_imagenes.setSpacing(6)
 
+        ancho, alto = dimensiones_miniatura()
         ruta_miniatura = miniatura_principal(nombre)
         if ruta_miniatura is not None:
             imagen = QLabel()
             pixmap = QPixmap(ruta_miniatura)
             imagen.setPixmap(
                 pixmap.scaled(
-                    ANCHO_TARJETA,
-                    ALTO_TARJETA,
+                    ancho,
+                    alto,
                     Qt.KeepAspectRatio,
                     Qt.SmoothTransformation,
                 )
             )
-            imagen.setFixedHeight(ALTO_TARJETA)
+            imagen.setFixedHeight(alto)
             imagen.setAlignment(Qt.AlignCenter)
+            self._imagen_miniatura = imagen
+            self._miniatura_original = pixmap
             contenedor_imagenes.addWidget(imagen)
         else:
             recuadro = QLabel("Sin miniatura")
-            recuadro.setFixedSize(ANCHO_TARJETA, ALTO_TARJETA)
+            recuadro.setFixedSize(ancho, alto)
             recuadro.setAlignment(Qt.AlignCenter)
             recuadro.setStyleSheet("background-color: #e0e0e0; border: 1px solid #999;")
+            self._recuadro_sin_miniatura = recuadro
             contenedor_imagenes.addWidget(recuadro)
 
         for _ in range(escanear_videos.CANTIDAD_PREVIEWS):
@@ -365,6 +418,23 @@ class Tarjeta(QFrame):
         for i, etiqueta in enumerate(self._etiquetas_previews):
             etiqueta.setVisible(i < cantidad)
         self.actualizar_previews(existentes[:cantidad])
+
+    def aplicar_tamano(self):
+        ancho, alto = dimensiones_miniatura()
+        if self._imagen_miniatura is not None and self._miniatura_original is not None:
+            self._imagen_miniatura.setPixmap(
+                self._miniatura_original.scaled(
+                    ancho,
+                    alto,
+                    Qt.KeepAspectRatio,
+                    Qt.SmoothTransformation,
+                )
+            )
+            self._imagen_miniatura.setFixedHeight(alto)
+        if self._recuadro_sin_miniatura is not None:
+            self._recuadro_sin_miniatura.setFixedSize(ancho, alto)
+        for etiqueta in self._etiquetas_previews:
+            etiqueta.reajustar()
 
 
 class PanelPrincipal(QWidget):
@@ -463,6 +533,15 @@ class VisorVideos(QMainWindow):
             self._al_cambiar_cantidad_previews
         )
 
+        self.etiqueta_tamano_miniaturas = QLabel("Tamaño:")
+        self.combo_tamano_miniaturas = QComboBox()
+        self.combo_tamano_miniaturas.addItems(
+            ["Pequeño", "Mediano", "Grande"]
+        )
+        self.combo_tamano_miniaturas.currentIndexChanged.connect(
+            self._al_cambiar_tamano_miniaturas
+        )
+
         self.boton_cargar_mas = QPushButton("Cargar más")
         self.boton_cargar_mas.setEnabled(False)
         self.boton_cargar_mas.clicked.connect(self.cargar_mas)
@@ -482,6 +561,8 @@ class VisorVideos(QMainWindow):
         fila_carpeta.addWidget(self.escaneo_automatico)
         fila_carpeta.addWidget(self.etiqueta_cantidad_previews)
         fila_carpeta.addWidget(self.combo_cantidad_previews)
+        fila_carpeta.addWidget(self.etiqueta_tamano_miniaturas)
+        fila_carpeta.addWidget(self.combo_tamano_miniaturas)
         fila_carpeta.addWidget(self.etiqueta_carpeta, 1)
         fila_carpeta.addWidget(self.estado_escaneo)
         fila_carpeta.addWidget(self.mensaje_carpeta)
@@ -564,6 +645,15 @@ class VisorVideos(QMainWindow):
         if idx >= 0:
             self.combo_cantidad_previews.setCurrentIndex(idx)
         configurar_cantidad_previews(cantidad)
+        tamano = obtener_tamano_miniaturas(self._ruta_config)
+        idx_tamano = self.combo_tamano_miniaturas.findText(
+            texto_tamano_miniaturas(tamano)
+        )
+        self.combo_tamano_miniaturas.blockSignals(True)
+        if idx_tamano >= 0:
+            self.combo_tamano_miniaturas.setCurrentIndex(idx_tamano)
+        self.combo_tamano_miniaturas.blockSignals(False)
+        configurar_tamano_miniaturas(tamano)
         self._iniciar_carga()
 
     def _iniciar_carga(self):
@@ -590,6 +680,15 @@ class VisorVideos(QMainWindow):
         configurar_cantidad_previews(n)
         for _, tarjeta in self.tarjetas:
             tarjeta.ajustar_previews(n)
+
+    def _al_cambiar_tamano_miniaturas(self, _indice):
+        nombre = clave_tamano_miniaturas(
+            self.combo_tamano_miniaturas.currentText()
+        )
+        configurar_tamano_miniaturas(nombre)
+        guardar_tamano_miniaturas(nombre, self._ruta_config)
+        for _, tarjeta in self.tarjetas:
+            tarjeta.aplicar_tamano()
 
     def _crear_tarea_lectura(self, desplazamiento=0):
         return TareaLecturaCatalogoPaginada(
