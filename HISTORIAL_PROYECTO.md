@@ -5,6 +5,59 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 82. Agregar infraestructura de selección de carpetas por rutas (Selección personalizada)
+
+- **Fecha:** 2026-08-07
+- **Objetivo:** Primera etapa del **Bloque de trabajo 4 — Catálogo por selección de carpetas**:
+  construir la infraestructura de selección (conjunto de rutas como única fuente de verdad,
+  persistencia, restauración y API limpia) **sin** modificar el árbol, la UI, el escaneo,
+  SQLite, el pipeline ni el catálogo. Modelo aprobado: la selección siempre se almacena por
+  rutas; los intervalos son solo constructores rápidos (etapas posteriores).
+- **Archivos creados:**
+  - `seleccion_carpetas.py` — clase pura `SeleccionCarpetas(ruta_config=None)`: `set` de rutas
+    absolutas; API `seleccionar`/`deseleccionar`/`alternar`/`limpiar`/`seleccionar_todas`/
+    `obtener_seleccion` (copia); persiste tras cada cambio real y restaura en el constructor
+    **descartando rutas inexistentes**. Sin árbol, sin Qt, sin intervalos internos.
+  - `prueba_seleccion_carpetas.py` — 22 verificaciones: API del conjunto, descarte de
+    inexistentes/inválidos, sin duplicados, persistencia entre instancias, restauración con
+    descarte, copia de `obtener_seleccion`, capa de config (dedup, filtrado, valor inválido,
+    configs anteriores, conservación de claves) y restauración al iniciar la aplicación.
+- **Archivos modificados:**
+  - `configuracion.py` — `CLAVE_SELECCION_CARPETAS` ("carpetas_seleccionadas") +
+    `guardar_seleccion_carpetas(rutas, ruta_config=None)` (normaliza, deduplica, conserva las
+    demás claves; patrón `.tmp`+`os.replace`) y `obtener_seleccion_carpetas(ruta_config=None)`
+    (descarta rutas inexistentes; configs anteriores/inválidas → lista vacía).
+  - `visor_videos.py` — restauración al iniciar: `self.seleccion_carpetas = SeleccionCarpetas(...)`
+    (una línea, sin cambio de comportamiento).
+  - `ROADMAP.md` — nuevo "Bloque de trabajo 4" con decisiones aprobadas y orden de
+    implementación (Etapas 1-7); Etapa 1 marcada como implementada.
+  - `DOCUMENTO_TECNICO.md` — módulo `seleccion_carpetas.py` y funciones de `configuracion.py`
+    documentados.
+  - `ESTADO_PROYECTO.md` — última etapa aprobada, fase actual, hitos y próxima etapa
+    (integración con el árbol).
+  - `HISTORIAL_PROYECTO.md` — este documento (registro de la etapa).
+- **Pruebas:** `prueba_seleccion_carpetas.py` 22/22; regresiones relevantes OK
+  (`prueba_preferencias_miniaturas.py` 31/31, `prueba_persistencia_arbol.py` 15/15,
+  `prueba_persistencia_subcarpetas.py` 10/10, `prueba_escaneo_automatico.py` 19/19,
+  `prueba_seleccion_carpeta.py` 26/26, `prueba_carpeta_actual.py` 19/19,
+  `prueba_expansion_carpetas.py` 35/35, `prueba_tamano_miniaturas.py` 32/32,
+  `prueba_escaneo_interfaz.py` 36/36, `prueba_progreso_pipeline.py` 11/11,
+  `prueba_progreso_operaciones.py` 12/12, `prueba_progreso_visual_pulido.py` 7/7,
+  `prueba_recarga_catalogo.py` 20/20, `prueba_interfaz_asincrona.py` 29/29,
+  `prueba_atajos_operaciones.py` 16/16, `prueba_seleccion.py` 28/28,
+  `prueba_restauracion_seleccion.py` 15/15, `prueba_smoke.py` OK).
+  `prueba_persistencia_carpeta.py` 18/20: **falla preexistente documentada** (T11/T16),
+  verificada en HEAD con `git stash`; no atribuible a esta etapa.
+- **Commit:** Aprobado y commiteado.
+- **Resultado:** la selección personalizada de carpetas tiene su infraestructura base
+  (conjunto por rutas, persistencia, restauración con descarte de inexistentes) lista para la
+  integración con el árbol de navegación.
+- **Decisiones importantes:** conjunto de rutas como única fuente de verdad (sin intervalos);
+  persistencia tras cada cambio real; restauración con descarte automático de rutas
+  inexistentes; total independencia del árbol.
+
+---
+
 ## 81. Pulir visualmente el sistema de progreso (Etapa B3.23)
 
 - **Fecha:** 2026-08-07

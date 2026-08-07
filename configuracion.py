@@ -13,6 +13,7 @@ CLAVE_RETARDO_VISTA_AMPLIADA = "retardo_vista_ampliada_ms"
 RETARDOS_VALIDOS_VISTA_AMPLIADA = (-1, 0, 250, 400, 600)
 CLAVE_TAMANO_VISTA_AMPLIADA = "tamano_vista_ampliada"
 FACTORES_VALIDOS_VISTA_AMPLIADA = (1.2, 1.6, 2.0, 2.5, 3.0, 3.5)
+CLAVE_SELECCION_CARPETAS = "carpetas_seleccionadas"
 VARIABLE_ENTORNO = "VISOR_CONFIG"
 
 
@@ -200,3 +201,37 @@ def obtener_tamano_vista_ampliada(ruta_config=None):
     ):
         return 1.6
     return valor
+
+
+def guardar_seleccion_carpetas(rutas, ruta_config=None):
+    lista = []
+    vistas = set()
+    if isinstance(rutas, (list, tuple, set)):
+        for r in rutas:
+            if not isinstance(r, str) or not r.strip():
+                continue
+            ruta = os.path.abspath(r)
+            if ruta in vistas:
+                continue
+            vistas.add(ruta)
+            lista.append(ruta)
+    datos = _leer(ruta_config) or {}
+    datos[CLAVE_SELECCION_CARPETAS] = lista
+    _escribir(datos, ruta_config)
+
+
+def obtener_seleccion_carpetas(ruta_config=None):
+    datos = _leer(ruta_config)
+    if datos is None:
+        return []
+    valor = datos.get(CLAVE_SELECCION_CARPETAS)
+    if not isinstance(valor, list):
+        return []
+    rutas = []
+    for r in valor:
+        if not isinstance(r, str) or not r.strip():
+            continue
+        ruta = os.path.abspath(r)
+        if ruta not in rutas and os.path.isdir(ruta):
+            rutas.append(ruta)
+    return rutas

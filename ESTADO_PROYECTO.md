@@ -12,37 +12,45 @@ técnicamente** (B3.1 a B3.9, más las ampliaciones **B3.14a** "Desactivado" y
 **B3.14b** "tamaños 3.0x/3.5x" de la vista ampliada), el **Bloque B —
 Selección y operaciones** quedó **completo** (B3.11 a B3.17 más la corrección
 técnica **B3.18**) y el **Bloque C — Progreso** quedó **completo**
-(**B3.20** infraestructura, **B3.21** progreso del pipeline, **B3.22**
-progreso de las operaciones y **B3.23** pulido visual). Con esto la
-**Beta 3 queda funcionalmente cerrada** salvo problemas que surjan en las
-pruebas finales. El plan de trabajo se documenta en `ROADMAP.md` (Bloque de
-trabajo 3). La Beta 2 permanece como la última versión estable publicada.
+(**B3.20–B3.23**), con lo que la **Beta 3 queda funcionalmente cerrada**
+salvo problemas en las pruebas finales. Además se inició el **Bloque de
+trabajo 4 — Catálogo por selección de carpetas** con la **Etapa 1 —
+Infraestructura de selección** implementada. El plan de trabajo se documenta
+en `ROADMAP.md` (Bloques de trabajo 3 y 4). La Beta 2 permanece como la
+última versión estable publicada.
 
 ## Último commit aprobado
 
-**Mensaje:** Pulir visualmente el sistema de progreso (Etapa B3.23)
+**Mensaje:** Agregar infraestructura de selección de carpetas por rutas (Selección personalizada)
 
-**Etapa:** Pulido visual del sistema de progreso (B3.23, Bloque C):
-- `visor_videos.py` — `_mostrar_progreso(texto)` guarda `self._texto_progreso`, reinicia
-  `self._progreso_detallado = False` y mantiene la barra indeterminada (`setRange(0,0)`) con
-  texto plano; `_al_progreso_pipeline(procesado, total)` conserva `setRange(0,total)` +
-  `setValue(procesado)` y aplica **solo la primera vez de cada etapa** el formato detallado
-  `"{texto} %v de %m (%p%)"` (placeholders nativos de `QProgressBar`: etapa + "N de M" +
-  porcentaje). Atributos `_texto_progreso`/`_progreso_detallado` en `__init__`. Las etapas sin
-  emisión (escaneo, sincronización, recarga) siguen indeterminadas con texto simple.
-- `prueba_progreso_visual_pulido.py` — 7 verificaciones de la etapa (nuevo).
+**Etapa:** Infraestructura de selección de carpetas (Bloque de trabajo 4, Etapa 1):
+- `seleccion_carpetas.py` — clase pura `SeleccionCarpetas(ruta_config=None)`: conjunto de
+  rutas absolutas como **única fuente de verdad**, sin árbol ni Qt. API
+  `seleccionar`/`deseleccionar`/`alternar`/`limpiar`/`seleccionar_todas`/`obtener_seleccion`
+  (esta última devuelve una copia). Persiste tras cada cambio real y **restaura en el
+  constructor descartando rutas inexistentes**. Sin intervalos internos, sin UI, sin cambios
+  en escaneo/SQLite/pipeline.
+- `configuracion.py` — clave `carpetas_seleccionadas` + `guardar_seleccion_carpetas`
+  (normaliza, deduplica, conserva las demás claves) y `obtener_seleccion_carpetas` (descarta
+  inexistentes; configs anteriores/inválidas → lista vacía).
+- `visor_videos.py` — restauración al iniciar: `self.seleccion_carpetas = SeleccionCarpetas(...)`
+  (una línea, sin cambio de comportamiento).
+- `prueba_seleccion_carpetas.py` — 22 verificaciones de la etapa (nuevo).
 
-**Pruebas superadas:** `prueba_progreso_visual_pulido.py` 7/7 (texto guardado e indeterminada;
-primera emisión aplica el formato detallado con rango/valor; emisiones siguientes no repiten
-`setFormat`; nueva etapa vuelve a texto simple sin arrastre; `total <= 0` no aplica detalle;
-integración del pipeline y de Copiar con el formato detallado); regresiones relevantes OK:
-`prueba_progreso.py` 13/13, `prueba_progreso_visual.py` OK, `prueba_progreso_pipeline.py` 11/11,
-`prueba_progreso_operaciones.py` 12/12, `prueba_escaneo_interfaz.py` 36/36,
-`prueba_sincronizacion_interfaz.py` 18/18, `prueba_recarga_catalogo.py` 20/20,
-`prueba_interfaz_asincrona.py` 29/29, `prueba_copiar_archivos.py` 15/15,
-`prueba_pegar_archivos.py` 15/15, `prueba_eliminar_archivos.py` 18/18,
-`prueba_atajos_operaciones.py` 16/16, `prueba_resincronizacion_incremental.py` 9/9,
-`prueba_smoke.py` OK.
+**Pruebas superadas:** `prueba_seleccion_carpetas.py` 22/22 (API del conjunto, descarte de
+inexistentes/inválidos, sin duplicados, persistencia entre instancias, restauración con
+descarte, copia de `obtener_seleccion`, capa de config y restauración al iniciar la
+aplicación); regresiones relevantes OK: `prueba_preferencias_miniaturas.py` 31/31,
+`prueba_persistencia_arbol.py` 15/15, `prueba_persistencia_subcarpetas.py` 10/10,
+`prueba_escaneo_automatico.py` 19/19, `prueba_seleccion_carpeta.py` 26/26,
+`prueba_carpeta_actual.py` 19/19, `prueba_expansion_carpetas.py` 35/35,
+`prueba_tamano_miniaturas.py` 32/32, `prueba_escaneo_interfaz.py` 36/36,
+`prueba_progreso_pipeline.py` 11/11, `prueba_progreso_operaciones.py` 12/12,
+`prueba_progreso_visual_pulido.py` 7/7, `prueba_recarga_catalogo.py` 20/20,
+`prueba_interfaz_asincrona.py` 29/29, `prueba_atajos_operaciones.py` 16/16,
+`prueba_seleccion.py` 28/28, `prueba_restauracion_seleccion.py` 15/15, `prueba_smoke.py` OK.
+`prueba_persistencia_carpeta.py` 18/20: **falla preexistente documentada** (T11/T16,
+verificada en HEAD con `git stash`), no atribuible a esta etapa.
 
 ## Hitos completados
 
@@ -225,6 +233,12 @@ integración del pipeline y de Copiar con el formato detallado); regresiones rel
   y reinicia `_progreso_detallado`; las etapas sin emisión (escaneo, sincronización, recarga)
   siguen indeterminadas con texto simple. Sin cambios en tareas ni infraestructura. Con esto
   el **Bloque C — Progreso queda completo**.
+- **Infraestructura de selección de carpetas (Bloque 4, Etapa 1).** Clase pura
+  `SeleccionCarpetas` con el conjunto de rutas como única fuente de verdad, persistencia en
+  configuración (`carpetas_seleccionadas`), restauración al iniciar con descarte automático de
+  rutas inexistentes y API `seleccionar`/`deseleccionar`/`alternar`/`limpiar`/`seleccionar_todas`/
+  `obtener_seleccion`. Sin árbol, sin UI, sin cambios en escaneo/SQLite/pipeline. Es la base de
+  la "Selección personalizada" del Bloque de trabajo 4.
 
 ## Pendientes prioritarios
 
@@ -281,13 +295,14 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
 
 ## Próxima etapa
 
-**Etapa B3.24 — Limpieza técnica** (Bloque C). Resolver únicamente la deuda técnica que
-continúe siendo necesaria después de las etapas anteriores (`_pipeline_activo`, helpers
-repetidos, etc.), según `ROADMAP.md` (Bloque de trabajo 3, "Orden de implementación del
-Bloque C"). Su definición detallada se realizará con la inspección técnica previa, en bloques
-pequeños, verificables y acumulativos, sin adelantar funcionalidades excluidas del alcance ni
-agregar funcionalidades nuevas fuera del plan aprobado. Con el Bloque C completo, la
-**Beta 3 queda funcionalmente cerrada** salvo problemas que surjan en las pruebas finales.
+**Integración con el árbol de navegación — modo de selección de carpetas** (Bloque de trabajo 4,
+Etapa 2). Sobre la infraestructura de selección recién implementada, agregar el modo de
+selección en el árbol: toggle de modo, checks por nodo, estado visual "seleccionada" distinto de
+"activa", barra de conteo y restauración, **sin modificar todavía el motor de escaneo
+multicarpeta**, según `ROADMAP.md` (Bloque de trabajo 4). Su definición detallada se realizará
+con la inspección técnica previa, en bloques pequeños, verificables y acumulativos, sin
+adelantar funcionalidades excluidas del alcance ni agregar funcionalidades nuevas fuera del
+plan aprobado.
 
 ## Documentos del proyecto
 

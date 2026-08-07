@@ -331,6 +331,43 @@ indicado arriba.
 
 ---
 
+# Bloque de trabajo 4 — Catálogo por selección de carpetas
+
+## Objetivo
+
+Permitir que el catálogo se construya a partir de **múltiples carpetas seleccionadas por el
+usuario** (p. ej. las primeras 20/50/100 de cientos de carpetas numeradas), con la experiencia
+de uso como prioridad absoluta. El modelo aprobado: la selección se almacena **siempre como un
+conjunto de rutas** (los intervalos son solo una forma rápida de construirla) y conviven dos
+conceptos: **carpeta activa** (navegación/abrir) y **carpetas seleccionadas** (para formar el
+catálogo). El checkbox "Incluir subcarpetas" evoluciona a un selector de modo ("Solo carpeta
+actual" / "Carpeta actual y todas las subcarpetas" / "Selección personalizada…").
+
+## Decisiones aprobadas
+
+- Selección interna siempre por rutas (nunca intervalos); "Seleccionar hasta aquí" es una
+  operación principal (primeras N de colecciones numeradas).
+- Modo dedicado de selección de carpetas; carpeta activa ≠ carpetas seleccionadas.
+- Herramientas de selección rápida: Seleccionar todas, Deseleccionar todas, Primeras N,
+  Últimas N, Desde X hasta Y, Invertir; menú contextual (Seleccionar/Deseleccionar: esta,
+  hasta aquí, desde aquí hasta el final); Shift+clic como complemento.
+- Pendiente de resolver antes del escaneo multicarpeta: deduplicación de nombres de archivo
+  entre carpetas (`nombre` UNIQUE), clave de orden natural, semántica de cascada.
+
+## Orden de implementación
+
+| Etapa | Contenido |
+| --- | --- |
+| 1 | **Infraestructura de selección** — conjunto de rutas (única fuente de verdad), persistencia en configuración, restauración al iniciar con descarte de rutas inexistentes, API `seleccionar`/`deseleccionar`/`alternar`/`limpiar`/`seleccionar_todas`/`obtener_seleccion`. Sin árbol, sin UI, sin cambios en escaneo/SQLite/pipeline. **Implementada.** |
+| 2 | **Modo de selección en el árbol** — toggle de modo, checks por nodo, estado visual "seleccionada" distinto de "activa", barra de conteo, orden natural de hermanos, restauración. |
+| 3 | **Herramientas de selección rápida** — acciones masivas y menú contextual; materializan rutas en el conjunto. |
+| 4 | **Escaneo de la selección** — `iniciar_escaneo` soporta los tres modos; pipeline sobre la unión de la selección; progreso "carpeta N de M". Requiere resolver la deduplicación de nombres. |
+| 5 | **Sincronización de la selección** — reconciliación por carpeta del alcance; indicadores por carpeta. |
+| 6 | **Selector de modo** — reemplazo del checkbox "Incluir subcarpetas" con migración retrocompatible. |
+| 7 | **Auditoría final** — UX, escala, regresiones integrales. |
+
+---
+
 # Prioridad inmediata
 
 -   ~~Opción de incluir o excluir subcarpetas en el escaneo.~~ Implementada

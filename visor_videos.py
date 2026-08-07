@@ -58,6 +58,7 @@ from escanear_videos import (
     configurar_escaneo_recursivo,
 )
 from rutas import ruta_carpeta_miniaturas, ruta_configuracion
+from seleccion_carpetas import SeleccionCarpetas
 from tareas import Estado, GestorTareas, TareaBase
 from apertura_videos import abrir_video_con_aplicacion_predeterminada
 from arbol_navegacion import ArbolNavegacion
@@ -758,6 +759,7 @@ class VisorVideos(QMainWindow):
         self.visibles = []
         self._ruta_db = ruta_db
         self._ruta_config = ruta_config
+        self.seleccion_carpetas = SeleccionCarpetas(ruta_config=ruta_config)
         self._carga_completada = False
         self.tarea_lectura = None
         self.carpeta_seleccionada = None
