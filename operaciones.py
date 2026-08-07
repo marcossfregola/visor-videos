@@ -1,9 +1,56 @@
+import ctypes
 import os
 import shutil
+from ctypes import wintypes
 
 
 def sumar(a, b):
     return a + b
+
+
+_FO_DELETE = 0x0003
+_FOF_ALLOWUNDO = 0x0040
+_FOF_NOCONFIRMATION = 0x0010
+_FOF_NOERRORUI = 0x0400
+_FOF_SILENT = 0x0004
+
+
+class _SHFILEOPSTRUCTW(ctypes.Structure):
+    _fields_ = [
+        ("hwnd", wintypes.HWND),
+        ("wFunc", wintypes.UINT),
+        ("pFrom", wintypes.LPCWSTR),
+        ("pTo", wintypes.LPCWSTR),
+        ("fFlags", ctypes.c_ushort),
+        ("fAnyOperationsAborted", wintypes.BOOL),
+        ("hNameMappings", wintypes.LPVOID),
+        ("lpszProgressTitle", wintypes.LPCWSTR),
+    ]
+
+
+def _enviar_a_papelera(ruta):
+    if os.name != "nt":
+        raise OSError("Enviar a la Papelera solo está disponible en Windows")
+    operacion = _SHFILEOPSTRUCTW()
+    operacion.hwnd = None
+    operacion.wFunc = _FO_DELETE
+    operacion.pFrom = ctypes.cast(
+        ctypes.create_unicode_buffer(ruta + "\0"), wintypes.LPCWSTR
+    )
+    operacion.pTo = None
+    operacion.fFlags = (
+        _FOF_ALLOWUNDO | _FOF_NOCONFIRMATION | _FOF_NOERRORUI | _FOF_SILENT
+    )
+    operacion.fAnyOperationsAborted = False
+    operacion.hNameMappings = None
+    operacion.lpszProgressTitle = None
+    resultado = ctypes.windll.shell32.SHFileOperationW(
+        ctypes.byref(operacion)
+    )
+    if resultado != 0:
+        raise OSError(
+            f"no se pudo enviar a la Papelera (código {resultado})"
+        )
 
 
 def copiar_archivos(origen, archivos, destino):
@@ -73,6 +120,34 @@ def pegar_archivos(archivos, destino):
             errores.append((ruta, str(exc)))
     return {
         "copiados": copiados,
+        "omitidos": omitidos,
+        "errores": errores,
+    }
+
+
+def eliminar_archivos(archivos):
+    if isinstance(archivos, (str, bytes, bytearray)):
+        raise TypeError("archivos debe ser una colección de rutas, no texto")
+    try:
+        lista = list(archivos)
+    except TypeError:
+        raise TypeError("archivos debe ser una colección iterable")
+    eliminados = []
+    omitidos = []
+    errores = []
+    for ruta in lista:
+        if not isinstance(ruta, str) or not ruta:
+            continue
+        if not os.path.isfile(ruta):
+            errores.append((ruta, "archivo no encontrado"))
+            continue
+        try:
+            _enviar_a_papelera(ruta)
+            eliminados.append(ruta)
+        except OSError as exc:
+            errores.append((ruta, str(exc)))
+    return {
+        "eliminados": eliminados,
         "omitidos": omitidos,
         "errores": errores,
     }

@@ -5,6 +5,70 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 75. Eliminar archivos seleccionados enviándolos a la Papelera (Etapa B3.16)
+
+- **Fecha:** 2026-08-07
+- **Objetivo:** Implementar la eliminación segura de los archivos seleccionados
+  enviándolos a la **Papelera de reciclaje de Windows** (nunca borrado permanente),
+  manteniendo la interfaz fluida, reutilizando la infraestructura existente y
+  minimizando el impacto arquitectónico.
+- **Investigación (Papelera):** se evaluó `send2trash` (dependencia externa,
+  descartada), `os.remove`/`shutil` (borrado permanente, prohibido por la filosofía del
+  proyecto) y la **API nativa de Windows `SHFileOperationW` vía `ctypes`** — elegida por
+  ser nativa, estable y sin dependencias nuevas.
+- **Archivos creados:**
+  - `prueba_eliminar_archivos.py` — 18 verificaciones: función pura (eliminación
+    simple, individual, múltiple, archivo inexistente, archivo bloqueado, validación de
+    tipos) e integración (habilitación del botón, cancelación sin tarea, eliminación en
+    segundo plano, resumen, actualización incremental del catálogo, contador, selección
+    restante, conservación del resto no eliminado).
+- **Archivos modificados:**
+  - `operaciones.py` — nueva función pura `eliminar_archivos(archivos)`: envía cada ruta
+    a la Papelera con `SHFileOperationW` vía `ctypes` (`_SHFILEOPSTRUCTW` con
+    `FO_DELETE` + `FOF_ALLOWUNDO`; `pFrom` con doble NUL), **una invocación por archivo**
+    para aislar errores y continuar; **nunca borra permanentemente**; origen inexistente
+    o archivo bloqueado → errores; devuelve `{"eliminados", "omitidos", "errores"}`.
+    **Sin dependencias externas.**
+  - `visor_videos.py` — botón "Eliminar…" con habilitación automática
+    (`_actualizar_boton_eliminar`); `TareaEliminarArchivos(TareaBase)` reutilizando
+    `gestor_operaciones` (despachador con rama "eliminar"); diálogo único de
+    confirmación que indica la cantidad y que los archivos irán a la Papelera y podrán
+    restaurarse ("Eliminar"/"Cancelar", default Cancelar; cancela → sin tarea); resumen
+    "Eliminado: X — Omitidos: Y — Errores: Z"; **actualización incremental del catálogo**
+    `_procesar_archivos_eliminados` (diferida con `QTimer.singleShot(0)` para que el
+    resumen sea visible) que reutiliza el paso de sincronización existente
+    (`TareaSincronizacionCatalogo`, detecta ausentes y los elimina) + recarga, **sin
+    reescaneo completo** (sin FFprobe ni miniaturas).
+  - `DOCUMENTO_TECNICO.md` — operación Eliminar, `eliminar_archivos` y la API nativa
+    documentados.
+  - `ROADMAP.md` — mejora B5 marcada como implementada.
+  - `ESTADO_PROYECTO.md` — última etapa aprobada, fase actual, hitos y próxima etapa
+    actualizados.
+  - `HISTORIAL_PROYECTO.md` — este documento (registro de la etapa).
+- **Alternativa de actualización del catálogo:** incremental, reutilizando la
+  sincronización existente (viable con cambios pequeños, sin romper la arquitectura; la
+  interfaz no accede a SQLite directamente).
+- **Pruebas:** `prueba_eliminar_archivos.py` 18/18; regresiones relevantes OK
+  (`prueba_copiar_archivos.py` 15/15, `prueba_pegar_archivos.py` 15/15,
+  `prueba_seleccion.py` 28/28, `prueba_modo_seleccion.py` 20/20,
+  `prueba_resumen_seleccion.py` 17/17, `prueba_atajos_basicos.py` 13/13,
+  `prueba_escaneo_interfaz.py` 36/36, `prueba_recarga_catalogo.py` 20/20,
+  `prueba_sincronizacion_interfaz.py` 18/18, `prueba_guardar.py` 19/19,
+  `prueba_seleccion_carpeta.py` 26/26, `prueba_carpeta_actual.py` 19/19,
+  `prueba_pulido_bloque_a.py` 29/29, `prueba_lectura_paginada.py` 32/32,
+  `prueba_filas_horizontales.py` 16/16, `prueba_interfaz_asincrona.py` 29/29,
+  `prueba_smoke.py` OK).
+- **Commit:** Aprobado y commiteado.
+- **Resultado:** Eliminar disponible enviando a la Papelera (recuperable), en segundo
+  plano, con confirmación, resumen y actualización incremental del catálogo; Copiar y
+  Pegar intactos; sin atajos ni menú contextual nuevos.
+- **Decisiones importantes:** Envío a la Papelera con API nativa de Windows
+  (`SHFileOperationW` vía `ctypes`), sin dependencias externas. Confirmación default
+  "Cancelar" (seguridad). El resumen es visible antes de que la sincronización lo
+  reemplace (diferido).
+
+---
+
 ## 74. Pegar archivos copiados en la carpeta actual (Etapa B3.15)
 
 - **Fecha:** 2026-08-07

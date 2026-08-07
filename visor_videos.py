@@ -498,6 +498,19 @@ class TareaPegarArchivos(TareaBase):
         return operaciones.pegar_archivos(self._archivos, self._destino)
 
 
+class TareaEliminarArchivos(TareaBase):
+    def __init__(self, archivos, parent=None):
+        super().__init__(parent)
+        self._archivos = list(archivos)
+
+    @property
+    def archivos(self):
+        return list(self._archivos)
+
+    def _trabajo(self):
+        return operaciones.eliminar_archivos(self._archivos)
+
+
 class Tarjeta(QFrame):
     doble_clic = Signal(str)
     seleccionada = Signal(str, bool)
@@ -841,6 +854,10 @@ class VisorVideos(QMainWindow):
         self.boton_pegar.setEnabled(False)
         self.boton_pegar.clicked.connect(self._iniciar_pegar)
 
+        self.boton_eliminar = QPushButton("Eliminar…")
+        self.boton_eliminar.setEnabled(False)
+        self.boton_eliminar.clicked.connect(self._iniciar_eliminar)
+
         self.boton_cargar_mas = QPushButton("Cargar más")
         self.boton_cargar_mas.setEnabled(False)
         self.boton_cargar_mas.clicked.connect(self.cargar_mas)
@@ -866,6 +883,7 @@ class VisorVideos(QMainWindow):
         fila_carpeta.addWidget(self.boton_modo_seleccion)
         fila_carpeta.addWidget(self.boton_copiar)
         fila_carpeta.addWidget(self.boton_pegar)
+        fila_carpeta.addWidget(self.boton_eliminar)
         fila_carpeta.addWidget(self.etiqueta_carpeta, 1)
         fila_carpeta.addWidget(self.estado_escaneo)
         fila_carpeta.addWidget(self.mensaje_carpeta)
@@ -1171,6 +1189,7 @@ class VisorVideos(QMainWindow):
         self.boton_cargar_mas.setEnabled(hay_mas)
         self._actualizar_boton_copiar()
         self._actualizar_boton_pegar()
+        self._actualizar_boton_eliminar()
 
     def _al_actividad(self, activo):
         self._actualizar_botones_carpeta()
@@ -1308,6 +1327,8 @@ class VisorVideos(QMainWindow):
     def _al_resultado_operaciones(self, resumen):
         if self._operacion_archivos == "pegar":
             self._al_resultado_pegar(resumen)
+        elif self._operacion_archivos == "eliminar":
+            self._al_resultado_eliminar(resumen)
         else:
             self._al_resultado_copia(resumen)
         self._operacion_archivos = None
@@ -1315,6 +1336,8 @@ class VisorVideos(QMainWindow):
     def _al_error_operaciones(self, mensaje):
         if self._operacion_archivos == "pegar":
             self._al_error_pegar(mensaje)
+        elif self._operacion_archivos == "eliminar":
+            self._al_error_eliminar(mensaje)
         else:
             self._al_error_copia(mensaje)
         self._operacion_archivos = None
@@ -1412,6 +1435,85 @@ class VisorVideos(QMainWindow):
         self._iniciar_tamanos()
         self._actualizar_botones_carpeta()
 
+    def _actualizar_boton_eliminar(self):
+        gestor_op = getattr(self, "gestor_operaciones", None)
+        habilitado = (
+            bool(self._nombres_seleccionados)
+            and (gestor_op is None or not gestor_op.activo)
+            and self.carpeta_seleccionada is not None
+            and os.path.isdir(self.carpeta_seleccionada)
+        )
+        self.boton_eliminar.setEnabled(habilitado)
+
+    def _iniciar_eliminar(self):
+        if self.gestor_operaciones.activo:
+            return
+        seleccion = list(self._nombres_seleccionados)
+        if not seleccion:
+            return
+        carpeta = self.carpeta_seleccionada
+        if not carpeta or not os.path.isdir(carpeta):
+            return
+        archivos = [os.path.join(carpeta, nombre) for nombre in seleccion]
+        caja = QMessageBox(self)
+        caja.setIcon(QMessageBox.Question)
+        caja.setWindowTitle("Eliminar")
+        caja.setText(
+            f"¿Eliminar los {len(archivos)} archivos seleccionados?\n\n"
+            "Serán enviados a la Papelera de reciclaje y podrán "
+            "restaurarse desde allí."
+        )
+        boton_eliminar = caja.addButton("Eliminar", QMessageBox.AcceptRole)
+        boton_cancelar = caja.addButton("Cancelar", QMessageBox.RejectRole)
+        caja.setDefaultButton(boton_cancelar)
+        caja.exec()
+        if caja.clickedButton() != boton_eliminar:
+            return
+        tarea = TareaEliminarArchivos(archivos)
+        if not self.gestor_operaciones.iniciar(tarea):
+            return
+        self._operacion_archivos = "eliminar"
+        self._mostrar_progreso("Eliminando…")
+        self._actualizar_boton_eliminar()
+
+    def _al_resultado_eliminar(self, resumen):
+        self._ocultar_progreso()
+        eliminados = resumen.get("eliminados", [])
+        omitidos = resumen.get("omitidos", [])
+        errores = resumen.get("errores", [])
+        self.estado_escaneo.setText(
+            f"Eliminado: {len(eliminados)} — Omitidos: {len(omitidos)} — Errores: {len(errores)}"
+        )
+        if eliminados:
+            QTimer.singleShot(0, self._procesar_archivos_eliminados)
+        self._actualizar_boton_eliminar()
+
+    def _al_error_eliminar(self, mensaje):
+        self._ocultar_progreso()
+        self.estado_escaneo.setText(f"Error al eliminar: {mensaje}")
+        self._actualizar_boton_eliminar()
+
+    def _procesar_archivos_eliminados(self):
+        if self.gestor.activo:
+            return
+        carpeta = self.carpeta_seleccionada
+        if not carpeta or not os.path.isdir(carpeta):
+            return
+        self._escaneo_pendiente = False
+        self._tamanos_pendiente = False
+        self._ffprobe_pendiente = False
+        self._miniaturas_pendiente = False
+        self._guardado_pendiente = False
+        self._sincronizacion_pendiente = True
+        self._recarga_catalogo_pendiente = False
+        self._pagina_pendiente = False
+        self.resultado_sincronizacion = None
+        self.tarea_sincronizacion = None
+        self.tarea_recarga_catalogo = None
+        self.tarea_pagina = None
+        self._iniciar_sincronizacion()
+        self._actualizar_botones_carpeta()
+
     def _actualizar_resumen_seleccion(self):
         visibles = self.visibles
         x = sum(
@@ -1422,6 +1524,7 @@ class VisorVideos(QMainWindow):
         )
         self._actualizar_boton_copiar()
         self._actualizar_boton_pegar()
+        self._actualizar_boton_eliminar()
 
     @property
     def nombres_seleccionados(self):
