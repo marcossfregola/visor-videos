@@ -5,6 +5,49 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 67. Planificación y congelamiento del alcance del Bloque B (Etapa B3.10)
+
+- **Fecha:** 2026-08-06
+- **Tipo:** Etapa **exclusivamente documental** de planificación y congelamiento del
+  alcance del Bloque B — **sin cambios de código** ni implementación.
+- **Objetivo:** Definir oficialmente el alcance del Bloque B (Selección y operaciones):
+  revisar las funcionalidades previstas, fijar el orden óptimo de implementación,
+  detectar dependencias y congelar el alcance antes de escribir código.
+- **Orden oficial del Bloque B (aprobado con modificación de la auditoría):**
+  - B3.11 — Resumen de selección (B6).
+  - B3.12 — Modo selección + Checks por fila (B1 + B2).
+  - B3.13 — Atajos básicos (B7 parcial).
+  - B3.14 — Copiar (B3).
+  - B3.15 — Pegar (B4).
+  - B3.16 — Eliminar (B5).
+  - B3.17 — Atajos de operaciones (B7 parcial).
+  La auditoría reordenó las dos primeras etapas (resumen antes que modo+checks) para
+  verificar el modelo interno de selección antes de incorporar una nueva interacción.
+- **Decisiones congeladas:** Copiar = copiar archivos físicos; Pegar = portapapeles
+  interno; Eliminar = mover a la Papelera de reciclaje (nunca borrado permanente);
+  operaciones de archivos en segundo plano; el modo selección no modifica el modo
+  normal.
+- **Excluidos del Bloque B:** renombrado masivo, favoritos, etiquetas, organización
+  automática, detección de duplicados, filtros avanzados y apertura del video desde
+  previews.
+- **Documentos actualizados:**
+  - `ROADMAP.md` — nueva sección "Bloque B — Selección y operaciones" (objetivo, orden,
+    dependencias, decisiones congeladas, excluidos y seguimiento B1–B7 Pendiente).
+  - `ESTADO_PROYECTO.md` — fase actual, última etapa aprobada, hitos y próxima etapa
+    (B3.11 Resumen de selección) actualizados.
+  - `HISTORIAL_PROYECTO.md` — este documento (registro de la etapa).
+- **Resultado:** El Bloque B queda planificado y con su alcance congelado, listo para
+  comenzar la implementación de la Etapa B3.11 tras la aprobación de este cierre.
+- **Commit:** "Planificar y congelar el alcance del Bloque B (Etapa B3.10)"
+- **Decisiones importantes:**
+  1. **Resumen primero**: verifica el modelo interno de selección (ya validado) antes
+     de incorporar los checks (reduce riesgo de regresiones y simplifica auditorías).
+  2. **Alcance acotado a la Beta 3**: sin funcionalidades fuera del plan aprobado.
+  3. **Seguimiento por mejoras B1–B7**: la tabla principal ya las refleja en
+     "Pendiente"; el plan solo define el orden (sin duplicar la tabla).
+
+---
+
 ## 66. Pulido técnico del Bloque A (Etapa B3.9)
 
 - **Fecha:** 2026-08-06

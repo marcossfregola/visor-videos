@@ -252,6 +252,55 @@ Quedan fuera del alcance de la Beta 3 y no se implementarán en ella:
 | D2 | Persistencia de nuevas preferencias | D | Pendiente |
 | E1 | Apertura del video desde una preview | E | Pendiente |
 
+## Bloque B — Selección y operaciones (plan aprobado, Etapa B3.10)
+
+### Objetivo
+
+Ampliar la selección del catálogo con un **modo de selección dedicado** (checks por
+fila), un **resumen del estado de la selección**, **operaciones de archivos** sobre
+los seleccionados (copiar, pegar y eliminar) y **atajos de teclado**, manteniendo
+intacto el comportamiento del modo normal.
+
+### Orden de implementación
+
+| Etapa | Contenido |
+| --- | --- |
+| B3.11 | **Resumen de selección** (B6) — "n de m seleccionados", sincronizado con la selección y el filtro. |
+| B3.12 | **Modo selección + Checks por fila** (B1 + B2) — toggle en la barra que activa checks por fila sincronizados con la selección; el modo normal no cambia. |
+| B3.13 | **Atajos básicos** (B7, parcial) — Ctrl+A (todo lo visible) y Esc (salir del modo selección). |
+| B3.14 | **Copiar** (B3) — copiar los archivos de video seleccionados a una carpeta destino (diálogo), en segundo plano, sin sobrescribir. |
+| B3.15 | **Pegar** (B4) — pegar en la carpeta actual los archivos copiados internamente, con confirmación de colisión. |
+| B3.16 | **Eliminar** (B5) — mover a la Papelera de reciclaje (nunca borrado permanente) con confirmación y resumen. |
+| B3.17 | **Atajos de operaciones** (B7, parcial) — Ctrl+C / Ctrl+V / Supr vinculados a Copiar/Pegar/Eliminar. |
+
+### Dependencias
+
+- **Checks por fila** dependen del **modo selección**.
+- El **resumen** depende únicamente del estado interno de selección (ya existente y
+  validado); se implementa primero para verificar ese modelo antes de incorporar los
+  checks.
+- **Pegar** depende de la semántica de **Copiar**.
+- Los **atajos de operaciones** dependen de **Copiar/Pegar/Eliminar**.
+
+### Decisiones congeladas
+
+- **Copiar** = copiar archivos físicos.
+- **Pegar** = portapapeles interno de la aplicación.
+- **Eliminar** = mover únicamente a la Papelera de reciclaje.
+- Todas las operaciones de archivos se ejecutan **en segundo plano**.
+- El **modo selección no modifica** el comportamiento del modo normal.
+
+### Excluidos del Bloque B
+
+Renombrado masivo, favoritos, etiquetas, organización automática, detección de
+duplicados, filtros avanzados y apertura del video desde previews.
+
+### Seguimiento
+
+La tabla de seguimiento del Bloque B es la correspondiente a las mejoras **B1–B7**
+de la tabla anterior (todas en estado "Pendiente"), con el orden de implementación
+indicado arriba.
+
 ---
 
 # Prioridad inmediata
