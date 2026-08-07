@@ -8,38 +8,36 @@ grandes colecciones de videos mediante miniaturas representativas.
 **Fase actual:** quedó **aprobado el alcance de la Beta 3** (Etapa B3.0,
 exclusivamente documental) y la **implementación de la Beta 3 está en
 marcha**: el **Bloque A — Experiencia visual** quedó **completo funcional y
-técnicamente** (B3.1 a B3.9, más la ampliación **B3.14a** "Desactivado" de la
-vista ampliada) y el **Bloque B — Selección y operaciones** está en
-implementación: **B3.11 — Resumen de selección** (B6), **B3.12 — Modo
-selección + Checks por fila** (B1 + B2), **B3.13 — Atajos básicos** (parte de
-B7) y **B3.14 — Copiar** (B3) implementadas. El plan de trabajo se documenta
-en `ROADMAP.md` (Bloque de trabajo 3). La Beta 2 permanece como la última
-versión estable publicada.
+técnicamente** (B3.1 a B3.9, más las ampliaciones **B3.14a** "Desactivado" y
+**B3.14b** "tamaños 3.0x/3.5x" de la vista ampliada) y el **Bloque B —
+Selección y operaciones** está en implementación: **B3.11 — Resumen de
+selección** (B6), **B3.12 — Modo selección + Checks por fila** (B1 + B2),
+**B3.13 — Atajos básicos** (parte de B7) y **B3.14 — Copiar** (B3)
+implementadas. El plan de trabajo se documenta en `ROADMAP.md` (Bloque de
+trabajo 3). La Beta 2 permanece como la última versión estable publicada.
 
 ## Último commit aprobado
 
-**Mensaje:** Agregar opción para desactivar la vista ampliada (Etapa B3.14a)
+**Mensaje:** Agregar tamaños grandes para la vista ampliada (Etapa B3.14b)
 
-**Etapa:** Desactivar la vista ampliada (B3.14a, ampliación del Bloque A):
-- `configuracion.py` — `-1` agregado a `RETARDOS_VALIDOS_VISTA_AMPLIADA`
-  (representación interna de "Desactivado"); configs anteriores compatibles; inválido
-  → default 400 ms.
-- `visor_videos.py` — "Desactivado" (`-1`) en el combo del retardo; `self._retardo_vista_ampliada`
-  conserva el valor vigente (restauración: solo se fija el intervalo si no es `-1`);
-  `_aplicar_retardo_vista_ampliada(-1)` detiene el timer y oculta un popup visible;
-  `_al_vista_solicitada` retorna de inmediato con `-1` (no se inicia el timer ni aparece
-  el popup). Volver a cualquier retardo reactiva la funcionalidad. Sin cambios de
-  clases ni timers.
-- `prueba_vista_ampliada_desactivada.py` — 20 verificaciones de la etapa.
+**Etapa:** Tamaños grandes de la vista ampliada (B3.14b, ampliación del Bloque A):
+- `configuracion.py` — `FACTORES_VALIDOS_VISTA_AMPLIADA = (1.2, 1.6, 2.0, 2.5, 3.0, 3.5)`.
+- `visor_videos.py` — `FACTORES_VISTA_AMPLIADA` y `TEXTOS_FACTOR_VISTA_AMPLIADA` con
+  `3.0x`/`3.5x` (el combo del diálogo y `preparar` se llenan/computan por datos; sin
+  tratamiento especial para los nuevos factores; `_posicion_vista` acota a pantalla).
+  El factor máximo pasa a ser 3.5x (la vista ampliada puede ocupar prácticamente toda
+  la pantalla). Default 1.6; configs anteriores compatibles.
+- `prueba_tamano_vista_ampliada_grande.py` — 28 verificaciones de la etapa.
+- `prueba_tamano_vista_ampliada.py` — contrato actualizado (3.0 ya no es inválido;
+  "último válido" pasa a 3.5), autorizado por la auditoría.
 
-**Pruebas superadas:** `prueba_vista_ampliada_desactivada.py` 20/20 (persistencia y
-compatibilidad del `-1`, restauración desde configuración, no se inicia el timer, el
-popup nunca aparece incluso recorriendo previews y disparando el timeout, reactivación a
-400 ms, ocultado del popup al desactivar estando visible); regresiones
-`prueba_vista_ampliada.py` 24/24, `prueba_preferencias_miniaturas.py` 31/31,
-`prueba_tamano_vista_ampliada.py` 35/35, `prueba_tamano_miniaturas.py` 32/32,
-`prueba_tamano_muy_grande.py` 27/27, `prueba_cantidad_previews.py` 14/14,
-`prueba_previews_automaticas.py` 22/22, `prueba_smoke.py` OK.
+**Pruebas superadas:** `prueba_tamano_vista_ampliada_grande.py` 28/28 (presencia de
+3.0x/3.5x, persistencia y compatibilidad, restauración, cálculo del popup sobre los
+cuatro tamaños de miniatura, acotado a pantalla con 3.5 sobre Muy grande);
+`prueba_tamano_vista_ampliada.py` 38/38 (tras la actualización de contrato),
+`prueba_vista_ampliada.py` 24/24, `prueba_vista_ampliada_desactivada.py` 20/20,
+`prueba_preferencias_miniaturas.py` 31/31, `prueba_tamano_miniaturas.py` 32/32,
+`prueba_tamano_muy_grande.py` 27/27, `prueba_smoke.py` OK.
 
 ## Hitos completados
 
@@ -161,6 +159,10 @@ popup nunca aparece incluso recorriendo previews y disparando el timeout, reacti
   "Desactivado" (`-1`) en el retardo de la vista ampliada; con ella nunca se inicia el
   timer ni aparece el popup al posar el mouse, y volver a cualquier retardo reactiva la
   funcionalidad.
+- **Tamaños grandes de la vista ampliada (Etapa B3.14b).** Ampliación del Bloque A:
+  factores 3.0x y 3.5x (máximo 3.5x; la vista ampliada puede ocupar prácticamente toda
+  la pantalla, acotada por `_posicion_vista`); integración por datos, sin tratamiento
+  especial, default 1.6.
 
 ## Pendientes prioritarios
 

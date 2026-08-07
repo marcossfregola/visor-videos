@@ -154,6 +154,10 @@ No se implementará ninguna mejora fuera de este alcance.
   "Desactivado" (`-1`): con él nunca se inicia el timer ni aparece el popup al posar el
   mouse; volver a cualquier retardo reactiva la funcionalidad. Persistido con la
   infraestructura existente (configs anteriores compatibles; inválido → 400 ms).
+- Tamaños grandes de la vista ampliada (3.0x y 3.5x) — ampliación de A7.
+  **Implementada (Etapa B3.14b).** El factor máximo pasa a ser 3.5x (puede ocupar
+  prácticamente toda la pantalla, acotado por `_posicion_vista`); sin tratamiento
+  especial para los nuevos factores (infraestructura por datos; default 1.6).
 
 ### B. Selección y operaciones
 
@@ -244,6 +248,7 @@ Quedan fuera del alcance de la Beta 3 y no se implementarán en ella:
 | A7 | Tamaño configurable de la vista ampliada (ampliación de A4) | A | Implementada |
 | A8 | Generación automática de previews faltantes (ampliación de A1) | A | Implementada |
 | A9 | Desactivar la vista ampliada (ampliación de A4) | A | Implementada |
+| A10 | Tamaños grandes de la vista ampliada (ampliación de A7) | A | Implementada |
 | B1 | Modo selección | B | Implementada |
 | B2 | Checks por fila | B | Implementada |
 | B3 | Copiar | B | Implementada |

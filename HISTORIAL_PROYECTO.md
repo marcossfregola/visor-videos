@@ -5,6 +5,56 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 73. Tamaños grandes para la vista ampliada (Etapa B3.14b)
+
+- **Fecha:** 2026-08-06
+- **Objetivo:** Agregar dos factores adicionales (3.0x y 3.5x) para la vista ampliada,
+  permitiendo que ocupe prácticamente toda la pantalla, sin modificar el mecanismo
+  existente ni el criterio proporcional (tamaño de miniatura × factor).
+- **Archivos creados:**
+  - `prueba_tamano_vista_ampliada_grande.py` — 28 verificaciones: presencia de 3.0x y
+    3.5x (UI y configuración), persistencia y compatibilidad (configs anteriores
+    válidas; inválido → 1.6), restauración desde configuración (3.5; inválido → 1.6),
+    cálculo del tamaño del popup (3.0/3.5 sobre Mediano; 3.5 sobre los cuatro tamaños
+    de miniatura) y acotado a pantalla con 3.5 sobre Muy grande.
+- **Archivos modificados:**
+  - `configuracion.py` — `FACTORES_VALIDOS_VISTA_AMPLIADA = (1.2, 1.6, 2.0, 2.5, 3.0, 3.5)`.
+  - `visor_videos.py` — `FACTORES_VISTA_AMPLIADA` y `TEXTOS_FACTOR_VISTA_AMPLIADA` con
+    `3.0x`/`3.5x` (el combo del diálogo y `preparar` se llenan/computan por datos; sin
+    tratamiento especial para los nuevos factores). El máximo pasa a ser 3.5x; la vista
+    ampliada puede ocupar prácticamente toda la pantalla, siempre acotada por
+    `_posicion_vista`. Default 1.6; configs anteriores compatibles.
+  - `prueba_tamano_vista_ampliada.py` — **contrato actualizado con autorización expresa**
+    de la auditoría: se eliminó `3.0` de los casos inválidos y las aserciones de "último
+    válido" pasan de `2.5` a `3.5` (nuevo máximo); el round-trip incluye 3.0/3.5. Sin
+    cambios en ninguna otra comprobación.
+  - `DOCUMENTO_TECNICO.md` — factores 1.2–3.5 documentados en `VistaAmpliada`,
+    `PreferenciasDialog` y `configuracion.py`.
+  - `ROADMAP.md` — ampliación A10 incorporada al Bloque A como implementada.
+  - `ESTADO_PROYECTO.md` — última etapa aprobada, fase actual, hitos y próxima etapa
+    actualizados.
+  - `HISTORIAL_PROYECTO.md` — este documento (registro de la etapa).
+- **Pruebas:** `prueba_tamano_vista_ampliada_grande.py` 28/28;
+  `prueba_tamano_vista_ampliada.py` 38/38 (tras la actualización de contrato),
+  `prueba_vista_ampliada.py` 24/24, `prueba_vista_ampliada_desactivada.py` 20/20,
+  `prueba_preferencias_miniaturas.py` 31/31, `prueba_tamano_miniaturas.py` 32/32,
+  `prueba_tamano_muy_grande.py` 27/27, `prueba_smoke.py` OK.
+- **Resultado:** La vista ampliada admite factores hasta 3.5x (puede ocupar
+  prácticamente toda la pantalla), integrados por datos sin tratamiento especial y con
+  el acotado a pantalla funcionando igual que antes; default 1.6 y compatibilidad total
+  con configuraciones anteriores.
+- **Commit:** "Agregar tamaños grandes para la vista ampliada (Etapa B3.14b)"
+- **Decisiones importantes:**
+  1. **Integración por datos**: solo se ampliaron `FACTORES_VALIDOS_VISTA_AMPLIADA`,
+     `FACTORES_VISTA_AMPLIADA` y `TEXTOS_FACTOR_VISTA_AMPLIADA`; sin lógica nueva.
+  2. **Criterio proporcional intacto**: ampliación = tamaño de miniatura × factor.
+  3. **Acotado a pantalla sin cambios**: `_posicion_vista` sigue limitando el popup a la
+     geometría disponible.
+  4. **Contrato de la suite actualizado** (autorizado): 3.0 deja de ser inválido y el
+     "último válido" pasa a 3.5.
+
+---
+
 ## 72. Opción para desactivar la vista ampliada (Etapa B3.14a)
 
 - **Fecha:** 2026-08-06

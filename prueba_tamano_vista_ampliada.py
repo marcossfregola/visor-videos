@@ -169,7 +169,7 @@ def main():
         temp_config = tempfile.TemporaryDirectory()
         ruta_config = os.path.join(temp_config.name, "config.json")
         try:
-            for factor in (1.2, 1.6, 2.0, 2.5):
+            for factor in (1.2, 1.6, 2.0, 2.5, 3.0, 3.5):
                 guardar_tamano_vista_ampliada(factor, ruta_config)
                 with open(ruta_config, encoding="utf-8") as f:
                     contenido = json.load(f)
@@ -178,10 +178,10 @@ def main():
                     and obtener_tamano_vista_ampliada(ruta_config) == factor,
                     f"persistencia round-trip factor {factor}",
                 )
-            for invalido in (True, 1.5, "1.6", 2, 3.0, -1.0):
+            for invalido in (True, 1.5, "1.6", 2, -1.0):
                 guardar_tamano_vista_ampliada(invalido, ruta_config)
                 verifica(
-                    obtener_tamano_vista_ampliada(ruta_config) == 2.5,
+                    obtener_tamano_vista_ampliada(ruta_config) == 3.5,
                     f"guardar inválido ({invalido!r}) no modifica y conserva el último válido",
                 )
             ruta_no = os.path.join(temp_config.name, "inexistente.json")
@@ -208,7 +208,7 @@ def main():
             )
         configurar_factor_vista_ampliada(1.9)
         verifica(
-            visor_videos.FACTOR_VISTA_AMPLIADA_ACTUAL == 2.5,
+            visor_videos.FACTOR_VISTA_AMPLIADA_ACTUAL == 3.5,
             "factor inválido se ignora",
         )
         configurar_factor_vista_ampliada(1.6)
