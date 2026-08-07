@@ -7,10 +7,10 @@ Videos. No representa el estado actual del proyecto, sino la dirección
 de desarrollo. El orden podrá cambiar según las decisiones
 arquitectónicas.
 
-> **Estado (Beta 2):** el desarrollo funcional está **pausado** mientras
-> dure la validación de la Beta 2 en fase de pruebas reales. Durante esta
-> fase no se implementarán funcionalidades nuevas; únicamente se corregirán
-> errores detectados mediante el uso. El Bloque de trabajo 2 (Centro de
+> **Estado (Beta 3):** quedó **aprobado el alcance de la Beta 3** (Etapa
+> B3.0, exclusivamente documental). El proyecto está listo para comenzar la
+> implementación de los bloques de trabajo **A–E** definidos en la sección
+> "Bloque de trabajo 3 — Beta 3". El Bloque de trabajo 2 (Centro de
 > Navegación) quedó completado y aprobado.
 
 ------------------------------------------------------------------------
@@ -93,10 +93,148 @@ pequeña, verificable y acumulativa:
 
 **Estado:** El Bloque de trabajo 2 quedó **completado** (Etapas 2.1 a 2.9,
 incluida la verificación de la Etapa 2.7) y el Centro de Navegación fue
-aprobado. La **Beta 2 queda congelada** y entra en fase de pruebas reales:
-durante la validación **no se implementarán funcionalidades nuevas**;
-únicamente se corregirán errores detectados mediante el uso. La Etapa 2.10
-(filtrado del catálogo desde el árbol) se retomará al finalizar la validación.
+aprobado. La **Etapa 2.10** (filtrado del catálogo desde el árbol) queda
+**diferida** y **no forma parte del alcance de la Beta 3**; se retomará en
+una etapa posterior.
+
+---
+
+# Bloque de trabajo 3 — Beta 3
+
+## Objetivo general
+
+Implementar las mejoras aprobadas que surgieron durante la fase de uso real
+de la Beta 2, organizadas en bloques de trabajo pequeños, verificables y
+acumulativos, priorizando la exploración visual y sin adelantar
+funcionalidades fuera del alcance acordado.
+
+## Filosofía de la Beta 3
+
+- Mantiene la filosofía del producto (`VISION_PRODUCTO.md`): la **exploración
+  visual** es el objetivo principal y la **reproducción** permanece como
+  función secundaria.
+- Se implementan **pequeñas mejoras acumulativas**, sin rediseños completos ni
+  cambios arquitectónicos que todavía no existen.
+- Las preferencias nuevas que surjan de la Beta 3 se **persistirán
+  automáticamente** siguiendo el patrón existente.
+- Ninguna mejora del alcance aprobado está aún implementada; el desarrollo
+  comenzará tras la aprobación de esta etapa.
+
+## Alcance
+
+La Beta 3 cubre **exclusivamente** las mejoras aprobadas de los bloques de
+implementación **A–E**. Las funcionalidades no incluidas en esos bloques
+quedan **expresamente excluidas** (ver sección "Funcionalidades excluidas").
+No se implementará ninguna mejora fuera de este alcance.
+
+## Bloques de implementación
+
+### A. Experiencia visual
+
+- Tiempo sobre las miniaturas.
+- Duración simplificada.
+- Tamaño configurable de miniaturas.
+- Vista ampliada al posar el mouse.
+- Preferencias relacionadas con miniaturas.
+
+### B. Selección y operaciones
+
+- Modo selección.
+- Checks por fila.
+- Copiar.
+- Pegar.
+- Eliminar.
+- Resumen de selección.
+- Atajos de teclado.
+
+### C. Progreso
+
+- Barra de progreso real.
+- Cantidad de videos procesados.
+- Porcentaje.
+- Cancelación del escaneo — **pendiente de evaluación técnica**; no es una
+  mejora aprobada.
+
+### D. Navegación
+
+- Reinicio de indicadores de carpetas escaneadas.
+- Persistencia de nuevas preferencias.
+
+### E. Integración con el reproductor
+
+- Apertura del video desde una preview (doble clic sobre una miniatura).
+
+## Mejoras aprobadas
+
+Mejoras aprobadas para la Beta 3, en correspondencia con los bloques:
+
+1. **A1 — Tiempo sobre las miniaturas** (Bloque A).
+2. **A2 — Duración simplificada** (Bloque A).
+3. **A3 — Tamaño configurable de miniaturas** (Bloque A).
+4. **A4 — Vista ampliada al posar el mouse** (Bloque A).
+5. **A5 — Preferencias relacionadas con miniaturas** (Bloque A).
+6. **B1 — Modo selección** (Bloque B).
+7. **B2 — Checks por fila** (Bloque B).
+8. **B3 — Copiar** (Bloque B).
+9. **B4 — Pegar** (Bloque B).
+10. **B5 — Eliminar** (Bloque B).
+11. **B6 — Resumen de selección** (Bloque B).
+12. **B7 — Atajos de teclado** (Bloque B).
+13. **C1 — Barra de progreso real** (Bloque C).
+14. **C2 — Cantidad de videos procesados** (Bloque C).
+15. **C3 — Porcentaje** (Bloque C).
+16. **D1 — Reinicio de indicadores de carpetas escaneadas** (Bloque D).
+17. **D2 — Persistencia de nuevas preferencias** (Bloque D).
+18. **E1 — Apertura del video desde una preview** (Bloque E).
+
+La **cancelación del escaneo** (Bloque C) queda **pendiente de evaluación
+técnica** y **no forma parte de las mejoras aprobadas** de la Beta 3.
+
+## Funcionalidades expresamente excluidas de la Beta 3
+
+Quedan fuera del alcance de la Beta 3 y no se implementarán en ella:
+
+- Favoritos, etiquetas, colecciones, recientes y últimos escaneos
+  (organización del catálogo).
+- Tarjetas expandibles (entre 20 y 30 previews por video al expandir).
+- Ordenamientos del catálogo (por nombre, duración, resolución, codec, tamaño
+  o fecha).
+- Paginación completa automática (scroll infinito, búsqueda en SQL desde la
+  interfaz y ordenamiento configurable).
+- Deduplicación de nombres repetidos en el plan de sincronización.
+- Filtrado del catálogo desde el árbol (Etapa 2.10 del Bloque de trabajo 2),
+  diferida a una etapa posterior.
+- Calidad de miniaturas avanzada (selección inteligente de fotogramas, evitar
+  pantallas negras, fundidos, créditos e imágenes repetidas).
+- Panel de propiedades, panel de favoritos, panel de etiquetas y panel de IA.
+- Administración (detección de archivos movidos, renombrado masivo,
+  organización automática y detección de duplicados).
+- IA (descripción y clasificación de videos, reconocimiento de escenas, OCR,
+  reconocimiento de rostros y objetos, plugins o extensiones y múltiples
+  vistas del catálogo).
+
+## Tabla de seguimiento de las mejoras
+
+| ID | Mejora | Bloque | Estado |
+| --- | --- | --- | --- |
+| A1 | Tiempo sobre las miniaturas | A | Pendiente |
+| A2 | Duración simplificada | A | Pendiente |
+| A3 | Tamaño configurable de miniaturas | A | Pendiente |
+| A4 | Vista ampliada al posar el mouse | A | Pendiente |
+| A5 | Preferencias relacionadas con miniaturas | A | Pendiente |
+| B1 | Modo selección | B | Pendiente |
+| B2 | Checks por fila | B | Pendiente |
+| B3 | Copiar | B | Pendiente |
+| B4 | Pegar | B | Pendiente |
+| B5 | Eliminar | B | Pendiente |
+| B6 | Resumen de selección | B | Pendiente |
+| B7 | Atajos de teclado | B | Pendiente |
+| C1 | Barra de progreso real | C | Pendiente |
+| C2 | Cantidad de videos procesados | C | Pendiente |
+| C3 | Porcentaje | C | Pendiente |
+| D1 | Reinicio de indicadores de carpetas escaneadas | D | Pendiente |
+| D2 | Persistencia de nuevas preferencias | D | Pendiente |
+| E1 | Apertura del video desde una preview | E | Pendiente |
 
 ---
 
@@ -111,15 +249,17 @@ durante la validación **no se implementarán funcionalidades nuevas**;
     escaneo automático al seleccionar, verificación de la paridad de
     subcarpetas, preferencia independiente de escaneo automático con las
      cuatro combinaciones e indicadores visuales de carpetas escaneadas). El
-     bloque de trabajo 2 queda **completado**; el desarrollo funcional está
-     **pausado** durante la validación de la Beta 2 (solo correcciones por uso).
+     bloque de trabajo 2 queda **completado**; el desarrollo funcional se
+     retoma con la implementación de la Beta 3 (ver Bloque de trabajo 3).
 -   Paginación completa automática del catálogo — scroll infinito,
     búsqueda en SQL desde la interfaz y ordenamiento configurable. La
     carga manual de una página adicional con el botón "Cargar más" ya
     existe.
 -   Deduplicación de nombres repetidos en el plan de sincronización.
 -   Persistencia de preferencias generales de configuración — más allá
-    de la última carpeta seleccionada, que ya se persiste.
+    de la última carpeta seleccionada, que ya se persiste. **Prevista en la
+    Beta 3** (Bloque de trabajo 3, Bloque D — "Persistencia de nuevas
+    preferencias").
 
 ------------------------------------------------------------------------
 
@@ -131,7 +271,9 @@ durante la validación **no se implementarán funcionalidades nuevas**;
     copiar rutas de los seleccionados, abrir carpetas de los seleccionados),
     restauración automática de la selección tras reconstruir tarjetas y selección
     por rango con Shift+clic basada en ancla y orden visible.
--   Cancelación de tareas.
+-   Cancelación de tareas — la **cancelación del escaneo** está **pendiente de
+    evaluación técnica** en la Beta 3 (Bloque de trabajo 3, Bloque C); no es
+    una mejora aprobada.
 -   Reanudación de trabajos.
 -   Configuración persistente.
 -   Mejor navegación entre videos.

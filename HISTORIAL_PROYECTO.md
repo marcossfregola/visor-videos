@@ -5,6 +5,52 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 57. Aprobación del alcance de la Beta 3 (Etapa B3.0)
+
+- **Fecha:** 2026-08-06
+- **Tipo:** Etapa **exclusivamente documental** de planificación y
+  congelamiento del alcance de la Beta 3 — **sin cambios de código** ni
+  implementación de funcionalidades.
+- **Objetivo:** Definir y aprobar oficialmente el alcance de la Beta 3 a
+  partir de las mejoras recopiladas durante la fase de uso real de la Beta 2,
+  y congelarlo como base de las etapas siguientes.
+- **Contexto:** Finalizó la **fase de recopilación de mejoras** del uso real
+  de la Beta 2 y quedó **aprobado el alcance de la Beta 3**. No se modificó
+  ningún archivo de producción ni se implementó funcionalidad alguna: la
+  etapa es exclusivamente de planificación.
+- **Documentos actualizados:**
+  - `ROADMAP.md` — nueva sección "Bloque de trabajo 3 — Beta 3": objetivo
+    general, filosofía, alcance, bloques de implementación A–E, mejoras
+    aprobadas, funcionalidades expresamente excluidas y tabla de seguimiento
+    (todas en estado "Pendiente"); nota de estado del encabezado y referencias
+    cruzadas actualizadas para mantener la coherencia.
+  - `ESTADO_PROYECTO.md` — fase actual y próxima etapa actualizadas (finalizó
+    la recopilación de mejoras, el alcance de la Beta 3 quedó aprobado y el
+    proyecto está listo para comenzar su implementación); nuevo hito de la
+    Etapa B3.0. Sin cambios en el último commit aprobado y sin marcar ninguna
+    mejora como implementada.
+  - `DOCUMENTO_TECNICO.md` — §9 (dirección futura) actualizado: la Beta 3 se
+    desarrollará siguiendo el plan de trabajo aprobado, sin introducir
+    cambios arquitectónicos que todavía no existen.
+  - `HISTORIAL_PROYECTO.md` — este documento (registro de la etapa).
+- **Alcance de la etapa:** planificación y definición del alcance de la Beta
+  3. **Sin modificaciones de código, sin implementación de funcionalidades y
+  sin adelantar funcionalidades excluidas del alcance.**
+- **Resultado:** El alcance de la Beta 3 quedó aprobado y congelado; el plan
+  de trabajo (objetivo, bloques, mejoras aprobadas, funcionalidades excluidas
+  y tabla de seguimiento) servirá como base para las etapas de implementación
+  siguientes.
+- **Commit:** pendiente de aprobación (etapa documental, sin commit).
+- **Decisiones importantes:**
+  1. **Congelamiento del alcance**: la Beta 3 se implementará únicamente con
+     las mejoras aprobadas en esta etapa; las funcionalidades excluidas no
+     forman parte de su alcance.
+  2. **Etapa exclusivamente documental**: no hubo modificaciones de código; el
+     plan de trabajo queda registrado como referencia para las etapas
+     siguientes.
+
+---
+
 ## 56. Cierre y congelamiento de la Beta 2 (fase de pruebas reales)
 
 - **Fecha:** 2026-08-06

@@ -5,12 +5,13 @@
 Proyecto de escritorio profesional para Windows orientado a explorar
 grandes colecciones de videos mediante miniaturas representativas.
 
-**Fase actual:** Beta 2 congelada, documentada y lista para distribuir e
-instalar en distintas computadoras para comenzar la **fase de uso real**. El
-**Bloque de trabajo 2** (Centro de Navegación) quedó completamente finalizado
-y aprobado (Etapas 2.1 a 2.9, incluida la verificación de la Etapa 2.7).
-Durante la validación de la Beta 2 **no se agregarán funcionalidades nuevas**:
-únicamente se corregirán errores detectados mediante el uso.
+**Fase actual:** finalizó la **fase de recopilación de mejoras** del uso real
+de la Beta 2 y quedó **aprobado el alcance de la Beta 3** (Etapa B3.0,
+exclusivamente documental). El proyecto está listo para comenzar la
+**implementación de la Beta 3** siguiendo el plan de trabajo aprobado, que se
+documenta en `ROADMAP.md` (Bloque de trabajo 3). La Beta 2 permanece como la
+última versión estable publicada y ninguna mejora del alcance aprobado está
+aún implementada.
 
 ## Último commit aprobado
 
@@ -84,6 +85,11 @@ a `ESCANEADA` con ícono; cierre limpio (exit 0).
 - Preferencia independiente de escaneo automático (Etapa 2.8: casilla "Escaneo automático" junto a "Incluir subcarpetas", persistida en `configuracion.json` con default `True`; decisión única `_disparar_escaneo_si_automatico()`; el botón "Escanear carpeta" ignora la preferencia; cuatro combinaciones soportadas).
 - Indicadores visuales de carpetas escaneadas (Etapa 2.9: `EstadoNodo` + `ROL_ESTADO` + `_icono_para`, marcado por el pipeline al sincronizar; únicamente visual, sin alterar selección/expansión/navegación; el árbol no conoce SQLite).
 - **Cierre del Bloque de trabajo 2 y aprobación del Centro de Navegación.** La **Beta 2 queda congelada** y entra en fase de pruebas reales: sin nuevas funcionalidades, únicamente correcciones de errores detectados mediante el uso.
+- **Aprobación del alcance de la Beta 3 (Etapa B3.0).** Finalizó la fase de
+  recopilación de mejoras del uso real de la Beta 2 y quedó **aprobado el
+  alcance de la Beta 3**, con su plan de trabajo en `ROADMAP.md` (Bloque de
+  trabajo 3). Etapa exclusivamente documental: sin cambios de código ni
+  implementación de funcionalidades.
 
 ## Pendientes prioritarios
 
@@ -133,12 +139,12 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
 
 ## Próxima etapa
 
-**Fase de pruebas reales de la Beta 2.** El desarrollo funcional queda
-**pausado** mientras dure la validación de la Beta 2 en distintas
-computadoras. Durante esta fase únicamente se corregirán errores detectados
-mediante el uso. Al finalizar la validación se retomará el desarrollo con la
-**Etapa 2.10 del Bloque de trabajo 2** (filtrado del catálogo desde el árbol),
-siguiendo la dirección definida en `VISION_PRODUCTO.md` y `ROADMAP.md`.
+**Implementación de la Beta 3.** El alcance quedó definido y aprobado en la
+Etapa B3.0 (plan de trabajo en `ROADMAP.md`, Bloque de trabajo 3). La
+implementación comenzará por las mejoras aprobadas, organizadas en bloques de
+trabajo pequeños, verificables y acumulativos, sin adelantar funcionalidades
+excluidas del alcance ni agregar funcionalidades nuevas fuera del plan
+aprobado.
 
 ## Documentos del proyecto
 
