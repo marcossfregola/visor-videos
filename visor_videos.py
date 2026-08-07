@@ -906,6 +906,13 @@ class VisorVideos(QMainWindow):
         self._atajo_esc = QShortcut(QKeySequence("Esc"), self)
         self._atajo_esc.activated.connect(self._atajo_salir_modo_seleccion)
 
+        self._atajo_copiar = QShortcut(QKeySequence("Ctrl+C"), self)
+        self._atajo_copiar.activated.connect(self._atajo_operacion_copiar)
+        self._atajo_pegar = QShortcut(QKeySequence("Ctrl+V"), self)
+        self._atajo_pegar.activated.connect(self._atajo_operacion_pegar)
+        self._atajo_eliminar = QShortcut(QKeySequence("Del"), self)
+        self._atajo_eliminar.activated.connect(self._atajo_operacion_eliminar)
+
         self.area = QScrollArea()
         self.area.setWidgetResizable(True)
         self.area.setWidget(self.contenedor)
@@ -1274,6 +1281,24 @@ class VisorVideos(QMainWindow):
     def _atajo_salir_modo_seleccion(self):
         if self._modo_seleccion:
             self.boton_modo_seleccion.setChecked(False)
+
+    def _atajo_operacion_copiar(self):
+        if self.busqueda.hasFocus():
+            self.busqueda.copy()
+            return
+        self._iniciar_copia()
+
+    def _atajo_operacion_pegar(self):
+        if self.busqueda.hasFocus():
+            self.busqueda.paste()
+            return
+        self._iniciar_pegar()
+
+    def _atajo_operacion_eliminar(self):
+        if self.busqueda.hasFocus():
+            self.busqueda.del_()
+            return
+        self._iniciar_eliminar()
 
     def _actualizar_boton_copiar(self):
         gestor_op = getattr(self, "gestor_operaciones", None)

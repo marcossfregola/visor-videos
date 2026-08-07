@@ -10,45 +10,37 @@ exclusivamente documental) y la **implementación de la Beta 3 está en
 marcha**: el **Bloque A — Experiencia visual** quedó **completo funcional y
 técnicamente** (B3.1 a B3.9, más las ampliaciones **B3.14a** "Desactivado" y
 **B3.14b** "tamaños 3.0x/3.5x" de la vista ampliada) y el **Bloque B —
-Selección y operaciones** está en implementación: **B3.11 — Resumen de
-selección** (B6), **B3.12 — Modo selección + Checks por fila** (B1 + B2),
-**B3.13 — Atajos básicos** (parte de B7), **B3.14 — Copiar** (B3),
-**B3.15 — Pegar** (B4) y **B3.16 — Eliminar** (B5) implementadas. El plan de
-trabajo se documenta en `ROADMAP.md` (Bloque de trabajo 3). La Beta 2
-permanece como la última versión estable publicada.
+Selección y operaciones** quedó **completo** (B3.11 — Resumen, B3.12 — Modo
+selección + Checks, B3.13 — Atajos básicos, B3.14 — Copiar, B3.15 — Pegar,
+B3.16 — Eliminar, B3.17 — Atajos de operaciones). El plan de trabajo se
+documenta en `ROADMAP.md` (Bloque de trabajo 3). La Beta 2 permanece como la
+última versión estable publicada.
 
 ## Último commit aprobado
 
-**Mensaje:** Eliminar archivos seleccionados enviándolos a la Papelera (Etapa B3.16)
+**Mensaje:** Agregar atajos de teclado para las operaciones (Etapa B3.17)
 
-**Etapa:** Eliminar (B3.16, Bloque B):
-- `operaciones.py` — nueva función pura `eliminar_archivos(archivos)`: envía cada ruta a
-  la **Papelera de reciclaje de Windows mediante la API nativa `SHFileOperationW` vía
-  `ctypes`** (con `FO_DELETE` + `FOF_ALLOWUNDO`), una invocación por archivo para aislar
-  errores; **nunca borra permanentemente**; origen inexistente o archivo bloqueado →
-  errores; devuelve `{"eliminados", "omitidos", "errores"}`. **Sin dependencias externas**.
-- `visor_videos.py` — botón "Eliminar…" con habilitación automática
-  (`_actualizar_boton_eliminar`); `TareaEliminarArchivos(TareaBase)` reutilizando
-  `gestor_operaciones` (despachador con rama "eliminar"); diálogo único de confirmación
-  ("Eliminar"/"Cancelar", default Cancelar; cancela → sin tarea); resumen en
-  `estado_escaneo`; **actualización incremental del catálogo** `_procesar_archivos_eliminados`
-  que reutiliza el paso de sincronización existente (detecta ausentes y los elimina) +
-  recarga, **sin reescaneo completo**.
-- `prueba_eliminar_archivos.py` — 18 verificaciones de la etapa (nuevo).
+**Etapa:** Atajos de operaciones (B3.17, Bloque B):
+- `visor_videos.py` — tres `QShortcut` (patrón B3.13): **Ctrl+C** → `_atajo_operacion_copiar`,
+  **Ctrl+V** → `_atajo_operacion_pegar`, **Supr** (`QKeySequence("Del")`) →
+  `_atajo_operacion_eliminar`. Cada handler **reutiliza directamente** `_iniciar_copia()`,
+  `_iniciar_pegar()` y `_iniciar_eliminar()` (sin lógica paralela ni validaciones
+  duplicadas). Con foco en la búsqueda se **preserva el comportamiento nativo del
+  `QLineEdit`** (`copy()`/`paste()`/`del_()`) y no se inicia ninguna operación.
+- `prueba_atajos_operaciones.py` — 16 verificaciones de la etapa (nuevo).
 
-**Pruebas superadas:** `prueba_eliminar_archivos.py` 18/18 (función pura: simple,
-individual, múltiple, inexistente, bloqueado, validaciones; integración: botón
-habilitado, cancelación, eliminación en segundo plano, resumen, actualización
-incremental del catálogo con contador y selección restante, conservación del resto);
+**Pruebas superadas:** `prueba_atajos_operaciones.py` 16/16 (reutilización de handlers vía
+spies; Ctrl+C inicia Copiar; Ctrl+V inicia Pegar; Supr inicia Eliminar; sin selección/sin
+portapapeles no ocurre nada; gestor ocupado bloquea los tres atajos; foco en la búsqueda
+replica el comportamiento nativo sin operación; compatibilidad con Ctrl+A/Esc de B3.13);
 regresiones relevantes OK: `prueba_copiar_archivos.py` 15/15,
-`prueba_pegar_archivos.py` 15/15, `prueba_seleccion.py` 28/28,
-`prueba_modo_seleccion.py` 20/20, `prueba_resumen_seleccion.py` 17/17,
-`prueba_atajos_basicos.py` 13/13, `prueba_escaneo_interfaz.py` 36/36,
-`prueba_recarga_catalogo.py` 20/20, `prueba_sincronizacion_interfaz.py` 18/18,
-`prueba_guardar.py` 19/19, `prueba_seleccion_carpeta.py` 26/26,
-`prueba_carpeta_actual.py` 19/19, `prueba_pulido_bloque_a.py` 29/29,
-`prueba_lectura_paginada.py` 32/32, `prueba_filas_horizontales.py` 16/16,
-`prueba_interfaz_asincrona.py` 29/29, `prueba_smoke.py` OK.
+`prueba_pegar_archivos.py` 15/15, `prueba_eliminar_archivos.py` 18/18,
+`prueba_seleccion.py` 28/28, `prueba_resumen_seleccion.py` 17/17,
+`prueba_modo_seleccion.py` 20/20, `prueba_atajos_basicos.py` 13/13,
+`prueba_escaneo_interfaz.py` 36/36, `prueba_recarga_catalogo.py` 20/20,
+`prueba_sincronizacion_interfaz.py` 18/18, `prueba_seleccion_carpeta.py` 26/26,
+`prueba_pulido_bloque_a.py` 29/29, `prueba_lectura_paginada.py` 32/32,
+`prueba_interfaz_asincrona.py` 29/29, `prueba_guardar.py` 19/19, `prueba_smoke.py` OK.
 
 ## Hitos completados
 
@@ -189,6 +181,13 @@ regresiones relevantes OK: `prueba_copiar_archivos.py` 15/15,
   interfaz y **actualización incremental del catálogo** que reutiliza la sincronización
   existente (detecta ausentes y los elimina) + recarga, **sin reescaneo completo**.
   Lógica pura en `operaciones.eliminar_archivos`.
+- **Atajos de operaciones (Etapa B3.17).** Mejora B7 (completada): **Ctrl+C**, **Ctrl+V**
+  y **Supr** vinculados respectivamente a Copiar, Pegar y Eliminar mediante `QShortcut`
+  (patrón B3.13). Cada atajo **reutiliza directamente** `_iniciar_copia()`,
+  `_iniciar_pegar()` y `_iniciar_eliminar()`, sin lógica paralela ni validaciones
+  duplicadas (las existentes cubren sin selección, sin portapapeles y gestor ocupado).
+  Con foco en la búsqueda se **preserva el comportamiento nativo del `QLineEdit`**
+  (`copy()`/`paste()`/`del_()`), replicando el criterio de Ctrl+A.
 
 ## Pendientes prioritarios
 
@@ -245,12 +244,12 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
 
 ## Próxima etapa
 
-**Etapa B3.17 — Atajos de operaciones** (Bloque B). Siguiente mejora del Bloque B:
-atajos de teclado vinculados a las operaciones (Ctrl+C / Ctrl+V / Supr para
-Copiar/Pegar/Eliminar). Su definición detallada se realizará con la inspección técnica
-previa, siguiendo el plan de `ROADMAP.md` (Bloque de trabajo 3, sección "Bloque B"), en
-bloques pequeños, verificables y acumulativos, sin adelantar funcionalidades excluidas
-del alcance ni agregar funcionalidades nuevas fuera del plan aprobado.
+**Bloque C — Progreso** (siguiente bloque del plan). Con el **Bloque B completo**,
+la próxima etapa corresponderá al Bloque C — Progreso (barra de progreso real,
+cantidad de videos procesados y porcentaje, según `ROADMAP.md`, Bloque de trabajo 3).
+Su definición detallada se realizará con la inspección técnica previa, en bloques
+pequeños, verificables y acumulativos, sin adelantar funcionalidades excluidas del
+alcance ni agregar funcionalidades nuevas fuera del plan aprobado.
 
 ## Documentos del proyecto
 

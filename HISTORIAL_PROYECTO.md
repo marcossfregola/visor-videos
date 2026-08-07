@@ -5,6 +5,52 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 76. Agregar atajos de teclado para las operaciones (Etapa B3.17)
+
+- **Fecha:** 2026-08-07
+- **Objetivo:** Agregar los atajos de teclado para las operaciones del Bloque B
+  (Ctrl+C → Copiar, Ctrl+V → Pegar, Supr → Eliminar) reutilizando la infraestructura
+  existente y sin duplicar lógica; deben actuar exactamente igual que los botones.
+- **Archivos creados:**
+  - `prueba_atajos_operaciones.py` — 16 verificaciones: reutilización de handlers (spies),
+    Ctrl+C inicia Copiar (diálogo + resumen), Ctrl+V inicia Pegar, Supr inicia Eliminar,
+    sin selección/sin portapapeles no ocurre nada, gestor ocupado bloquea los tres atajos,
+    foco en la búsqueda replica el comportamiento nativo (`copy()`/`paste()`/`del_()`)
+    sin operación, y compatibilidad con Ctrl+A/Esc de B3.13.
+- **Archivos modificados:**
+  - `visor_videos.py` — tres `QShortcut` con el patrón de B3.13: **Ctrl+C**
+    (`_atajo_copiar` → `_atajo_operacion_copiar`), **Ctrl+V** (`_atajo_pegar` →
+    `_atajo_operacion_pegar`) y **Supr** (`_atajo_eliminar`, `QKeySequence("Del")` →
+    `_atajo_operacion_eliminar`). Cada handler **reutiliza directamente** `_iniciar_copia()`,
+    `_iniciar_pegar()` y `_iniciar_eliminar()` (los mismos que los botones), **sin lógica
+    paralela ni validaciones duplicadas** (sin selección, sin portapapeles, gestor ocupado
+    y carpeta inválida ya están cubiertos). Con foco en la búsqueda se **preserva el
+    comportamiento nativo del `QLineEdit`** replicándolo (`copy()`, `paste()`, `del_()`
+    — nombre de PySide6 para el slot `del`) y no se inicia ninguna operación.
+  - `DOCUMENTO_TECNICO.md` — atajos de operaciones documentados.
+  - `ROADMAP.md` — mejora B7 marcada como implementada.
+  - `ESTADO_PROYECTO.md` — última etapa aprobada, fase actual, hitos y próxima etapa
+    actualizados (Bloque B completo).
+  - `HISTORIAL_PROYECTO.md` — este documento (registro de la etapa).
+- **Pruebas:** `prueba_atajos_operaciones.py` 16/16; regresiones relevantes OK
+  (`prueba_copiar_archivos.py` 15/15, `prueba_pegar_archivos.py` 15/15,
+  `prueba_eliminar_archivos.py` 18/18, `prueba_seleccion.py` 28/28,
+  `prueba_resumen_seleccion.py` 17/17, `prueba_modo_seleccion.py` 20/20,
+  `prueba_atajos_basicos.py` 13/13, `prueba_escaneo_interfaz.py` 36/36,
+  `prueba_recarga_catalogo.py` 20/20, `prueba_sincronizacion_interfaz.py` 18/18,
+  `prueba_seleccion_carpeta.py` 26/26, `prueba_pulido_bloque_a.py` 29/29,
+  `prueba_lectura_paginada.py` 32/32, `prueba_interfaz_asincrona.py` 29/29,
+  `prueba_guardar.py` 19/19, `prueba_smoke.py` OK).
+- **Commit:** Aprobado y commiteado.
+- **Resultado:** Ctrl+C, Ctrl+V y Supr actúan exactamente como los botones Copiar/Pegar/
+  Eliminar; el `QLineEdit` de búsqueda conserva su comportamiento nativo; sin lógica
+  paralela. Con esto el **Bloque B — Selección y operaciones queda completo**.
+- **Decisiones importantes:** Reutilización directa de los handlers existentes; criterio
+  de foco idéntico al de Ctrl+A (B3.13); sin atajos adicionales ni cambios en botones,
+  Copiar, Pegar, Eliminar ni menú contextual.
+
+---
+
 ## 75. Eliminar archivos seleccionados enviándolos a la Papelera (Etapa B3.16)
 
 - **Fecha:** 2026-08-07

@@ -167,7 +167,7 @@ No se implementará ninguna mejora fuera de este alcance.
 - Pegar. **Implementada (Etapa B3.15).**
 - Eliminar. **Implementada (Etapa B3.16).**
 - Resumen de selección.
-- Atajos de teclado.
+- Atajos de teclado. **Implementada (Etapa B3.17).**
 
 ### C. Progreso
 
@@ -255,7 +255,7 @@ Quedan fuera del alcance de la Beta 3 y no se implementarán en ella:
 | B4 | Pegar | B | Implementada |
 | B5 | Eliminar | B | Implementada |
 | B6 | Resumen de selección | B | Implementada |
-| B7 | Atajos de teclado | B | Pendiente |
+| B7 | Atajos de teclado | B | Implementada |
 | C1 | Barra de progreso real | C | Pendiente |
 | C2 | Cantidad de videos procesados | C | Pendiente |
 | C3 | Porcentaje | C | Pendiente |
@@ -282,7 +282,7 @@ intacto el comportamiento del modo normal.
 | B3.14 | **Copiar** (B3) — copiar los archivos de video seleccionados a una carpeta destino (diálogo), en segundo plano, sin sobrescribir. **Implementada (Etapa B3.14).** |
 | B3.15 | **Pegar** (B4) — pegar en la carpeta actual los archivos copiados internamente, con confirmación de colisión. **Implementada (Etapa B3.15).** |
 | B3.16 | **Eliminar** (B5) — mover a la Papelera de reciclaje (nunca borrado permanente) con confirmación y resumen. **Implementada (Etapa B3.16).** |
-| B3.17 | **Atajos de operaciones** (B7, parcial) — Ctrl+C / Ctrl+V / Supr vinculados a Copiar/Pegar/Eliminar. |
+| B3.17 | **Atajos de operaciones** (B7, parcial) — Ctrl+C / Ctrl+V / Supr vinculados a Copiar/Pegar/Eliminar. **Implementada (Etapa B3.17).** |
 
 ### Dependencias
 
