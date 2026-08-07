@@ -164,7 +164,7 @@ No se implementará ninguna mejora fuera de este alcance.
 - Modo selección.
 - Checks por fila.
 - Copiar.
-- Pegar.
+- Pegar. **Implementada (Etapa B3.15).**
 - Eliminar.
 - Resumen de selección.
 - Atajos de teclado.
@@ -252,7 +252,7 @@ Quedan fuera del alcance de la Beta 3 y no se implementarán en ella:
 | B1 | Modo selección | B | Implementada |
 | B2 | Checks por fila | B | Implementada |
 | B3 | Copiar | B | Implementada |
-| B4 | Pegar | B | Pendiente |
+| B4 | Pegar | B | Implementada |
 | B5 | Eliminar | B | Pendiente |
 | B6 | Resumen de selección | B | Implementada |
 | B7 | Atajos de teclado | B | Pendiente |
@@ -280,7 +280,7 @@ intacto el comportamiento del modo normal.
 | B3.12 | **Modo selección + Checks por fila** (B1 + B2) — toggle en la barra que activa checks por fila sincronizados con la selección; el modo normal no cambia. **Implementada (Etapa B3.12).** |
 | B3.13 | **Atajos básicos** (B7, parcial) — Ctrl+A (todo lo visible) y Esc (salir del modo selección). **Implementada (Etapa B3.13).** |
 | B3.14 | **Copiar** (B3) — copiar los archivos de video seleccionados a una carpeta destino (diálogo), en segundo plano, sin sobrescribir. **Implementada (Etapa B3.14).** |
-| B3.15 | **Pegar** (B4) — pegar en la carpeta actual los archivos copiados internamente, con confirmación de colisión. |
+| B3.15 | **Pegar** (B4) — pegar en la carpeta actual los archivos copiados internamente, con confirmación de colisión. **Implementada (Etapa B3.15).** |
 | B3.16 | **Eliminar** (B5) — mover a la Papelera de reciclaje (nunca borrado permanente) con confirmación y resumen. |
 | B3.17 | **Atajos de operaciones** (B7, parcial) — Ctrl+C / Ctrl+V / Supr vinculados a Copiar/Pegar/Eliminar. |
 

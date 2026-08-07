@@ -12,32 +12,40 @@ técnicamente** (B3.1 a B3.9, más las ampliaciones **B3.14a** "Desactivado" y
 **B3.14b** "tamaños 3.0x/3.5x" de la vista ampliada) y el **Bloque B —
 Selección y operaciones** está en implementación: **B3.11 — Resumen de
 selección** (B6), **B3.12 — Modo selección + Checks por fila** (B1 + B2),
-**B3.13 — Atajos básicos** (parte de B7) y **B3.14 — Copiar** (B3)
-implementadas. El plan de trabajo se documenta en `ROADMAP.md` (Bloque de
-trabajo 3). La Beta 2 permanece como la última versión estable publicada.
+**B3.13 — Atajos básicos** (parte de B7), **B3.14 — Copiar** (B3) y
+**B3.15 — Pegar** (B4) implementadas. El plan de trabajo se documenta en
+`ROADMAP.md` (Bloque de trabajo 3). La Beta 2 permanece como la última
+versión estable publicada.
 
 ## Último commit aprobado
 
-**Mensaje:** Agregar tamaños grandes para la vista ampliada (Etapa B3.14b)
+**Mensaje:** Pegar archivos copiados en la carpeta actual (Etapa B3.15)
 
-**Etapa:** Tamaños grandes de la vista ampliada (B3.14b, ampliación del Bloque A):
-- `configuracion.py` — `FACTORES_VALIDOS_VISTA_AMPLIADA = (1.2, 1.6, 2.0, 2.5, 3.0, 3.5)`.
-- `visor_videos.py` — `FACTORES_VISTA_AMPLIADA` y `TEXTOS_FACTOR_VISTA_AMPLIADA` con
-  `3.0x`/`3.5x` (el combo del diálogo y `preparar` se llenan/computan por datos; sin
-  tratamiento especial para los nuevos factores; `_posicion_vista` acota a pantalla).
-  El factor máximo pasa a ser 3.5x (la vista ampliada puede ocupar prácticamente toda
-  la pantalla). Default 1.6; configs anteriores compatibles.
-- `prueba_tamano_vista_ampliada_grande.py` — 28 verificaciones de la etapa.
-- `prueba_tamano_vista_ampliada.py` — contrato actualizado (3.0 ya no es inválido;
-  "último válido" pasa a 3.5), autorizado por la auditoría.
+**Etapa:** Pegar (B3.15, Bloque B):
+- `operaciones.py` — nueva función pura `pegar_archivos(archivos, destino)`: copia cada
+  ruta con `shutil.copy2` a `destino` (por `basename`), omite destinos existentes (nunca
+  sobrescribe), registra errores por archivo y continúa; devuelve
+  `{"copiados", "omitidos", "errores"}`. Sin Qt.
+- `visor_videos.py` — portapapeles interno `self._portapapeles` (alimentado en
+  `_al_resultado_copia`); botón "Pegar…" con habilitación automática (`_actualizar_boton_pegar`);
+  `TareaPegarArchivos(TareaBase)` reutilizando `gestor_operaciones` con despachador
+  `_al_resultado_operaciones`/`_al_error_operaciones`; diálogo único de colisión con
+  botones "Omitir"/"Cancelar" (sin sobrescribir; si cancela no inicia tarea); resumen en
+  `estado_escaneo`; **resincronización incremental** `_procesar_archivos_pegados` que
+  reutiliza la cadena existente solo para los archivos pegados (sin reescaneo completo).
+- `prueba_pegar_archivos.py` — 15 verificaciones de la etapa (nuevo).
 
-**Pruebas superadas:** `prueba_tamano_vista_ampliada_grande.py` 28/28 (presencia de
-3.0x/3.5x, persistencia y compatibilidad, restauración, cálculo del popup sobre los
-cuatro tamaños de miniatura, acotado a pantalla con 3.5 sobre Muy grande);
-`prueba_tamano_vista_ampliada.py` 38/38 (tras la actualización de contrato),
-`prueba_vista_ampliada.py` 24/24, `prueba_vista_ampliada_desactivada.py` 20/20,
-`prueba_preferencias_miniaturas.py` 31/31, `prueba_tamano_miniaturas.py` 32/32,
-`prueba_tamano_muy_grande.py` 27/27, `prueba_smoke.py` OK.
+**Pruebas superadas:** `prueba_pegar_archivos.py` 15/15 (función pura: pegado simple,
+múltiple, omisión, origen inexistente, validaciones; integración: botón habilitado,
+pegado en segundo plano, resumen, resincronización incremental con incorporación de los
+pegados, colisiones Omitir/Cancelar sin sobrescribir, portapapeles vacío y carpeta
+inválida); regresiones relevantes OK: `prueba_copiar_archivos.py` 15/15,
+`prueba_seleccion.py` 28/28, `prueba_modo_seleccion.py` 20/20,
+`prueba_resumen_seleccion.py` 17/17, `prueba_atajos_basicos.py` 13/13,
+`prueba_escaneo_interfaz.py` 36/36, `prueba_recarga_catalogo.py` 20/20,
+`prueba_sincronizacion_interfaz.py` 18/18, `prueba_guardar.py` 19/19,
+`prueba_filas_horizontales.py` 16/16, `prueba_pulido_bloque_a.py` 29/29,
+`prueba_interfaz_asincrona.py` 29/29, `prueba_lectura_paginada.py` 32/32, entre otras.
 
 ## Hitos completados
 
@@ -163,6 +171,13 @@ cuatro tamaños de miniatura, acotado a pantalla con 3.5 sobre Muy grande);
   factores 3.0x y 3.5x (máximo 3.5x; la vista ampliada puede ocupar prácticamente toda
   la pantalla, acotada por `_posicion_vista`); integración por datos, sin tratamiento
   especial, default 1.6.
+- **Pegar (Etapa B3.15).** Mejora B4: pega en la carpeta actual los archivos copiados
+  internamente (portapapeles interno `_portapapeles`, alimentado al copiar), en segundo
+  plano reutilizando `gestor_operaciones`, con un único diálogo de colisión
+  ("Omitir"/"Cancelar", nunca sobrescribe), resumen final en la interfaz y
+  **resincronización incremental**: la cadena existente (tamaños → FFprobe → miniaturas
+  → guardado → sincronización → recarga) se reutiliza únicamente para los archivos
+  pegados, sin reescaneo completo. Lógica pura en `operaciones.pegar_archivos`.
 
 ## Pendientes prioritarios
 
@@ -219,12 +234,12 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
 
 ## Próxima etapa
 
-**Etapa B3.15 — Pegar** (Bloque B). Siguiente mejora del Bloque B: pegar en la carpeta
-actual los archivos copiados internamente, con confirmación de colisión. Su definición
-detallada se realizará con la inspección técnica previa, siguiendo el plan de `ROADMAP.md`
-(Bloque de trabajo 3, sección "Bloque B"), en bloques pequeños, verificables y
-acumulativos, sin adelantar funcionalidades excluidas del alcance ni agregar
-funcionalidades nuevas fuera del plan aprobado.
+**Etapa B3.16 — Eliminar** (Bloque B). Siguiente mejora del Bloque B: eliminar los
+videos seleccionados moviéndolos a la Papelera de reciclaje (nunca borrado permanente)
+con confirmación y resumen. Su definición detallada se realizará con la inspección
+técnica previa, siguiendo el plan de `ROADMAP.md` (Bloque de trabajo 3, sección "Bloque
+B"), en bloques pequeños, verificables y acumulativos, sin adelantar funcionalidades
+excluidas del alcance ni agregar funcionalidades nuevas fuera del plan aprobado.
 
 ## Documentos del proyecto
 

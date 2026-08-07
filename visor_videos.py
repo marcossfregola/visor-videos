@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMainWindow,
     QMenu,
+    QMessageBox,
     QProgressBar,
     QPushButton,
     QScrollArea,
@@ -479,6 +480,24 @@ class TareaCopiarArchivos(TareaBase):
         )
 
 
+class TareaPegarArchivos(TareaBase):
+    def __init__(self, archivos, destino, parent=None):
+        super().__init__(parent)
+        self._archivos = list(archivos)
+        self._destino = destino
+
+    @property
+    def archivos(self):
+        return list(self._archivos)
+
+    @property
+    def destino(self):
+        return self._destino
+
+    def _trabajo(self):
+        return operaciones.pegar_archivos(self._archivos, self._destino)
+
+
 class Tarjeta(QFrame):
     doble_clic = Signal(str)
     seleccionada = Signal(str, bool)
@@ -758,6 +777,8 @@ class VisorVideos(QMainWindow):
         self._nombres_seleccionados = set()
         self._ancla_seleccion = None
         self._modo_seleccion = False
+        self._portapapeles = []
+        self._operacion_archivos = None
 
         self.busqueda = QLineEdit()
         self.busqueda.setPlaceholderText("Buscar por nombre...")
@@ -816,6 +837,10 @@ class VisorVideos(QMainWindow):
         self.boton_copiar.setEnabled(False)
         self.boton_copiar.clicked.connect(self._iniciar_copia)
 
+        self.boton_pegar = QPushButton("Pegar…")
+        self.boton_pegar.setEnabled(False)
+        self.boton_pegar.clicked.connect(self._iniciar_pegar)
+
         self.boton_cargar_mas = QPushButton("Cargar más")
         self.boton_cargar_mas.setEnabled(False)
         self.boton_cargar_mas.clicked.connect(self.cargar_mas)
@@ -840,6 +865,7 @@ class VisorVideos(QMainWindow):
         fila_carpeta.addWidget(self.boton_preferencias)
         fila_carpeta.addWidget(self.boton_modo_seleccion)
         fila_carpeta.addWidget(self.boton_copiar)
+        fila_carpeta.addWidget(self.boton_pegar)
         fila_carpeta.addWidget(self.etiqueta_carpeta, 1)
         fila_carpeta.addWidget(self.estado_escaneo)
         fila_carpeta.addWidget(self.mensaje_carpeta)
@@ -907,8 +933,12 @@ class VisorVideos(QMainWindow):
         self.gestor_previews.tarea_finalizada.connect(self._al_previews_finalizada)
 
         self.gestor_operaciones = GestorTareas(self)
-        self.gestor_operaciones.tarea_resultado.connect(self._al_resultado_copia)
-        self.gestor_operaciones.tarea_error.connect(self._al_error_copia)
+        self.gestor_operaciones.tarea_resultado.connect(
+            self._al_resultado_operaciones
+        )
+        self.gestor_operaciones.tarea_error.connect(
+            self._al_error_operaciones
+        )
 
         self._timer_previews = QTimer(self)
         self._timer_previews.setSingleShot(True)
@@ -1140,6 +1170,7 @@ class VisorVideos(QMainWindow):
         )
         self.boton_cargar_mas.setEnabled(hay_mas)
         self._actualizar_boton_copiar()
+        self._actualizar_boton_pegar()
 
     def _al_actividad(self, activo):
         self._actualizar_botones_carpeta()
@@ -1252,6 +1283,7 @@ class VisorVideos(QMainWindow):
         tarea = TareaCopiarArchivos(carpeta, seleccion, destino)
         if not self.gestor_operaciones.iniciar(tarea):
             return
+        self._operacion_archivos = "copiar"
         self._mostrar_progreso("Copiando…")
         self._actualizar_boton_copiar()
 
@@ -1263,12 +1295,122 @@ class VisorVideos(QMainWindow):
         self.estado_escaneo.setText(
             f"Copiado: {copiados} — Omitidos: {omitidos} — Errores: {errores}"
         )
+        self._portapapeles = list(resumen.get("copiados", []))
         self._actualizar_boton_copiar()
+        self._actualizar_boton_pegar()
 
     def _al_error_copia(self, mensaje):
         self._ocultar_progreso()
         self.estado_escaneo.setText(f"Error al copiar: {mensaje}")
         self._actualizar_boton_copiar()
+        self._actualizar_boton_pegar()
+
+    def _al_resultado_operaciones(self, resumen):
+        if self._operacion_archivos == "pegar":
+            self._al_resultado_pegar(resumen)
+        else:
+            self._al_resultado_copia(resumen)
+        self._operacion_archivos = None
+
+    def _al_error_operaciones(self, mensaje):
+        if self._operacion_archivos == "pegar":
+            self._al_error_pegar(mensaje)
+        else:
+            self._al_error_copia(mensaje)
+        self._operacion_archivos = None
+
+    def _actualizar_boton_pegar(self):
+        gestor_op = getattr(self, "gestor_operaciones", None)
+        habilitado = (
+            bool(self._portapapeles)
+            and (gestor_op is None or not gestor_op.activo)
+            and self.carpeta_seleccionada is not None
+            and os.path.isdir(self.carpeta_seleccionada)
+        )
+        self.boton_pegar.setEnabled(habilitado)
+
+    def _iniciar_pegar(self):
+        if self.gestor_operaciones.activo:
+            return
+        if not self._portapapeles:
+            return
+        carpeta = self.carpeta_seleccionada
+        if not carpeta or not os.path.isdir(carpeta):
+            return
+        colision = any(
+            os.path.exists(os.path.join(carpeta, os.path.basename(ruta)))
+            for ruta in self._portapapeles
+        )
+        if colision:
+            caja = QMessageBox(self)
+            caja.setIcon(QMessageBox.Question)
+            caja.setWindowTitle("Pegar")
+            caja.setText(
+                "Algunos archivos ya existen en la carpeta. "
+                "¿Desea omitirlos o cancelar?"
+            )
+            boton_omitir = caja.addButton("Omitir", QMessageBox.AcceptRole)
+            boton_cancelar = caja.addButton("Cancelar", QMessageBox.RejectRole)
+            caja.setDefaultButton(boton_omitir)
+            caja.exec()
+            if caja.clickedButton() != boton_omitir:
+                return
+        tarea = TareaPegarArchivos(list(self._portapapeles), carpeta)
+        if not self.gestor_operaciones.iniciar(tarea):
+            return
+        self._operacion_archivos = "pegar"
+        self._mostrar_progreso("Pegando…")
+        self._actualizar_boton_pegar()
+
+    def _al_resultado_pegar(self, resumen):
+        self._ocultar_progreso()
+        copiados = resumen.get("copiados", [])
+        omitidos = resumen.get("omitidos", [])
+        errores = resumen.get("errores", [])
+        self.estado_escaneo.setText(
+            f"Pegado: {len(copiados)} — Omitidos: {len(omitidos)} — Errores: {len(errores)}"
+        )
+        if copiados:
+            self._procesar_archivos_pegados(
+                [os.path.basename(ruta) for ruta in copiados]
+            )
+        self._actualizar_boton_pegar()
+
+    def _al_error_pegar(self, mensaje):
+        self._ocultar_progreso()
+        self.estado_escaneo.setText(f"Error al pegar: {mensaje}")
+        self._actualizar_boton_pegar()
+
+    def _procesar_archivos_pegados(self, nombres):
+        if not nombres or self.gestor.activo:
+            return
+        carpeta = self.carpeta_seleccionada
+        if not carpeta or not os.path.isdir(carpeta):
+            return
+        self._escaneo_pendiente = False
+        self._tamanos_pendiente = True
+        self._ffprobe_pendiente = False
+        self._miniaturas_pendiente = False
+        self._guardado_pendiente = False
+        self._sincronizacion_pendiente = False
+        self._recarga_catalogo_pendiente = False
+        self._pagina_pendiente = False
+        self.registros_guardados = None
+        self.resultado_sincronizacion = None
+        self.resultado_tamanos = None
+        self.resultado_ffprobe = None
+        self.resultado_miniaturas = None
+        self.tarea_tamanos = None
+        self.tarea_ffprobe = None
+        self.tarea_miniaturas = None
+        self.tarea_guardado = None
+        self.tarea_sincronizacion = None
+        self.tarea_recarga_catalogo = None
+        self.tarea_pagina = None
+        self.videos_detectados = list(nombres)
+        self.tarea_escaneo = TareaEscaneo(carpeta)
+        self._iniciar_tamanos()
+        self._actualizar_botones_carpeta()
 
     def _actualizar_resumen_seleccion(self):
         visibles = self.visibles
@@ -1279,6 +1421,7 @@ class VisorVideos(QMainWindow):
             f"{x} de {len(visibles)} seleccionados"
         )
         self._actualizar_boton_copiar()
+        self._actualizar_boton_pegar()
 
     @property
     def nombres_seleccionados(self):

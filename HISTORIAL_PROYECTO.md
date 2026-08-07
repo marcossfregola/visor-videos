@@ -5,6 +5,65 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 74. Pegar archivos copiados en la carpeta actual (Etapa B3.15)
+
+- **Fecha:** 2026-08-07
+- **Objetivo:** Agregar la operación **Pegar** reutilizando la infraestructura de
+  Copiar (B3.14): portapapeles interno de la aplicación, botón "Pegar…", operación en
+  segundo plano, detección de colisiones (nunca sobrescribir), resumen final y
+  resincronización incremental únicamente de los archivos pegados.
+- **Archivos creados:**
+  - `prueba_pegar_archivos.py` — 15 verificaciones: función pura (pegado simple,
+    múltiple, omisión de existentes, origen inexistente, validaciones de tipo y
+    destino) e integración (habilitación del botón, pegado en segundo plano, resumen,
+    resincronización incremental con incorporación de los pegados, colisiones
+    Omitir/Cancelar sin sobrescribir, portapapeles vacío y carpeta inválida).
+- **Archivos modificados:**
+  - `operaciones.py` — nueva función pura `pegar_archivos(archivos, destino)`: copia
+    con `shutil.copy2` a `destino` (por `basename`), omite destinos existentes (nunca
+    sobrescribe), registra errores por archivo y continúa; devuelve
+    `{"copiados", "omitidos", "errores"}`. Sin Qt.
+  - `visor_videos.py` — portapapeles interno `self._portapapeles` (alimentado en
+    `_al_resultado_copia`); botón "Pegar…" con habilitación automática
+    (`_actualizar_boton_pegar`); `TareaPegarArchivos(TareaBase)` reutilizando
+    `gestor_operaciones` con despachador `_al_resultado_operaciones`/`_al_error_operaciones`;
+    diálogo único de colisión con botones "Omitir"/"Cancelar" (si cancela no inicia
+    tarea); resumen "Pegado: X — Omitidos: Y — Errores: Z" en `estado_escaneo`;
+    **resincronización incremental** `_procesar_archivos_pegados(nombres)`: reutiliza
+    la cadena existente (tamaños → FFprobe → miniaturas → guardado → sincronización →
+    recarga) fijando `videos_detectados` a los archivos pegados, sin reescaneo completo.
+  - `DOCUMENTO_TECNICO.md` — operación Pegar y `pegar_archivos` documentados.
+  - `ROADMAP.md` — mejora B4 marcada como implementada.
+  - `ESTADO_PROYECTO.md` — última etapa aprobada, fase actual, hitos y próxima etapa
+    actualizados.
+  - `HISTORIAL_PROYECTO.md` — este documento (registro de la etapa).
+- **Investigación de resincronización:** el pipeline existente opera sobre
+  `videos_detectados`, por lo que **es viable reutilizarlo solo para los archivos
+  pegados** con cambios pequeños y sin romper la arquitectura: se fija la lista a los
+  nombres pegados y se arranca la cadena en el paso "tamaños" con un `TareaEscaneo`
+  portador de `.carpeta` (no iniciado). Los pasos caros (FFprobe, miniaturas) se limitan
+  a los pegados; la sincronización reconcilia la carpeta (no-op en pegado limpio).
+- **Alternativa implementada:** **incorporación incremental únicamente de los archivos
+  pegados** (sin reescaneo completo).
+- **Pruebas:** `prueba_pegar_archivos.py` 15/15; regresiones relevantes OK
+  (`prueba_copiar_archivos.py` 15/15, `prueba_seleccion.py` 28/28,
+  `prueba_modo_seleccion.py` 20/20, `prueba_resumen_seleccion.py` 17/17,
+  `prueba_atajos_basicos.py` 13/13, `prueba_escaneo_interfaz.py` 36/36,
+  `prueba_recarga_catalogo.py` 20/20, `prueba_sincronizacion_interfaz.py` 18/18,
+  `prueba_guardar.py` 19/19, `prueba_filas_horizontales.py` 16/16,
+  `prueba_pulido_bloque_a.py` 29/29, `prueba_interfaz_asincrona.py` 29/29,
+  `prueba_lectura_paginada.py` 32/32, entre otras).
+- **Commit:** Aprobado y commiteado.
+- **Resultado:** Pegar disponible con portapapeles interno, sin sobrescribir existentes
+  y con resincronización acotada a los archivos pegados; Copiar intacto; sin atajos ni
+  menú contextual nuevos.
+- **Decisiones importantes:** Colisión → solo "Omitir"/"Cancelar" (nunca sobrescribir).
+  El portapapeles persiste hasta un nuevo Copiar o el cierre de la aplicación (semántica
+  de portapapeles; el pegado repetido queda a criterio del usuario). Copiar no se
+  modifica; su resultado solo alimenta el portapapeles.
+
+---
+
 ## 73. Tamaños grandes para la vista ampliada (Etapa B3.14b)
 
 - **Fecha:** 2026-08-06
