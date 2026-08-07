@@ -3,7 +3,7 @@ import os
 import sys
 
 from PySide6.QtCore import QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QCursor, QPixmap
+from PySide6.QtGui import QColor, QCursor, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -36,6 +36,7 @@ from configuracion import (
 )
 from escanear_videos import (
     _nombre_seguro,
+    calcular_tiempo_preview,
     configurar_cantidad_previews,
     configurar_escaneo_recursivo,
 )
@@ -120,6 +121,19 @@ def formatear_tamano(valor):
     return f"{valor / (1024 * 1024 * 1024):.1f} GB"
 
 
+def formatear_tiempo(segundos):
+    if not isinstance(segundos, (int, float)) or isinstance(segundos, bool):
+        return None
+    if segundos < 0:
+        return None
+    total = int(round(segundos))
+    horas, resto = divmod(total, 3600)
+    minutos, segundos_resto = divmod(resto, 60)
+    if horas:
+        return f"{horas}:{minutos:02d}:{segundos_resto:02d}"
+    return f"{minutos}:{segundos_resto:02d}"
+
+
 def miniatura_principal(nombre):
     prefijo = _nombre_seguro(os.path.splitext(nombre)[0])
     carpeta = ruta_carpeta_miniaturas()
@@ -139,6 +153,69 @@ def previews_de(nombre):
 
 
 ESTILO_SELECCIONADA = "Tarjeta { border: 3px solid #2196F3; }"
+
+
+class PreviewConTiempo(QLabel):
+    """Etiqueta de preview que superpone el instante temporal al fotograma.
+
+    La superposición es exclusivamente visual: mantiene un widget por slot y
+    el mismo layout, sin alterar tamaños de tarjeta, de miniaturas ni el
+    scroll. El pixmap almacenado es el ya escalado (mismo criterio que antes
+    de la etapa), por lo que `pixmap()` conserva el contrato y el tamaño de
+    la etiqueta no cambia. Si no hay tiempo (duración desconocida o
+    inválida), dibuja solo el fotograma, sin valores por defecto.
+    """
+
+    ESTILO_BASE = "background-color: #f0f0f0; border: 1px solid #ccc;"
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._tiempo = None
+        self.setFixedHeight(ALTO_TARJETA)
+        self.setAlignment(Qt.AlignCenter)
+        self.setStyleSheet(self.ESTILO_BASE)
+
+    def poner_preview(self, pixmap, tiempo=None):
+        if pixmap is None or pixmap.isNull():
+            return False
+        self.setPixmap(
+            pixmap.scaled(
+                ANCHO_TARJETA,
+                ALTO_TARJETA,
+                Qt.KeepAspectRatio,
+                Qt.SmoothTransformation,
+            )
+        )
+        self._tiempo = tiempo
+        self.setText("")
+        self.update()
+        return True
+
+    def paintEvent(self, event):
+        if self.pixmap() is None or self.pixmap().isNull():
+            super().paintEvent(event)
+            return
+        pintor = QPainter(self)
+        pintor.fillRect(self.rect(), QColor("#f0f0f0"))
+        pintor.setPen(QColor("#cccccc"))
+        pintor.setBrush(Qt.NoBrush)
+        pintor.drawRect(self.rect().adjusted(0, 0, -1, -1))
+        escalada = self.pixmap()
+        x = (self.width() - escalada.width()) // 2
+        y = (self.height() - escalada.height()) // 2
+        pintor.drawPixmap(x, y, escalada)
+        if self._tiempo is not None:
+            metrica = pintor.fontMetrics()
+            ancho = metrica.horizontalAdvance(self._tiempo) + 10
+            alto = metrica.height() + 4
+            bx = x + escalada.width() - ancho - 4
+            by = y + escalada.height() - alto - 4
+            pintor.setPen(Qt.NoPen)
+            pintor.setBrush(QColor(0, 0, 0, 150))
+            pintor.drawRoundedRect(bx, by, ancho, alto, 3, 3)
+            pintor.setPen(QColor(255, 255, 255, 235))
+            pintor.drawText(bx + 5, by + metrica.ascent() + 2, self._tiempo)
+        pintor.end()
 
 
 class Tarjeta(QFrame):
@@ -179,6 +256,7 @@ class Tarjeta(QFrame):
         layout.addWidget(datos_widget)
 
         self._nombre = nombre
+        self._duracion = duracion
         self._seleccionada = False
         self._etiquetas_previews = []
 
@@ -209,10 +287,8 @@ class Tarjeta(QFrame):
             contenedor_imagenes.addWidget(recuadro)
 
         for _ in range(escanear_videos.CANTIDAD_PREVIEWS):
-            etiqueta = QLabel("Generando preview…")
-            etiqueta.setFixedHeight(ALTO_TARJETA)
-            etiqueta.setAlignment(Qt.AlignCenter)
-            etiqueta.setStyleSheet("background-color: #f0f0f0; border: 1px solid #ccc;")
+            etiqueta = PreviewConTiempo()
+            etiqueta.setText("Generando preview…")
             self._etiquetas_previews.append(etiqueta)
             contenedor_imagenes.addWidget(etiqueta)
 
@@ -252,20 +328,18 @@ class Tarjeta(QFrame):
         if not (0 <= indice < len(self._etiquetas_previews)):
             return False
         etiqueta = self._etiquetas_previews[indice]
-        ruta_a_usar = ruta
-        pixmap = QPixmap(ruta_a_usar)
+        pixmap = QPixmap(ruta)
         if pixmap.isNull():
             return False
-        etiqueta.setPixmap(
-            pixmap.scaled(
-                ANCHO_TARJETA,
-                ALTO_TARJETA,
-                Qt.KeepAspectRatio,
-                Qt.SmoothTransformation,
-            )
-        )
-        etiqueta.setText("")
-        return True
+        tiempo = None
+        duracion = self._duracion
+        if (
+            isinstance(duracion, (int, float))
+            and not isinstance(duracion, bool)
+            and duracion > 0
+        ):
+            tiempo = formatear_tiempo(calcular_tiempo_preview(duracion, indice + 1))
+        return etiqueta.poner_preview(pixmap, tiempo)
 
     def actualizar_previews(self, rutas):
         if rutas is None:

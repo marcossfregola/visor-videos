@@ -5,37 +5,39 @@
 Proyecto de escritorio profesional para Windows orientado a explorar
 grandes colecciones de videos mediante miniaturas representativas.
 
-**Fase actual:** finalizó la **fase de recopilación de mejoras** del uso real
-de la Beta 2 y quedó **aprobado el alcance de la Beta 3** (Etapa B3.0,
-exclusivamente documental). El proyecto está listo para comenzar la
-**implementación de la Beta 3** siguiendo el plan de trabajo aprobado, que se
-documenta en `ROADMAP.md` (Bloque de trabajo 3). La Beta 2 permanece como la
-última versión estable publicada y ninguna mejora del alcance aprobado está
-aún implementada.
+**Fase actual:** quedó **aprobado el alcance de la Beta 3** (Etapa B3.0,
+exclusivamente documental) y la **implementación de la Beta 3 está en
+marcha**: la primera mejora aprobada quedó implementada (Etapa B3.1, "Tiempo
+sobre las miniaturas de preview", Bloque A). El plan de trabajo se documenta
+en `ROADMAP.md` (Bloque de trabajo 3). La Beta 2 permanece como la última
+versión estable publicada.
 
 ## Último commit aprobado
 
-**Mensaje:** Agregar indicadores visuales de carpetas escaneadas en el arbol (Etapa 2.9)
+**Mensaje:** Implementar tiempo sobre las miniaturas de preview (Etapa B3.1)
 
-**Etapa:** Indicadores visuales de carpetas escaneadas (Etapa 2.9 del Bloque de trabajo 2):
-- `arbol_navegacion.py` — `EstadoNodo(IntEnum)` (SIN_ESCANEAR/ESCANEADA/PARCIAL/CAMBIOS_PENDIENTES/ERROR,
-  solo se usan los dos primeros); `ROL_ESTADO = Qt.UserRole + 4`; `_carpetas_escaneadas`; método público
-  `marcar_carpeta_escaneada(ruta)`; `_aplicar_indicador` guarda **solo el valor del estado** y calcula
-  el ícono con `_icono_para(estado)` (checkmark `QStyle.SP_DialogApplyButton`); se aplica al crear nodos
-  (incluida la carga diferida). El árbol **no conoce SQLite ni el catálogo** (solo recibe un conjunto de rutas).
-- `visor_videos.py` — `self.carpetas_escaneadas = set()`; en `_al_resultado_sincronizacion` marca la
-  carpeta escaneada (`resultado["diferencias"]["carpeta"]`) y llama `marcar_carpeta_escaneada`. Sin
-  consultas nuevas (el dato proviene del pipeline existente).
-- `prueba_indicador_escaneado.py` — 14 verificaciones de la etapa.
+**Etapa:** Tiempo sobre las miniaturas de preview (B3.1, Bloque A — Experiencia visual):
+- `visor_videos.py` — `PreviewConTiempo(QLabel)` (overlay del instante sobre cada
+  preview: fondo semitransparente oscuro y texto claro, exclusivamente visual, sin
+  cambios de layout, tamaños ni scroll); `formatear_tiempo(segundos)` ("m:ss"/"h:mm:ss",
+  `None` ante duración inválida); `Tarjeta` guarda `_duracion` y `_colocar_preview`
+  deriva el instante con `calcular_tiempo_preview(duracion, indice + 1)`. Sin overlay
+  cuando la duración es `None`/inválida. Sin FFprobe adicional, sin cambios de
+  pipeline, sin esquema SQLite ni persistencia de tiempos.
+- `prueba_tiempo_previews.py` — 35 verificaciones de la etapa.
 
-**Pruebas superadas:** `prueba_indicador_escaneado.py` 14/14 (enum, nunca/ya escaneada, solo visual sin
-alterar selección/expansión/navegación, carga diferida, `ROL_ESTADO` como `int`, sin `QIcon` en datos,
-AST sin sqlite, flujo real); regresiones `prueba_arbol_navegacion.py` OK, `prueba_expansion_carpetas.py`
-35/35, `prueba_seleccion_arbol.py` 25/25, `prueba_escaneo_arbol.py` 11/11, `prueba_escaneo_automatico.py`
-19/19, `prueba_subcarpetas_arbol.py` 15/15, `prueba_carpeta_actual.py` 19/19,
-`prueba_persistencia_arbol.py` 15/15, `prueba_escaneo_interfaz.py` 36/36, `prueba_smoke.py` OK.
-Ejecución real de `visor_videos.py`: escaneo de `C:\prueba\videos_prueba` → el nodo pasa de `SIN_ESCANEAR`
-a `ESCANEADA` con ícono; cierre limpio (exit 0).
+**Pruebas superadas:** `prueba_tiempo_previews.py` 35/35 (formateador, derivación
+N=3/5/7/9, overlay con duración válida, sin overlay con duración None/inválida,
+ruta inexistente, `ajustar_previews`, integración con catálogo); regresiones
+`prueba_previews_progresivas.py` 16/16, `prueba_cantidad_previews.py` 14/14,
+`prueba_filas_horizontales.py` 16/16, `prueba_smoke.py` OK, `prueba_tamano_archivo.py`
+15/15, `prueba_lectura_paginada.py` 32/32, `prueba_pagina_siguiente.py` 20/20,
+`prueba_recarga_catalogo.py` 20/20, `prueba_seleccion_visual.py` OK,
+`prueba_shift_clic.py` 28/28, `prueba_seleccion.py` 28/28,
+`prueba_restauracion_seleccion.py` 15/15. Ejecución real de `visor_videos.py` con
+`biblioteca.db` y `miniaturas/` reales: 24 tarjetas con overlays correctos derivados
+de la duración del catálogo, cantidades 3/5/7/9 aplicadas, verificación por píxeles
+del overlay, cierre limpio (exit 0).
 
 ## Hitos completados
 
@@ -90,6 +92,10 @@ a `ESCANEADA` con ícono; cierre limpio (exit 0).
   alcance de la Beta 3**, con su plan de trabajo en `ROADMAP.md` (Bloque de
   trabajo 3). Etapa exclusivamente documental: sin cambios de código ni
   implementación de funcionalidades.
+- **Tiempo sobre las miniaturas de preview (Etapa B3.1).** Primera mejora de la
+  Beta 3 implementada (Bloque A): cada preview muestra el instante temporal
+  derivado de la duración del catálogo, con overlay exclusivamente visual y sin
+  cambios de pipeline, esquema SQLite ni recursos.
 
 ## Pendientes prioritarios
 
@@ -139,12 +145,12 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
 
 ## Próxima etapa
 
-**Implementación de la Beta 3.** El alcance quedó definido y aprobado en la
-Etapa B3.0 (plan de trabajo en `ROADMAP.md`, Bloque de trabajo 3). La
-implementación comenzará por las mejoras aprobadas, organizadas en bloques de
-trabajo pequeños, verificables y acumulativos, sin adelantar funcionalidades
-excluidas del alcance ni agregar funcionalidades nuevas fuera del plan
-aprobado.
+**Etapa B3.2** — **Duración simplificada** (Bloque A): segunda mejora de la
+Beta 3. Su definición detallada se acordará recién después del cierre
+documental de la B3.1, siguiendo el plan de trabajo de `ROADMAP.md` (Bloque
+de trabajo 3), en bloques pequeños, verificables y acumulativos, sin
+adelantar funcionalidades excluidas del alcance ni agregar funcionalidades
+nuevas fuera del plan aprobado.
 
 ## Documentos del proyecto
 

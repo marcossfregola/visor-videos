@@ -5,6 +5,58 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 58. Tiempo sobre las miniaturas de preview (Etapa B3.1)
+
+- **Fecha:** 2026-08-06
+- **Objetivo:** Mostrar sobre cada preview el instante temporal de su fotograma, derivado
+  exclusivamente de la duración almacenada en el catálogo, con un overlay puramente visual
+  y el menor impacto posible sobre la arquitectura.
+- **Archivos creados:**
+  - `prueba_tiempo_previews.py` — 35 verificaciones: formateador (None/bool/negativo/texto,
+    0, 41.07, 65.4, 3600, 3723); derivación por índice con N=3/5/7/9; Tarjeta con duración
+    válida (overlay por preview y textos 0:25/0:50/1:15 para 100 s); duración None/0/-5/texto/
+    bool sin overlay; ruta inexistente sin overlay y placeholder conservado; regresión
+    `ajustar_previews` 3/5/7/9; integración con `VisorVideos` (duración desde catálogo y
+    duración NULL sin overlay).
+- **Archivos modificados:**
+  - `visor_videos.py` — `PreviewConTiempo(QLabel)`: overlay exclusivamente visual del
+    instante sobre cada preview (mismo widget por slot, mismo pixmap escalado y mismo layout;
+    fondo semitransparente oscuro `rgba(0,0,0,150)` + texto claro; sin overlay si no hay
+    tiempo); `formatear_tiempo(segundos)` ("m:ss"/"h:mm:ss", `None` ante duración inválida);
+    `Tarjeta` guarda `_duracion`; `_colocar_preview` deriva el instante con
+    `calcular_tiempo_preview(duracion, indice + 1)`. Sin FFprobe adicional, sin pipeline, sin
+    esquema SQLite ni persistencia de tiempos.
+  - `DOCUMENTO_TECNICO.md` — `PreviewConTiempo`, `formatear_tiempo` y `Tarjeta` actualizados;
+    §9 con la observación arquitectónica para la futura apertura del video desde una preview.
+  - `ROADMAP.md` — mejora A1 marcada como implementada.
+  - `ESTADO_PROYECTO.md` — última etapa aprobada, fase actual, hitos y próxima etapa actualizados.
+  - `HISTORIAL_PROYECTO.md` — este documento (registro de la etapa).
+- **Pruebas:** `prueba_tiempo_previews.py` 35/35; regresiones `prueba_previews_progresivas.py`
+  16/16, `prueba_cantidad_previews.py` 14/14, `prueba_filas_horizontales.py` 16/16,
+  `prueba_smoke.py` OK, `prueba_tamano_archivo.py` 15/15, `prueba_lectura_paginada.py` 32/32,
+  `prueba_pagina_siguiente.py` 20/20, `prueba_recarga_catalogo.py` 20/20,
+  `prueba_seleccion_visual.py` OK, `prueba_shift_clic.py` 28/28, `prueba_seleccion.py` 28/28,
+  `prueba_restauracion_seleccion.py` 15/15. Ejecución real de `visor_videos.py` con
+  `biblioteca.db` y `miniaturas/` reales: 24 tarjetas con overlays correctos, cantidades
+  3/5/7/9 aplicadas, verificación por píxeles del overlay, cierre limpio (exit 0).
+- **Resultado:** Cada preview muestra el instante temporal de su fotograma, derivado
+  exclusivamente de la duración del catálogo; con duración desconocida o inválida no se
+  dibuja ningún overlay. El overlay es únicamente visual (sin cambios de layout, tamaños,
+  scroll, pipeline, SQLite ni recursos).
+- **Commit:** "Implementar tiempo sobre las miniaturas de preview (Etapa B3.1)"
+- **Decisiones importantes:**
+  1. **Derivación en visualización**: el instante se calcula con la función existente
+     `calcular_tiempo_preview(duración, índice)` en tiempo de render, sin FFprobe adicional,
+     sin persistir tiempos ni modificar el esquema.
+  2. **Overlay exclusivamente visual**: un `QLabel` por slot con `pixmap()` conservado (mismo
+     contrato y tamaño), lo que no altera layout, tamaños ni scroll.
+  3. **Sin valores por defecto**: si la duración es `None` o inválida no se dibuja el overlay.
+  4. **Observación para el futuro (Bloque E)**: al implementar la apertura del video desde una
+     preview, el instante deberá provenir del instante real usado al generar el fotograma, no
+     de un recálculo.
+
+---
+
 ## 57. Aprobación del alcance de la Beta 3 (Etapa B3.0)
 
 - **Fecha:** 2026-08-06
