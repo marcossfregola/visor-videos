@@ -238,8 +238,8 @@ Quedan fuera del alcance de la Beta 3 y no se implementarán en ella:
 | A6 | Tamaño "Muy grande" (ampliación de A3) | A | Implementada |
 | A7 | Tamaño configurable de la vista ampliada (ampliación de A4) | A | Implementada |
 | A8 | Generación automática de previews faltantes (ampliación de A1) | A | Implementada |
-| B1 | Modo selección | B | Pendiente |
-| B2 | Checks por fila | B | Pendiente |
+| B1 | Modo selección | B | Implementada |
+| B2 | Checks por fila | B | Implementada |
 | B3 | Copiar | B | Pendiente |
 | B4 | Pegar | B | Pendiente |
 | B5 | Eliminar | B | Pendiente |
@@ -266,7 +266,7 @@ intacto el comportamiento del modo normal.
 | Etapa | Contenido |
 | --- | --- |
 | B3.11 | **Resumen de selección** (B6) — "n de m seleccionados", sincronizado con la selección y el filtro. **Implementada (Etapa B3.11).** |
-| B3.12 | **Modo selección + Checks por fila** (B1 + B2) — toggle en la barra que activa checks por fila sincronizados con la selección; el modo normal no cambia. |
+| B3.12 | **Modo selección + Checks por fila** (B1 + B2) — toggle en la barra que activa checks por fila sincronizados con la selección; el modo normal no cambia. **Implementada (Etapa B3.12).** |
 | B3.13 | **Atajos básicos** (B7, parcial) — Ctrl+A (todo lo visible) y Esc (salir del modo selección). |
 | B3.14 | **Copiar** (B3) — copiar los archivos de video seleccionados a una carpeta destino (diálogo), en segundo plano, sin sobrescribir. |
 | B3.15 | **Pegar** (B4) — pegar en la carpeta actual los archivos copiados internamente, con confirmación de colisión. |

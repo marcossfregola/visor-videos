@@ -445,6 +445,7 @@ class Tarjeta(QFrame):
     menu_contextual = Signal(str)
     vista_solicitada = Signal(object)
     vista_abandonada = Signal()
+    seleccion_check = Signal(str, bool)
 
     def __init__(self, fila, parent=None):
         super().__init__(parent)
@@ -534,6 +535,11 @@ class Tarjeta(QFrame):
         contenedor_imagenes.addStretch()
         layout.addLayout(contenedor_imagenes, 1)
 
+        self._check = QCheckBox()
+        self._check.setVisible(False)
+        self._check.stateChanged.connect(self._al_check_cambiar)
+        layout.insertWidget(0, self._check)
+
     @property
     def nombre(self):
         return self._nombre
@@ -562,6 +568,17 @@ class Tarjeta(QFrame):
             self.setStyleSheet(ESTILO_SELECCIONADA)
         else:
             self.setStyleSheet("")
+
+    def _al_check_cambiar(self, _estado):
+        self.seleccion_check.emit(self._nombre, self._check.isChecked())
+
+    def mostrar_check(self, visible):
+        self._check.setVisible(visible)
+
+    def set_check(self, marcado):
+        self._check.blockSignals(True)
+        self._check.setChecked(bool(marcado))
+        self._check.blockSignals(False)
 
     def _colocar_preview(self, indice, ruta):
         if not (0 <= indice < len(self._etiquetas_previews)):
@@ -699,6 +716,7 @@ class VisorVideos(QMainWindow):
         self._pipeline_activo = False
         self._nombres_seleccionados = set()
         self._ancla_seleccion = None
+        self._modo_seleccion = False
 
         self.busqueda = QLineEdit()
         self.busqueda.setPlaceholderText("Buscar por nombre...")
@@ -747,6 +765,12 @@ class VisorVideos(QMainWindow):
         self.boton_preferencias = QPushButton("Preferencias…")
         self.boton_preferencias.clicked.connect(self._abrir_preferencias)
 
+        self.boton_modo_seleccion = QPushButton("Modo selección")
+        self.boton_modo_seleccion.setCheckable(True)
+        self.boton_modo_seleccion.toggled.connect(
+            self._al_cambiar_modo_seleccion
+        )
+
         self.boton_cargar_mas = QPushButton("Cargar más")
         self.boton_cargar_mas.setEnabled(False)
         self.boton_cargar_mas.clicked.connect(self.cargar_mas)
@@ -769,6 +793,7 @@ class VisorVideos(QMainWindow):
         fila_carpeta.addWidget(self.etiqueta_tamano_miniaturas)
         fila_carpeta.addWidget(self.combo_tamano_miniaturas)
         fila_carpeta.addWidget(self.boton_preferencias)
+        fila_carpeta.addWidget(self.boton_modo_seleccion)
         fila_carpeta.addWidget(self.etiqueta_carpeta, 1)
         fila_carpeta.addWidget(self.estado_escaneo)
         fila_carpeta.addWidget(self.mensaje_carpeta)
@@ -1100,8 +1125,22 @@ class VisorVideos(QMainWindow):
         for candidato, tarjeta in self.tarjetas:
             if candidato == nombre:
                 tarjeta.marcar_seleccionada(valor)
+                tarjeta.set_check(valor)
                 self._actualizar_resumen_seleccion()
                 return
+
+    def _al_check_tarjeta(self, nombre, marcado):
+        if marcado:
+            self._nombres_seleccionados.add(nombre)
+            self._marcar_tarjeta(nombre, True)
+        else:
+            self._nombres_seleccionados.discard(nombre)
+            self._marcar_tarjeta(nombre, False)
+
+    def _al_cambiar_modo_seleccion(self, activo):
+        self._modo_seleccion = bool(activo)
+        for _, tarjeta in self.tarjetas:
+            tarjeta.mostrar_check(self._modo_seleccion)
 
     def _actualizar_resumen_seleccion(self):
         visibles = self.visibles
@@ -1556,6 +1595,8 @@ class VisorVideos(QMainWindow):
             tarjeta.menu_contextual.connect(self._mostrar_menu_contextual)
             tarjeta.vista_solicitada.connect(self._al_vista_solicitada)
             tarjeta.vista_abandonada.connect(self._al_vista_abandonada)
+            tarjeta.seleccion_check.connect(self._al_check_tarjeta)
+            tarjeta.mostrar_check(self._modo_seleccion)
             self.tarjetas.append((fila[0], tarjeta))
             self.visibles.append(fila[0])
             self.cuadricula.addWidget(tarjeta, posicion, 0)
@@ -1618,6 +1659,8 @@ class VisorVideos(QMainWindow):
             tarjeta.menu_contextual.connect(self._mostrar_menu_contextual)
             tarjeta.vista_solicitada.connect(self._al_vista_solicitada)
             tarjeta.vista_abandonada.connect(self._al_vista_abandonada)
+            tarjeta.seleccion_check.connect(self._al_check_tarjeta)
+            tarjeta.mostrar_check(self._modo_seleccion)
             self.tarjetas.append((fila[0], tarjeta))
             self.visibles.append(fila[0])
             self.cuadricula.addWidget(tarjeta, indice, 0)

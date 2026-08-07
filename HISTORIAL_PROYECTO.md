@@ -5,6 +5,70 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 69. Modo selección con checks por fila (Etapa B3.12)
+
+- **Fecha:** 2026-08-06
+- **Objetivo:** Introducir un modo específico para operaciones sobre múltiples archivos:
+  toggle "Modo selección" en la barra principal y un checkbox por tarjeta (visible solo
+  en modo activo), con sincronización completa entre el checkbox y `_nombres_seleccionados`,
+  reutilizando `_marcar_tarjeta()` como punto central. Sin Copiar/Pegar/Eliminar/atajos.
+- **Archivos creados:**
+  - `prueba_modo_seleccion.py` — 20 verificaciones: checkbox oculto por defecto;
+    mostrar/set con `blockSignals` (sin señal de retorno); toggle real emite
+    `seleccion_check`; modo activo/desactivo (aparición/desaparición de checks);
+    sincronización check↔selección en simple/Ctrl/Shift; deselección y selección vía
+    checkbox (borde y resumen); sin reentrada (una sola incorporación); restauración
+    tras recarga con modo activo; búsqueda; consistencia invariante.
+- **Archivos modificados:**
+  - `visor_videos.py` — `Tarjeta`: `QCheckBox` (`_check`) en el índice 0 del layout
+    raíz (oculto por defecto), señal `seleccion_check(nombre, marcado)`,
+    `mostrar_check(visible)`, `set_check(marcado)` (con `blockSignals`) y
+    `_al_check_cambiar` (usa `self._check.isChecked()`). `VisorVideos`:
+    `boton_modo_seleccion` (checkable) en la barra, `_modo_seleccion`,
+    `_al_cambiar_modo_seleccion` (solo alterna visibilidad de checks), `_al_check_tarjeta`
+    (muta `_nombres_seleccionados` y llama `_marcar_tarjeta`); `_marcar_tarjeta` agrega
+    `tarjeta.set_check(valor)`; `_crear_tarjetas`/`_agregar_tarjetas` conectan la señal
+    y aplican el modo. `_nombres_seleccionados` sigue siendo la única fuente de verdad;
+    el resumen (B3.11) no cambia.
+  - `DOCUMENTO_TECNICO.md` — Modo Selección + checks documentado (con la nota de
+    `isChecked()`).
+  - `ROADMAP.md` — mejoras B1 y B2 marcadas como implementadas; orden B3.12 marcado.
+  - `ESTADO_PROYECTO.md` — última etapa aprobada, fase actual, hitos y próxima etapa
+    actualizados.
+  - `HISTORIAL_PROYECTO.md` — este documento (registro de la etapa).
+- **Corrección durante la implementación:** `_al_check_cambiar` compara con
+  `self._check.isChecked()` en lugar de `estado == Qt.Checked` (semántica enum/int de
+  PySide6); sin esta corrección la reentrada desmarcaba el checkbox y el estado se
+  interpretaba invertido.
+- **Pruebas:** `prueba_modo_seleccion.py` 20/20; regresiones `prueba_resumen_seleccion.py`
+  17/17, `prueba_seleccion.py` 28/28, `prueba_shift_clic.py` 28/28,
+  `prueba_seleccion_visual.py` OK, `prueba_restauracion_seleccion.py` 15/15,
+  `prueba_filas_horizontales.py` 16/16, `prueba_recarga_catalogo.py` 20/20,
+  `prueba_smoke.py` OK, `prueba_cantidad_previews.py` 14/14,
+  `prueba_previews_automaticas.py` 22/22, `prueba_vista_ampliada.py` 24/24,
+  `prueba_tiempo_previews.py` 35/35, `prueba_tamano_miniaturas.py` 32/32,
+  `prueba_tamano_muy_grande.py` 27/27, `prueba_tamano_vista_ampliada.py` 35/35,
+  `prueba_preferencias_miniaturas.py` 31/31. Ejecución real de `visor_videos.py` con
+  `biblioteca.db`: modo activo/desactivo, checks visibles/ocultos, sincronización en
+  simple/Ctrl/Shift, deselección vía check, recarga con restauración y modo activo,
+  búsqueda, consistencia check↔selección verificada en todo el flujo, cierre limpio
+  (exit 0).
+- **Resultado:** El Modo Selección con checks por fila queda implementado con
+  sincronización bidireccional centralizada en `_marcar_tarjeta`, `blockSignals` para
+  evitar reentradas y `_nombres_seleccionados` como única fuente de verdad; activar o
+  desactivar el modo conserva la selección y el resumen.
+- **Commit:** "Implementar modo selección con checks por fila (Etapa B3.12)"
+- **Decisiones importantes:**
+  1. **Un solo punto de sincronización**: `_marcar_tarjeta` (toda mutación de selección)
+     actualiza el check; el check emite `seleccion_check` → `_al_check_tarjeta`. Sin
+     segunda lógica de selección.
+  2. **`blockSignals`**: evita reentradas en la sincronización estado→check.
+  3. **Modo no destructivo**: activar/desactivar solo alterna visibilidad de checks;
+     selección y resumen intactos.
+  4. **Corrección `isChecked()`**: por la semántica enum/int de PySide6.
+
+---
+
 ## 68. Resumen permanente de selección (Etapa B3.11)
 
 - **Fecha:** 2026-08-06
