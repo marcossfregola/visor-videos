@@ -8,30 +8,43 @@ grandes colecciones de videos mediante miniaturas representativas.
 **Fase actual:** quedó **aprobado el alcance de la Beta 3** (Etapa B3.0,
 exclusivamente documental) y la **implementación de la Beta 3 está en
 marcha**: el **Bloque A — Experiencia visual** quedó **completo funcional y
-técnicamente** (B3.1 a B3.9) y el **Bloque B — Selección y operaciones** quedó
-**planificado y congelado** (Etapa B3.10, documental). El plan de trabajo se
+técnicamente** (B3.1 a B3.9), el **Bloque B — Selección y operaciones** quedó
+**planificado y congelado** (B3.10) y comenzó su implementación con la **B3.11 —
+Resumen de selección** (mejora B6 implementada). El plan de trabajo se
 documenta en `ROADMAP.md` (Bloque de trabajo 3). La Beta 2 permanece como la
 última versión estable publicada.
 
 ## Último commit aprobado
 
-**Mensaje:** Planificar y congelar el alcance del Bloque B (Etapa B3.10)
+**Mensaje:** Implementar resumen permanente de selección (Etapa B3.11)
 
-**Etapa:** Planificación del Bloque B (B3.10 — exclusivamente documental):
-- `ROADMAP.md` — nueva sección "Bloque B — Selección y operaciones": objetivo, orden
-  de implementación (B3.11 Resumen de selección, B3.12 Modo selección + checks,
-  B3.13 Atajos básicos, B3.14 Copiar, B3.15 Pegar, B3.16 Eliminar, B3.17 Atajos de
-  operaciones), dependencias, decisiones congeladas, excluidos y seguimiento (B1–B7
-  Pendiente).
-- `ESTADO_PROYECTO.md` — fase actual, última etapa aprobada, hitos y próxima etapa
-  actualizados.
-- `HISTORIAL_PROYECTO.md` — entrada B3.10 (este registro).
+**Etapa:** Resumen de selección (B3.11, Bloque B):
+- `visor_videos.py` — `resumen_seleccion` (QLabel en la barra de búsqueda) y
+  `_actualizar_resumen_seleccion()` (único método centralizado: "X de Y seleccionados"
+  con Y = tarjetas visibles y X = visibles seleccionadas). Se invoca desde los dos
+  puntos de enganche que cubren todos los cambios: `_marcar_tarjeta` (selección
+  simple/Ctrl/Shift, deselección, restauración) y `filtrar` (búsqueda, carga inicial,
+  "Cargar más", reconstrucción), más el cierre de `_limpiar_seleccion`. Sin cambios de
+  comportamiento de selección ni de layout.
+- `prueba_resumen_seleccion.py` — 17 verificaciones de la etapa.
 
-**Decisiones congeladas del Bloque B:** Copiar = copiar archivos físicos; Pegar =
-portapapeles interno; Eliminar = mover a la Papelera de reciclaje; operaciones de
-archivos en segundo plano; el modo selección no modifica el modo normal. Excluidos:
-renombrado masivo, favoritos, etiquetas, organización automática, detección de
-duplicados, filtros avanzados y apertura del video desde previews.
+**Pruebas superadas:** `prueba_resumen_seleccion.py` 17/17 (estado inicial, simple,
+Ctrl, Shift, deselección, limpieza, búsqueda, cargar más con 105 videos, reconstrucción
+y restauración, solo tarjetas visibles); regresiones `prueba_seleccion_visual.py` OK,
+`prueba_shift_clic.py` 28/28, `prueba_seleccion.py` 28/28,
+`prueba_restauracion_seleccion.py` 15/15, `prueba_filas_horizontales.py` 16/16,
+`prueba_recarga_catalogo.py` 20/20, `prueba_pagina_siguiente.py` 20/20,
+`prueba_lectura_paginada.py` 32/32, `prueba_escaneo_interfaz.py` 36/36,
+`prueba_seleccion_carpeta.py` 26/26, `prueba_interfaz_asincrona.py` 29/29,
+`prueba_smoke.py` OK, `prueba_cantidad_previews.py` 14/14,
+`prueba_previews_automaticas.py` 22/22, `prueba_vista_ampliada.py` 24/24,
+`prueba_tiempo_previews.py` 35/35, `prueba_tamano_miniaturas.py` 32/32,
+`prueba_tamano_muy_grande.py` 27/27, `prueba_tamano_vista_ampliada.py` 35/35,
+`prueba_preferencias_miniaturas.py` 31/31, `prueba_previews_progresivas.py` 16/16,
+`prueba_duracion_simplificada.py` 23/23, `prueba_doble_clic.py` 14/14,
+`prueba_tamano_archivo.py` 15/15. Ejecución real de `visor_videos.py` con
+`biblioteca.db`: 0/24, 1/24, 3/24 (Ctrl), 3/24 (rango), filtro solo visibles, recarga
+con restauración, limpieza 0/24, cierre limpio (exit 0).
 
 ## Hitos completados
 
@@ -132,6 +145,10 @@ duplicados, filtros avanzados y apertura del video desde previews.
   documental: se define el orden de implementación del Bloque B (B3.11 a B3.17), sus
   dependencias, las decisiones congeladas (Copiar/Pegar/Eliminar, segundo plano, modo
   selección) y los excluidos. El alcance queda congelado en `ROADMAP.md`.
+- **Resumen de selección (Etapa B3.11).** Primera mejora del Bloque B implementada
+  (B6): indicador permanente "X de Y seleccionados" basado únicamente en las tarjetas
+  visibles, centralizado en `_actualizar_resumen_seleccion()` e integrado con
+  selección, búsqueda, carga inicial, reconstrucción y paginación.
 
 ## Pendientes prioritarios
 
@@ -188,12 +205,11 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
 
 ## Próxima etapa
 
-**Etapa B3.11 — Resumen de selección** (Bloque B). El Bloque B quedó planificado y
-congelado en la Etapa B3.10; la primera etapa de implementación será el **resumen de
-selección** ("n de m seleccionados", sincronizado con la selección y el filtro), que
-verifica el modelo interno de selección antes de incorporar los checks. Su definición
-detallada se realizará con la inspección técnica previa, siguiendo el plan de
-`ROADMAP.md` (Bloque de trabajo 3, sección "Bloque B"), en bloques pequeños,
+**Etapa B3.12 — Modo selección + Checks por fila** (Bloque B). Siguiente mejora del
+Bloque B: un toggle de modo selección en la barra que activa checks por fila
+sincronizados con la selección, sin modificar el comportamiento del modo normal. Su
+definición detallada se realizará con la inspección técnica previa, siguiendo el plan
+de `ROADMAP.md` (Bloque de trabajo 3, sección "Bloque B"), en bloques pequeños,
 verificables y acumulativos, sin adelantar funcionalidades excluidas del alcance ni
 agregar funcionalidades nuevas fuera del plan aprobado.
 

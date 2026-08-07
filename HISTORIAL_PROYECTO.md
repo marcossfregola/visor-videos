@@ -5,6 +5,64 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 68. Resumen permanente de selección (Etapa B3.11)
+
+- **Fecha:** 2026-08-06
+- **Objetivo:** Brindar un indicador permanente del estado de la selección ("X de Y
+  seleccionados") basado únicamente en las tarjetas visibles, reutilizando la
+  infraestructura existente de selección; sin checks, modo selección ni operaciones
+  sobre archivos.
+- **Archivos creados:**
+  - `prueba_resumen_seleccion.py` — 17 verificaciones: estado inicial (0 de 5);
+    selección simple, Ctrl (agregar/quitar), Shift (rango), deselección y limpieza;
+    búsqueda/filtro (solo visibles); "Cargar más" (105 videos: 0 de 100 → 1 de 100 →
+    1 de 105); reconstrucción del catálogo y restauración de la selección; el resumen
+    refleja solo las visibles.
+- **Archivos modificados:**
+  - `visor_videos.py` — `resumen_seleccion` (QLabel en la barra de búsqueda) y
+    `_actualizar_resumen_seleccion()` (método único y centralizado: X = visibles
+    seleccionadas, Y = tarjetas visibles). Se invoca desde dos puntos de enganche que
+    cubren todos los cambios: `_marcar_tarjeta` (selección simple/Ctrl/Shift,
+    deselección, restauración) y `filtrar` (búsqueda, carga inicial, "Cargar más",
+    reconstrucción), más el cierre de `_limpiar_seleccion`. Sin cambios de
+    comportamiento de selección ni de layout.
+  - `DOCUMENTO_TECNICO.md` — `_actualizar_resumen_seleccion` / `resumen_seleccion`
+    documentados.
+  - `ROADMAP.md` — mejora B6 marcada como implementada; orden B3.11 marcado como
+    implementado.
+  - `ESTADO_PROYECTO.md` — última etapa aprobada, fase actual, hitos y próxima etapa
+    actualizados.
+  - `HISTORIAL_PROYECTO.md` — este documento (registro de la etapa).
+- **Pruebas:** `prueba_resumen_seleccion.py` 17/17; regresiones `prueba_seleccion_visual.py`
+  OK, `prueba_shift_clic.py` 28/28, `prueba_seleccion.py` 28/28,
+  `prueba_restauracion_seleccion.py` 15/15, `prueba_filas_horizontales.py` 16/16,
+  `prueba_recarga_catalogo.py` 20/20, `prueba_pagina_siguiente.py` 20/20,
+  `prueba_lectura_paginada.py` 32/32, `prueba_escaneo_interfaz.py` 36/36,
+  `prueba_seleccion_carpeta.py` 26/26, `prueba_interfaz_asincrona.py` 29/29,
+  `prueba_smoke.py` OK, `prueba_cantidad_previews.py` 14/14,
+  `prueba_previews_automaticas.py` 22/22, `prueba_vista_ampliada.py` 24/24,
+  `prueba_tiempo_previews.py` 35/35, `prueba_tamano_miniaturas.py` 32/32,
+  `prueba_tamano_muy_grande.py` 27/27, `prueba_tamano_vista_ampliada.py` 35/35,
+  `prueba_preferencias_miniaturas.py` 31/31, `prueba_previews_progresivas.py` 16/16,
+  `prueba_duracion_simplificada.py` 23/23, `prueba_doble_clic.py` 14/14,
+  `prueba_tamano_archivo.py` 15/15. Ejecución real de `visor_videos.py` con
+  `biblioteca.db`: 0/24, 1/24, 3/24 (Ctrl), 3/24 (rango Shift), filtro solo visibles,
+  recarga con restauración, limpieza 0/24, cierre limpio (exit 0).
+- **Resultado:** La interfaz muestra permanentemente "X de Y seleccionados" con Y =
+  tarjetas visibles y X = visibles seleccionadas, actualizado automáticamente ante
+  selección (simple/Ctrl/Shift), búsqueda, carga inicial, "Cargar más", reconstrucción
+  y limpieza, sin modificar el comportamiento de selección ni el layout.
+- **Commit:** "Implementar resumen permanente de selección (Etapa B3.11)"
+- **Decisiones importantes:**
+  1. **Centralización**: un único método `_actualizar_resumen_seleccion()`; se
+     actualiza desde los choke points existentes (`_marcar_tarjeta` y `filtrar`) más el
+     cierre de `_limpiar_seleccion` — sin llamadas dispersas.
+  2. **Solo tarjetas visibles**: nunca refleja el catálogo completo.
+  3. **Sin cambios de comportamiento**: no toca la lógica de selección, el layout ni
+     las operaciones futuras del Bloque B.
+
+---
+
 ## 67. Planificación y congelamiento del alcance del Bloque B (Etapa B3.10)
 
 - **Fecha:** 2026-08-06

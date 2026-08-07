@@ -243,7 +243,7 @@ Quedan fuera del alcance de la Beta 3 y no se implementarán en ella:
 | B3 | Copiar | B | Pendiente |
 | B4 | Pegar | B | Pendiente |
 | B5 | Eliminar | B | Pendiente |
-| B6 | Resumen de selección | B | Pendiente |
+| B6 | Resumen de selección | B | Implementada |
 | B7 | Atajos de teclado | B | Pendiente |
 | C1 | Barra de progreso real | C | Pendiente |
 | C2 | Cantidad de videos procesados | C | Pendiente |
@@ -265,7 +265,7 @@ intacto el comportamiento del modo normal.
 
 | Etapa | Contenido |
 | --- | --- |
-| B3.11 | **Resumen de selección** (B6) — "n de m seleccionados", sincronizado con la selección y el filtro. |
+| B3.11 | **Resumen de selección** (B6) — "n de m seleccionados", sincronizado con la selección y el filtro. **Implementada (Etapa B3.11).** |
 | B3.12 | **Modo selección + Checks por fila** (B1 + B2) — toggle en la barra que activa checks por fila sincronizados con la selección; el modo normal no cambia. |
 | B3.13 | **Atajos básicos** (B7, parcial) — Ctrl+A (todo lo visible) y Esc (salir del modo selección). |
 | B3.14 | **Copiar** (B3) — copiar los archivos de video seleccionados a una carpeta destino (diálogo), en segundo plano, sin sobrescribir. |

@@ -705,6 +705,7 @@ class VisorVideos(QMainWindow):
         self.busqueda.textChanged.connect(self.filtrar)
 
         self.contador = QLabel()
+        self.resumen_seleccion = QLabel()
         self.estado_carga = QLabel(MENSAJE_CARGANDO)
 
         self.barra_progreso = QProgressBar()
@@ -775,6 +776,7 @@ class VisorVideos(QMainWindow):
         barra = QHBoxLayout()
         barra.addWidget(self.busqueda, 1)
         barra.addWidget(self.contador)
+        barra.addWidget(self.resumen_seleccion)
         barra.addWidget(self.boton_cargar_mas)
         barra.addWidget(self.estado_carga)
 
@@ -782,6 +784,7 @@ class VisorVideos(QMainWindow):
         self.cuadricula = QGridLayout(self.contenedor)
         self.cuadricula.setColumnStretch(0, 1)
         self.actualizar_contador()
+        self._actualizar_resumen_seleccion()
 
         self.area = QScrollArea()
         self.area.setWidgetResizable(True)
@@ -1091,12 +1094,23 @@ class VisorVideos(QMainWindow):
         for nombre in list(self._nombres_seleccionados):
             self._marcar_tarjeta(nombre, False)
         self._nombres_seleccionados.clear()
+        self._actualizar_resumen_seleccion()
 
     def _marcar_tarjeta(self, nombre, valor):
         for candidato, tarjeta in self.tarjetas:
             if candidato == nombre:
                 tarjeta.marcar_seleccionada(valor)
+                self._actualizar_resumen_seleccion()
                 return
+
+    def _actualizar_resumen_seleccion(self):
+        visibles = self.visibles
+        x = sum(
+            1 for nombre in visibles if nombre in self._nombres_seleccionados
+        )
+        self.resumen_seleccion.setText(
+            f"{x} de {len(visibles)} seleccionados"
+        )
 
     @property
     def nombres_seleccionados(self):
@@ -1679,6 +1693,7 @@ class VisorVideos(QMainWindow):
                 visibles.append(nombre)
         self.visibles = visibles
         self.actualizar_contador()
+        self._actualizar_resumen_seleccion()
 
     def tarjetas_visibles(self):
         return list(self.visibles)
