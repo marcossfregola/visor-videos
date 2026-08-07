@@ -144,6 +144,11 @@ No se implementará ninguna mejora fuera de este alcance.
   ampliación de A1. **Implementada (Etapa B3.8).** Al incrementar la cantidad (p. ej.
   3→5), la aplicación genera únicamente las previews inexistentes en segundo plano y
   actualiza las tarjetas afectadas, sin volver a escanear; al disminuir solo oculta.
+- Pulido técnico del Bloque A. **Completado (Etapa B3.9).** Mejoras internas sin
+  funcionalidades nuevas: acotado de los pixmaps originales retenidos en memoria
+  (límite 1280, sin releer disco ni regenerar, calidad preservada), transición limpia
+  del popup entre miniaturas distintas, helper reutilizable `_duracion_valida` y
+  eliminación de constantes realmente muertas.
 
 ### B. Selección y operaciones
 

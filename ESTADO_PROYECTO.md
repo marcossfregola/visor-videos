@@ -7,45 +7,46 @@ grandes colecciones de videos mediante miniaturas representativas.
 
 **Fase actual:** quedó **aprobado el alcance de la Beta 3** (Etapa B3.0,
 exclusivamente documental) y la **implementación de la Beta 3 está en
-marcha**: el **Bloque A — Experiencia visual** quedó **completo** con las
-mejoras B3.1 ("Tiempo sobre las miniaturas de preview"), B3.2 ("Duración
-simplificada"), B3.3 ("Tamaño configurable de miniaturas"), B3.4 ("Vista
-ampliada al posar el mouse") y B3.5 ("Preferencias relacionadas con
-miniaturas"), más las ampliaciones **B3.6** (tamaño "Muy grande" 512×288),
-**B3.7** (tamaño configurable de la vista ampliada) y **B3.8** (generación
-automática de previews faltantes al aumentar la cantidad). El plan de trabajo
-se documenta en `ROADMAP.md` (Bloque de trabajo 3). La Beta 2 permanece como
-la última versión estable publicada.
+marcha**: el **Bloque A — Experiencia visual** quedó **completo funcional y
+técnicamente** con las mejoras B3.1 ("Tiempo sobre las miniaturas de preview"),
+B3.2 ("Duración simplificada"), B3.3 ("Tamaño configurable de miniaturas"),
+B3.4 ("Vista ampliada al posar el mouse") y B3.5 ("Preferencias relacionadas
+con miniaturas"), las ampliaciones **B3.6** (tamaño "Muy grande"), **B3.7**
+(tamaño configurable de la vista ampliada) y **B3.8** (generación automática
+de previews faltantes), y el **pulido técnico B3.9** (acotado de pixmaps en
+memoria, transición limpia del popup, helper `_duracion_valida` y limpieza de
+constantes muertas). El plan de trabajo se documenta en `ROADMAP.md` (Bloque
+de trabajo 3). La Beta 2 permanece como la última versión estable publicada.
 
 ## Último commit aprobado
 
-**Mensaje:** Agregar generación automática de previews faltantes al aumentar la cantidad (Etapa B3.8)
+**Mensaje:** Pulir técnicamente el Bloque A (Etapa B3.9)
 
-**Etapa:** Generación automática de previews faltantes (B3.8, ampliación del Bloque A — Experiencia visual):
-- `visor_videos.py` — `Tarjeta._asegurar_slots_previews(cantidad)` (crea `PreviewConTiempo`
-  adicionales con `eventFilter` y tamaño vigente, antes del `addStretch()`, sin reconstruir
-  la tarjeta); `ajustar_previews` crece los slots; `_al_cambiar_cantidad_previews` llama
-  `_programar_previews()` al final (reutiliza la cola y el gestor existentes; solo genera
-  los índices faltantes vía `generar_previews_faltantes`). Sin escaneo, sin pipeline de
-  catálogo; disminuir solo oculta.
-- `prueba_previews_automaticas.py` — 22 verificaciones de la etapa.
+**Etapa:** Pulido técnico del Bloque A (B3.9 — sin funcionalidades nuevas):
+- `visor_videos.py` — `LIMITE_ORIGINAL_MINIATURA = 1280` y `_pixmap_acotado()`
+  (los originales retenidos se acotan al cargar; sin releer disco ni regenerar,
+  calidad de todos los tamaños y de la vista ampliada preservada); `_al_vista_solicitada`
+  oculta de inmediato el popup al pasar a una miniatura distinta (transición limpia);
+  helper `_duracion_valida(duracion)` (elimina la duplicación del criterio);
+  eliminación de `ANCHO_PREVIEW`/`ALTO_PREVIEW` (constantes realmente muertas).
+- `prueba_pulido_bloque_a.py` — 29 verificaciones de la etapa.
 
-**Pruebas superadas:** `prueba_previews_automaticas.py` 22/22 (crecimiento dinámico y
-conservación de eventFilter/overlay/tamaño, generación solo de índices faltantes 4-5/6-7/8-9,
-sin regenerar existentes, sin escaneo, actualización incremental de la tarjeta, disminuir sin
-trabajo, selección y scroll conservados); regresiones `prueba_previews_progresivas.py` 16/16,
-`prueba_cantidad_previews.py` 14/14, `prueba_vista_ampliada.py` 24/24,
-`prueba_tiempo_previews.py` 35/35, `prueba_tamano_miniaturas.py` 32/32,
+**Pruebas superadas:** `prueba_pulido_bloque_a.py` 29/29 (acotado con evidencia de
+memoria 1920×1080 → 1280×720, ~56 % menos; límite cubre la mayor salida; previews y
+miniatura acotadas; `_duracion_valida` y comportamiento intacto; transición limpia del
+popup; constantes eliminadas; vista ampliada sobre original acotado); regresiones
+`prueba_vista_ampliada.py` 24/24, `prueba_tamano_miniaturas.py` 32/32,
 `prueba_tamano_muy_grande.py` 27/27, `prueba_tamano_vista_ampliada.py` 35/35,
-`prueba_preferencias_miniaturas.py` 31/31, `prueba_recarga_catalogo.py` 20/20,
-`prueba_pagina_siguiente.py` 20/20, `prueba_lectura_paginada.py` 32/32,
-`prueba_filas_horizontales.py` 16/16, `prueba_seleccion_visual.py` OK,
+`prueba_tiempo_previews.py` 35/35, `prueba_previews_progresivas.py` 16/16,
+`prueba_cantidad_previews.py` 14/14, `prueba_previews_automaticas.py` 22/22,
+`prueba_preferencias_miniaturas.py` 31/31, `prueba_filas_horizontales.py` 16/16,
+`prueba_recarga_catalogo.py` 20/20, `prueba_pagina_siguiente.py` 20/20,
+`prueba_lectura_paginada.py` 32/32, `prueba_seleccion_visual.py` OK,
 `prueba_shift_clic.py` 28/28, `prueba_seleccion.py` 28/28,
-`prueba_restauracion_seleccion.py` 15/15, `prueba_smoke.py` OK, `prueba_doble_clic.py` 14/14,
-`prueba_tamano_archivo.py` 15/15. Ejecución manual del flujo real en entorno controlado:
-3→5 (solo [4,5]), 5→7 (solo [6,7]), 7→9 (solo [8,9]), disminuir sin trabajo, tarjetas
-actualizadas, sin escaneo, selección y scroll conservados, fluidez ~155-185 ms, cierre limpio
-(exit 0).
+`prueba_restauracion_seleccion.py` 15/15, `prueba_smoke.py` OK, `prueba_doble_clic.py`
+14/14, `prueba_tamano_archivo.py` 15/15. Ejecución real de `visor_videos.py` con
+`biblioteca.db`: 4 tamaños, transición limpia del popup, vista ampliada sobre Muy grande
+×2.5, overlays, sin regeneración (488 → 488), cierre limpio (exit 0).
 
 ## Hitos completados
 
@@ -137,6 +138,11 @@ actualizadas, sin escaneo, selección y scroll conservados, fluidez ~155-185 ms,
   cantidad de previews, las tarjetas crecen dinámicamente (sin reconstruirse) y la
   cola existente genera únicamente los índices faltantes en segundo plano, actualizando
   solo las tarjetas afectadas; sin escaneo ni pipeline. Al disminuir solo se ocultan.
+- **Pulido técnico del Bloque A (Etapa B3.9).** Mejoras internas sin funcionalidades
+  nuevas: acotado de pixmaps originales en memoria (límite 1280, sin releer disco ni
+  regenerar), transición limpia del popup, helper `_duracion_valida` y eliminación de
+  constantes realmente muertas. Con esto el **Bloque A queda finalizado funcional y
+  técnicamente**.
 
 ## Pendientes prioritarios
 
@@ -193,12 +199,13 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
 
 ## Próxima etapa
 
-**Etapa B3.9** — primera etapa del siguiente bloque de trabajo de la Beta 3.
-Su definición detallada se acordará recién después del cierre documental de la
-B3.8 y la aprobación del commit, siguiendo el plan de trabajo de `ROADMAP.md`
-(Bloque de trabajo 3), en bloques pequeños, verificables y acumulativos, sin
-adelantar funcionalidades excluidas del alcance ni agregar funcionalidades
-nuevas fuera del plan aprobado.
+**Bloque B — Selección y operaciones.** Con el Bloque A finalizado funcional y
+técnicamente, el siguiente bloque de trabajo de la Beta 3 será **B (Selección y
+operaciones)**. La primera etapa del bloque se definirá recién después del cierre
+documental de la B3.9 y la aprobación del commit, siguiendo el plan de trabajo de
+`ROADMAP.md` (Bloque de trabajo 3), en bloques pequeños, verificables y acumulativos,
+sin adelantar funcionalidades excluidas del alcance ni agregar funcionalidades nuevas
+fuera del plan aprobado.
 
 ## Documentos del proyecto
 

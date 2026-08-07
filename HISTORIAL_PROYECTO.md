@@ -5,6 +5,75 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 66. Pulido técnico del Bloque A (Etapa B3.9)
+
+- **Fecha:** 2026-08-06
+- **Tipo:** Etapa de **pulido técnico** — **sin funcionalidades nuevas**; mejoras
+  internas de rendimiento, mantenimiento y experiencia de uso del Bloque A.
+- **Objetivo:** Resolver deudas técnicas de bajo costo detectadas en la auditoría del
+  Bloque A (acotar la retención de pixmaps originales en memoria, corregir la
+  transición del popup, deduplicar el criterio de duración válida y eliminar
+  constantes realmente muertas) sin modificar el comportamiento funcional esperado.
+- **Archivos creados:**
+  - `prueba_pulido_bloque_a.py` — 29 verificaciones: `_pixmap_acotado` (imágenes
+    pequeñas idénticas, 1920×1080 → 1280×720, vacío intacto), evidencia de reducción
+    de memoria (~56 %), el límite 1280 cubre la mayor salida (Muy grande × 2.5);
+    previews y miniatura acotadas al cargar; `_duracion_valida` y overlay/duración
+    intactos; transición limpia del popup (oculta al cambiar, muestra la nueva tras el
+    retardo, misma imagen no oculta); constantes muertas eliminadas; vista ampliada
+    sobre original acotado.
+- **Archivos modificados:**
+  - `visor_videos.py` — `LIMITE_ORIGINAL_MINIATURA = 1280` y `_pixmap_acotado(pixmap)`
+    aplicados al almacenar `_pixmap_original` (previews) y `_miniatura_original`
+    (miniatura principal); `_al_vista_solicitada` oculta de inmediato el popup al pasar
+    a una miniatura distinta; helper `_duracion_valida(duracion)` reemplazando las dos
+    ocurrencias duplicadas; eliminación de `ANCHO_PREVIEW`/`ALTO_PREVIEW` (constantes
+    realmente muertas). `RETARDO_VISTA_AMPLIADA_MS` se conserva (lo usa una prueba).
+  - `DOCUMENTO_TECNICO.md` — `_duracion_valida`, `_pixmap_acotado`, `LIMITE_ORIGINAL_MINIATURA`
+    y la transición del popup documentados; constante `TAMANIO_LOTE_PREVIEWS` corregida.
+  - `ROADMAP.md` — pulido técnico registrado en el Bloque A (sin funcionalidades nuevas).
+  - `ESTADO_PROYECTO.md` — última etapa aprobada, fase actual (Bloque A finalizado
+    funcional y técnicamente), hitos y próxima etapa (Bloque B) actualizados.
+  - `HISTORIAL_PROYECTO.md` — este documento (registro de la etapa).
+- **Pruebas:** `prueba_pulido_bloque_a.py` 29/29; regresiones `prueba_vista_ampliada.py`
+  24/24, `prueba_tamano_miniaturas.py` 32/32, `prueba_tamano_muy_grande.py` 27/27,
+  `prueba_tamano_vista_ampliada.py` 35/35, `prueba_tiempo_previews.py` 35/35,
+  `prueba_previews_progresivas.py` 16/16, `prueba_cantidad_previews.py` 14/14,
+  `prueba_previews_automaticas.py` 22/22, `prueba_preferencias_miniaturas.py` 31/31,
+  `prueba_filas_horizontales.py` 16/16, `prueba_recarga_catalogo.py` 20/20,
+  `prueba_pagina_siguiente.py` 20/20, `prueba_lectura_paginada.py` 32/32,
+  `prueba_seleccion_visual.py` OK, `prueba_shift_clic.py` 28/28, `prueba_seleccion.py`
+  28/28, `prueba_restauracion_seleccion.py` 15/15, `prueba_smoke.py` OK,
+  `prueba_doble_clic.py` 14/14, `prueba_tamano_archivo.py` 15/15. Ejecución real de
+  `visor_videos.py` con `biblioteca.db`: 4 tamaños, transición limpia del popup, vista
+  ampliada sobre Muy grande ×2.5, overlays, sin regeneración (488 → 488), cierre limpio
+  (exit 0).
+- **Evidencia objetiva de reducción de memoria:** `_pixmap_acotado` de 1920×1080 →
+  1280×720: de 8.294.400 a 3.686.400 bytes por imagen almacenada (~56 % menos). Las
+  previews reales actuales ya son ≤1280, por lo que se conservan iguales; el ahorro
+  aplica a fuentes de mayor resolución.
+- **Resultado:** El Bloque A queda pulido técnicamente sin cambios funcionales visibles:
+  menor memoria retenida (manteniendo el reescalado en memoria, sin releer disco ni
+  regenerar, y preservando la calidad de todos los tamaños y de la vista ampliada),
+  transición limpia del popup, criterio de duración centralizado y constantes muertas
+  eliminadas.
+- **Commit:** "Pulir técnicamente el Bloque A (Etapa B3.9)"
+- **Decisiones importantes:**
+  1. **Acotado sin perder calidad**: `LIMITE_ORIGINAL_MINIATURA = 1280` cubre
+     exactamente la mayor salida (Muy grande 512 × factor 2.5); imágenes ≤ 1280 se
+     conservan idénticas; se mantiene la filosofía "sin releer disco, sin regenerar".
+  2. **Transición limpia del popup**: ocultar de inmediato al cambiar de miniatura
+     (la misma imagen no oculta) evita la sensación de popup "pegado".
+  3. **Helper `_duracion_valida`**: centraliza el criterio; sin cambio de
+     comportamiento (verificado por regresiones).
+  4. **Solo constantes realmente muertas**: se eliminaron `ANCHO_PREVIEW`/`ALTO_PREVIEW`;
+     se conservó `RETARDO_VISTA_AMPLIADA_MS` por tener uso en pruebas.
+  5. **Sin nuevas funcionalidades**: no se implementaron las mejoras diferidas
+     (badge en la vista ampliada, PreferenciasDialog, infraestructura genérica,
+     instante real de generación, slots dinámicos decrecientes, persistencia_carpeta).
+
+---
+
 ## 65. Generación automática de previews faltantes al aumentar la cantidad (Etapa B3.8)
 
 - **Fecha:** 2026-08-06

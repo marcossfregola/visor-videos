@@ -72,11 +72,10 @@ from tareas_videos import (
 
 ANCHO_TARJETA = 320
 ALTO_TARJETA = 180
-ANCHO_PREVIEW = ANCHO_TARJETA // 3
-ALTO_PREVIEW = ALTO_TARJETA // 3
 TAMANIO_PAGINA_INICIAL = 100
 TAMANIO_LOTE_PREVIEWS = 3
 RETARDO_VISTA_AMPLIADA_MS = 400
+LIMITE_ORIGINAL_MINIATURA = 1280
 RETARDO_OCULTAR_VISTA_MS = 150
 FACTOR_VISTA_AMPLIADA = 1.6
 FACTORES_VISTA_AMPLIADA = (1.2, 1.6, 2.0, 2.5)
@@ -189,6 +188,31 @@ def formatear_tiempo(segundos):
     return f"{minutos}:{segundos_resto:02d}"
 
 
+def _duracion_valida(duracion):
+    return (
+        isinstance(duracion, (int, float))
+        and not isinstance(duracion, bool)
+        and duracion > 0
+    )
+
+
+def _pixmap_acotado(pixmap):
+    if pixmap is None or pixmap.isNull():
+        return pixmap
+    ancho = pixmap.width()
+    alto = pixmap.height()
+    mayor = max(ancho, alto)
+    if mayor <= LIMITE_ORIGINAL_MINIATURA:
+        return pixmap
+    escala = LIMITE_ORIGINAL_MINIATURA / mayor
+    return pixmap.scaled(
+        max(1, int(ancho * escala)),
+        max(1, int(alto * escala)),
+        Qt.KeepAspectRatio,
+        Qt.SmoothTransformation,
+    )
+
+
 def miniatura_principal(nombre):
     prefijo = _nombre_seguro(os.path.splitext(nombre)[0])
     carpeta = ruta_carpeta_miniaturas()
@@ -234,12 +258,12 @@ class PreviewConTiempo(QLabel):
     def poner_preview(self, pixmap, tiempo=None):
         if pixmap is None or pixmap.isNull():
             return False
-        self._pixmap_original = pixmap
+        self._pixmap_original = _pixmap_acotado(pixmap)
         self._tiempo = tiempo
         ancho, alto = dimensiones_miniatura()
         self.setFixedHeight(alto)
         self.setPixmap(
-            pixmap.scaled(
+            self._pixmap_original.scaled(
                 ancho,
                 alto,
                 Qt.KeepAspectRatio,
@@ -435,11 +459,7 @@ class Tarjeta(QFrame):
             resolucion = f"{ancho}x{alto}"
 
         duracion_texto = "No disponible"
-        if (
-            isinstance(duracion, (int, float))
-            and not isinstance(duracion, bool)
-            and duracion > 0
-        ):
+        if _duracion_valida(duracion):
             duracion_texto = formatear_tiempo(duracion)
 
         campos = [
@@ -478,7 +498,7 @@ class Tarjeta(QFrame):
         ruta_miniatura = miniatura_principal(nombre)
         if ruta_miniatura is not None:
             imagen = QLabel()
-            pixmap = QPixmap(ruta_miniatura)
+            pixmap = _pixmap_acotado(QPixmap(ruta_miniatura))
             imagen.setPixmap(
                 pixmap.scaled(
                     ancho,
@@ -552,11 +572,7 @@ class Tarjeta(QFrame):
             return False
         tiempo = None
         duracion = self._duracion
-        if (
-            isinstance(duracion, (int, float))
-            and not isinstance(duracion, bool)
-            and duracion > 0
-        ):
+        if _duracion_valida(duracion):
             tiempo = formatear_tiempo(calcular_tiempo_preview(duracion, indice + 1))
         return etiqueta.poner_preview(pixmap, tiempo)
 
@@ -901,6 +917,8 @@ class VisorVideos(QMainWindow):
         if pixmap is None or pixmap.isNull():
             return
         self._timer_vista_ocultar.stop()
+        if self._vista.isVisible() and self._vista._pixmap is not pixmap:
+            self._vista.ocultar()
         self._vista_pendiente = pixmap
         self._timer_vista_mostrar.start()
 
