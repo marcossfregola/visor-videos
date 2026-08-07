@@ -799,6 +799,8 @@ class VisorVideos(QMainWindow):
         self._portapapeles = []
         self._operacion_archivos = None
         self._carpeta_sincronizacion = None
+        self._cola_carpetas_escaneo = []
+        self._omite_sincronizacion = False
 
         self.busqueda = QLineEdit()
         self.busqueda.setPlaceholderText("Buscar por nombre...")
@@ -818,7 +820,9 @@ class VisorVideos(QMainWindow):
 
         self.boton_escanear = QPushButton("Escanear carpeta")
         self.boton_escanear.setEnabled(False)
-        self.boton_escanear.clicked.connect(self.iniciar_escaneo)
+        self.boton_escanear.clicked.connect(
+            lambda _marcado=False: self.iniciar_escaneo()
+        )
 
         self.incluir_subcarpetas = QCheckBox("Incluir subcarpetas")
         self.incluir_subcarpetas.stateChanged.connect(self._al_cambiar_subcarpetas)
@@ -1617,14 +1621,27 @@ class VisorVideos(QMainWindow):
     def nombres_seleccionados(self):
         return set(self._nombres_seleccionados)
 
-    def iniciar_escaneo(self):
+    def iniciar_escaneo(self, carpetas=None):
         if self.gestor.activo:
             return
-        carpeta = self.carpeta_seleccionada
-        if not carpeta or not os.path.isdir(carpeta):
+        if carpetas is None or isinstance(carpetas, bool):
+            carpetas = [self.carpeta_seleccionada]
+        elif isinstance(carpetas, str):
+            carpetas = [carpetas]
+        carpetas_validas = [
+            c for c in carpetas
+            if isinstance(c, str) and os.path.isdir(c)
+        ]
+        if not carpetas_validas:
             self.mensaje_carpeta.setText(MENSAJE_RUTA_INVALIDA)
             self._actualizar_botones_carpeta()
             return
+        carpetas_sin_repetir = list(dict.fromkeys(carpetas_validas))
+        self._cola_carpetas_escaneo = list(carpetas_sin_repetir[1:])
+        self._omite_sincronizacion = len(carpetas_sin_repetir) > 1
+        self._iniciar_escaneo_carpeta(carpetas_sin_repetir[0])
+
+    def _iniciar_escaneo_carpeta(self, carpeta):
         configurar_escaneo_recursivo(self.incluir_subcarpetas.isChecked())
         tarea = TareaEscaneo(carpeta)
         self._escaneo_pendiente = True
@@ -1635,7 +1652,7 @@ class VisorVideos(QMainWindow):
         self._sincronizacion_pendiente = False
         self._recarga_catalogo_pendiente = False
         self._pagina_pendiente = False
-        self._carpeta_sincronizacion = None
+        self._carpeta_sincronizacion = carpeta
         self.registros_guardados = None
         self.resultado_sincronizacion = None
         self.tarea_escaneo = None
@@ -1651,6 +1668,7 @@ class VisorVideos(QMainWindow):
         self.resultado_miniaturas = None
         if not self.gestor.iniciar(tarea):
             self._escaneo_pendiente = False
+            self._cola_carpetas_escaneo = []
             self._actualizar_botones_carpeta()
             return
         self.tarea_escaneo = tarea
@@ -1668,6 +1686,8 @@ class VisorVideos(QMainWindow):
         self._recarga_catalogo_pendiente = False
         self._pagina_pendiente = False
         self._carpeta_sincronizacion = None
+        self._cola_carpetas_escaneo = []
+        self._omite_sincronizacion = False
         self.tarea_escaneo = None
         self.tarea_tamanos = None
         self.tarea_ffprobe = None
@@ -1867,6 +1887,11 @@ class VisorVideos(QMainWindow):
         if self._recarga_catalogo_pendiente:
             self._iniciar_recarga_catalogo()
             return
+        if self._cola_carpetas_escaneo:
+            siguiente = self._cola_carpetas_escaneo.pop(0)
+            self._iniciar_escaneo_carpeta(siguiente)
+            return
+        self._omite_sincronizacion = False
 
     def _iniciar_sincronizacion(self, carpeta=None):
         if carpeta is None and self._carpeta_sincronizacion is not None:
@@ -2080,7 +2105,10 @@ class VisorVideos(QMainWindow):
         self.resultado_ffprobe = None
         self.resultado_miniaturas = None
         self.registros_guardados = resultado.get("guardados")
-        self._sincronizacion_pendiente = True
+        if self._omite_sincronizacion:
+            self._recarga_catalogo_pendiente = True
+        else:
+            self._sincronizacion_pendiente = True
         self._actualizar_botones_carpeta()
 
     def _al_error(self, mensaje):

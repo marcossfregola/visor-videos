@@ -15,22 +15,46 @@ técnica **B3.18**) y el **Bloque C — Progreso** quedó **completo**
 (**B3.20–B3.23**), con lo que la **Beta 3 queda funcionalmente cerrada**
 salvo problemas en las pruebas finales. Además está en marcha el **Bloque de
 trabajo 4 — Catálogo por selección de carpetas**: implementadas la **Etapa 1
-— Infraestructura de selección** y la **entrega conjunta Etapas 2-3 — Modo
-de selección del árbol y herramientas de selección rápida**. El plan de
-trabajo se documenta en `ROADMAP.md` (Bloques de trabajo 3 y 4). La Beta 2
-permanece como la última versión estable publicada.
+— Infraestructura de selección**, la **entrega conjunta Etapas 2-3 — Modo
+de selección del árbol y herramientas de selección rápida** y la **Etapa 4 —
+Escaneo multicarpeta** (con la limitación temporal de omisión de
+sincronización, a eliminar en la Etapa 5). El plan de trabajo se documenta
+en `ROADMAP.md` (Bloques de trabajo 3 y 4). La Beta 2 permanece como la
+última versión estable publicada.
 
 ## Último commit aprobado
 
-**Mensaje:** Integrar el modo de selección de carpetas y las herramientas de selección rápida en el árbol (Etapas 2-3, Bloque 4)
+**Mensaje:** Implementar el escaneo multicarpeta del catálogo (Etapa 4, Bloque 4)
 
-**Etapa:** Modo de selección del árbol + herramientas de selección rápida (Bloque de trabajo 4, **entrega conjunta Etapas 2-3**):
-- `arbol_navegacion.py` — `ArbolNavegacion(seleccion=...)` enlazado a `SeleccionCarpetas`; `set_modo_seleccion(activo)` con checkboxes por nodo que reflejan el conjunto (`_aplicar_check`, guard `_sincronizando_checks`, nodos envueltos en el guard en `_crear_nodo_disco`/`_crear_nodo_carpeta`); `_al_item_cambiado` sincroniza checkbox ↔ conjunto solo si difieren (sin cambiar carpeta activa, sin escaneos, sin alterar navegación); con el modo desactivado el árbol es idéntico al actual. **Herramientas rápidas**: `seleccionar_todas_nivel`, `deseleccionar_todas`, `invertir_nivel` (conserva lo externo), y menú contextual (solo en modo selección) `seleccionar_hasta`/`deseleccionar_hasta`/`seleccionar_desde`/`deseleccionar_desde` sobre los hermanos ordenados (`_hijos_ordenados`); todas materializan **rutas** en el conjunto, sin intervalos ni estructuras paralelas.
-- `visor_videos.py` — pasa `seleccion=self.seleccion_carpetas` al árbol; toggle "Modo selección" y fila de acciones rápidas (oculta salvo en modo selección).
-- `prueba_modo_seleccion_arbol.py` — 16 verificaciones de la Etapa 2 (nuevo).
-- `prueba_herramientas_seleccion_arbol.py` — 20 verificaciones de la Etapa 3 (nuevo).
+**Etapa:** Escaneo multicarpeta (Bloque de trabajo 4, Etapa 4):
+- `visor_videos.py` — `iniciar_escaneo(carpetas=None)` acepta una lista (o cadena, o `None` →
+  carpeta activa), filtra carpetas inexistentes y **deduplica**; `_iniciar_escaneo_carpeta`
+  ejecuta la cadena existente por carpeta; cola secuencial `_cola_carpetas_escaneo`
+  (avance en `_al_tarea_finalizada`); `_omite_sincronizacion` (**limitación temporal**):
+  en multicarpeta se omite la sincronización monocarpetas (que eliminaría registros de otras
+  carpetas) y `_al_resultado_guardado` va directo a la recarga. `boton_escanear` reconectado
+  con lambda (Qt pasa `bool`). Modo tradicional idéntico; sin auto-activación desde la interfaz.
+- `prueba_escaneo_multicarpeta.py` — 12 verificaciones de la etapa (nuevo), incluida la
+  transición de modos A → A+B (selección) → A solicitada por la auditoría.
 
-**Pruebas superadas:** `prueba_modo_seleccion_arbol.py` 16/16 (toggle, árbol idéntico con modo desactivado, checks solo en modo, sincronización checkbox↔conjunto, persistencia tras reconstrucción/expansión, carpeta activa independiente, sin escaneos, restauración al iniciar); `prueba_herramientas_seleccion_arbol.py` 20/20 (todas las acciones rápidas, orden visual, checks restaurados, conjunto persistido como única fuente de verdad, carpeta activa intacta, no-op sin hijos, botones visibles/ocultos, sin escaneos); regresiones relevantes OK: `prueba_arbol_navegacion.py`, `prueba_seleccion_carpetas.py` 22/22, `prueba_seleccion_arbol.py` 25/25, `prueba_seleccion_carpeta.py` 26/26, `prueba_persistencia_arbol.py` 15/15, `prueba_persistencia_subcarpetas.py` 10/10, `prueba_expansion_carpetas.py` 35/35, `prueba_escaneo_automatico.py` 19/19, `prueba_escaneo_interfaz.py` 36/36, `prueba_carpeta_actual.py` 19/19, `prueba_recarga_catalogo.py` 20/20, `prueba_interfaz_asincrona.py` 29/29, `prueba_progreso_visual_pulido.py` 7/7, `prueba_restauracion_seleccion.py` 15/15, `prueba_atajos_operaciones.py` 16/16, `prueba_seleccion.py` 28/28, `prueba_seleccion_visual.py` OK, `prueba_smoke.py` OK.
+**Pruebas superadas:** `prueba_escaneo_multicarpeta.py` 12/12 (escaneo tradicional sin
+regresión y marcado de escaneada; multicarpeta produce la unión; repetición de carpetas sin
+duplicados; carpetas inexistentes ignoradas; lista vacía/inválida no escanea; la base refleja
+la unión; limpieza del flag; transición A → A+B → A); regresiones relevantes OK:
+`prueba_escaneo.py` 12/12, `prueba_escaneo_guardado.py` 24/24, `prueba_escaneo_interfaz.py`
+36/36, `prueba_escaneo_automatico.py` 19/19, `prueba_ffprobe.py` 12/12, `prueba_guardar.py`
+19/19, `prueba_guardar_videos.py` 34/34, `prueba_lectura.py` 15/15, `prueba_lectura_paginada.py`
+32/32, `prueba_progreso_pipeline.py` 11/11, `prueba_progreso_operaciones.py` 12/12,
+`prueba_sincronizacion_interfaz.py` 18/18, `prueba_recarga_catalogo.py` 20/20,
+`prueba_interfaz_asincrona.py` 29/29, `prueba_tamano_archivo.py` 15/15, `prueba_progreso.py`
+13/13, `prueba_progreso_visual.py` OK, `prueba_progreso_visual_pulido.py` 7/7,
+`prueba_modo_seleccion_arbol.py` 16/16, `prueba_herramientas_seleccion_arbol.py` 20/20,
+`prueba_seleccion_carpetas.py` 22/22, `prueba_arbol_navegacion.py`, `prueba_seleccion_carpeta.py`
+26/26, `prueba_carpeta_actual.py` 19/19, `prueba_persistencia_arbol.py` 15/15,
+`prueba_persistencia_subcarpetas.py` 10/10, `prueba_expansion_carpetas.py` 35/35,
+`prueba_atajos_operaciones.py` 16/16, `prueba_seleccion.py` 28/28,
+`prueba_restauracion_seleccion.py` 15/15, `prueba_duracion_simplificada.py` 23/23,
+`prueba_smoke.py` OK.
 
 ## Hitos completados
 
@@ -227,6 +251,11 @@ permanece como la última versión estable publicada.
   (Seleccionar/Deseleccionar: hasta aquí, desde aquí hasta el final) sobre los hermanos
   ordenados. Todas materializan **rutas** en `SeleccionCarpetas`, sin intervalos ni estructuras
   paralelas.
+- **Escaneo multicarpeta (Bloque 4, Etapa 4).** `iniciar_escaneo(carpetas=None)` acepta una
+  lista de carpetas y encadena el pipeline existente **una vez por carpeta** (cola secuencial),
+  produciendo la unión en el catálogo; deduplicación de carpetas y modo tradicional idéntico.
+  **Limitación temporal:** en multicarpeta se omite la sincronización monocarpetas (eliminaría
+  registros de otras carpetas); se eliminará por completo en la **Etapa 5**.
 
 ## Pendientes prioritarios
 
@@ -283,13 +312,14 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
 
 ## Próxima etapa
 
-**Etapa 4 — Escaneo de la selección** (Bloque de trabajo 4). Hacer que `iniciar_escaneo`
-soporte los tres modos (solo carpeta actual, carpeta + subcarpetas, selección personalizada)
-y que el pipeline procese la unión de la selección con progreso "carpeta N de M". Requiere
-resolver previamente la **deduplicación de nombres de archivo entre carpetas** (`nombre`
-UNIQUE). Su definición detallada se realizará con la inspección técnica previa, en bloques
-pequeños, verificables y acumulativos, sin adelantar funcionalidades excluidas del alcance ni
-agregar funcionalidades nuevas fuera del plan aprobado.
+**Etapa 5 — Sincronización multicarpeta** (Bloque de trabajo 4). Eliminar la limitación
+temporal introducida en la Etapa 4 (omisión de sincronización en el escaneo multicarpeta) y
+hacer que la reconciliación del catálogo sea consistente con el conjunto seleccionado
+(reconciliación por carpeta del alcance, indicadores por carpeta), según `ROADMAP.md` (Bloque
+de trabajo 4). Es la etapa más importante del bloque: con ella el comportamiento multicarpeta
+queda completamente consistente. Su definición detallada se realizará con la inspección técnica
+previa, en bloques pequeños, verificables y acumulativos, sin adelantar funcionalidades
+excluidas del alcance ni agregar funcionalidades nuevas fuera del plan aprobado.
 
 ## Documentos del proyecto
 

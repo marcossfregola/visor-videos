@@ -5,6 +5,65 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 84. Implementar el escaneo multicarpeta del catálogo (Etapa 4, Bloque 4)
+
+- **Fecha:** 2026-08-07
+- **Objetivo:** Hacer que el motor de escaneo pueda trabajar sobre el conjunto de carpetas
+  seleccionado (Bloque 4, Etapa 4), reutilizando al máximo la arquitectura existente: el
+  escaneo recibe varias carpetas y produce la **unión** en el catálogo, sin reescribir
+  `TareaEscaneo`, `escanear_videos`, FFprobe, miniaturas ni guardado, y sin activar
+  automáticamente el modo multicarpeta desde la interfaz.
+- **Análisis previo:** el punto único de decisión del alcance es `iniciar_escaneo()`; la forma
+  más pequeña de pasar de "una carpeta" a "lista de carpetas" es encadenar el pipeline existente
+  **una vez por carpeta**; `TareaFFprobe` ya usa rutas absolutas pero los demás pasos dependen de
+  `(nombre, carpeta única)`, por lo que la cadena por carpeta evita tocar sus contratos.
+- **Archivos creados:**
+  - `prueba_escaneo_multicarpeta.py` — 12 verificaciones: escaneo tradicional sin regresión y
+    marcado de escaneada; multicarpeta produce la unión; repetición de carpetas sin duplicados;
+    carpetas inexistentes ignoradas; lista vacía/inválida no escanea; la base refleja la unión;
+    limpieza del flag; **transición de modos A → A+B (selección) → A** solicitada por la
+    auditoría.
+- **Archivos modificados:**
+  - `visor_videos.py` — `iniciar_escaneo(carpetas=None)` acepta lista/cadena/`None` (modo
+    tradicional), filtra carpetas inexistentes y **deduplica** (`dict.fromkeys`); `_iniciar_escaneo_carpeta`
+    ejecuta la cadena existente por carpeta (con `_carpeta_sincronizacion = carpeta`); cola
+    secuencial `_cola_carpetas_escaneo` (avance en `_al_tarea_finalizada`); `_omite_sincronizacion`
+    (**limitación temporal**: en multicarpeta se omite la sincronización monocarpetas, que
+    eliminaría los registros de las demás carpetas; `_al_resultado_guardado` salta al paso de
+    recarga); `boton_escanear` reconectado con lambda (Qt pasa `bool` al slot) y guarda contra
+    `bool`/`None`/`str`.
+  - `ROADMAP.md` — Bloque 4: Etapa 4 marcada como implementada con la **limitación temporal**
+    documentada (a eliminar en la Etapa 5).
+  - `DOCUMENTO_TECNICO.md` — `iniciar_escaneo(carpetas=None)`, la cola, el flag de omisión y la
+    limitación temporal documentados.
+  - `ESTADO_PROYECTO.md` — última etapa aprobada, fase actual, hitos y próxima etapa (Etapa 5).
+  - `HISTORIAL_PROYECTO.md` — este documento (registro de la etapa).
+- **Pruebas:** `prueba_escaneo_multicarpeta.py` 12/12; regresiones relevantes OK (`prueba_escaneo.py`
+  12/12, `prueba_escaneo_guardado.py` 24/24, `prueba_escaneo_interfaz.py` 36/36,
+  `prueba_escaneo_automatico.py` 19/19, `prueba_ffprobe.py` 12/12, `prueba_guardar.py` 19/19,
+  `prueba_guardar_videos.py` 34/34, `prueba_lectura.py` 15/15, `prueba_lectura_paginada.py` 32/32,
+  `prueba_progreso_pipeline.py` 11/11, `prueba_progreso_operaciones.py` 12/12,
+  `prueba_sincronizacion_interfaz.py` 18/18, `prueba_recarga_catalogo.py` 20/20,
+  `prueba_interfaz_asincrona.py` 29/29, `prueba_tamano_archivo.py` 15/15, `prueba_progreso.py`
+  13/13, `prueba_progreso_visual.py` OK, `prueba_progreso_visual_pulido.py` 7/7,
+  `prueba_modo_seleccion_arbol.py` 16/16, `prueba_herramientas_seleccion_arbol.py` 20/20,
+  `prueba_seleccion_carpetas.py` 22/22, `prueba_arbol_navegacion.py`, `prueba_seleccion_carpeta.py`
+  26/26, `prueba_carpeta_actual.py` 19/19, `prueba_persistencia_arbol.py` 15/15,
+  `prueba_persistencia_subcarpetas.py` 10/10, `prueba_expansion_carpetas.py` 35/35,
+  `prueba_atajos_operaciones.py` 16/16, `prueba_seleccion.py` 28/28,
+  `prueba_restauracion_seleccion.py` 15/15, `prueba_duracion_simplificada.py` 23/23,
+  `prueba_smoke.py` OK).
+- **Commit:** Aprobado y commiteado.
+- **Resultado:** el escaneo multicarpeta produce la unión de las carpetas seleccionadas en un
+  único catálogo, reutilizando íntegramente el pipeline; el modo tradicional sigue funcionando
+  igual. El flujo A → A+B → A (transición entre modos) queda verificado automáticamente.
+- **Decisiones importantes:** encadenamiento del pipeline por carpeta (menor riesgo, sin
+  reescribir tareas); cola secuencial (sin pipelines simultáneos); **omisión temporal de la
+  sincronización en multicarpeta** (limitación transitoria que se eliminará por completo en la
+  Etapa 5); sin auto-activación del modo multicarpeta desde la interfaz.
+
+---
+
 ## 83. Modo de selección del árbol y herramientas de selección rápida (Bloque 4, Etapas 2-3)
 
 - **Fecha:** 2026-08-07
