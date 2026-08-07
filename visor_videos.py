@@ -789,6 +789,8 @@ class VisorVideos(QMainWindow):
         self.tarea_previews = None
         self.gestor_previews = None
         self._pipeline_activo = False
+        self._texto_progreso = ""
+        self._progreso_detallado = False
         self._nombres_seleccionados = set()
         self._ancla_seleccion = None
         self._modo_seleccion = False
@@ -1210,6 +1212,8 @@ class VisorVideos(QMainWindow):
 
     def _mostrar_progreso(self, texto):
         self._pipeline_activo = True
+        self._texto_progreso = texto
+        self._progreso_detallado = False
         self.barra_progreso.setRange(0, 0)
         self.barra_progreso.setFormat(texto)
         self.barra_progreso.setVisible(True)
@@ -1218,6 +1222,11 @@ class VisorVideos(QMainWindow):
         if total > 0:
             self.barra_progreso.setRange(0, total)
             self.barra_progreso.setValue(procesado)
+            if not self._progreso_detallado:
+                self.barra_progreso.setFormat(
+                    f"{self._texto_progreso} %v de %m (%p%)"
+                )
+                self._progreso_detallado = True
 
     def _ocultar_progreso(self):
         self._pipeline_activo = False

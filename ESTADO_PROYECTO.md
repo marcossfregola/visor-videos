@@ -11,45 +11,38 @@ marcha**: el **Bloque A — Experiencia visual** quedó **completo funcional y
 técnicamente** (B3.1 a B3.9, más las ampliaciones **B3.14a** "Desactivado" y
 **B3.14b** "tamaños 3.0x/3.5x" de la vista ampliada), el **Bloque B —
 Selección y operaciones** quedó **completo** (B3.11 a B3.17 más la corrección
-técnica **B3.18**) y el **Bloque C — Progreso** está en marcha con
-**B3.20 — Infraestructura de progreso**, **B3.21 — Progreso real del
-pipeline de escaneo** y **B3.22 — Progreso real de las operaciones de
-archivos** implementadas. El plan de trabajo se documenta en `ROADMAP.md`
-(Bloque de trabajo 3). La Beta 2 permanece como la última versión estable
-publicada.
+técnica **B3.18**) y el **Bloque C — Progreso** quedó **completo**
+(**B3.20** infraestructura, **B3.21** progreso del pipeline, **B3.22**
+progreso de las operaciones y **B3.23** pulido visual). Con esto la
+**Beta 3 queda funcionalmente cerrada** salvo problemas que surjan en las
+pruebas finales. El plan de trabajo se documenta en `ROADMAP.md` (Bloque de
+trabajo 3). La Beta 2 permanece como la última versión estable publicada.
 
 ## Último commit aprobado
 
-**Mensaje:** Implementar progreso real en las operaciones de archivos (Etapa B3.22)
+**Mensaje:** Pulir visualmente el sistema de progreso (Etapa B3.23)
 
-**Etapa:** Progreso real en Copiar, Pegar y Eliminar (B3.22, Bloque C):
-- `operaciones.py` — parámetro opcional `on_progreso=None` en `copiar_archivos`,
-  `pegar_archivos` y `eliminar_archivos`; emite `on_progreso(indice + 1, total)` **una vez por
-  archivo** (incluyendo omitidos y errores); sin callback, comportamiento idéntico. Sin Qt.
-- `visor_videos.py` — las tres tareas pasan `self.reportar_progreso`; conexión
-  `gestor_operaciones.tarea_progreso → _al_progreso_pipeline` (mismo handler del pipeline, sin
-  lógica paralela); **exclusión mutua**: guard `if self.gestor_operaciones.activo or
-  self.gestor.activo: return` en `_iniciar_copia/pegar/eliminar` y condición `not
-  self.gestor.activo` reflejada en `_actualizar_boton_copiar/pegar/eliminar`.
-- `prueba_progreso_operaciones.py` — 12 verificaciones de la etapa (nuevo).
+**Etapa:** Pulido visual del sistema de progreso (B3.23, Bloque C):
+- `visor_videos.py` — `_mostrar_progreso(texto)` guarda `self._texto_progreso`, reinicia
+  `self._progreso_detallado = False` y mantiene la barra indeterminada (`setRange(0,0)`) con
+  texto plano; `_al_progreso_pipeline(procesado, total)` conserva `setRange(0,total)` +
+  `setValue(procesado)` y aplica **solo la primera vez de cada etapa** el formato detallado
+  `"{texto} %v de %m (%p%)"` (placeholders nativos de `QProgressBar`: etapa + "N de M" +
+  porcentaje). Atributos `_texto_progreso`/`_progreso_detallado` en `__init__`. Las etapas sin
+  emisión (escaneo, sincronización, recarga) siguen indeterminadas con texto simple.
+- `prueba_progreso_visual_pulido.py` — 7 verificaciones de la etapa (nuevo).
 
-**Pruebas superadas:** `prueba_progreso_operaciones.py` 12/12 (callbacks de las tres funciones
-puras emiten `(1..N, N)` incluyendo omitidos y conservan el resultado sin callback; las tres
-tareas reenvían el progreso; la barra se vuelve determinada durante Copiar `[(3,1),(3,2),(3,3)]`,
-Pegar `[(2,1),(2,2)]` y Eliminar `[(2,1),(2,2)]`; exclusión mutua: con el pipeline activo los
-botones se deshabilitan y los atajos no hacen nada); regresiones relevantes OK: `prueba_copiar_archivos.py`
-15/15, `prueba_pegar_archivos.py` 15/15, `prueba_eliminar_archivos.py` 18/18,
-`prueba_atajos_operaciones.py` 16/16, `prueba_resincronizacion_incremental.py` 9/9,
-`prueba_progreso_pipeline.py` 11/11, `prueba_infraestructura_progreso.py` 9/9,
-`prueba_tareas.py` 13/13, `prueba_escaneo_interfaz.py` 36/36,
+**Pruebas superadas:** `prueba_progreso_visual_pulido.py` 7/7 (texto guardado e indeterminada;
+primera emisión aplica el formato detallado con rango/valor; emisiones siguientes no repiten
+`setFormat`; nueva etapa vuelve a texto simple sin arrastre; `total <= 0` no aplica detalle;
+integración del pipeline y de Copiar con el formato detallado); regresiones relevantes OK:
+`prueba_progreso.py` 13/13, `prueba_progreso_visual.py` OK, `prueba_progreso_pipeline.py` 11/11,
+`prueba_progreso_operaciones.py` 12/12, `prueba_escaneo_interfaz.py` 36/36,
 `prueba_sincronizacion_interfaz.py` 18/18, `prueba_recarga_catalogo.py` 20/20,
-`prueba_progreso.py` 13/13, `prueba_progreso_visual.py` OK, `prueba_interfaz_asincrona.py`
-29/29, `prueba_guardar.py` 19/19, `prueba_ffprobe.py` 12/12, `prueba_seleccion.py` 28/28,
-`prueba_modo_seleccion.py` 20/20, `prueba_resumen_seleccion.py` 17/17, `prueba_smoke.py` OK;
-adicionales OK: `prueba_escaneo_guardado.py` 24/24, `prueba_sincronizacion_asincrona.py` 27/27,
-`prueba_lectura_paginada.py` 32/32, `prueba_seleccion_carpeta.py` 26/26,
-`prueba_carpeta_actual.py` 19/19, `prueba_previews_automaticas.py` 22/22,
-`prueba_pulido_bloque_a.py` 29/29.
+`prueba_interfaz_asincrona.py` 29/29, `prueba_copiar_archivos.py` 15/15,
+`prueba_pegar_archivos.py` 15/15, `prueba_eliminar_archivos.py` 18/18,
+`prueba_atajos_operaciones.py` 16/16, `prueba_resincronizacion_incremental.py` 9/9,
+`prueba_smoke.py` OK.
 
 ## Hitos completados
 
@@ -225,6 +218,13 @@ adicionales OK: `prueba_escaneo_guardado.py` 24/24, `prueba_sincronizacion_asinc
   `self.reportar_progreso`; `gestor_operaciones.tarea_progreso` se conecta al **mismo handler**
   `_al_progreso_pipeline` (sin lógica paralela). Se incorpora la **exclusión mutua** entre
   operaciones y pipeline principal (guard en los handlers y en la habilitación de los botones).
+- **Pulido visual del sistema de progreso (Etapa B3.23).** La barra muestra simultáneamente el
+  nombre de la etapa, la cantidad "N de M" y el porcentaje mediante el formato detallado
+  `"{etapa} %v de %m (%p%)"` con los placeholders nativos de `QProgressBar`, aplicado **una
+  sola vez por etapa** en `_al_progreso_pipeline`. `_mostrar_progreso` guarda `_texto_progreso`
+  y reinicia `_progreso_detallado`; las etapas sin emisión (escaneo, sincronización, recarga)
+  siguen indeterminadas con texto simple. Sin cambios en tareas ni infraestructura. Con esto
+  el **Bloque C — Progreso queda completo**.
 
 ## Pendientes prioritarios
 
@@ -281,13 +281,13 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
 
 ## Próxima etapa
 
-**Etapa B3.23 — Pulido visual del sistema de progreso** (Bloque C). Revisar la consistencia
-entre la barra y los mensajes de estado, evitar mensajes que se pisan (p. ej. los resúmenes de
-Pegar/Eliminar reemplazados por "Sincronizando…") y unificar el comportamiento visual, según
-`ROADMAP.md` (Bloque de trabajo 3, "Orden de implementación del Bloque C"). Su definición
-detallada se realizará con la inspección técnica previa, en bloques pequeños, verificables y
-acumulativos, sin adelantar funcionalidades excluidas del alcance ni agregar funcionalidades
-nuevas fuera del plan aprobado.
+**Etapa B3.24 — Limpieza técnica** (Bloque C). Resolver únicamente la deuda técnica que
+continúe siendo necesaria después de las etapas anteriores (`_pipeline_activo`, helpers
+repetidos, etc.), según `ROADMAP.md` (Bloque de trabajo 3, "Orden de implementación del
+Bloque C"). Su definición detallada se realizará con la inspección técnica previa, en bloques
+pequeños, verificables y acumulativos, sin adelantar funcionalidades excluidas del alcance ni
+agregar funcionalidades nuevas fuera del plan aprobado. Con el Bloque C completo, la
+**Beta 3 queda funcionalmente cerrada** salvo problemas que surjan en las pruebas finales.
 
 ## Documentos del proyecto
 

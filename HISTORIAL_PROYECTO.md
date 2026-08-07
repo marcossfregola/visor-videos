@@ -5,6 +5,51 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 81. Pulir visualmente el sistema de progreso (Etapa B3.23)
+
+- **Fecha:** 2026-08-07
+- **Objetivo:** Completar el pulido visual del sistema de progreso reutilizando íntegramente la
+  infraestructura de B3.20/B3.21/B3.22: la barra muestra simultáneamente el nombre de la etapa,
+  la cantidad "N de M" y el porcentaje, con un criterio único y sin nueva infraestructura.
+- **Archivos creados:**
+  - `prueba_progreso_visual_pulido.py` — 7 verificaciones: `_mostrar_progreso` guarda el texto
+    y deja la barra indeterminada; la primera emisión aplica el formato detallado
+    `"%v de %m (%p%)"` con rango/valor; las emisiones siguientes no repiten `setFormat`; una
+    nueva etapa vuelve a texto simple sin arrastre; `total <= 0` no aplica detalle; integración
+    del pipeline y de Copiar con el formato detallado.
+- **Archivos modificados:**
+  - `visor_videos.py` — `_mostrar_progreso(texto)` guarda `self._texto_progreso`, reinicia
+    `self._progreso_detallado = False` y mantiene la barra indeterminada (`setRange(0,0)`) con
+    texto plano; `_al_progreso_pipeline(procesado, total)` conserva `setRange(0,total)` +
+    `setValue(procesado)` y aplica **solo la primera vez de cada etapa** el formato detallado
+    `"{texto} %v de %m (%p%)"` (placeholders nativos de `QProgressBar`); atributos
+    `_texto_progreso`/`_progreso_detallado` inicializados en `__init__`. Escaneo,
+    sincronización y recarga siguen indeterminadas con texto simple. Sin widgets nuevos ni
+    cambios de diseño; sin cambios en tareas ni infraestructura.
+  - `DOCUMENTO_TECNICO.md` — formato detallado y estado de la barra documentados.
+  - `ROADMAP.md` — B3.23 marcada como implementada.
+  - `ESTADO_PROYECTO.md` — última etapa aprobada, fase actual (Bloque C completo), hitos y
+    próxima etapa (B3.24).
+  - `HISTORIAL_PROYECTO.md` — este documento (registro de la etapa).
+- **Pruebas:** `prueba_progreso_visual_pulido.py` 7/7; regresiones relevantes OK
+  (`prueba_progreso.py` 13/13, `prueba_progreso_visual.py` OK, `prueba_progreso_pipeline.py`
+  11/11, `prueba_progreso_operaciones.py` 12/12, `prueba_escaneo_interfaz.py` 36/36,
+  `prueba_sincronizacion_interfaz.py` 18/18, `prueba_recarga_catalogo.py` 20/20,
+  `prueba_interfaz_asincrona.py` 29/29, `prueba_copiar_archivos.py` 15/15,
+  `prueba_pegar_archivos.py` 15/15, `prueba_eliminar_archivos.py` 18/18,
+  `prueba_atajos_operaciones.py` 16/16, `prueba_resincronizacion_incremental.py` 9/9,
+  `prueba_smoke.py` OK).
+- **Commit:** Aprobado y commiteado.
+- **Resultado:** el sistema de progreso queda unificado (etapa + "N de M" + porcentaje en las
+  etapas determinadas; texto simple en las indeterminadas). Con esto el **Bloque C — Progreso
+  queda completo** y la **Beta 3 queda funcionalmente cerrada** salvo problemas en las pruebas
+  finales.
+- **Decisiones importantes:** un único formato detallado con placeholders nativos
+  (`%v`, `%m`, `%p%`); `setFormat` aplicado una sola vez por etapa (flag `_progreso_detallado`);
+  sin widgets nuevos ni cambios de diseño.
+
+---
+
 ## 80. Implementar progreso real en las operaciones de archivos (Etapa B3.22)
 
 - **Fecha:** 2026-08-07
