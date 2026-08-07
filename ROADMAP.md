@@ -267,7 +267,7 @@ intacto el comportamiento del modo normal.
 | --- | --- |
 | B3.11 | **Resumen de selección** (B6) — "n de m seleccionados", sincronizado con la selección y el filtro. **Implementada (Etapa B3.11).** |
 | B3.12 | **Modo selección + Checks por fila** (B1 + B2) — toggle en la barra que activa checks por fila sincronizados con la selección; el modo normal no cambia. **Implementada (Etapa B3.12).** |
-| B3.13 | **Atajos básicos** (B7, parcial) — Ctrl+A (todo lo visible) y Esc (salir del modo selección). |
+| B3.13 | **Atajos básicos** (B7, parcial) — Ctrl+A (todo lo visible) y Esc (salir del modo selección). **Implementada (Etapa B3.13).** |
 | B3.14 | **Copiar** (B3) — copiar los archivos de video seleccionados a una carpeta destino (diálogo), en segundo plano, sin sobrescribir. |
 | B3.15 | **Pegar** (B4) — pegar en la carpeta actual los archivos copiados internamente, con confirmación de colisión. |
 | B3.16 | **Eliminar** (B5) — mover a la Papelera de reciclaje (nunca borrado permanente) con confirmación y resumen. |

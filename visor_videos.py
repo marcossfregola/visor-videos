@@ -3,7 +3,14 @@ import os
 import sys
 
 from PySide6.QtCore import QEvent, QPoint, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QCursor, QPainter, QPixmap
+from PySide6.QtGui import (
+    QColor,
+    QCursor,
+    QKeySequence,
+    QPainter,
+    QPixmap,
+    QShortcut,
+)
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -811,6 +818,11 @@ class VisorVideos(QMainWindow):
         self.actualizar_contador()
         self._actualizar_resumen_seleccion()
 
+        self._atajo_ctrl_a = QShortcut(QKeySequence("Ctrl+A"), self)
+        self._atajo_ctrl_a.activated.connect(self._atajo_seleccionar_todo)
+        self._atajo_esc = QShortcut(QKeySequence("Esc"), self)
+        self._atajo_esc.activated.connect(self._atajo_salir_modo_seleccion)
+
         self.area = QScrollArea()
         self.area.setWidgetResizable(True)
         self.area.setWidget(self.contenedor)
@@ -1141,6 +1153,22 @@ class VisorVideos(QMainWindow):
         self._modo_seleccion = bool(activo)
         for _, tarjeta in self.tarjetas:
             tarjeta.mostrar_check(self._modo_seleccion)
+
+    def _atajo_seleccionar_todo(self):
+        if self.busqueda.hasFocus():
+            self.busqueda.selectAll()
+            return
+        self._seleccionar_todo_visible()
+
+    def _seleccionar_todo_visible(self):
+        for nombre in self.visibles:
+            self._nombres_seleccionados.add(nombre)
+            self._marcar_tarjeta(nombre, True)
+        self._actualizar_resumen_seleccion()
+
+    def _atajo_salir_modo_seleccion(self):
+        if self._modo_seleccion:
+            self.boton_modo_seleccion.setChecked(False)
 
     def _actualizar_resumen_seleccion(self):
         visibles = self.visibles

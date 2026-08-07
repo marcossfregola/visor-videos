@@ -5,6 +5,58 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 70. Atajos básicos de selección (Etapa B3.13)
+
+- **Fecha:** 2026-08-06
+- **Objetivo:** Implementar los atajos básicos de selección: **Ctrl+A** (seleccionar
+  todas las tarjetas visibles, respetando el filtro) y **Esc** (salir del Modo
+  Selección), sin operaciones sobre archivos.
+- **Archivos creados:**
+  - `prueba_atajos_basicos.py` — 13 verificaciones: Ctrl+A sin filtro (todas las
+    visibles), con filtro (solo visibles; una oculta ya seleccionada no cuenta en el
+    resumen), repetido (idempotente), con foco en la búsqueda (selecciona el texto del
+    campo, no las tarjetas), con foco en un checkbox del modo (selecciona todas y marca
+    checks); Esc con modo activo (sale, oculta checks, conserva selección), con modo
+    inactivo (sin cambios), con foco en la búsqueda; consistencia.
+- **Archivos modificados:**
+  - `visor_videos.py` — imports `QShortcut`/`QKeySequence`; `_atajo_ctrl_a`
+    (Ctrl+A) y `_atajo_esc` (Esc) sobre la ventana; `_atajo_seleccionar_todo` (guarda
+    `busqueda.hasFocus()` → `selectAll()` o `_seleccionar_todo_visible`),
+    `_seleccionar_todo_visible` (itera `self.visibles`, `add` + `_marcar_tarjeta`,
+    cierra con `_actualizar_resumen_seleccion`) y `_atajo_salir_modo_seleccion` (si
+    modo activo → `boton_modo_seleccion.setChecked(False)`).
+  - `DOCUMENTO_TECNICO.md` — atajos básicos documentados.
+  - `ROADMAP.md` — B3.13 marcada en el orden del Bloque B (B7 parcial; B7 queda
+    Pendiente hasta B3.17).
+  - `ESTADO_PROYECTO.md` — última etapa aprobada, fase actual, hitos y próxima etapa
+    actualizados.
+  - `HISTORIAL_PROYECTO.md` — este documento (registro de la etapa).
+- **Pruebas:** `prueba_atajos_basicos.py` 13/13; regresiones `prueba_modo_seleccion.py`
+  20/20, `prueba_resumen_seleccion.py` 17/17, `prueba_seleccion.py` 28/28,
+  `prueba_shift_clic.py` 28/28, `prueba_seleccion_visual.py` OK,
+  `prueba_restauracion_seleccion.py` 15/15, `prueba_filas_horizontales.py` 16/16,
+  `prueba_recarga_catalogo.py` 20/20, `prueba_smoke.py` OK. Ejecución real de
+  `visor_videos.py` con `biblioteca.db` y `QTest` (eventos reales de teclado): Ctrl+A sin
+  filtro (24 de 24), con filtro (solo visibles), con foco en la búsqueda (sin tocar
+  tarjetas), con foco en un checkbox; Esc con modo activo (sale, oculta checks, conserva
+  24 de 24) y con modo inactivo; consistencia check↔selección, cierre limpio (exit 0).
+- **Resultado:** Ctrl+A selecciona únicamente las tarjetas visibles (respetando el
+  filtro) reutilizando `_marcar_tarjeta`; Esc sale del Modo Selección ocultando solo los
+  checks y conservando la selección y el resumen. Se preserva el comportamiento del
+  buscador (`QLineEdit`) y `_nombres_seleccionados` sigue siendo la única fuente de
+  verdad.
+- **Commit:** "Implementar atajos básicos de selección (Etapa B3.13)"
+- **Decisiones importantes:**
+  1. **`QShortcut`** sobre la ventana principal (contexto `WindowShortcut`).
+  2. **Sin interferencia con la búsqueda**: con foco en el `QLineEdit`, Ctrl+A replica
+     su `selectAll()` y no selecciona tarjetas.
+  3. **Solo visibles**: `_seleccionar_todo_visible` itera `self.visibles`; las tarjetas
+     ocultas por el filtro no se seleccionan (y una ya seleccionada no cuenta en el
+     resumen mientras esté oculta).
+  4. **Esc no destructivo**: solo oculta los checks; selección y resumen intactos.
+
+---
+
 ## 69. Modo selección con checks por fila (Etapa B3.12)
 
 - **Fecha:** 2026-08-06

@@ -9,45 +9,39 @@ grandes colecciones de videos mediante miniaturas representativas.
 exclusivamente documental) y la **implementación de la Beta 3 está en
 marcha**: el **Bloque A — Experiencia visual** quedó **completo funcional y
 técnicamente** (B3.1 a B3.9) y el **Bloque B — Selección y operaciones** está
-en implementación: **B3.11 — Resumen de selección** (B6) y **B3.12 — Modo
-selección + Checks por fila** (B1 + B2) implementadas. El plan de trabajo se
-documenta en `ROADMAP.md` (Bloque de trabajo 3). La Beta 2 permanece como la
-última versión estable publicada.
+en implementación: **B3.11 — Resumen de selección** (B6), **B3.12 — Modo
+selección + Checks por fila** (B1 + B2) y **B3.13 — Atajos básicos** (Ctrl+A y
+Esc, parte de B7) implementadas. El plan de trabajo se documenta en
+`ROADMAP.md` (Bloque de trabajo 3). La Beta 2 permanece como la última versión
+estable publicada.
 
 ## Último commit aprobado
 
-**Mensaje:** Implementar modo selección con checks por fila (Etapa B3.12)
+**Mensaje:** Implementar atajos básicos de selección (Etapa B3.13)
 
-**Etapa:** Modo selección + Checks por fila (B3.12, Bloque B):
-- `visor_videos.py` — `Tarjeta`: `QCheckBox` (`_check`) en el índice 0 del layout
-  raíz (oculto por defecto), señal `seleccion_check`, `mostrar_check`/`set_check`
-  (con `blockSignals`) y `_al_check_cambiar` (usa `isChecked()`); `VisorVideos`:
-  botón checkable "Modo selección" en la barra, `_modo_seleccion`,
-  `_al_cambiar_modo_seleccion`, `_al_check_tarjeta` y sincronización centralizada en
-  `_marcar_tarjeta`. `_nombres_seleccionados` sigue siendo la única fuente de verdad;
-  activar/desactivar el modo conserva la selección y el resumen (B3.11).
-- `prueba_modo_seleccion.py` — 20 verificaciones de la etapa.
+**Etapa:** Atajos básicos (B3.13, Bloque B):
+- `visor_videos.py` — dos `QShortcut` sobre la ventana: **Ctrl+A** (`_atajo_ctrl_a`)
+  y **Esc** (`_atajo_esc`). `_atajo_seleccionar_todo`: si el foco está en la búsqueda,
+  replica `selectAll()` del `QLineEdit` (sin tocar tarjetas); en caso contrario,
+  `_seleccionar_todo_visible()` itera `self.visibles` (respeta el filtro), agrega a
+  `_nombres_seleccionados` y llama `_marcar_tarjeta(nombre, True)`, cerrando con
+  `_actualizar_resumen_seleccion()` (idempotente). `_atajo_salir_modo_seleccion`: si el
+  modo está activo, `boton_modo_seleccion.setChecked(False)` (oculta solo los checks y
+  conserva la selección y el resumen).
+- `prueba_atajos_basicos.py` — 13 verificaciones de la etapa.
 
-**Corrección durante la implementación:** `_al_check_cambiar` usa `isChecked()` en
-lugar de `estado == Qt.Checked` (semántica enum/int de PySide6), evitando que la
-reentrada desmarcara el checkbox.
-
-**Pruebas superadas:** `prueba_modo_seleccion.py` 20/20 (checkbox oculto/mostrar/set
-sin reentrada, toggle real emite `seleccion_check`, modo activo/desactivo, sincronización
-check↔selección en simple/Ctrl/Shift, deselección y selección vía check, sin reentrada,
-restauración tras recarga con modo activo, búsqueda, consistencia invariante);
-regresiones `prueba_resumen_seleccion.py` 17/17, `prueba_seleccion.py` 28/28,
-`prueba_shift_clic.py` 28/28, `prueba_seleccion_visual.py` OK,
-`prueba_restauracion_seleccion.py` 15/15, `prueba_filas_horizontales.py` 16/16,
-`prueba_recarga_catalogo.py` 20/20, `prueba_smoke.py` OK, `prueba_cantidad_previews.py`
-14/14, `prueba_previews_automaticas.py` 22/22, `prueba_vista_ampliada.py` 24/24,
-`prueba_tiempo_previews.py` 35/35, `prueba_tamano_miniaturas.py` 32/32,
-`prueba_tamano_muy_grande.py` 27/27, `prueba_tamano_vista_ampliada.py` 35/35,
-`prueba_preferencias_miniaturas.py` 31/31. Ejecución real de `visor_videos.py` con
-`biblioteca.db`: modo activo/desactivo, checks visibles/ocultos, sincronización en
-simple/Ctrl/Shift, deselección vía check, recarga con restauración y modo activo,
-búsqueda, consistencia check↔selección verificada en todo el flujo, cierre limpio
-(exit 0).
+**Pruebas superadas:** `prueba_atajos_basicos.py` 13/13 (Ctrl+A sin filtro, con filtro
+solo visibles, con foco en la búsqueda —no selecciona tarjetas—, con foco en un checkbox
+del modo, idempotencia; Esc con modo activo —sale, oculta checks, conserva selección—,
+con modo inactivo —sin cambios—, con foco en la búsqueda; consistencia);
+regresiones `prueba_modo_seleccion.py` 20/20, `prueba_resumen_seleccion.py` 17/17,
+`prueba_seleccion.py` 28/28, `prueba_shift_clic.py` 28/28, `prueba_seleccion_visual.py`
+OK, `prueba_restauracion_seleccion.py` 15/15, `prueba_filas_horizontales.py` 16/16,
+`prueba_recarga_catalogo.py` 20/20, `prueba_smoke.py` OK. Ejecución real de
+`visor_videos.py` con `biblioteca.db` y `QTest` (eventos reales de teclado): Ctrl+A sin
+filtro (24 de 24), con filtro (solo visibles), con foco en la búsqueda (sin tocar
+tarjetas), con foco en un checkbox; Esc con modo activo (sale, oculta checks, conserva 24
+de 24) y con modo inactivo; consistencia check↔selección, cierre limpio (exit 0).
 
 ## Hitos completados
 
@@ -157,6 +151,10 @@ búsqueda, consistencia check↔selección verificada en todo el flujo, cierre l
   solo en modo activo); sincronización bidireccional centralizada en `_marcar_tarjeta`
   con `blockSignals` (sin reentradas) y `_nombres_seleccionados` como única fuente de
   verdad. Activarlo/desactivarlo conserva la selección y el resumen.
+- **Atajos básicos (Etapa B3.13).** Parte de B7: Ctrl+A (selecciona solo las tarjetas
+  visibles, respetando el filtro; con foco en la búsqueda no interfiere con el
+  `QLineEdit`) y Esc (sale del Modo Selección, oculta los checks y conserva la
+  selección y el resumen), mediante `QShortcut` sobre la ventana.
 
 ## Pendientes prioritarios
 
@@ -213,12 +211,12 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
 
 ## Próxima etapa
 
-**Etapa B3.13 — Atajos básicos** (Bloque B). Siguiente mejora del Bloque B: Ctrl+A
-(seleccionar todo lo visible) y Esc (salir del modo selección). Su definición detallada
-se realizará con la inspección técnica previa, siguiendo el plan de `ROADMAP.md`
-(Bloque de trabajo 3, sección "Bloque B"), en bloques pequeños, verificables y
-acumulativos, sin adelantar funcionalidades excluidas del alcance ni agregar
-funcionalidades nuevas fuera del plan aprobado.
+**Etapa B3.14 — Copiar** (Bloque B). Siguiente mejora del Bloque B: copiar los archivos
+de video seleccionados a una carpeta destino (diálogo), en segundo plano y sin
+sobrescribir. Su definición detallada se realizará con la inspección técnica previa,
+siguiendo el plan de `ROADMAP.md` (Bloque de trabajo 3, sección "Bloque B"), en bloques
+pequeños, verificables y acumulativos, sin adelantar funcionalidades excluidas del
+alcance ni agregar funcionalidades nuevas fuera del plan aprobado.
 
 ## Documentos del proyecto
 
