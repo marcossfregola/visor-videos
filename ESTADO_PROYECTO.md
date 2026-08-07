@@ -8,8 +8,9 @@ grandes colecciones de videos mediante miniaturas representativas.
 **Fase actual:** quedó **aprobado el alcance de la Beta 3** (Etapa B3.0,
 exclusivamente documental) y la **implementación de la Beta 3 está en
 marcha**: el **Bloque A — Experiencia visual** quedó **completo funcional y
-técnicamente** (B3.1 a B3.9) y el **Bloque B — Selección y operaciones** está
-en implementación: **B3.11 — Resumen de selección** (B6), **B3.12 — Modo
+técnicamente** (B3.1 a B3.9, más la ampliación **B3.14a** "Desactivado" de la
+vista ampliada) y el **Bloque B — Selección y operaciones** está en
+implementación: **B3.11 — Resumen de selección** (B6), **B3.12 — Modo
 selección + Checks por fila** (B1 + B2), **B3.13 — Atajos básicos** (parte de
 B7) y **B3.14 — Copiar** (B3) implementadas. El plan de trabajo se documenta
 en `ROADMAP.md` (Bloque de trabajo 3). La Beta 2 permanece como la última
@@ -17,33 +18,28 @@ versión estable publicada.
 
 ## Último commit aprobado
 
-**Mensaje:** Implementar copia de archivos seleccionados (Etapa B3.14)
+**Mensaje:** Agregar opción para desactivar la vista ampliada (Etapa B3.14a)
 
-**Etapa:** Copiar (B3.14, Bloque B):
-- `operaciones.py` — `copiar_archivos(origen, archivos, destino)` (función pura:
-  `shutil.copy2`, crea subdirectorios para nombres anidados, omite destinos existentes,
-  registra errores por archivo y continúa; resumen `{"copiados", "omitidos", "errores"}`).
-- `visor_videos.py` — `TareaCopiarArchivos(TareaBase)` (glue), tercer gestor
-  `gestor_operaciones` (independiente del pipeline y de previews; cerrado en
-  `closeEvent`), botón "Copiar…" en la barra (`_actualizar_boton_copiar` lo habilita
-  con selección + carpeta válida + gestor inactivo), `_iniciar_copia`
-  (`getExistingDirectory`; cancelar no copia), `_al_resultado_copia` (muestra en
-  `estado_escaneo` "Copiado: X — Omitidos: Y — Errores: Z"; sin atributos de estado
-  permanentes) y `_al_error_copia`. Sin cambios en menú contextual, atajos ni catálogo.
-- `prueba_copiar_archivos.py` — 15 verificaciones de la etapa.
+**Etapa:** Desactivar la vista ampliada (B3.14a, ampliación del Bloque A):
+- `configuracion.py` — `-1` agregado a `RETARDOS_VALIDOS_VISTA_AMPLIADA`
+  (representación interna de "Desactivado"); configs anteriores compatibles; inválido
+  → default 400 ms.
+- `visor_videos.py` — "Desactivado" (`-1`) en el combo del retardo; `self._retardo_vista_ampliada`
+  conserva el valor vigente (restauración: solo se fija el intervalo si no es `-1`);
+  `_aplicar_retardo_vista_ampliada(-1)` detiene el timer y oculta un popup visible;
+  `_al_vista_solicitada` retorna de inmediato con `-1` (no se inicia el timer ni aparece
+  el popup). Volver a cualquier retardo reactiva la funcionalidad. Sin cambios de
+  clases ni timers.
+- `prueba_vista_ampliada_desactivada.py` — 20 verificaciones de la etapa.
 
-**Pruebas superadas:** `prueba_copiar_archivos.py` 15/15 (función pura: copia simple y
-múltiple, omitido si existe, errores por archivo, nombres anidados, validaciones;
-integración: botón habilitado con selección, la tarea emite el resumen por señal, archivos
-copiados, resumen visible en la interfaz, interfaz no bloqueada, cancelación del diálogo,
-sin selección); regresiones `prueba_modo_seleccion.py` 20/20, `prueba_resumen_seleccion.py`
-17/17, `prueba_seleccion.py` 28/28, `prueba_shift_clic.py` 28/28,
-`prueba_seleccion_visual.py` OK, `prueba_restauracion_seleccion.py` 15/15,
-`prueba_filas_horizontales.py` 16/16, `prueba_recarga_catalogo.py` 20/20,
-`prueba_atajos_basicos.py` 13/13, `prueba_smoke.py` OK. Ejecución manual del flujo real en
-entorno controlado: copia de un archivo, copia múltiple (con omitido y error), destino con
-archivos existentes (omitido sin sobrescribir), cancelación del diálogo, interfaz fluida
-(gestor principal no bloqueado), resumen final correcto (5/5).
+**Pruebas superadas:** `prueba_vista_ampliada_desactivada.py` 20/20 (persistencia y
+compatibilidad del `-1`, restauración desde configuración, no se inicia el timer, el
+popup nunca aparece incluso recorriendo previews y disparando el timeout, reactivación a
+400 ms, ocultado del popup al desactivar estando visible); regresiones
+`prueba_vista_ampliada.py` 24/24, `prueba_preferencias_miniaturas.py` 31/31,
+`prueba_tamano_vista_ampliada.py` 35/35, `prueba_tamano_miniaturas.py` 32/32,
+`prueba_tamano_muy_grande.py` 27/27, `prueba_cantidad_previews.py` 14/14,
+`prueba_previews_automaticas.py` 22/22, `prueba_smoke.py` OK.
 
 ## Hitos completados
 
@@ -161,6 +157,10 @@ archivos existentes (omitido sin sobrescribir), cancelación del diálogo, inter
   una carpeta destino elegida por el usuario, en segundo plano (tercer gestor
   `gestor_operaciones`), sin sobrescribir, con resumen final (copiados/omitidos/errores)
   visible en la interfaz. Lógica pura en `operaciones.copiar_archivos`.
+- **Desactivar la vista ampliada (Etapa B3.14a).** Ampliación del Bloque A: opción
+  "Desactivado" (`-1`) en el retardo de la vista ampliada; con ella nunca se inicia el
+  timer ni aparece el popup al posar el mouse, y volver a cualquier retardo reactiva la
+  funcionalidad.
 
 ## Pendientes prioritarios
 

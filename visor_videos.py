@@ -370,8 +370,9 @@ class VistaAmpliada(QFrame):
         self.hide()
 
 
-RETARDOS_VISTA_AMPLIADA = (0, 250, 400, 600)
+RETARDOS_VISTA_AMPLIADA = (-1, 0, 250, 400, 600)
 TEXTOS_RETARDO_VISTA_AMPLIADA = (
+    "Desactivado",
     "Inmediato",
     "250 ms",
     "400 ms",
@@ -911,9 +912,13 @@ class VisorVideos(QMainWindow):
         self._vista_pendiente = None
         self._timer_vista_mostrar = QTimer(self)
         self._timer_vista_mostrar.setSingleShot(True)
-        self._timer_vista_mostrar.setInterval(
-            obtener_retardo_vista_ampliada(self._ruta_config)
+        self._retardo_vista_ampliada = obtener_retardo_vista_ampliada(
+            self._ruta_config
         )
+        if self._retardo_vista_ampliada != -1:
+            self._timer_vista_mostrar.setInterval(
+                self._retardo_vista_ampliada
+            )
         configurar_factor_vista_ampliada(
             obtener_tamano_vista_ampliada(self._ruta_config)
         )
@@ -989,6 +994,8 @@ class VisorVideos(QMainWindow):
             tarjeta.aplicar_tamano()
 
     def _al_vista_solicitada(self, pixmap):
+        if self._retardo_vista_ampliada == -1:
+            return
         if pixmap is None or pixmap.isNull():
             return
         self._timer_vista_ocultar.stop()
@@ -1043,8 +1050,13 @@ class VisorVideos(QMainWindow):
             )
 
     def _aplicar_retardo_vista_ampliada(self, ms):
+        self._retardo_vista_ampliada = ms
         guardar_retardo_vista_ampliada(ms, self._ruta_config)
-        self._timer_vista_mostrar.setInterval(ms)
+        if ms == -1:
+            self._timer_vista_mostrar.stop()
+            self._ocultar_vista()
+        else:
+            self._timer_vista_mostrar.setInterval(ms)
 
     def _aplicar_tamano_vista_ampliada(self, factor):
         guardar_tamano_vista_ampliada(factor, self._ruta_config)

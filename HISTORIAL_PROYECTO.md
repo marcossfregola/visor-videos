@@ -5,6 +5,57 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 72. Opción para desactivar la vista ampliada (Etapa B3.14a)
+
+- **Fecha:** 2026-08-06
+- **Objetivo:** Permitir desactivar completamente la vista ampliada al posar el mouse,
+  agregando la opción "Desactivado" en el combo del retardo de la vista ampliada: con
+  ella nunca se inicia el timer ni aparece el popup (mover el mouse no produce ninguna
+  acción), manteniendo intacto el resto de la funcionalidad.
+- **Archivos creados:**
+  - `prueba_vista_ampliada_desactivada.py` — 20 verificaciones: persistencia y
+    compatibilidad del valor `-1` (default 400 ante ausencia/inválido); restauración
+    desde configuración; con "Desactivado" **no se inicia el timer**, **no se fija
+    pendiente** y **el popup nunca aparece** (incluso recorriendo previews y disparando
+    el timeout); volver desde "Desactivado" a 400 ms reactiva el timer y el popup;
+    aplicar "Desactivado" con el popup visible lo oculta.
+- **Archivos modificados:**
+  - `configuracion.py` — `-1` agregado a `RETARDOS_VALIDOS_VISTA_AMPLIADA`
+    (representación interna de "Desactivado"); configs anteriores (0/250/400/600)
+    compatibles; inválido → default 400 ms.
+  - `visor_videos.py` — `RETARDOS_VISTA_AMPLIADA = (-1, 0, 250, 400, 600)` y
+    `TEXTOS_RETARDO_VISTA_AMPLIADA = ("Desactivado", "Inmediato", "250 ms", "400 ms",
+    "600 ms")`; `self._retardo_vista_ampliada` conserva el valor vigente (en la
+    restauración solo se fija el intervalo si no es `-1`); `_aplicar_retardo_vista_ampliada`
+    con `-1` detiene el timer y oculta un popup visible; `_al_vista_solicitada` retorna de
+    inmediato con `-1`. Sin eliminar clases ni timers; sin tocar el resto de la
+    funcionalidad.
+  - `DOCUMENTO_TECNICO.md` — opción "Desactivado" documentada en `VistaAmpliada`,
+    `PreferenciasDialog` y `configuracion.py`.
+  - `ROADMAP.md` — ampliación A9 incorporada al Bloque A como implementada.
+  - `ESTADO_PROYECTO.md` — última etapa aprobada, fase actual, hitos y próxima etapa
+    actualizados.
+  - `HISTORIAL_PROYECTO.md` — este documento (registro de la etapa).
+- **Pruebas:** `prueba_vista_ampliada_desactivada.py` 20/20; regresiones
+  `prueba_vista_ampliada.py` 24/24, `prueba_preferencias_miniaturas.py` 31/31,
+  `prueba_tamano_vista_ampliada.py` 35/35, `prueba_tamano_miniaturas.py` 32/32,
+  `prueba_tamano_muy_grande.py` 27/27, `prueba_cantidad_previews.py` 14/14,
+  `prueba_previews_automaticas.py` 22/22, `prueba_smoke.py` OK.
+- **Resultado:** La opción "Desactivado" impide por completo la vista ampliada (sin
+  timer ni popup) y volver a cualquier retardo la reactiva; se persiste con la
+  infraestructura existente y las configuraciones anteriores siguen siendo compatibles.
+- **Commit:** "Agregar opción para desactivar la vista ampliada (Etapa B3.14a)"
+- **Decisiones importantes:**
+  1. **Representación discreta `-1`**: sigue el patrón existente de
+     `configuracion.py`; aditivo y sin migración.
+  2. **Guarda en el punto de entrada**: `_al_vista_solicitada` retorna de inmediato con
+     `-1`; no se tocan clases, timers ni el resto del mecanismo.
+  3. **Ocultado inmediato**: aplicar "Desactivado" con un popup visible lo oculta.
+  4. **Reactivación**: volver a cualquier retardo restaura el intervalo y el flujo
+     normal.
+
+---
+
 ## 71. Copia de archivos seleccionados (Etapa B3.14)
 
 - **Fecha:** 2026-08-06

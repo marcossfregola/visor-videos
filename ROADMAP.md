@@ -149,6 +149,11 @@ No se implementará ninguna mejora fuera de este alcance.
   (límite 1280, sin releer disco ni regenerar, calidad preservada), transición limpia
   del popup entre miniaturas distintas, helper reutilizable `_duracion_valida` y
   eliminación de constantes realmente muertas.
+- Opción "Desactivado" para la vista ampliada (ampliación de A4). **Implementada
+  (Etapa B3.14a).** En el retardo de la vista ampliada se agrega el valor discreto
+  "Desactivado" (`-1`): con él nunca se inicia el timer ni aparece el popup al posar el
+  mouse; volver a cualquier retardo reactiva la funcionalidad. Persistido con la
+  infraestructura existente (configs anteriores compatibles; inválido → 400 ms).
 
 ### B. Selección y operaciones
 
@@ -238,6 +243,7 @@ Quedan fuera del alcance de la Beta 3 y no se implementarán en ella:
 | A6 | Tamaño "Muy grande" (ampliación de A3) | A | Implementada |
 | A7 | Tamaño configurable de la vista ampliada (ampliación de A4) | A | Implementada |
 | A8 | Generación automática de previews faltantes (ampliación de A1) | A | Implementada |
+| A9 | Desactivar la vista ampliada (ampliación de A4) | A | Implementada |
 | B1 | Modo selección | B | Implementada |
 | B2 | Checks por fila | B | Implementada |
 | B3 | Copiar | B | Implementada |
