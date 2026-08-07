@@ -82,12 +82,14 @@ TAMANIOS_MINIATURAS = {
     "pequeno": (260, 146),
     "mediano": (320, 180),
     "grande": (400, 225),
+    "muy_grande": (512, 288),
 }
 TAMANIO_MINIATURAS_ACTUAL = "mediano"
 TEXTO_TAMANO_MINIATURAS = {
     "pequeno": "Pequeño",
     "mediano": "Mediano",
     "grande": "Grande",
+    "muy_grande": "Muy grande",
 }
 
 
@@ -673,7 +675,7 @@ class VisorVideos(QMainWindow):
         self.etiqueta_tamano_miniaturas = QLabel("Tamaño:")
         self.combo_tamano_miniaturas = QComboBox()
         self.combo_tamano_miniaturas.addItems(
-            ["Pequeño", "Mediano", "Grande"]
+            ["Pequeño", "Mediano", "Grande", "Muy grande"]
         )
         self.combo_tamano_miniaturas.currentIndexChanged.connect(
             self._al_cambiar_tamano_miniaturas

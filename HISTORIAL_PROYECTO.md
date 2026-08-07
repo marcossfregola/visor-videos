@@ -5,6 +5,61 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 63. Tamaño "Muy grande" para las miniaturas (Etapa B3.6)
+
+- **Fecha:** 2026-08-06
+- **Objetivo:** Ampliar la funcionalidad de tamaño configurable (B3.3) agregando un
+  cuarto tamaño "Muy grande" (512×288), integrado únicamente ampliando los datos de
+  configuración, sin modificar la lógica principal ni el comportamiento de los tres
+  tamaños existentes.
+- **Archivos creados:**
+  - `prueba_tamano_muy_grande.py` — 27 verificaciones: presets y default (los tres
+    existentes intactos + muy_grande); mapeo texto↔clave; persistencia round-trip y
+    compatibilidad (configuraciones anteriores válidas; inválido → "mediano"); cambio
+    en memoria sin `QPixmap` nuevos; overlay y miniatura principal reescalados; vista
+    ampliada 1.6× sobre Muy grande (819×460); integración con selección/scroll/
+    persistencia/restauración.
+- **Archivos modificados:**
+  - `visor_videos.py` — `"muy_grande": (512, 288)` en `TAMANIOS_MINIATURAS`,
+    `"muy_grande": "Muy grande"` en `TEXTO_TAMANO_MINIATURAS` y `"Muy grande"` en el
+    combo de tamaño. Integración 100 % por datos (miniatura principal, previews,
+    overlays, vista ampliada, persistencia y cambio inmediato derivados de
+    `dimensiones_miniatura()`); sin refactor ni lógica específica.
+  - `configuracion.py` — `"muy_grande"` agregado a `TAMANIOS_VALIDOS_MINIATURAS`;
+    lecturas tolerantes: valores previos válidos, desconocido/inválido → "mediano".
+  - `DOCUMENTO_TECNICO.md` — `TAMANIOS_MINIATURAS` actualizado a los cuatro presets.
+  - `ROADMAP.md` — ampliación A6 "Tamaño Muy grande" incorporada al Bloque A como
+    implementada.
+  - `ESTADO_PROYECTO.md` — última etapa aprobada, fase actual, hitos y próxima etapa
+    actualizados.
+  - `HISTORIAL_PROYECTO.md` — este documento (registro de la etapa).
+- **Pruebas:** `prueba_tamano_muy_grande.py` 27/27; regresiones
+  `prueba_tamano_miniaturas.py` 32/32, `prueba_vista_ampliada.py` 24/24,
+  `prueba_tiempo_previews.py` 35/35, `prueba_preferencias_miniaturas.py` 31/31,
+  `prueba_cantidad_previews.py` 14/14, `prueba_previews_progresivas.py` 16/16,
+  `prueba_filas_horizontales.py` 16/16, `prueba_recarga_catalogo.py` 20/20,
+  `prueba_pagina_siguiente.py` 20/20, `prueba_seleccion_visual.py` OK,
+  `prueba_shift_clic.py` 28/28, `prueba_seleccion.py` 28/28,
+  `prueba_restauracion_seleccion.py` 15/15, `prueba_smoke.py` OK,
+  `prueba_doble_clic.py` 14/14, `prueba_tamano_archivo.py` 15/15. Ejecución real de
+  `visor_videos.py` con `biblioteca.db`: los cuatro tamaños (146/180/225/288), cambio
+  inmediato (Muy grande ~36 ms, sin degradación perceptible), selección y scroll
+  conservados, vista ampliada 1.6× (819×460), sin regeneración de miniaturas
+  (488 → 488), persistencia tras reiniciar (Muy grande), cierre limpio (exit 0).
+- **Resultado:** El tamaño "Muy grande" (512×288) queda integrado al Bloque A; la
+  incorporación confirmó que la arquitectura de B3.3 está desacoplada y preparada
+  para crecer (solo se ampliaron los datos de configuración).
+- **Commit:** "Agregar tamaño 'Muy grande' para las miniaturas (Etapa B3.6)"
+- **Decisiones importantes:**
+  1. **Integración por datos**: cuatro adiciones (preset, texto, combo, conjunto
+     válido); sin refactor ni lógica específica para el nuevo tamaño.
+  2. **Comportamiento intacto de los tamaños existentes**: "Mediano" sigue siendo el
+     default; configuraciones previas compatibles; inválido → "mediano".
+  3. **Mismo mecanismo de B3.3**: escalado solo en memoria, sin regenerar ni releer
+     disco (verificado: 0 `QPixmap` nuevos).
+
+---
+
 ## 62. Preferencias relacionadas con miniaturas (Etapa B3.5)
 
 - **Fecha:** 2026-08-06

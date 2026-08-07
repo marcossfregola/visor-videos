@@ -11,39 +11,39 @@ marcha**: el **Bloque A — Experiencia visual** quedó **completo** con las
 mejoras B3.1 ("Tiempo sobre las miniaturas de preview"), B3.2 ("Duración
 simplificada"), B3.3 ("Tamaño configurable de miniaturas"), B3.4 ("Vista
 ampliada al posar el mouse") y B3.5 ("Preferencias relacionadas con
-miniaturas"). El plan de trabajo se documenta en `ROADMAP.md` (Bloque de
-trabajo 3). La Beta 2 permanece como la última versión estable publicada.
+miniaturas"), más la **ampliación B3.6** (tamaño "Muy grande" 512×288,
+incorporado solo ampliando los datos de configuración). El plan de trabajo se
+documenta en `ROADMAP.md` (Bloque de trabajo 3). La Beta 2 permanece como la
+última versión estable publicada.
 
 ## Último commit aprobado
 
-**Mensaje:** Agregar preferencias relacionadas con miniaturas (Etapa B3.5)
+**Mensaje:** Agregar tamaño "Muy grande" para las miniaturas (Etapa B3.6)
 
-**Etapa:** Preferencias relacionadas con miniaturas (B3.5, Bloque A — Experiencia visual):
-- `visor_videos.py` — `PreferenciasDialog(QDialog)` con el retardo de la vista
-  ampliada (Inmediato 0 / 250 / 400 / 600 ms, default 400); botón "Preferencias…"
-  en la barra junto a los controles Previews y Tamaño (que permanecen intactos);
-  `_abrir_preferencias` y `_aplicar_retardo_vista_ampliada(ms)` (persiste y aplica
-  de inmediato el intervalo del timer). Sin reinicio, sin reconstrucción del
-  catálogo, sin tocar selección/scroll.
-- `configuracion.py` — `CLAVE_RETARDO_VISTA_AMPLIADA`, `guardar_retardo_vista_ampliada`
-  y `obtener_retardo_vista_ampliada` (default 400; aditivo, sin migración).
-- `prueba_preferencias_miniaturas.py` — 31 verificaciones de la etapa.
+**Etapa:** Tamaño "Muy grande" (B3.6, ampliación del Bloque A — Experiencia visual):
+- `visor_videos.py` — `"muy_grande": (512, 288)` en `TAMANIOS_MINIATURAS`,
+  `"muy_grande": "Muy grande"` en `TEXTO_TAMANO_MINIATURAS` y `"Muy grande"` en el
+  combo de tamaño. Integración 100 % por datos, sin refactor ni lógica específica;
+  miniatura principal, previews, overlays, vista ampliada (1.6× → 819×460),
+  persistencia y cambio inmediato funcionan automáticamente.
+- `configuracion.py` — `"muy_grande"` agregado a `TAMANIOS_VALIDOS_MINIATURAS`
+  (compatibilidad: valores previos válidos; inválido → "mediano").
+- `prueba_tamano_muy_grande.py` — 27 verificaciones de la etapa.
 
-**Pruebas superadas:** `prueba_preferencias_miniaturas.py` 31/31 (persistencia y
-tolerancia, diálogo con valores discretos, combos Previews/Tamaño preservados,
-aplicación inmediata y persistencia, flujo aceptar/cancelar, restauración al
-iniciar, vista ampliada con el retardo configurado, selección y scroll conservados);
-regresiones `prueba_cantidad_previews.py` 14/14, `prueba_tamano_miniaturas.py` 32/32,
-`prueba_vista_ampliada.py` 24/24, `prueba_tiempo_previews.py` 35/35,
-`prueba_filas_horizontales.py` 16/16, `prueba_recarga_catalogo.py` 20/20,
-`prueba_pagina_siguiente.py` 20/20, `prueba_seleccion_visual.py` OK,
-`prueba_shift_clic.py` 28/28, `prueba_seleccion.py` 28/28,
-`prueba_restauracion_seleccion.py` 15/15, `prueba_persistencia_subcarpetas.py` 10/10,
-`prueba_smoke.py` OK, `prueba_doble_clic.py` 14/14, `prueba_tamano_archivo.py` 15/15.
-Ejecución real de `visor_videos.py` con `biblioteca.db`: apertura del diálogo,
-cambio de retardo aplicado y persistido, cancelar conserva el valor, persistencia
-tras reiniciar, Previews (5→3→5) y Tamaño (Grande 225) funcionando, selección y
-scroll conservados, cierre limpio (exit 0).
+**Pruebas superadas:** `prueba_tamano_muy_grande.py` 27/27 (presets y default,
+mapeo texto↔clave, persistencia y compatibilidad, cambio en memoria sin `QPixmap`
+nuevos, overlay y miniatura principal reescalados, vista ampliada 1.6×, integración
+con selección/scroll/persistencia/restauración); regresiones `prueba_tamano_miniaturas.py`
+32/32, `prueba_vista_ampliada.py` 24/24, `prueba_tiempo_previews.py` 35/35,
+`prueba_preferencias_miniaturas.py` 31/31, `prueba_cantidad_previews.py` 14/14,
+`prueba_previews_progresivas.py` 16/16, `prueba_filas_horizontales.py` 16/16,
+`prueba_recarga_catalogo.py` 20/20, `prueba_pagina_siguiente.py` 20/20,
+`prueba_seleccion_visual.py` OK, `prueba_shift_clic.py` 28/28, `prueba_seleccion.py`
+28/28, `prueba_restauracion_seleccion.py` 15/15, `prueba_smoke.py` OK,
+`prueba_doble_clic.py` 14/14, `prueba_tamano_archivo.py` 15/15. Ejecución real de
+`visor_videos.py` con `biblioteca.db`: los cuatro tamaños (146/180/225/288), cambio
+inmediato (Muy grande ~36 ms), selección y scroll conservados, vista ampliada 1.6×,
+sin regeneración (488 → 488), persistencia tras reiniciar, cierre limpio (exit 0).
 
 ## Hitos completados
 
@@ -121,6 +121,11 @@ scroll conservados, cierre limpio (exit 0).
   400 ms), aplicado de inmediato y persistido con la infraestructura existente; los
   controles Previews y Tamaño permanecen con acceso directo en la barra. Con esto
   el **Bloque A — Experiencia visual queda completo**.
+- **Tamaño "Muy grande" (Etapa B3.6).** Cuarto tamaño (512×288) incorporado como
+  ampliación de A3, solo ampliando los datos de configuración (sin refactor ni
+  lógica específica); confirma el desacople diseñado en B3.3. Miniatura principal,
+  previews, overlays, vista ampliada, persistencia y cambio inmediato funcionan
+  automáticamente; "Mediano" sigue siendo el default.
 
 ## Pendientes prioritarios
 
@@ -177,11 +182,12 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
 
 ## Próxima etapa
 
-**Revisión funcional del Bloque A (Experiencia visual).** El Bloque A quedó
-**completo** con las Etapas B3.1 a B3.5. Antes de continuar con la Beta 3 se
-realizará una revisión funcional completa del bloque para verificar que las
-cinco mejoras funcionen de forma coherente como conjunto y decidir el siguiente
-bloque de trabajo, siguiendo el plan de `ROADMAP.md` (Bloque de trabajo 3).
+**Etapa B3.7** — primera etapa del siguiente bloque de trabajo de la Beta 3.
+Su definición detallada se acordará recién después del cierre documental de la
+B3.6 y la aprobación del commit, siguiendo el plan de trabajo de `ROADMAP.md`
+(Bloque de trabajo 3), en bloques pequeños, verificables y acumulativos, sin
+adelantar funcionalidades excluidas del alcance ni agregar funcionalidades
+nuevas fuera del plan aprobado.
 
 ## Documentos del proyecto
 
