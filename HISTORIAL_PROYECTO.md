@@ -5,6 +5,70 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 62. Preferencias relacionadas con miniaturas (Etapa B3.5)
+
+- **Fecha:** 2026-08-06
+- **Objetivo:** Centralizar el retardo de la vista ampliada como preferencia de
+  miniaturas, con un diálogo de preferencias accesible desde la barra principal, sin
+  mover ni alterar los controles de uso frecuente (Previews y Tamaño), y aplicando el
+  nuevo valor de forma inmediata sin reinicio ni reconstrucción.
+- **Alcance modificado por la auditoría:** la inspección original proponía trasladar
+  los combos Previews y Tamaño al diálogo; la auditoría **rechazó ese traslado** (son
+  de uso frecuente durante la exploración) y aprobó mantenerlos con acceso directo en
+  la barra, dejando el diálogo únicamente para el retardo.
+- **Archivos creados:**
+  - `prueba_preferencias_miniaturas.py` — 31 verificaciones: persistencia y tolerancia
+    (0/250/400/600; inválidos → default 400); diálogo con valores discretos; combos
+    Previews/Tamaño preservados; aplicación inmediata y persistencia; flujo
+    aceptar/cancelar (patcheando `exec`); restauración al iniciar; vista ampliada con
+    el retardo configurado; selección y scroll conservados.
+- **Archivos modificados:**
+  - `configuracion.py` — `CLAVE_RETARDO_VISTA_AMPLIADA = "retardo_vista_ampliada_ms"`,
+    `guardar_retardo_vista_ampliada(ms, ruta_config)` (valida `0/250/400/600`) y
+    `obtener_retardo_vista_ampliada(ruta_config)` (default 400; aditivo, sin
+    migración).
+  - `visor_videos.py` — `PreferenciasDialog(QDialog)` (solo retardo, "Inmediato/250/400/
+    600 ms"); botón "Preferencias…" en `fila_carpeta` junto a Previews/Tamaño;
+    `_abrir_preferencias` (modal; Aceptar aplica) y `_aplicar_retardo_vista_ampliada(ms)`
+    (persiste y hace `_timer_vista_mostrar.setInterval(ms)`); el intervalo inicial se
+    toma de la configuración. Sin cambios en los controles existentes ni en pipeline,
+    SQLite ni miniaturas.
+  - `DOCUMENTO_TECNICO.md` — `PreferenciasDialog` y la clave del retardo documentados;
+    `VistaAmpliada` actualizada (retardo configurable).
+  - `ROADMAP.md` — mejora A5 marcada como implementada.
+  - `ESTADO_PROYECTO.md` — última etapa aprobada, fase actual (Bloque A completo),
+    hitos y próxima etapa actualizados.
+  - `HISTORIAL_PROYECTO.md` — este documento (registro de la etapa).
+- **Pruebas:** `prueba_preferencias_miniaturas.py` 31/31; regresiones
+  `prueba_cantidad_previews.py` 14/14, `prueba_tamano_miniaturas.py` 32/32,
+  `prueba_vista_ampliada.py` 24/24, `prueba_tiempo_previews.py` 35/35,
+  `prueba_filas_horizontales.py` 16/16, `prueba_recarga_catalogo.py` 20/20,
+  `prueba_pagina_siguiente.py` 20/20, `prueba_seleccion_visual.py` OK,
+  `prueba_shift_clic.py` 28/28, `prueba_seleccion.py` 28/28,
+  `prueba_restauracion_seleccion.py` 15/15, `prueba_persistencia_subcarpetas.py` 10/10,
+  `prueba_smoke.py` OK, `prueba_doble_clic.py` 14/14, `prueba_tamano_archivo.py` 15/15.
+  Ejecución real de `visor_videos.py` con `biblioteca.db`: apertura del diálogo, cambio
+  de retardo aplicado y persistido, cancelar conserva el valor, persistencia tras
+  reiniciar, Previews (5→3→5) y Tamaño (Grande 225) funcionando, selección y scroll
+  conservados, cierre limpio (exit 0).
+- **Resultado:** El retardo de la vista ampliada es una preferencia configurable desde
+  el botón "Preferencias…" (diálogo modal) con valores discretos, aplicada de inmediato
+  y persistida con la infraestructura existente; los controles Previews y Tamaño
+  permanecen con acceso directo en la barra principal. Con esto el **Bloque A —
+  Experiencia visual queda completo** (B3.1 a B3.5).
+- **Commit:** "Agregar preferencias relacionadas con miniaturas (Etapa B3.5)"
+- **Decisiones importantes:**
+  1. **Acceso directo para uso frecuente**: Previews y Tamaño permanecen en la barra
+     (decisión de la auditoría); el diálogo concentra solo el retardo.
+  2. **Aplicación inmediata**: `_aplicar_retardo_vista_ampliada` persiste y ajusta el
+     timer sin reinicio, sin reconstrucción, sin tocar selección/scroll.
+  3. **Compatibilidad**: clave aditiva; default 400 ms ante ausencia o valor inválido.
+  4. **Infraestructura única**: se reutiliza el patrón de `configuracion.py` (clave +
+     guardar/obtener + escritura atómica); el diálogo está preparado para incorporar
+     más preferencias sin rediseñar la ventana principal.
+
+---
+
 ## 61. Vista ampliada al posar el mouse sobre una miniatura (Etapa B3.4)
 
 - **Fecha:** 2026-08-06

@@ -9,6 +9,8 @@ CLAVE_CANTIDAD_PREVIEWS = "cantidad_previews"
 CLAVE_ESCANEO_AUTOMATICO = "escaneo_automatico"
 CLAVE_TAMANIO_MINIATURAS = "tamano_miniaturas"
 TAMANIOS_VALIDOS_MINIATURAS = {"pequeno", "mediano", "grande"}
+CLAVE_RETARDO_VISTA_AMPLIADA = "retardo_vista_ampliada_ms"
+RETARDOS_VALIDOS_VISTA_AMPLIADA = (0, 250, 400, 600)
 VARIABLE_ENTORNO = "VISOR_CONFIG"
 
 
@@ -141,4 +143,31 @@ def obtener_tamano_miniaturas(ruta_config=None):
     valor = datos.get(CLAVE_TAMANIO_MINIATURAS)
     if not isinstance(valor, str) or valor not in TAMANIOS_VALIDOS_MINIATURAS:
         return "mediano"
+    return valor
+
+
+def guardar_retardo_vista_ampliada(ms, ruta_config=None):
+    if (
+        not isinstance(ms, int)
+        or isinstance(ms, bool)
+        or ms not in RETARDOS_VALIDOS_VISTA_AMPLIADA
+    ):
+        return None
+    datos = _leer(ruta_config) or {}
+    datos[CLAVE_RETARDO_VISTA_AMPLIADA] = ms
+    _escribir(datos, ruta_config)
+    return ms
+
+
+def obtener_retardo_vista_ampliada(ruta_config=None):
+    datos = _leer(ruta_config)
+    if datos is None:
+        return 400
+    valor = datos.get(CLAVE_RETARDO_VISTA_AMPLIADA)
+    if (
+        not isinstance(valor, int)
+        or isinstance(valor, bool)
+        or valor not in RETARDOS_VALIDOS_VISTA_AMPLIADA
+    ):
+        return 400
     return valor

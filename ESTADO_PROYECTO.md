@@ -7,42 +7,43 @@ grandes colecciones de videos mediante miniaturas representativas.
 
 **Fase actual:** quedó **aprobado el alcance de la Beta 3** (Etapa B3.0,
 exclusivamente documental) y la **implementación de la Beta 3 está en
-marcha**: las mejoras B3.1 ("Tiempo sobre las miniaturas de preview"), B3.2
-("Duración simplificada"), B3.3 ("Tamaño configurable de miniaturas") y B3.4
-("Vista ampliada al posar el mouse") del Bloque A quedaron implementadas. El
-plan de trabajo se documenta en `ROADMAP.md` (Bloque de trabajo 3). La Beta 2
-permanece como la última versión estable publicada.
+marcha**: el **Bloque A — Experiencia visual** quedó **completo** con las
+mejoras B3.1 ("Tiempo sobre las miniaturas de preview"), B3.2 ("Duración
+simplificada"), B3.3 ("Tamaño configurable de miniaturas"), B3.4 ("Vista
+ampliada al posar el mouse") y B3.5 ("Preferencias relacionadas con
+miniaturas"). El plan de trabajo se documenta en `ROADMAP.md` (Bloque de
+trabajo 3). La Beta 2 permanece como la última versión estable publicada.
 
 ## Último commit aprobado
 
-**Mensaje:** Agregar vista ampliada al posar el mouse sobre una miniatura (Etapa B3.4)
+**Mensaje:** Agregar preferencias relacionadas con miniaturas (Etapa B3.5)
 
-**Etapa:** Vista ampliada al posar el mouse (B3.4, Bloque A — Experiencia visual):
-- `visor_videos.py` — `VistaAmpliada(QFrame)` (popup único por ventana, flags
-  `Qt.ToolTip|Frameless|StaysOnTop`, `QLabel` interno, `preparar()` reutiliza y
-  `ocultar()`); constantes `RETARDO_VISTA_AMPLIADA_MS` (400) y
-  `RETARDO_OCULTAR_VISTA_MS` (150); `Tarjeta` instala `eventFilter` sobre la
-  miniatura principal y las previews y emite `vista_solicitada`/`vista_abandonada`;
-  `VisorVideos` maneja retardo, ocultado por salida/scroll/reconstrucción/cierre y
-  posicionamiento con offset acotado a pantalla. Ampliación ~1.6× reutilizando los
-  pixmaps originales en memoria: sin lecturas de disco, sin procesos externos, sin
-  SQLite ni pipeline. Comportamiento idéntico para miniatura principal y previews.
-- `prueba_vista_ampliada.py` — 24 verificaciones de la etapa.
+**Etapa:** Preferencias relacionadas con miniaturas (B3.5, Bloque A — Experiencia visual):
+- `visor_videos.py` — `PreferenciasDialog(QDialog)` con el retardo de la vista
+  ampliada (Inmediato 0 / 250 / 400 / 600 ms, default 400); botón "Preferencias…"
+  en la barra junto a los controles Previews y Tamaño (que permanecen intactos);
+  `_abrir_preferencias` y `_aplicar_retardo_vista_ampliada(ms)` (persiste y aplica
+  de inmediato el intervalo del timer). Sin reinicio, sin reconstrucción del
+  catálogo, sin tocar selección/scroll.
+- `configuracion.py` — `CLAVE_RETARDO_VISTA_AMPLIADA`, `guardar_retardo_vista_ampliada`
+  y `obtener_retardo_vista_ampliada` (default 400; aditivo, sin migración).
+- `prueba_preferencias_miniaturas.py` — 31 verificaciones de la etapa.
 
-**Pruebas superadas:** `prueba_vista_ampliada.py` 24/24 (instancia única aislada de la
-tarjeta, reutilización del pixmap original sin `QPixmap` nuevos, retardo y cancelación
-al salir, miniatura principal y previews con mismo comportamiento, ocultado por
-scroll/reconstrucción, posicionamiento acotado, integración); regresiones
-`prueba_tiempo_previews.py` 35/35, `prueba_tamano_miniaturas.py` 32/32,
-`prueba_filas_horizontales.py` 16/16, `prueba_previews_progresivas.py` 16/16,
-`prueba_seleccion_visual.py` OK, `prueba_shift_clic.py` 28/28, `prueba_seleccion.py`
-28/28, `prueba_restauracion_seleccion.py` 15/15, `prueba_cantidad_previews.py` 14/14,
-`prueba_recarga_catalogo.py` 20/20, `prueba_pagina_siguiente.py` 20/20,
-`prueba_lectura_paginada.py` 32/32, `prueba_smoke.py` OK, `prueba_doble_clic.py` 14/14,
-`prueba_tamano_archivo.py` 15/15. Ejecución real de `visor_videos.py` con
-`biblioteca.db`: popup tras el retardo, ocultado por salida/scroll/reconstrucción,
-funcionamiento sobre miniatura principal y previews, 0 lecturas de disco, sin
-parpadeos, sin regeneración (348 → 348), cierre limpio (exit 0).
+**Pruebas superadas:** `prueba_preferencias_miniaturas.py` 31/31 (persistencia y
+tolerancia, diálogo con valores discretos, combos Previews/Tamaño preservados,
+aplicación inmediata y persistencia, flujo aceptar/cancelar, restauración al
+iniciar, vista ampliada con el retardo configurado, selección y scroll conservados);
+regresiones `prueba_cantidad_previews.py` 14/14, `prueba_tamano_miniaturas.py` 32/32,
+`prueba_vista_ampliada.py` 24/24, `prueba_tiempo_previews.py` 35/35,
+`prueba_filas_horizontales.py` 16/16, `prueba_recarga_catalogo.py` 20/20,
+`prueba_pagina_siguiente.py` 20/20, `prueba_seleccion_visual.py` OK,
+`prueba_shift_clic.py` 28/28, `prueba_seleccion.py` 28/28,
+`prueba_restauracion_seleccion.py` 15/15, `prueba_persistencia_subcarpetas.py` 10/10,
+`prueba_smoke.py` OK, `prueba_doble_clic.py` 14/14, `prueba_tamano_archivo.py` 15/15.
+Ejecución real de `visor_videos.py` con `biblioteca.db`: apertura del diálogo,
+cambio de retardo aplicado y persistido, cancelar conserva el valor, persistencia
+tras reiniciar, Previews (5→3→5) y Tamaño (Grande 225) funcionando, selección y
+scroll conservados, cierre limpio (exit 0).
 
 ## Hitos completados
 
@@ -115,6 +116,11 @@ parpadeos, sin regeneración (348 → 348), cierre limpio (exit 0).
   original en memoria (sin lecturas de disco ni procesos externos); aparece tras un
   retardo, se oculta al salir/scroll/reconstrucción/cierre y se posiciona dentro de
   la pantalla.
+- **Preferencias relacionadas con miniaturas (Etapa B3.5).** Botón "Preferencias…"
+  con diálogo modal que expone el retardo de la vista ampliada (discreto, default
+  400 ms), aplicado de inmediato y persistido con la infraestructura existente; los
+  controles Previews y Tamaño permanecen con acceso directo en la barra. Con esto
+  el **Bloque A — Experiencia visual queda completo**.
 
 ## Pendientes prioritarios
 
@@ -171,13 +177,11 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
 
 ## Próxima etapa
 
-**Etapa B3.5** — **Preferencias relacionadas con miniaturas** (Bloque A): quinta
-mejora de la Beta 3 (incluirá, entre otras, la configuración del retardo y del
-tamaño de la vista ampliada). Su definición detallada se acordará recién después
-del cierre documental de la B3.4, siguiendo el plan de trabajo de `ROADMAP.md`
-(Bloque de trabajo 3), en bloques pequeños, verificables y acumulativos, sin
-adelantar funcionalidades excluidas del alcance ni agregar funcionalidades
-nuevas fuera del plan aprobado.
+**Revisión funcional del Bloque A (Experiencia visual).** El Bloque A quedó
+**completo** con las Etapas B3.1 a B3.5. Antes de continuar con la Beta 3 se
+realizará una revisión funcional completa del bloque para verificar que las
+cinco mejoras funcionen de forma coherente como conjunto y decidir el siguiente
+bloque de trabajo, siguiendo el plan de `ROADMAP.md` (Bloque de trabajo 3).
 
 ## Documentos del proyecto
 

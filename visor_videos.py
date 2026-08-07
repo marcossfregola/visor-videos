@@ -8,6 +8,8 @@ from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
+    QDialog,
+    QDialogButtonBox,
     QFileDialog,
     QFrame,
     QGridLayout,
@@ -28,11 +30,13 @@ from configuracion import (
     guardar_cantidad_previews,
     guardar_preferencia_escaneo_automatico,
     guardar_preferencia_subcarpetas,
+    guardar_retardo_vista_ampliada,
     guardar_tamano_miniaturas,
     guardar_ultima_carpeta,
     obtener_cantidad_previews,
     obtener_preferencia_escaneo_automatico,
     obtener_preferencia_subcarpetas,
+    obtener_retardo_vista_ampliada,
     obtener_tamano_miniaturas,
     obtener_ultima_carpeta,
 )
@@ -319,6 +323,59 @@ class VistaAmpliada(QFrame):
         self._pixmap = None
         self._tam_amp = None
         self.hide()
+
+
+RETARDOS_VISTA_AMPLIADA = (0, 250, 400, 600)
+TEXTOS_RETARDO_VISTA_AMPLIADA = (
+    "Inmediato",
+    "250 ms",
+    "400 ms",
+    "600 ms",
+)
+
+
+class PreferenciasDialog(QDialog):
+    """Diálogo modal de preferencias (Etapa B3.5).
+
+    En esta primera versión contiene únicamente el retardo de la vista
+    ampliada, con valores discretos. La infraestructura está preparada para
+    incorporar más preferencias sin rediseñar la ventana principal.
+    """
+
+    def __init__(self, ruta_config=None, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Preferencias")
+        self._ruta_config = ruta_config
+        layout = QVBoxLayout(self)
+        fila = QHBoxLayout()
+        fila.addWidget(QLabel("Retardo de la vista ampliada:"))
+        self.combo_retardo = QComboBox()
+        self.combo_retardo.addItems(list(TEXTOS_RETARDO_VISTA_AMPLIADA))
+        self.combo_retardo.setCurrentIndex(
+            self._indice_retardo(
+                obtener_retardo_vista_ampliada(ruta_config)
+            )
+        )
+        fila.addWidget(self.combo_retardo)
+        fila.addStretch()
+        layout.addLayout(fila)
+        botones = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        )
+        botones.accepted.connect(self.accept)
+        botones.rejected.connect(self.reject)
+        layout.addWidget(botones)
+
+    def _indice_retardo(self, ms):
+        if ms in RETARDOS_VISTA_AMPLIADA:
+            return RETARDOS_VISTA_AMPLIADA.index(ms)
+        return RETARDOS_VISTA_AMPLIADA.index(400)
+
+    def retardo_seleccionado(self):
+        indice = self.combo_retardo.currentIndex()
+        if 0 <= indice < len(RETARDOS_VISTA_AMPLIADA):
+            return RETARDOS_VISTA_AMPLIADA[indice]
+        return 400
 
 
 class Tarjeta(QFrame):
@@ -622,6 +679,9 @@ class VisorVideos(QMainWindow):
             self._al_cambiar_tamano_miniaturas
         )
 
+        self.boton_preferencias = QPushButton("Preferencias…")
+        self.boton_preferencias.clicked.connect(self._abrir_preferencias)
+
         self.boton_cargar_mas = QPushButton("Cargar más")
         self.boton_cargar_mas.setEnabled(False)
         self.boton_cargar_mas.clicked.connect(self.cargar_mas)
@@ -643,6 +703,7 @@ class VisorVideos(QMainWindow):
         fila_carpeta.addWidget(self.combo_cantidad_previews)
         fila_carpeta.addWidget(self.etiqueta_tamano_miniaturas)
         fila_carpeta.addWidget(self.combo_tamano_miniaturas)
+        fila_carpeta.addWidget(self.boton_preferencias)
         fila_carpeta.addWidget(self.etiqueta_carpeta, 1)
         fila_carpeta.addWidget(self.estado_escaneo)
         fila_carpeta.addWidget(self.mensaje_carpeta)
@@ -711,7 +772,9 @@ class VisorVideos(QMainWindow):
         self._vista_pendiente = None
         self._timer_vista_mostrar = QTimer(self)
         self._timer_vista_mostrar.setSingleShot(True)
-        self._timer_vista_mostrar.setInterval(RETARDO_VISTA_AMPLIADA_MS)
+        self._timer_vista_mostrar.setInterval(
+            obtener_retardo_vista_ampliada(self._ruta_config)
+        )
         self._timer_vista_mostrar.timeout.connect(self._mostrar_vista_diferida)
         self._timer_vista_ocultar = QTimer(self)
         self._timer_vista_ocultar.setSingleShot(True)
@@ -825,6 +888,15 @@ class VisorVideos(QMainWindow):
         self._timer_vista_ocultar.stop()
         self._vista_pendiente = None
         self._vista.ocultar()
+
+    def _abrir_preferencias(self):
+        dialogo = PreferenciasDialog(self._ruta_config, self)
+        if dialogo.exec() == QDialog.Accepted:
+            self._aplicar_retardo_vista_ampliada(dialogo.retardo_seleccionado())
+
+    def _aplicar_retardo_vista_ampliada(self, ms):
+        guardar_retardo_vista_ampliada(ms, self._ruta_config)
+        self._timer_vista_mostrar.setInterval(ms)
 
     def _crear_tarea_lectura(self, desplazamiento=0):
         return TareaLecturaCatalogoPaginada(
