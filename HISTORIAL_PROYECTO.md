@@ -5,6 +5,67 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 71. Copia de archivos seleccionados (Etapa B3.14)
+
+- **Fecha:** 2026-08-06
+- **Objetivo:** Implementar la operación "Copiar" para los videos seleccionados: copiar
+  los archivos físicos a una carpeta elegida por el usuario, en segundo plano, sin
+  sobrescribir y con un resumen final. Sin Pegar, Eliminar ni atajos.
+- **Archivos creados:**
+  - `prueba_copiar_archivos.py` — 15 verificaciones: función pura (copia simple y
+    múltiple, omitido si existe, errores por archivo y continúa, nombres anidados con
+    subdirectorios, validaciones `TypeError`/`ValueError`); integración (botón habilitado
+    con selección, la tarea emite el resumen por `tarea_resultado`, archivos copiados,
+    resumen visible en `estado_escaneo`, interfaz no bloqueada con gestores
+    independientes, cancelación del diálogo sin copia, clic sin selección sin efecto).
+- **Archivos modificados:**
+  - `operaciones.py` — incorporado a la arquitectura (conserva `sumar`): función pura
+    `copiar_archivos(origen, archivos, destino)` con `shutil.copy2`, creación de
+    subdirectorios para nombres anidados, omisión de destinos existentes (nunca
+    sobrescribe), errores por archivo y resumen `{"copiados", "omitidos", "errores"}`.
+  - `visor_videos.py` — `import operaciones` y `TareaBase` en el import de `tareas`;
+    `TareaCopiarArchivos(TareaBase)` (glue); tercer gestor **`gestor_operaciones**`
+    (independiente del pipeline y de previews; conectado a `_al_resultado_copia`/
+    `_al_error_copia`; cerrado en `closeEvent`); botón "Copiar…" en la barra con
+    `_actualizar_boton_copiar` (habilitado con selección + carpeta válida + gestor
+    inactivo, conectado a `_actualizar_resumen_seleccion` y `_actualizar_botones_carpeta`);
+    `_iniciar_copia` (aborta sin selección/carpeta; `getExistingDirectory`; cancelar no
+    copia), `_al_resultado_copia` (oculta la barra y muestra "Copiado: X — Omitidos: Y —
+    Errores: Z") y `_al_error_copia`. Sin atributos de estado permanentes (el resumen se
+    emite por señal y el slot actualiza la interfaz). Sin cambios en menú contextual,
+    atajos, SQLite ni pipeline.
+  - `DOCUMENTO_TECNICO.md` — operación Copiar, `operaciones.py` y árbol de directorios
+    actualizados; `operaciones.py` sale de la lista de "módulos ajenos".
+  - `ROADMAP.md` — mejora B3 marcada como implementada; orden B3.14 marcado.
+  - `ESTADO_PROYECTO.md` — última etapa aprobada, fase actual, hitos y próxima etapa
+    actualizados.
+  - `HISTORIAL_PROYECTO.md` — este documento (registro de la etapa).
+- **Pruebas:** `prueba_copiar_archivos.py` 15/15; regresiones `prueba_modo_seleccion.py`
+  20/20, `prueba_resumen_seleccion.py` 17/17, `prueba_seleccion.py` 28/28,
+  `prueba_shift_clic.py` 28/28, `prueba_seleccion_visual.py` OK,
+  `prueba_restauracion_seleccion.py` 15/15, `prueba_filas_horizontales.py` 16/16,
+  `prueba_recarga_catalogo.py` 20/20, `prueba_atajos_basicos.py` 13/13,
+  `prueba_smoke.py` OK. Ejecución manual del flujo real en entorno controlado: copia de un
+  archivo, copia múltiple (omitido + error), destino con archivos existentes (omitido sin
+  sobrescribir), cancelación del diálogo, interfaz fluida (gestor principal no bloqueado),
+  resumen final correcto (5/5).
+- **Resultado:** El usuario puede copiar los archivos de video seleccionados a una carpeta
+  elegida, en segundo plano, sin bloquear la interfaz ni sobrescribir archivos, con un
+  resumen final visible (copiados/omitidos/errores). El catálogo no se resincroniza (la
+  copia exporta a otra carpeta).
+- **Commit:** "Implementar copia de archivos seleccionados (Etapa B3.14)"
+- **Decisiones importantes:**
+  1. **Lógica pura en `operaciones.py`** y tarea "pegamento" en `visor_videos.py`
+     (restringido `tareas_videos.py`).
+  2. **Tercer `GestorTareas`** dedicado a operaciones de archivos (no interfiere con el
+     pipeline ni con las previews).
+  3. **Sin sobrescribir** y **errores por archivo** con continuidad.
+  4. **Sin estado permanente**: el resumen se emite por la señal `tarea_resultado` y el
+     slot actualiza directamente la interfaz (modificación arquitectónica de la
+     auditoría: sin `self.ultimo_resumen_copia`).
+
+---
+
 ## 70. Atajos básicos de selección (Etapa B3.13)
 
 - **Fecha:** 2026-08-06

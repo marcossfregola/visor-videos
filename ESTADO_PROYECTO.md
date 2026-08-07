@@ -10,38 +10,40 @@ exclusivamente documental) y la **implementación de la Beta 3 está en
 marcha**: el **Bloque A — Experiencia visual** quedó **completo funcional y
 técnicamente** (B3.1 a B3.9) y el **Bloque B — Selección y operaciones** está
 en implementación: **B3.11 — Resumen de selección** (B6), **B3.12 — Modo
-selección + Checks por fila** (B1 + B2) y **B3.13 — Atajos básicos** (Ctrl+A y
-Esc, parte de B7) implementadas. El plan de trabajo se documenta en
-`ROADMAP.md` (Bloque de trabajo 3). La Beta 2 permanece como la última versión
-estable publicada.
+selección + Checks por fila** (B1 + B2), **B3.13 — Atajos básicos** (parte de
+B7) y **B3.14 — Copiar** (B3) implementadas. El plan de trabajo se documenta
+en `ROADMAP.md` (Bloque de trabajo 3). La Beta 2 permanece como la última
+versión estable publicada.
 
 ## Último commit aprobado
 
-**Mensaje:** Implementar atajos básicos de selección (Etapa B3.13)
+**Mensaje:** Implementar copia de archivos seleccionados (Etapa B3.14)
 
-**Etapa:** Atajos básicos (B3.13, Bloque B):
-- `visor_videos.py` — dos `QShortcut` sobre la ventana: **Ctrl+A** (`_atajo_ctrl_a`)
-  y **Esc** (`_atajo_esc`). `_atajo_seleccionar_todo`: si el foco está en la búsqueda,
-  replica `selectAll()` del `QLineEdit` (sin tocar tarjetas); en caso contrario,
-  `_seleccionar_todo_visible()` itera `self.visibles` (respeta el filtro), agrega a
-  `_nombres_seleccionados` y llama `_marcar_tarjeta(nombre, True)`, cerrando con
-  `_actualizar_resumen_seleccion()` (idempotente). `_atajo_salir_modo_seleccion`: si el
-  modo está activo, `boton_modo_seleccion.setChecked(False)` (oculta solo los checks y
-  conserva la selección y el resumen).
-- `prueba_atajos_basicos.py` — 13 verificaciones de la etapa.
+**Etapa:** Copiar (B3.14, Bloque B):
+- `operaciones.py` — `copiar_archivos(origen, archivos, destino)` (función pura:
+  `shutil.copy2`, crea subdirectorios para nombres anidados, omite destinos existentes,
+  registra errores por archivo y continúa; resumen `{"copiados", "omitidos", "errores"}`).
+- `visor_videos.py` — `TareaCopiarArchivos(TareaBase)` (glue), tercer gestor
+  `gestor_operaciones` (independiente del pipeline y de previews; cerrado en
+  `closeEvent`), botón "Copiar…" en la barra (`_actualizar_boton_copiar` lo habilita
+  con selección + carpeta válida + gestor inactivo), `_iniciar_copia`
+  (`getExistingDirectory`; cancelar no copia), `_al_resultado_copia` (muestra en
+  `estado_escaneo` "Copiado: X — Omitidos: Y — Errores: Z"; sin atributos de estado
+  permanentes) y `_al_error_copia`. Sin cambios en menú contextual, atajos ni catálogo.
+- `prueba_copiar_archivos.py` — 15 verificaciones de la etapa.
 
-**Pruebas superadas:** `prueba_atajos_basicos.py` 13/13 (Ctrl+A sin filtro, con filtro
-solo visibles, con foco en la búsqueda —no selecciona tarjetas—, con foco en un checkbox
-del modo, idempotencia; Esc con modo activo —sale, oculta checks, conserva selección—,
-con modo inactivo —sin cambios—, con foco en la búsqueda; consistencia);
-regresiones `prueba_modo_seleccion.py` 20/20, `prueba_resumen_seleccion.py` 17/17,
-`prueba_seleccion.py` 28/28, `prueba_shift_clic.py` 28/28, `prueba_seleccion_visual.py`
-OK, `prueba_restauracion_seleccion.py` 15/15, `prueba_filas_horizontales.py` 16/16,
-`prueba_recarga_catalogo.py` 20/20, `prueba_smoke.py` OK. Ejecución real de
-`visor_videos.py` con `biblioteca.db` y `QTest` (eventos reales de teclado): Ctrl+A sin
-filtro (24 de 24), con filtro (solo visibles), con foco en la búsqueda (sin tocar
-tarjetas), con foco en un checkbox; Esc con modo activo (sale, oculta checks, conserva 24
-de 24) y con modo inactivo; consistencia check↔selección, cierre limpio (exit 0).
+**Pruebas superadas:** `prueba_copiar_archivos.py` 15/15 (función pura: copia simple y
+múltiple, omitido si existe, errores por archivo, nombres anidados, validaciones;
+integración: botón habilitado con selección, la tarea emite el resumen por señal, archivos
+copiados, resumen visible en la interfaz, interfaz no bloqueada, cancelación del diálogo,
+sin selección); regresiones `prueba_modo_seleccion.py` 20/20, `prueba_resumen_seleccion.py`
+17/17, `prueba_seleccion.py` 28/28, `prueba_shift_clic.py` 28/28,
+`prueba_seleccion_visual.py` OK, `prueba_restauracion_seleccion.py` 15/15,
+`prueba_filas_horizontales.py` 16/16, `prueba_recarga_catalogo.py` 20/20,
+`prueba_atajos_basicos.py` 13/13, `prueba_smoke.py` OK. Ejecución manual del flujo real en
+entorno controlado: copia de un archivo, copia múltiple (con omitido y error), destino con
+archivos existentes (omitido sin sobrescribir), cancelación del diálogo, interfaz fluida
+(gestor principal no bloqueado), resumen final correcto (5/5).
 
 ## Hitos completados
 
@@ -155,6 +157,10 @@ de 24) y con modo inactivo; consistencia check↔selección, cierre limpio (exit
   visibles, respetando el filtro; con foco en la búsqueda no interfiere con el
   `QLineEdit`) y Esc (sale del Modo Selección, oculta los checks y conserva la
   selección y el resumen), mediante `QShortcut` sobre la ventana.
+- **Copiar (Etapa B3.14).** Mejora B3: copia de los archivos de video seleccionados a
+  una carpeta destino elegida por el usuario, en segundo plano (tercer gestor
+  `gestor_operaciones`), sin sobrescribir, con resumen final (copiados/omitidos/errores)
+  visible en la interfaz. Lógica pura en `operaciones.copiar_archivos`.
 
 ## Pendientes prioritarios
 
@@ -211,12 +217,12 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
 
 ## Próxima etapa
 
-**Etapa B3.14 — Copiar** (Bloque B). Siguiente mejora del Bloque B: copiar los archivos
-de video seleccionados a una carpeta destino (diálogo), en segundo plano y sin
-sobrescribir. Su definición detallada se realizará con la inspección técnica previa,
-siguiendo el plan de `ROADMAP.md` (Bloque de trabajo 3, sección "Bloque B"), en bloques
-pequeños, verificables y acumulativos, sin adelantar funcionalidades excluidas del
-alcance ni agregar funcionalidades nuevas fuera del plan aprobado.
+**Etapa B3.15 — Pegar** (Bloque B). Siguiente mejora del Bloque B: pegar en la carpeta
+actual los archivos copiados internamente, con confirmación de colisión. Su definición
+detallada se realizará con la inspección técnica previa, siguiendo el plan de `ROADMAP.md`
+(Bloque de trabajo 3, sección "Bloque B"), en bloques pequeños, verificables y
+acumulativos, sin adelantar funcionalidades excluidas del alcance ni agregar
+funcionalidades nuevas fuera del plan aprobado.
 
 ## Documentos del proyecto
 

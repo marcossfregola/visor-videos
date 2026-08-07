@@ -1,4 +1,5 @@
 import escanear_videos
+import operaciones
 import os
 import sys
 
@@ -56,7 +57,7 @@ from escanear_videos import (
     configurar_escaneo_recursivo,
 )
 from rutas import ruta_carpeta_miniaturas, ruta_configuracion
-from tareas import Estado, GestorTareas
+from tareas import Estado, GestorTareas, TareaBase
 from apertura_videos import abrir_video_con_aplicacion_predeterminada
 from arbol_navegacion import ArbolNavegacion
 from tareas_videos import (
@@ -445,6 +446,31 @@ class PreferenciasDialog(QDialog):
         return 1.6
 
 
+class TareaCopiarArchivos(TareaBase):
+    def __init__(self, origen, archivos, destino, parent=None):
+        super().__init__(parent)
+        self._origen = origen
+        self._archivos = list(archivos)
+        self._destino = destino
+
+    @property
+    def origen(self):
+        return self._origen
+
+    @property
+    def archivos(self):
+        return list(self._archivos)
+
+    @property
+    def destino(self):
+        return self._destino
+
+    def _trabajo(self):
+        return operaciones.copiar_archivos(
+            self._origen, self._archivos, self._destino
+        )
+
+
 class Tarjeta(QFrame):
     doble_clic = Signal(str)
     seleccionada = Signal(str, bool)
@@ -778,6 +804,10 @@ class VisorVideos(QMainWindow):
             self._al_cambiar_modo_seleccion
         )
 
+        self.boton_copiar = QPushButton("Copiar…")
+        self.boton_copiar.setEnabled(False)
+        self.boton_copiar.clicked.connect(self._iniciar_copia)
+
         self.boton_cargar_mas = QPushButton("Cargar más")
         self.boton_cargar_mas.setEnabled(False)
         self.boton_cargar_mas.clicked.connect(self.cargar_mas)
@@ -801,6 +831,7 @@ class VisorVideos(QMainWindow):
         fila_carpeta.addWidget(self.combo_tamano_miniaturas)
         fila_carpeta.addWidget(self.boton_preferencias)
         fila_carpeta.addWidget(self.boton_modo_seleccion)
+        fila_carpeta.addWidget(self.boton_copiar)
         fila_carpeta.addWidget(self.etiqueta_carpeta, 1)
         fila_carpeta.addWidget(self.estado_escaneo)
         fila_carpeta.addWidget(self.mensaje_carpeta)
@@ -866,6 +897,10 @@ class VisorVideos(QMainWindow):
         self.gestor_previews.tarea_resultado.connect(self._al_resultado_previews)
         self.gestor_previews.tarea_error.connect(self._al_error_previews)
         self.gestor_previews.tarea_finalizada.connect(self._al_previews_finalizada)
+
+        self.gestor_operaciones = GestorTareas(self)
+        self.gestor_operaciones.tarea_resultado.connect(self._al_resultado_copia)
+        self.gestor_operaciones.tarea_error.connect(self._al_error_copia)
 
         self._timer_previews = QTimer(self)
         self._timer_previews.setSingleShot(True)
@@ -1085,6 +1120,7 @@ class VisorVideos(QMainWindow):
             and not cadena_activa
         )
         self.boton_cargar_mas.setEnabled(hay_mas)
+        self._actualizar_boton_copiar()
 
     def _al_actividad(self, activo):
         self._actualizar_botones_carpeta()
@@ -1170,6 +1206,51 @@ class VisorVideos(QMainWindow):
         if self._modo_seleccion:
             self.boton_modo_seleccion.setChecked(False)
 
+    def _actualizar_boton_copiar(self):
+        gestor_op = getattr(self, "gestor_operaciones", None)
+        habilitado = (
+            bool(self._nombres_seleccionados)
+            and (gestor_op is None or not gestor_op.activo)
+            and self.carpeta_seleccionada is not None
+            and os.path.isdir(self.carpeta_seleccionada)
+        )
+        self.boton_copiar.setEnabled(habilitado)
+
+    def _iniciar_copia(self):
+        if self.gestor_operaciones.activo:
+            return
+        seleccion = list(self._nombres_seleccionados)
+        if not seleccion:
+            return
+        carpeta = self.carpeta_seleccionada
+        if not carpeta or not os.path.isdir(carpeta):
+            return
+        destino = QFileDialog.getExistingDirectory(
+            self, "Carpeta de destino", ""
+        )
+        if not destino:
+            return
+        tarea = TareaCopiarArchivos(carpeta, seleccion, destino)
+        if not self.gestor_operaciones.iniciar(tarea):
+            return
+        self._mostrar_progreso("Copiando…")
+        self._actualizar_boton_copiar()
+
+    def _al_resultado_copia(self, resumen):
+        self._ocultar_progreso()
+        copiados = len(resumen.get("copiados", []))
+        omitidos = len(resumen.get("omitidos", []))
+        errores = len(resumen.get("errores", []))
+        self.estado_escaneo.setText(
+            f"Copiado: {copiados} — Omitidos: {omitidos} — Errores: {errores}"
+        )
+        self._actualizar_boton_copiar()
+
+    def _al_error_copia(self, mensaje):
+        self._ocultar_progreso()
+        self.estado_escaneo.setText(f"Error al copiar: {mensaje}")
+        self._actualizar_boton_copiar()
+
     def _actualizar_resumen_seleccion(self):
         visibles = self.visibles
         x = sum(
@@ -1178,6 +1259,7 @@ class VisorVideos(QMainWindow):
         self.resumen_seleccion.setText(
             f"{x} de {len(visibles)} seleccionados"
         )
+        self._actualizar_boton_copiar()
 
     @property
     def nombres_seleccionados(self):
@@ -1780,6 +1862,8 @@ class VisorVideos(QMainWindow):
         self.gestor.cerrar()
         if self.gestor_previews is not None:
             self.gestor_previews.cerrar()
+        if self.gestor_operaciones is not None:
+            self.gestor_operaciones.cerrar()
         super().closeEvent(event)
 
 
