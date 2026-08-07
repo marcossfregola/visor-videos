@@ -236,9 +236,17 @@ class Tarjeta(QFrame):
         if ancho is not None and alto is not None:
             resolucion = f"{ancho}x{alto}"
 
+        duracion_texto = "No disponible"
+        if (
+            isinstance(duracion, (int, float))
+            and not isinstance(duracion, bool)
+            and duracion > 0
+        ):
+            duracion_texto = formatear_tiempo(duracion)
+
         campos = [
             ("Nombre", nombre),
-            ("Duración", formatear_valor(duracion)),
+            ("Duración", duracion_texto),
             ("Resolución", resolucion),
             ("Codec", formatear_valor(codec)),
             ("Miniaturas", formatear_valor(miniaturas)),

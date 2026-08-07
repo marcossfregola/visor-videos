@@ -416,7 +416,7 @@ def test_06():
         _limpiar(ventana)
         ok = (
             nombres == ["video_real.mp4"]
-            and campos.get("Duración:") == "5"
+            and campos.get("Duración:") == "0:05"
             and campos.get("Resolución:") == "640x360"
             and campos.get("Codec:") == "h264"
             and campos.get("Miniaturas:") == "1"

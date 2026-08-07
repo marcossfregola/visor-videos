@@ -397,7 +397,7 @@ def test_07():
             ventana.close()
             _limpiar(ventana)
         ok = (
-            campos.get("Duración:") == "5"
+            campos.get("Duración:") == "0:05"
             and campos.get("Resolución:") == "640x360"
             and campos.get("Codec:") == "h264"
             and campos.get("Miniaturas:") == "1"

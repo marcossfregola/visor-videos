@@ -5,6 +5,61 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 59. Duración simplificada en las tarjetas (Etapa B3.2)
+
+- **Fecha:** 2026-08-06
+- **Objetivo:** Simplificar la presentación de la duración en las tarjetas aplicando
+  el criterio aprobado —`m:ss` (menos de una hora), `h:mm:ss` (una hora o más) y
+  "No disponible" (duración inexistente o inválida)— como representación visual,
+  sin alterar el valor numérico almacenado.
+- **Archivos creados:**
+  - `prueba_duracion_simplificada.py` — 23 verificaciones: formato `m:ss`/`h:mm:ss`
+    (5, 41.07, 65, 15:42, 1:00:00, 1:01:01, 2:35:18); tarjeta con duración válida y
+    Resolución/Codec/Miniaturas intactos; "No disponible" ante duración None/0/-5/
+    bool/texto; integración con `VisorVideos` (corto, varios minutos, una hora o más
+    y desconocida).
+- **Archivos modificados:**
+  - `visor_videos.py` — el campo "Duración" de `Tarjeta` se presenta con
+    `formatear_tiempo(duracion)` (reutiliza la función de B3.1, sin funciones nuevas
+    ni lógica duplicada): `m:ss`/`h:mm:ss` y `"No disponible"` cuando la duración no
+    existe o no es válida. Cambio solo de presentación: `duracion_segundos` permanece
+    numérico (REAL); sin cambios de SQLite, esquema, consultas, pipeline, FFprobe ni
+    miniaturas.
+  - `prueba_filas_horizontales.py` y `prueba_recarga_catalogo.py` — aserción de
+    duración actualizada al nuevo contrato visual (`"5"` → `"0:05"`).
+  - `DOCUMENTO_TECNICO.md` — `formatear_tiempo` y `Tarjeta` actualizados con la
+    duración simplificada (B3.2).
+  - `ROADMAP.md` — mejora A2 marcada como implementada.
+  - `ESTADO_PROYECTO.md` — última etapa aprobada, fase actual, hitos y próxima etapa
+    actualizados.
+  - `HISTORIAL_PROYECTO.md` — este documento (registro de la etapa).
+- **Pruebas:** `prueba_duracion_simplificada.py` 23/23; regresiones
+  `prueba_filas_horizontales.py` 16/16, `prueba_recarga_catalogo.py` 20/20,
+  `prueba_smoke.py` OK, `prueba_tiempo_previews.py` 35/35, `prueba_cantidad_previews.py`
+  14/14, `prueba_previews_progresivas.py` 16/16, `prueba_pagina_siguiente.py` 20/20,
+  `prueba_seleccion_visual.py` OK, `prueba_shift_clic.py` 28/28, `prueba_seleccion.py`
+  28/28, `prueba_restauracion_seleccion.py` 15/15, `prueba_tamano_archivo.py` 15/15,
+  `prueba_doble_clic.py` 14/14. Ejecución real de `visor_videos.py` con `biblioteca.db`:
+  duraciones reales correctas (23/23) y casos representativos (pocos segundos,
+  varios minutos, una hora o más, desconocida), cierre limpio (exit 0).
+- **Resultado:** La duración de cada tarjeta se muestra legiblemente con `m:ss` /
+  `h:mm:ss`, o "No disponible" cuando corresponde; el valor `duracion_segundos`
+  permanece numérico y no se tocaron SQLite, esquema, consultas, pipeline, FFprobe
+  ni miniaturas.
+- **Commit:** "Simplificar la duración mostrada en las tarjetas (Etapa B3.2)"
+- **Decisiones importantes:**
+  1. **Reutilización**: se reutiliza `formatear_tiempo()` de B3.1 (m:ss / h:mm:ss,
+     `None` ante inválido); no se creó una segunda función de formato.
+  2. **Representación visual únicamente**: el texto es efímero de la interfaz; la
+     lógica interna sigue trabajando con segundos (REAL).
+  3. **"No disponible"**: si la duración no existe o no es válida (None, 0, negativo,
+     bool, texto) se muestra "No disponible".
+  4. **Ajuste de pruebas por contrato**: `prueba_filas_horizontales.py` y
+     `prueba_recarga_catalogo.py` actualizaron su aserción de duración al nuevo
+     formato (cambio intencional de representación).
+
+---
+
 ## 58. Tiempo sobre las miniaturas de preview (Etapa B3.1)
 
 - **Fecha:** 2026-08-06

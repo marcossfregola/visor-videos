@@ -7,37 +7,38 @@ grandes colecciones de videos mediante miniaturas representativas.
 
 **Fase actual:** quedó **aprobado el alcance de la Beta 3** (Etapa B3.0,
 exclusivamente documental) y la **implementación de la Beta 3 está en
-marcha**: la primera mejora aprobada quedó implementada (Etapa B3.1, "Tiempo
-sobre las miniaturas de preview", Bloque A). El plan de trabajo se documenta
-en `ROADMAP.md` (Bloque de trabajo 3). La Beta 2 permanece como la última
-versión estable publicada.
+marcha**: las mejoras B3.1 ("Tiempo sobre las miniaturas de preview") y B3.2
+("Duración simplificada") del Bloque A quedaron implementadas. El plan de
+trabajo se documenta en `ROADMAP.md` (Bloque de trabajo 3). La Beta 2
+permanece como la última versión estable publicada.
 
 ## Último commit aprobado
 
-**Mensaje:** Implementar tiempo sobre las miniaturas de preview (Etapa B3.1)
+**Mensaje:** Simplificar la duración mostrada en las tarjetas (Etapa B3.2)
 
-**Etapa:** Tiempo sobre las miniaturas de preview (B3.1, Bloque A — Experiencia visual):
-- `visor_videos.py` — `PreviewConTiempo(QLabel)` (overlay del instante sobre cada
-  preview: fondo semitransparente oscuro y texto claro, exclusivamente visual, sin
-  cambios de layout, tamaños ni scroll); `formatear_tiempo(segundos)` ("m:ss"/"h:mm:ss",
-  `None` ante duración inválida); `Tarjeta` guarda `_duracion` y `_colocar_preview`
-  deriva el instante con `calcular_tiempo_preview(duracion, indice + 1)`. Sin overlay
-  cuando la duración es `None`/inválida. Sin FFprobe adicional, sin cambios de
-  pipeline, sin esquema SQLite ni persistencia de tiempos.
-- `prueba_tiempo_previews.py` — 35 verificaciones de la etapa.
+**Etapa:** Duración simplificada (B3.2, Bloque A — Experiencia visual):
+- `visor_videos.py` — el campo "Duración" de la tarjeta se presenta con
+  `formatear_tiempo(duracion)` (reutiliza la función de B3.1): `m:ss` si es menor a
+  una hora, `h:mm:ss` si es una hora o más, y `"No disponible"` si la duración no
+  existe o no es válida. Cambio solo de presentación: `duracion_segundos` permanece
+  numérico; sin cambios de SQLite, esquema, consultas, pipeline, FFprobe ni
+  miniaturas.
+- `prueba_duracion_simplificada.py` — 23 verificaciones de la etapa.
+- `prueba_filas_horizontales.py` y `prueba_recarga_catalogo.py` — aserción de
+  duración actualizada al nuevo contrato visual ("5" → "0:05").
 
-**Pruebas superadas:** `prueba_tiempo_previews.py` 35/35 (formateador, derivación
-N=3/5/7/9, overlay con duración válida, sin overlay con duración None/inválida,
-ruta inexistente, `ajustar_previews`, integración con catálogo); regresiones
-`prueba_previews_progresivas.py` 16/16, `prueba_cantidad_previews.py` 14/14,
-`prueba_filas_horizontales.py` 16/16, `prueba_smoke.py` OK, `prueba_tamano_archivo.py`
-15/15, `prueba_lectura_paginada.py` 32/32, `prueba_pagina_siguiente.py` 20/20,
-`prueba_recarga_catalogo.py` 20/20, `prueba_seleccion_visual.py` OK,
-`prueba_shift_clic.py` 28/28, `prueba_seleccion.py` 28/28,
-`prueba_restauracion_seleccion.py` 15/15. Ejecución real de `visor_videos.py` con
-`biblioteca.db` y `miniaturas/` reales: 24 tarjetas con overlays correctos derivados
-de la duración del catálogo, cantidades 3/5/7/9 aplicadas, verificación por píxeles
-del overlay, cierre limpio (exit 0).
+**Pruebas superadas:** `prueba_duracion_simplificada.py` 23/23 (formato m:ss y
+h:mm:ss, "No disponible" ante duración inexistente/inválida, integración con
+catálogo); regresiones `prueba_filas_horizontales.py` 16/16,
+`prueba_recarga_catalogo.py` 20/20, `prueba_smoke.py` OK,
+`prueba_tiempo_previews.py` 35/35, `prueba_cantidad_previews.py` 14/14,
+`prueba_previews_progresivas.py` 16/16, `prueba_pagina_siguiente.py` 20/20,
+`prueba_seleccion_visual.py` OK, `prueba_shift_clic.py` 28/28,
+`prueba_seleccion.py` 28/28, `prueba_restauracion_seleccion.py` 15/15,
+`prueba_tamano_archivo.py` 15/15, `prueba_doble_clic.py` 14/14. Ejecución real de
+`visor_videos.py` con `biblioteca.db`: duraciones reales correctas (23/23) y casos
+representativos pocos segundos/varios minutos/una hora o más/desconocida, cierre
+limpio (exit 0).
 
 ## Hitos completados
 
@@ -96,6 +97,10 @@ del overlay, cierre limpio (exit 0).
   Beta 3 implementada (Bloque A): cada preview muestra el instante temporal
   derivado de la duración del catálogo, con overlay exclusivamente visual y sin
   cambios de pipeline, esquema SQLite ni recursos.
+- **Duración simplificada (Etapa B3.2).** El campo "Duración" de la tarjeta se
+  presenta con `formatear_tiempo` (m:ss / h:mm:ss / "No disponible"), reutilizando
+  la función de B3.1; cambio solo de presentación, sin tocar el valor numérico,
+  SQLite, consultas, pipeline ni miniaturas.
 
 ## Pendientes prioritarios
 
@@ -145,10 +150,10 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
 
 ## Próxima etapa
 
-**Etapa B3.2** — **Duración simplificada** (Bloque A): segunda mejora de la
-Beta 3. Su definición detallada se acordará recién después del cierre
-documental de la B3.1, siguiendo el plan de trabajo de `ROADMAP.md` (Bloque
-de trabajo 3), en bloques pequeños, verificables y acumulativos, sin
+**Etapa B3.3** — **Tamaño configurable de miniaturas** (Bloque A): tercera
+mejora de la Beta 3. Su definición detallada se acordará recién después del
+cierre documental de la B3.2, siguiendo el plan de trabajo de `ROADMAP.md`
+(Bloque de trabajo 3), en bloques pequeños, verificables y acumulativos, sin
 adelantar funcionalidades excluidas del alcance ni agregar funcionalidades
 nuevas fuera del plan aprobado.
 

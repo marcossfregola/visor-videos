@@ -132,7 +132,7 @@ No se implementará ninguna mejora fuera de este alcance.
 ### A. Experiencia visual
 
 - Tiempo sobre las miniaturas. **Implementada (Etapa B3.1).**
-- Duración simplificada.
+- Duración simplificada. **Implementada (Etapa B3.2).**
 - Tamaño configurable de miniaturas.
 - Vista ampliada al posar el mouse.
 - Preferencias relacionadas con miniaturas.
@@ -218,7 +218,7 @@ Quedan fuera del alcance de la Beta 3 y no se implementarán en ella:
 | ID | Mejora | Bloque | Estado |
 | --- | --- | --- | --- |
 | A1 | Tiempo sobre las miniaturas | A | Implementada |
-| A2 | Duración simplificada | A | Pendiente |
+| A2 | Duración simplificada | A | Implementada |
 | A3 | Tamaño configurable de miniaturas | A | Pendiente |
 | A4 | Vista ampliada al posar el mouse | A | Pendiente |
 | A5 | Preferencias relacionadas con miniaturas | A | Pendiente |
