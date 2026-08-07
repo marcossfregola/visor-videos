@@ -536,7 +536,16 @@ def listar_videos(ruta_db=None):
         conn.close()
 
 
-def detectar_diferencias(carpeta, ruta_db=None):
+def _es_subcarpeta(padre, ruta):
+    if not isinstance(ruta, str) or not ruta:
+        return False
+    try:
+        return os.path.commonpath([padre, ruta]) == padre
+    except ValueError:
+        return False
+
+
+def detectar_diferencias(carpeta, ruta_db=None, carpetas_protegidas=None):
     if not isinstance(carpeta, str) or not carpeta:
         raise ValueError("carpeta debe ser una ruta de texto no vacía")
     if not os.path.isdir(carpeta):
@@ -545,17 +554,49 @@ def detectar_diferencias(carpeta, ruta_db=None):
         ruta_db = ruta_biblioteca()
     if not os.path.isfile(ruta_db):
         raise FileNotFoundError(f"Base de datos no encontrada: {ruta_db}")
+    if carpetas_protegidas is not None:
+        if isinstance(carpetas_protegidas, (str, bytes, bytearray)):
+            raise TypeError(
+                "carpetas_protegidas debe ser una colección, no texto"
+            )
+        try:
+            list(carpetas_protegidas)
+        except TypeError:
+            raise TypeError(
+                "carpetas_protegidas debe ser una colección iterable"
+            ) from None
     en_disco = set(escanear_videos(carpeta))
+    carpeta_normalizada = os.path.normcase(os.path.normpath(carpeta))
     conn = sqlite3.connect(ruta_db)
     try:
-        en_bd = {fila[0] for fila in conn.execute("SELECT nombre FROM videos")}
+        filas = conn.execute("SELECT nombre, ruta FROM videos").fetchall()
     finally:
         conn.close()
+    nombres_en_bd = set()
+    presentes = []
+    ausentes = []
+    for nombre, ruta in filas:
+        if not isinstance(nombre, str):
+            continue
+        nombres_en_bd.add(nombre)
+        if nombre in en_disco:
+            presentes.append(nombre)
+            continue
+        if carpetas_protegidas is None:
+            ausentes.append(nombre)
+            continue
+        ruta_normalizada = (
+            os.path.normcase(os.path.normpath(ruta))
+            if isinstance(ruta, str) and ruta
+            else None
+        )
+        if _es_subcarpeta(carpeta_normalizada, ruta_normalizada):
+            ausentes.append(nombre)
     return {
         "carpeta": carpeta,
-        "presentes_en_ambos": sorted(en_disco & en_bd),
-        "nuevos": sorted(en_disco - en_bd),
-        "ausentes_del_disco": sorted(en_bd - en_disco),
+        "presentes_en_ambos": sorted(presentes),
+        "nuevos": sorted(en_disco - nombres_en_bd),
+        "ausentes_del_disco": sorted(ausentes),
     }
 
 

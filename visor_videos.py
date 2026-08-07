@@ -205,11 +205,46 @@ def formatear_tiempo(segundos):
     return f"{minutos}:{segundos_resto:02d}"
 
 
+def _ruta_contiene(padre, hija):
+    if (
+        not isinstance(padre, str)
+        or not isinstance(hija, str)
+        or not padre
+        or not hija
+    ):
+        return False
+    padre_normalizada = os.path.normcase(os.path.normpath(padre))
+    hija_normalizada = os.path.normcase(os.path.normpath(hija))
+    if padre_normalizada == hija_normalizada:
+        return False
+    try:
+        return os.path.commonpath(
+            [padre_normalizada, hija_normalizada]
+        ) == padre_normalizada
+    except ValueError:
+        return False
+
+
+def _alcance_efectivo(carpetas, recursivo):
+    if not recursivo or len(carpetas) <= 1:
+        return list(carpetas)
+    efectivas = []
+    for carpeta in carpetas:
+        contenido = any(
+            _ruta_contiene(otra, carpeta)
+            for otra in carpetas
+            if otra != carpeta
+        )
+        if not contenido:
+            efectivas.append(carpeta)
+    return efectivas
+
+
 def _duracion_valida(duracion):
     return (
         isinstance(duracion, (int, float))
         and not isinstance(duracion, bool)
-        and duracion > 0
+        and duracion >= 0
     )
 
 
@@ -800,7 +835,7 @@ class VisorVideos(QMainWindow):
         self._operacion_archivos = None
         self._carpeta_sincronizacion = None
         self._cola_carpetas_escaneo = []
-        self._omite_sincronizacion = False
+        self._alcance_sincronizacion = None
 
         self.busqueda = QLineEdit()
         self.busqueda.setPlaceholderText("Buscar por nombre...")
@@ -1637,9 +1672,17 @@ class VisorVideos(QMainWindow):
             self._actualizar_botones_carpeta()
             return
         carpetas_sin_repetir = list(dict.fromkeys(carpetas_validas))
-        self._cola_carpetas_escaneo = list(carpetas_sin_repetir[1:])
-        self._omite_sincronizacion = len(carpetas_sin_repetir) > 1
-        self._iniciar_escaneo_carpeta(carpetas_sin_repetir[0])
+        carpetas_efectivas = _alcance_efectivo(
+            carpetas_sin_repetir,
+            self.incluir_subcarpetas.isChecked(),
+        )
+        self._cola_carpetas_escaneo = list(carpetas_efectivas[1:])
+        self._alcance_sincronizacion = (
+            list(carpetas_efectivas)
+            if len(carpetas_efectivas) > 1
+            else None
+        )
+        self._iniciar_escaneo_carpeta(carpetas_efectivas[0])
 
     def _iniciar_escaneo_carpeta(self, carpeta):
         configurar_escaneo_recursivo(self.incluir_subcarpetas.isChecked())
@@ -1687,7 +1730,7 @@ class VisorVideos(QMainWindow):
         self._pagina_pendiente = False
         self._carpeta_sincronizacion = None
         self._cola_carpetas_escaneo = []
-        self._omite_sincronizacion = False
+        self._alcance_sincronizacion = None
         self.tarea_escaneo = None
         self.tarea_tamanos = None
         self.tarea_ffprobe = None
@@ -1891,7 +1934,7 @@ class VisorVideos(QMainWindow):
             siguiente = self._cola_carpetas_escaneo.pop(0)
             self._iniciar_escaneo_carpeta(siguiente)
             return
-        self._omite_sincronizacion = False
+        self._alcance_sincronizacion = None
 
     def _iniciar_sincronizacion(self, carpeta=None):
         if carpeta is None and self._carpeta_sincronizacion is not None:
@@ -1903,7 +1946,14 @@ class VisorVideos(QMainWindow):
             self._limpiar_cadena()
             self._actualizar_botones_carpeta()
             return
-        tarea = TareaSincronizacionCatalogo(carpeta, self._ruta_db)
+        protegidas = None
+        if self._alcance_sincronizacion:
+            protegidas = [
+                c for c in self._alcance_sincronizacion if c != carpeta
+            ]
+        tarea = TareaSincronizacionCatalogo(
+            carpeta, self._ruta_db, carpetas_protegidas=protegidas
+        )
         if not self.gestor.iniciar(tarea):
             self._limpiar_cadena()
             self._actualizar_botones_carpeta()
@@ -2105,10 +2155,7 @@ class VisorVideos(QMainWindow):
         self.resultado_ffprobe = None
         self.resultado_miniaturas = None
         self.registros_guardados = resultado.get("guardados")
-        if self._omite_sincronizacion:
-            self._recarga_catalogo_pendiente = True
-        else:
-            self._sincronizacion_pendiente = True
+        self._sincronizacion_pendiente = True
         self._actualizar_botones_carpeta()
 
     def _al_error(self, mensaje):

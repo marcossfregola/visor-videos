@@ -9,7 +9,7 @@ from PySide6.QtWidgets import QApplication
 
 import escanear_videos as escanear_mod
 import visor_videos
-from visor_videos import VisorVideos
+from visor_videos import VisorVideos, _alcance_efectivo
 
 _CONTADOR = [0]
 _FALLOS = [0]
@@ -173,8 +173,8 @@ def main():
             extra=sorted(_nombres(ventana)),
         )
         verifica(
-            termino and ventana._omite_sincronizacion is False,
-            "al terminar el multicarpeta el flag de omisión de sincronización se limpia",
+            termino and not hasattr(ventana, "_omite_sincronizacion"),
+            "el flag temporal de omisión de sincronización ya no existe (Etapa 5)",
         )
 
     # --- C) repetición de carpetas: sin duplicados ---
@@ -271,6 +271,88 @@ def main():
             "paso 3: volver a escanear A restaura el catálogo de A",
             extra=sorted(_nombres(ventana)),
         )
+
+    # --- H) alcance efectivo (función pura) ---
+    raiz_h = os.path.join(base.name, "H")
+    a_h = os.path.join(raiz_h, "A")
+    b_h = os.path.join(a_h, "B")
+    c_h = os.path.join(b_h, "C")
+    x_h = os.path.join(raiz_h, "X")
+    y_h = os.path.join(x_h, "Y")
+    videos_v = os.path.join(raiz_h, "Videos")
+    videos2_v = os.path.join(raiz_h, "Videos2")
+    verifica(
+        _alcance_efectivo([a_h, b_h], False) == [a_h, b_h],
+        "alcance OFF: [A, B en A] conserva ambas",
+    )
+    verifica(
+        _alcance_efectivo([a_h, b_h], True) == [a_h],
+        "alcance ON: [A, B en A] se reduce a [A]",
+    )
+    verifica(
+        _alcance_efectivo([b_h, a_h], True) == [a_h],
+        "alcance ON independiente del orden: [B, A] -> [A]",
+    )
+    verifica(
+        _alcance_efectivo([a_h, b_h, c_h], True) == [a_h],
+        "alcance ON: tres niveles [A, A\\B, A\\B\\C] -> [A]",
+    )
+    verifica(
+        _alcance_efectivo([a_h, b_h, x_h, y_h], True) == [a_h, x_h],
+        "alcance ON: dos padres independientes [A, A\\B, X, X\\Y] -> [A, X]",
+    )
+    verifica(
+        _alcance_efectivo([videos_v, videos2_v], True)
+        == [videos_v, videos2_v],
+        "prefijos engañosos C:\\Videos y C:\\Videos2 no son padre/hija",
+    )
+
+    # --- I) escenario A/B real contra SQLite ---
+    base_i = tempfile.TemporaryDirectory()
+    carpeta_a_i = os.path.join(base_i.name, "A")
+    carpeta_b_i = os.path.join(carpeta_a_i, "B")
+    os.makedirs(carpeta_b_i)
+    _crear_archivo(os.path.join(carpeta_a_i, "a.mp4"))
+    _crear_archivo(os.path.join(carpeta_b_i, "b.mp4"))
+    try:
+        with _ventana_con() as ventana:
+            ventana.carpeta_seleccionada = carpeta_a_i
+            ventana.incluir_subcarpetas.setChecked(True)
+            ventana.iniciar_escaneo([carpeta_a_i, carpeta_b_i])
+            _esperar_escaneo(ventana)
+            conn = sqlite3.connect(ventana._ruta_db)
+            try:
+                nombres = sorted(
+                    r[0] for r in conn.execute("SELECT nombre FROM videos")
+                )
+            finally:
+                conn.close()
+            esperado_on = sorted(["a.mp4", os.path.join("B", "b.mp4")])
+            verifica(
+                nombres == esperado_on
+                and "b.mp4" not in nombres,
+                "ON [A, B en A]: el alcance efectivo es solo A y cada archivo físico se procesa una vez",
+                extra=nombres,
+            )
+        with _ventana_con() as ventana:
+            ventana.carpeta_seleccionada = carpeta_a_i
+            ventana.incluir_subcarpetas.setChecked(False)
+            ventana.iniciar_escaneo([carpeta_a_i, carpeta_b_i])
+            _esperar_escaneo(ventana)
+            conn = sqlite3.connect(ventana._ruta_db)
+            try:
+                nombres = sorted(
+                    r[0] for r in conn.execute("SELECT nombre FROM videos")
+                )
+            finally:
+                conn.close()
+            verifica(
+                nombres == ["a.mp4", "b.mp4"],
+                "OFF [A, B en A]: el alcance efectivo conserva A y B (a.mp4 y b.mp4 una vez cada uno)",
+                extra=nombres,
+            )
+    finally:
+        base_i.cleanup()
 
     base.cleanup()
 

@@ -258,10 +258,13 @@ class TareaGuardarVideos(TareaBase):
 
 
 class TareaSincronizacionCatalogo(TareaBase):
-    def __init__(self, carpeta, ruta_db=None, parent=None):
+    def __init__(
+        self, carpeta, ruta_db=None, parent=None, carpetas_protegidas=None
+    ):
         super().__init__(parent)
         self._carpeta = carpeta
         self._ruta_db = ruta_db
+        self._carpetas_protegidas = carpetas_protegidas
 
     @property
     def carpeta(self):
@@ -272,7 +275,9 @@ class TareaSincronizacionCatalogo(TareaBase):
         return self._ruta_db
 
     def _trabajo(self):
-        diferencias = escanear_mod.detectar_diferencias(self._carpeta, self._ruta_db)
+        diferencias = escanear_mod.detectar_diferencias(
+            self._carpeta, self._ruta_db, self._carpetas_protegidas
+        )
         plan = escanear_mod.preparar_plan_sincronizacion(diferencias)
         incorporaciones = escanear_mod.aplicar_incorporaciones(plan, self._ruta_db)
         eliminaciones = escanear_mod.eliminar_candidatos(plan, self._ruta_db)

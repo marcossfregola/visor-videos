@@ -16,45 +16,56 @@ técnica **B3.18**) y el **Bloque C — Progreso** quedó **completo**
 salvo problemas en las pruebas finales. Además está en marcha el **Bloque de
 trabajo 4 — Catálogo por selección de carpetas**: implementadas la **Etapa 1
 — Infraestructura de selección**, la **entrega conjunta Etapas 2-3 — Modo
-de selección del árbol y herramientas de selección rápida** y la **Etapa 4 —
-Escaneo multicarpeta** (con la limitación temporal de omisión de
-sincronización, a eliminar en la Etapa 5). El plan de trabajo se documenta
+de selección del árbol y herramientas de selección rápida**, la **Etapa 4 —
+Escaneo multicarpeta** y la **Etapa 5 — Sincronización multicarpeta** (que
+elimina la limitación temporal de la Etapa 4). El plan de trabajo se documenta
 en `ROADMAP.md` (Bloques de trabajo 3 y 4). La Beta 2 permanece como la
 última versión estable publicada.
 
 ## Último commit aprobado
 
-**Mensaje:** Implementar el escaneo multicarpeta del catálogo (Etapa 4, Bloque 4)
+**Mensaje:** Implementar sincronizacion multicarpeta segura (Etapa 5)
 
-**Etapa:** Escaneo multicarpeta (Bloque de trabajo 4, Etapa 4):
-- `visor_videos.py` — `iniciar_escaneo(carpetas=None)` acepta una lista (o cadena, o `None` →
-  carpeta activa), filtra carpetas inexistentes y **deduplica**; `_iniciar_escaneo_carpeta`
-  ejecuta la cadena existente por carpeta; cola secuencial `_cola_carpetas_escaneo`
-  (avance en `_al_tarea_finalizada`); `_omite_sincronizacion` (**limitación temporal**):
-  en multicarpeta se omite la sincronización monocarpetas (que eliminaría registros de otras
-  carpetas) y `_al_resultado_guardado` va directo a la recarga. `boton_escanear` reconectado
-  con lambda (Qt pasa `bool`). Modo tradicional idéntico; sin auto-activación desde la interfaz.
-- `prueba_escaneo_multicarpeta.py` — 12 verificaciones de la etapa (nuevo), incluida la
-  transición de modos A → A+B (selección) → A solicitada por la auditoría.
+**Etapa:** Sincronización multicarpeta (Bloque de trabajo 4, Etapa 5):
+- `escanear_videos.py` — `detectar_diferencias(carpeta, ruta_db=None, carpetas_protegidas=None)`
+  con `_es_subcarpeta` (`os.path.commonpath`): en modo multicarpeta un registro solo es ausente
+  si su **ruta pertenece a la carpeta** y no está en disco (no elimina registros de otras raíces
+  del alcance); el modo tradicional (sin parámetro) permanece idéntico. Sin cambios de esquema.
+- `tareas_videos.py` — `TareaSincronizacionCatalogo` acepta `carpetas_protegidas` opcional y la
+  reenvía a `detectar_diferencias` (mismo conjunto de métodos).
+- `visor_videos.py` — eliminado por completo `_omite_sincronizacion`; `_alcance_sincronizacion`
+  (mismo conjunto efectivo que la cola de escaneo); `_iniciar_sincronizacion` calcula las
+  carpetas protegidas del alcance; **normalización del alcance efectivo** `_alcance_efectivo`/
+  `_ruta_contiene` en `iniciar_escaneo` (con "Incluir subcarpetas" activado se eliminan las
+  raíces descendientes redundantes; con OFF se conservan). Transición correcta A → A+B → A.
+- `prueba_escaneo_multicarpeta.py` — actualizada (flag eliminado) + secciones de alcance
+  efectivo (función pura) y escenario A/B contra SQLite.
+- `prueba_sincronizacion_multicarpeta.py` — 17 verificaciones de la etapa (nuevo), incluidas las
+  fases SQLite [A]/[A,B]/[A] y el caso solapado A⊇B.
 
-**Pruebas superadas:** `prueba_escaneo_multicarpeta.py` 12/12 (escaneo tradicional sin
-regresión y marcado de escaneada; multicarpeta produce la unión; repetición de carpetas sin
-duplicados; carpetas inexistentes ignoradas; lista vacía/inválida no escanea; la base refleja
-la unión; limpieza del flag; transición A → A+B → A); regresiones relevantes OK:
+**Pruebas superadas:** `prueba_sincronizacion_multicarpeta.py` 17/17 (protección por ruta con y
+sin protección; sincronización de una carpeta sin regresión; ausente de una carpeta del conjunto
+eliminado conservando la otra; flag eliminado; marcado por carpeta; transición A → A+B → A contra
+SQLite; caso solapado A⊇B); `prueba_escaneo_multicarpeta.py` 20/20 (incluye alcance efectivo
+ON/OFF, tres niveles, dos padres, prefijos engañosos y escenario A/B: ON → {a.mp4, "B\b.mp4"},
+OFF → {a.mp4, b.mp4}); regresiones relevantes OK: `prueba_sincronizacion_asincrona.py` 27/27,
+`prueba_plan_sincronizacion.py` 12/12, `prueba_detectar.py` 15/15,
+`prueba_eliminar_candidatos.py` 16/16, `prueba_sincronizacion_interfaz.py` 18/18,
 `prueba_escaneo.py` 12/12, `prueba_escaneo_guardado.py` 24/24, `prueba_escaneo_interfaz.py`
-36/36, `prueba_escaneo_automatico.py` 19/19, `prueba_ffprobe.py` 12/12, `prueba_guardar.py`
-19/19, `prueba_guardar_videos.py` 34/34, `prueba_lectura.py` 15/15, `prueba_lectura_paginada.py`
-32/32, `prueba_progreso_pipeline.py` 11/11, `prueba_progreso_operaciones.py` 12/12,
-`prueba_sincronizacion_interfaz.py` 18/18, `prueba_recarga_catalogo.py` 20/20,
-`prueba_interfaz_asincrona.py` 29/29, `prueba_tamano_archivo.py` 15/15, `prueba_progreso.py`
-13/13, `prueba_progreso_visual.py` OK, `prueba_progreso_visual_pulido.py` 7/7,
-`prueba_modo_seleccion_arbol.py` 16/16, `prueba_herramientas_seleccion_arbol.py` 20/20,
-`prueba_seleccion_carpetas.py` 22/22, `prueba_arbol_navegacion.py`, `prueba_seleccion_carpeta.py`
-26/26, `prueba_carpeta_actual.py` 19/19, `prueba_persistencia_arbol.py` 15/15,
-`prueba_persistencia_subcarpetas.py` 10/10, `prueba_expansion_carpetas.py` 35/35,
-`prueba_atajos_operaciones.py` 16/16, `prueba_seleccion.py` 28/28,
-`prueba_restauracion_seleccion.py` 15/15, `prueba_duracion_simplificada.py` 23/23,
-`prueba_smoke.py` OK.
+36/36, `prueba_escaneo_automatico.py` 19/19, `prueba_escaneo_subcarpetas.py` 12/12,
+`prueba_subcarpetas_arbol.py` 15/15, `prueba_guardar.py` 19/19, `prueba_guardar_videos.py`
+34/34, `prueba_lectura.py` 15/15, `prueba_lectura_paginada.py` 32/32,
+`prueba_progreso_pipeline.py` 11/11, `prueba_progreso_operaciones.py` 12/12,
+`prueba_progreso_visual_pulido.py` 7/7, `prueba_interfaz_asincrona.py` 29/29,
+`prueba_recarga_catalogo.py` 20/20, `prueba_modo_seleccion_arbol.py` 16/16,
+`prueba_herramientas_seleccion_arbol.py` 20/20, `prueba_seleccion_carpetas.py` 22/22,
+`prueba_arbol_navegacion.py`, `prueba_seleccion_carpeta.py` 26/26, `prueba_carpeta_actual.py`
+19/19, `prueba_persistencia_arbol.py` 15/15, `prueba_persistencia_subcarpetas.py` 10/10,
+`prueba_expansion_carpetas.py` 35/35, `prueba_atajos_operaciones.py` 16/16,
+`prueba_seleccion.py` 28/28, `prueba_restauracion_seleccion.py` 15/15,
+`prueba_duracion_simplificada.py` 23/23, `prueba_ffprobe.py` 12/12,
+`prueba_tamano_archivo.py` 15/15, `prueba_smoke.py` OK. `prueba_aplicar_incorporaciones.py`
+14/15: **T15 preexistente** (operada sobre la copia de `biblioteca.db`), verificada en HEAD.
 
 ## Hitos completados
 
@@ -254,8 +265,15 @@ la unión; limpieza del flag; transición A → A+B → A); regresiones relevant
 - **Escaneo multicarpeta (Bloque 4, Etapa 4).** `iniciar_escaneo(carpetas=None)` acepta una
   lista de carpetas y encadena el pipeline existente **una vez por carpeta** (cola secuencial),
   produciendo la unión en el catálogo; deduplicación de carpetas y modo tradicional idéntico.
-  **Limitación temporal:** en multicarpeta se omite la sincronización monocarpetas (eliminaría
-  registros de otras carpetas); se eliminará por completo en la **Etapa 5**.
+- **Sincronización multicarpeta (Bloque 4, Etapa 5).** Se elimina por completo el flag temporal
+  `_omite_sincronizacion` y se implementa una **sincronización real por cada carpeta del alcance**
+  efectivo: `detectar_diferencias(..., carpetas_protegidas)` sincroniza **por ruta** en modo
+  multicarpeta (una carpeta no elimina registros de otras raíces del mismo alcance; el modo
+  tradicional permanece idéntico); `_alcance_sincronizacion` es el mismo conjunto efectivo que la
+  cola de escaneo; la **normalización del alcance efectivo** (`_alcance_efectivo`/`_ruta_contiene`)
+  elimina raíces descendientes redundantes cuando "Incluir subcarpetas" está activado (comportamiento
+  ON/OFF diferenciado), y la **transición A → A+B → A** queda verificada contra SQLite. Sin cambios
+  de esquema SQLite.
 
 ## Pendientes prioritarios
 
@@ -312,14 +330,13 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
 
 ## Próxima etapa
 
-**Etapa 5 — Sincronización multicarpeta** (Bloque de trabajo 4). Eliminar la limitación
-temporal introducida en la Etapa 4 (omisión de sincronización en el escaneo multicarpeta) y
-hacer que la reconciliación del catálogo sea consistente con el conjunto seleccionado
-(reconciliación por carpeta del alcance, indicadores por carpeta), según `ROADMAP.md` (Bloque
-de trabajo 4). Es la etapa más importante del bloque: con ella el comportamiento multicarpeta
-queda completamente consistente. Su definición detallada se realizará con la inspección técnica
-previa, en bloques pequeños, verificables y acumulativos, sin adelantar funcionalidades
-excluidas del alcance ni agregar funcionalidades nuevas fuera del plan aprobado.
+**Etapa 6 — Selector de modo** (Bloque de trabajo 4). Reemplazar el checkbox "Incluir
+subcarpetas" por un selector de modo ("Solo carpeta actual" / "Carpeta actual y todas las
+subcarpetas" / "Selección personalizada…", que activa el modo de selección), con migración
+retrocompatible, según `ROADMAP.md` (Bloque de trabajo 4). Su definición detallada se realizará
+con la inspección técnica previa, en bloques pequeños, verificables y acumulativos, sin
+adelantar funcionalidades excluidas del alcance ni agregar funcionalidades nuevas fuera del
+plan aprobado.
 
 ## Documentos del proyecto
 

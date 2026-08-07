@@ -5,6 +5,64 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 85. Implementar sincronizacion multicarpeta segura (Etapa 5)
+
+- **Fecha:** 2026-08-07
+- **Objetivo:** Eliminar la limitación temporal de la Etapa 4 (omisión de sincronización en el
+  escaneo multicarpeta) e implementar una **sincronización real por cada carpeta del alcance**
+  efectivo, garantizando: cada carpeta seleccionada se sincroniza; los archivos borrados
+  desaparecen del catálogo; los nuevos se incorporan; y los registros de otras raíces del mismo
+  alcance nunca se eliminan por error. La transición A → A+B → A debe quedar consistente y el
+  alcance efectivo se normaliza cuando "Incluir subcarpetas" está activado.
+- **Archivos creados:**
+  - `prueba_sincronizacion_multicarpeta.py` — 17 verificaciones: protección por ruta con/sin
+    `carpetas_protegidas` (función pura); sincronización de una carpeta sin regresión (elimina
+    el ausente); multicarpeta elimina el ausente de una carpeta conservando la otra (SQLite);
+    desaparición de `_omite_sincronizacion`; marcado por carpeta; **transición [A]→[A,B]→[A]
+    contra SQLite real** (a.mp4/b.mp4, estados exactos); caso solapado A⊇B.
+- **Archivos modificados:**
+  - `escanear_videos.py` — `detectar_diferencias(carpeta, ruta_db=None, carpetas_protegidas=None)`
+    con `_es_subcarpeta` (`os.path.commonpath`): en modo multicarpeta un registro solo es ausente
+    si su **ruta pertenece a la carpeta** y no está en disco (no elimina registros de otras
+    raíces; el modo tradicional sin parámetro es idéntico). Sin cambios de esquema SQLite.
+  - `tareas_videos.py` — `TareaSincronizacionCatalogo` acepta `carpetas_protegidas` opcional y la
+    reenvía a `detectar_diferencias` (mismo conjunto de métodos `__init__`/`_trabajo`/`carpeta`/
+    `ruta_db`).
+  - `visor_videos.py` — eliminado por completo `_omite_sincronizacion`; `_alcance_sincronizacion`
+    (mismo conjunto efectivo que `_cola_carpetas_escaneo`); `_iniciar_sincronizacion` calcula las
+    carpetas protegidas del alcance y las pasa a la tarea; **`_alcance_efectivo`/`_ruta_contiene`**
+    normalizan el alcance en `iniciar_escaneo` (con "Incluir subcarpetas" ON se eliminan las
+    raíces descendientes redundantes; con OFF se conservan). Resets en `_limpiar_cadena` y al
+    terminar la cola.
+  - `prueba_escaneo_multicarpeta.py` — aserción del flag eliminado + secciones de alcance
+    efectivo (función pura: ON/OFF, tres niveles, dos padres, prefijos engañosos, orden) y
+    escenario A/B contra SQLite (ON → {a.mp4, "B\b.mp4"}; OFF → {a.mp4, b.mp4}).
+  - `ROADMAP.md` — Bloque 4: Etapa 5 marcada como implementada (sin la limitación temporal).
+  - `DOCUMENTO_TECNICO.md` — `iniciar_escaneo`, `detectar_diferencias`, `_iniciar_sincronizacion`
+    y `TareaSincronizacionCatalogo` actualizados.
+  - `ESTADO_PROYECTO.md` — última etapa aprobada, fase actual, hitos y próxima etapa (Etapa 6).
+  - `HISTORIAL_PROYECTO.md` — este documento (registro de la etapa).
+- **Pruebas:** `prueba_sincronizacion_multicarpeta.py` 17/17, `prueba_escaneo_multicarpeta.py`
+  20/20, y regresiones relevantes OK (`prueba_sincronizacion_asincrona.py` 27/27,
+  `prueba_plan_sincronizacion.py` 12/12, `prueba_detectar.py` 15/15,
+  `prueba_eliminar_candidatos.py` 16/16, `prueba_sincronizacion_interfaz.py` 18/18,
+  `prueba_escaneo_subcarpetas.py` 12/12, `prueba_subcarpetas_arbol.py` 15/15,
+  `prueba_escaneo_automatico.py` 19/19, `prueba_escaneo_interfaz.py` 36/36, `prueba_smoke.py`
+  OK, entre otras). `prueba_aplicar_incorporaciones.py` 14/15: **T15 preexistente** verificada
+  en HEAD.
+- **Commit:** Aprobado y commiteado.
+- **Resultado:** la sincronización multicarpeta queda consistente: cada carpeta del alcance
+  efectivo se sincroniza por ruta sin eliminar registros de otras raíces, la transición
+  A → A+B → A funciona contra SQLite, y con "Incluir subcarpetas" activado el alcance efectivo
+  elimina las raíces descendientes redundantes (sin duplicar archivos físicos).
+- **Decisiones importantes:** sincronización por ruta en modo multicarpeta (protección por
+  `_es_subcarpeta`); `_alcance_sincronizacion` = conjunto efectivo; normalización del alcance
+  en `iniciar_escaneo` con `_alcance_efectivo`/`_ruta_contiene` (comparación robusta con
+  `os.path.commonpath`); sin cambios de esquema SQLite; sin identidad estable de videos ni
+  detección de archivos movidos (fuera de alcance).
+
+---
+
 ## 84. Implementar el escaneo multicarpeta del catálogo (Etapa 4, Bloque 4)
 
 - **Fecha:** 2026-08-07
