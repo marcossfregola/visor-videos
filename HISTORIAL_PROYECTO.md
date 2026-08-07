@@ -5,6 +5,59 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 79. Implementar progreso real del pipeline de escaneo (Etapa B3.21)
+
+- **Fecha:** 2026-08-07
+- **Objetivo:** Utilizar la infraestructura de B3.20 para que la cadena principal de escaneo
+  informe **progreso real** en las etapas donde existe una unidad natural de trabajo, sin
+  modificar Copiar/Pegar/Eliminar (B3.22) y sin cambiar textos ni diseño.
+- **Decisión arquitectónica (auditoría):** **no** mover los bucles de las funciones puras a
+  las tareas; se incorporan **callbacks opcionales de progreso** en `escanear_videos.py`
+  (sin Qt), y las tareas pasan `self.reportar_progreso`.
+- **Archivos creados:**
+  - `prueba_progreso_pipeline.py` — 11 verificaciones: callbacks de las tres funciones puras
+    emiten `(1..N, N)` y conservan el resultado sin callback; las cuatro tareas reenvían el
+    progreso por unidad vía `GestorTareas`; `_mostrar_progreso` deja la barra indeterminada y
+    no arrastra rango; `_al_progreso_pipeline` convierte `(procesado,total)` en rango/valor;
+    integración: el progreso de una tarea actualiza la barra de la ventana `[(3,1),(3,2),(3,3)]`.
+- **Archivos modificados:**
+  - `escanear_videos.py` — `obtener_tamanos_archivos(videos, carpeta, on_progreso=None)`,
+    `asegurar_miniaturas(videos, carpeta, on_progreso=None)` y
+    `guardar_videos(datos_videos, ruta_db=None, on_progreso=None)`: emiten
+    `on_progreso(indice + 1, total)` por unidad; sin callback, comportamiento idéntico. Sin Qt.
+  - `tareas_videos.py` — `TareaTamanosArchivos`, `TareaMiniaturas` y `TareaGuardarVideos`
+    pasan `self.reportar_progreso`; `TareaFFprobe` recorre las rutas con bucle explícito y
+    emite `reportar_progreso(indice + 1, total)`.
+  - `visor_videos.py` — conexión `self.gestor.tarea_progreso → _al_progreso_pipeline`;
+    `_mostrar_progreso()` restablece siempre `setRange(0,0)`; nuevo handler
+    `_al_progreso_pipeline(procesado, total)` (`setRange(0, total)` + `setValue`). Escaneo,
+    sincronización y recarga permanecen **indeterminados** por decisión.
+  - `prueba_escaneo_guardado.py` — actualizados los spies de paso a través de T07/T09 para
+    aceptar y reenviar `on_progreso` (**incompatibilidad objetiva demostrable**: los spies de
+    2 argumentos recibían la invocación de 3 argumentos de la tarea).
+  - `DOCUMENTO_TECNICO.md` — callbacks y progreso del pipeline documentados.
+  - `ROADMAP.md` — B3.21 marcada como implementada.
+  - `ESTADO_PROYECTO.md` — última etapa aprobada, fase actual, hitos y próxima etapa (B3.22).
+  - `HISTORIAL_PROYECTO.md` — este documento (registro de la etapa).
+- **Pruebas:** `prueba_progreso_pipeline.py` 11/11; regresiones relevantes OK (`prueba_tareas.py`
+  13/13, `prueba_infraestructura_progreso.py` 9/9, `prueba_ffprobe.py` 12/12,
+  `prueba_tamano_archivo.py` 15/15, `prueba_escaneo_guardado.py` 24/24,
+  `prueba_guardar_videos.py` 34/34, `prueba_guardar.py` 19/19, `prueba_escaneo.py` 12/12,
+  `prueba_escaneo_interfaz.py` 36/36, `prueba_sincronizacion_interfaz.py` 18/18,
+  `prueba_recarga_catalogo.py` 20/20, `prueba_progreso.py` 13/13, `prueba_progreso_visual.py`
+  OK, `prueba_interfaz_asincrona.py` 29/29, `prueba_lectura.py` 15/15,
+  `prueba_lectura_paginada.py` 32/32, `prueba_sincronizacion_asincrona.py` 27/27,
+  `prueba_previews_automaticas.py` 22/22, `prueba_previews_progresivas.py` 16/16,
+  `prueba_smoke.py` OK).
+- **Commit:** Aprobado y commiteado.
+- **Resultado:** la cadena principal muestra progreso real (barra determinada) en tamaños,
+  FFprobe, miniaturas y guardado; escaneo/sincronización/recarga siguen indeterminados.
+- **Decisiones importantes:** callbacks opcionales en funciones puras (sin Qt, sin mover
+  bucles); `_mostrar_progreso` resetea siempre a indeterminado para no arrastrar estado;
+  corrección mínima de los spies de `prueba_escaneo_guardado.py` por incompatibilidad objetiva.
+
+---
+
 ## 78. Incorporar infraestructura reutilizable de progreso para tareas (Etapa B3.20)
 
 - **Fecha:** 2026-08-07

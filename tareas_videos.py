@@ -43,7 +43,11 @@ class TareaFFprobe(TareaBase):
         return list(self._rutas)
 
     def _trabajo(self):
-        resultados = [self._procesar_uno(ruta) for ruta in self._rutas]
+        resultados = []
+        total = len(self._rutas)
+        for indice, ruta in enumerate(self._rutas):
+            resultados.append(self._procesar_uno(ruta))
+            self.reportar_progreso(indice + 1, total)
         return {
             "rutas": list(self._rutas),
             "resultados": resultados,
@@ -102,7 +106,9 @@ class TareaTamanosArchivos(TareaBase):
         return self._carpeta
 
     def _trabajo(self):
-        return obtener_tamanos_archivos(self._videos, self._carpeta)
+        return obtener_tamanos_archivos(
+            self._videos, self._carpeta, self.reportar_progreso
+        )
 
 
 class TareaMiniaturas(TareaBase):
@@ -124,7 +130,9 @@ class TareaMiniaturas(TareaBase):
         return self._carpeta
 
     def _trabajo(self):
-        return asegurar_miniaturas(self._videos, self._carpeta)
+        return asegurar_miniaturas(
+            self._videos, self._carpeta, self.reportar_progreso
+        )
 
 
 class TareaPreviewsProgresivas(TareaBase):
@@ -244,7 +252,9 @@ class TareaGuardarVideos(TareaBase):
     def _trabajo(self):
         if self._datos_invalidos is not None:
             raise TypeError(f"colección inválida: {self._datos_invalidos}")
-        return guardar_videos(self._datos, self._ruta_db)
+        return guardar_videos(
+            self._datos, self._ruta_db, self.reportar_progreso
+        )
 
 
 class TareaSincronizacionCatalogo(TareaBase):

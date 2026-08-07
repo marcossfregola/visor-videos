@@ -951,6 +951,7 @@ class VisorVideos(QMainWindow):
         self.gestor.tarea_resultado.connect(self._al_resultado)
         self.gestor.tarea_error.connect(self._al_error)
         self.gestor.tarea_finalizada.connect(self._al_tarea_finalizada)
+        self.gestor.tarea_progreso.connect(self._al_progreso_pipeline)
         self.gestor.actividad_cambiada.connect(self._al_actividad)
 
         self.gestor_previews = GestorTareas(self)
@@ -1204,8 +1205,14 @@ class VisorVideos(QMainWindow):
 
     def _mostrar_progreso(self, texto):
         self._pipeline_activo = True
+        self.barra_progreso.setRange(0, 0)
         self.barra_progreso.setFormat(texto)
         self.barra_progreso.setVisible(True)
+
+    def _al_progreso_pipeline(self, procesado, total):
+        if total > 0:
+            self.barra_progreso.setRange(0, total)
+            self.barra_progreso.setValue(procesado)
 
     def _ocultar_progreso(self):
         self._pipeline_activo = False

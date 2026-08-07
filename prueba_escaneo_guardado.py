@@ -348,10 +348,10 @@ def test_07():
         info = {}
         orig = tv.guardar_videos
 
-        def _espia(datos_videos, ruta_db=None):
+        def _espia(datos_videos, ruta_db=None, on_progreso=None):
             info["ident"] = threading.get_ident()
             info["principal"] = QThread.isMainThread()
-            return orig(datos_videos, ruta_db)
+            return orig(datos_videos, ruta_db, on_progreso)
 
         tv.guardar_videos = _espia
         try:
@@ -427,9 +427,9 @@ def test_09():
         conteo = {"guardar": 0}
         orig = tv.guardar_videos
 
-        def _espia(datos_videos, ruta_db=None):
+        def _espia(datos_videos, ruta_db=None, on_progreso=None):
             conteo["guardar"] += 1
-            return orig(datos_videos, ruta_db)
+            return orig(datos_videos, ruta_db, on_progreso)
 
         tv.guardar_videos = _espia
         try:

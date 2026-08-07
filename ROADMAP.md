@@ -187,7 +187,7 @@ No se implementará ninguna mejora fuera de este alcance.
 | Etapa | Contenido |
 | --- | --- |
 | B3.20 | **Infraestructura de progreso** — señal `progreso` en `TareaBase` y `tarea_progreso` en `GestorTareas`, reenvío por `_RelayTarea` con token `_vigente`, helper `reportar_progreso`; cambio aditivo sin modificar `ejecutar()` ni el comportamiento visible. **Implementada (Etapa B3.20).** |
-| B3.21 | **Progreso real del pipeline de escaneo** — usar la infraestructura en la cadena principal (tamaños, FFprobe, miniaturas, guardado, sincronización, recarga). |
+| B3.21 | **Progreso real del pipeline de escaneo** — usar la infraestructura en la cadena principal (tamaños, FFprobe, miniaturas, guardado, sincronización, recarga). **Implementada (Etapa B3.21):** progreso real en tamaños, FFprobe, miniaturas y guardado mediante **callbacks opcionales** en las funciones puras de `escanear_videos` (sin Qt ni bucles movidos a las tareas); escaneo, sincronización y recarga permanecen indeterminados por decisión. La barra pasa a determinada durante esas etapas. |
 | B3.22 | **Progreso de Copiar, Pegar y Eliminar** — reutilizar la misma infraestructura, sin lógica paralela. |
 | B3.23 | **Pulido visual del sistema de progreso** — consistencia barra ↔ mensajes de estado, evitar mensajes pisados, unificar comportamiento visual. |
 | B3.24 | **Limpieza técnica** — deuda que continúe siendo necesaria (`_pipeline_activo`, helpers repetidos, etc.). |

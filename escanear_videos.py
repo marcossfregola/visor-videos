@@ -135,7 +135,7 @@ def _tamano_archivo(ruta):
         return None
 
 
-def obtener_tamanos_archivos(videos, carpeta):
+def obtener_tamanos_archivos(videos, carpeta, on_progreso=None):
     if not isinstance(carpeta, str) or not carpeta:
         raise ValueError("carpeta debe ser una ruta de texto no vacía")
     if not os.path.isdir(carpeta):
@@ -147,9 +147,12 @@ def obtener_tamanos_archivos(videos, carpeta):
     except TypeError:
         raise TypeError("videos debe ser una colección iterable") from None
     rutas = [os.path.join(carpeta, nombre) for nombre in lista]
-    resultados = [
-        {"ruta": ruta, "tamano_bytes": _tamano_archivo(ruta)} for ruta in rutas
-    ]
+    resultados = []
+    total = len(rutas)
+    for indice, ruta in enumerate(rutas):
+        resultados.append({"ruta": ruta, "tamano_bytes": _tamano_archivo(ruta)})
+        if on_progreso is not None:
+            on_progreso(indice + 1, total)
     return {
         "rutas": rutas,
         "resultados": resultados,
@@ -319,7 +322,7 @@ def asegurar_miniatura(video, ruta_video):
         return 0
     return 1 if generar_miniatura(ruta_video, ruta) else 0
 
-def asegurar_miniaturas(videos, carpeta):
+def asegurar_miniaturas(videos, carpeta, on_progreso=None):
     if isinstance(videos, (str, bytes, bytearray)):
         raise TypeError("videos debe ser una colección de nombres, no texto")
     try:
@@ -329,12 +332,15 @@ def asegurar_miniaturas(videos, carpeta):
     if not isinstance(carpeta, str) or not carpeta:
         raise ValueError("carpeta debe ser una ruta de texto no vacía")
     resultados = []
-    for nombre in lista:
+    total = len(lista)
+    for indice, nombre in enumerate(lista):
         ruta_video = os.path.join(carpeta, nombre)
         if not os.path.isfile(ruta_video):
             resultados.append(
                 {"ruta": ruta_video, "asegurada": 0, "cantidad_miniaturas": 0}
             )
+            if on_progreso is not None:
+                on_progreso(indice + 1, total)
             continue
         asegurada = asegurar_miniatura(nombre, ruta_video)
         resultados.append(
@@ -344,6 +350,8 @@ def asegurar_miniaturas(videos, carpeta):
                 "cantidad_miniaturas": contar_miniaturas(nombre),
             }
         )
+        if on_progreso is not None:
+            on_progreso(indice + 1, total)
     return {
         "rutas": [r["ruta"] for r in resultados],
         "resultados": resultados,
@@ -750,7 +758,7 @@ def guardar_video(datos, ruta_db=None):
     return {"guardado": True, "nombre": datos["nombre"]}
 
 
-def guardar_videos(datos_videos, ruta_db=None):
+def guardar_videos(datos_videos, ruta_db=None, on_progreso=None):
     if isinstance(datos_videos, (str, bytes, bytearray)):
         raise TypeError("datos_videos debe ser una colección, no texto")
     try:
@@ -766,9 +774,12 @@ def guardar_videos(datos_videos, ruta_db=None):
     if not os.path.isfile(ruta_db):
         raise FileNotFoundError(f"Base de datos no encontrada: {ruta_db}")
     conn = sqlite3.connect(ruta_db)
+    total = len(registros)
     try:
-        for datos in registros:
+        for indice, datos in enumerate(registros):
             _upsert_video(conn, datos)
+            if on_progreso is not None:
+                on_progreso(indice + 1, total)
         conn.commit()
     except Exception:
         conn.rollback()
