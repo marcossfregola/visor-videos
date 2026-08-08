@@ -7,11 +7,11 @@ Videos. No representa el estado actual del proyecto, sino la dirección
 de desarrollo. El orden podrá cambiar según las decisiones
 arquitectónicas.
 
-> **Estado (Beta 3):** quedó **aprobado el alcance de la Beta 3** (Etapa
-> B3.0, exclusivamente documental). El proyecto está listo para comenzar la
-> implementación de los bloques de trabajo **A–E** definidos en la sección
-> "Bloque de trabajo 3 — Beta 3". El Bloque de trabajo 2 (Centro de
-> Navegación) quedó completado y aprobado.
+> **Estado (Beta 3):** la **Beta 3 quedó finalizada, funcionalmente cerrada y
+> congelada sobre el código definitivo**, lista para la **validación manual
+> integral** sobre una instalación limpia antes de su publicación. El
+> desarrollo funcional se reanudará con el **próximo ciclo (Beta 4)** (ver
+> la sección "Próximo ciclo: Beta 4").
 
 ------------------------------------------------------------------------
 
@@ -117,8 +117,10 @@ funcionalidades fuera del alcance acordado.
   cambios arquitectónicos que todavía no existen.
 - Las preferencias nuevas que surjan de la Beta 3 se **persistirán
   automáticamente** siguiendo el patrón existente.
-- Ninguna mejora del alcance aprobado está aún implementada; el desarrollo
-  comenzará tras la aprobación de esta etapa.
+- La Beta 3 quedó **completa y congelada**: todas las mejoras aprobadas del
+  alcance **A–E** (incluidas las ampliaciones posteriores A6–A10), el **Bloque
+  de trabajo 4** (catálogo por selección de carpetas) y las correcciones finales
+  fueron implementadas, verificadas y cerradas.
 
 ## Alcance
 
@@ -161,12 +163,12 @@ No se implementará ninguna mejora fuera de este alcance.
 
 ### B. Selección y operaciones
 
-- Modo selección.
-- Checks por fila.
-- Copiar.
+- Modo selección. **Implementada (Etapa B3.12).**
+- Checks por fila. **Implementada (Etapa B3.12).**
+- Copiar. **Implementada (Etapa B3.14).**
 - Pegar. **Implementada (Etapa B3.15).**
 - Eliminar. **Implementada (Etapa B3.16).**
-- Resumen de selección.
+- Resumen de selección. **Implementada (Etapa B3.11).**
 - Atajos de teclado. **Implementada (Etapa B3.17).**
 - Corrección técnica del Bloque B (punto I1 de la auditoría). **Completada (Etapa B3.18).**
   Captura de la carpeta al inicio de la resincronización incremental de Pegar/Eliminar
@@ -176,11 +178,12 @@ No se implementará ninguna mejora fuera de este alcance.
 
 ### C. Progreso
 
-- Barra de progreso real.
-- Cantidad de videos procesados.
-- Porcentaje.
-- Cancelación del escaneo — **pendiente de evaluación técnica**; no es una
-  mejora aprobada.
+- Barra de progreso real. **Implementada (Etapas B3.20–B3.23).**
+- Cantidad de videos procesados. **Implementada (Etapas B3.20–B3.23).**
+- Porcentaje. **Implementada (Etapas B3.20–B3.23).**
+- Cancelación del escaneo — **diferida**: no formó parte del alcance aprobado
+  de la Beta 3 (no es una mejora aprobada) y no se incluye en el cierre;
+  permanece abierta para etapas futuras.
 
 #### Orden de implementación del Bloque C (aprobado en B3.19)
 
@@ -190,8 +193,8 @@ No se implementará ninguna mejora fuera de este alcance.
 | B3.21 | **Progreso real del pipeline de escaneo** — usar la infraestructura en la cadena principal (tamaños, FFprobe, miniaturas, guardado, sincronización, recarga). **Implementada (Etapa B3.21):** progreso real en tamaños, FFprobe, miniaturas y guardado mediante **callbacks opcionales** en las funciones puras de `escanear_videos` (sin Qt ni bucles movidos a las tareas); escaneo, sincronización y recarga permanecen indeterminados por decisión. La barra pasa a determinada durante esas etapas. |
 | B3.22 | **Progreso de Copiar, Pegar y Eliminar** — reutilizar la misma infraestructura, sin lógica paralela. **Implementada (Etapa B3.22):** callbacks opcionales `on_progreso` en `copiar_archivos`, `pegar_archivos` y `eliminar_archivos`; las tres tareas pasan `self.reportar_progreso`; `gestor_operaciones.tarea_progreso` se conecta al mismo handler `_al_progreso_pipeline`; exclusión mutua entre operaciones y pipeline en handlers y habilitación de botones. |
 | B3.23 | **Pulido visual del sistema de progreso** — consistencia barra ↔ mensajes de estado, evitar mensajes pisados, unificar comportamiento visual. **Implementada (Etapa B3.23):** formato detallado `"{etapa} %v de %m (%p%)"` con los placeholders nativos de `QProgressBar` (nombre de etapa + "N de M" + porcentaje), aplicado una sola vez por etapa en `_al_progreso_pipeline`; `_mostrar_progreso` guarda `_texto_progreso` y reinicia `_progreso_detallado`; las etapas sin emisión (escaneo, sincronización, recarga) siguen indeterminadas con texto simple. Sin cambios en tareas ni infraestructura. |
-| B3.24 | **Limpieza técnica** — deuda que continúe siendo necesaria (`_pipeline_activo`, helpers repetidos, etc.). |
-| B3.25 | **Feedback de previews** — diferido; solo si continúa aportando valor tras el resto del Bloque C. |
+| B3.24 | **Limpieza técnica** — deuda que continúe siendo necesaria (`_pipeline_activo`, helpers repetidos, etc.). **No implementada:** diferida fuera del cierre de la Beta 3. |
+| B3.25 | **Feedback de previews** — diferido; solo si continúa aportando valor tras el resto del Bloque C. **Descartado** del cierre de la Beta 3. |
 
 ### D. Navegación
 
@@ -272,12 +275,12 @@ Quedan fuera del alcance de la Beta 3 y no se implementarán en ella:
 | B5 | Eliminar | B | Implementada |
 | B6 | Resumen de selección | B | Implementada |
 | B7 | Atajos de teclado | B | Implementada |
-| C1 | Barra de progreso real | C | Pendiente |
-| C2 | Cantidad de videos procesados | C | Pendiente |
-| C3 | Porcentaje | C | Pendiente |
-| D1 | Reinicio de indicadores de carpetas escaneadas | D | Pendiente |
-| D2 | Persistencia de nuevas preferencias | D | Pendiente |
-| E1 | Apertura del video desde una preview | E | Pendiente |
+| C1 | Barra de progreso real | C | Implementada (B3.20–B3.23) |
+| C2 | Cantidad de videos procesados | C | Implementada (B3.20–B3.23) |
+| C3 | Porcentaje | C | Implementada (B3.20–B3.23) |
+| D1 | Reinicio de indicadores de carpetas escaneadas | D | Diferida (no forma parte del cierre) |
+| D2 | Persistencia de nuevas preferencias | D | Implementada |
+| E1 | Apertura del video desde una preview | E | Implementada (preexistente: doble clic sobre la tarjeta) |
 
 ## Bloque B — Selección y operaciones (plan aprobado, Etapa B3.10)
 
@@ -326,7 +329,8 @@ duplicados, filtros avanzados y apertura del video desde previews.
 ### Seguimiento
 
 La tabla de seguimiento del Bloque B es la correspondiente a las mejoras **B1–B7**
-de la tabla anterior (todas en estado "Pendiente"), con el orden de implementación
+de la tabla anterior (todas en estado **"Implementada"**, con la corrección técnica
+B3.18 incluida), con el orden de implementación
 indicado arriba.
 
 ---
@@ -363,14 +367,17 @@ actual" / "Carpeta actual y todas las subcarpetas" / "Selección personalizada�
 | 4 | **Escaneo de la selección** — `iniciar_escaneo` soporta los tres modos; pipeline sobre la unión de la selección; progreso "carpeta N de M". **Implementada (Etapa 4):** `iniciar_escaneo(carpetas=None)` acepta una lista y encadena el pipeline existente **una vez por carpeta** (cola secuencial `_cola_carpetas_escaneo`), con deduplicación de carpetas y modo tradicional idéntico. |
 | 5 | **Sincronización multicarpeta** — reconciliación **por cada carpeta del alcance** con protección de las demás raíces del mismo alcance; indicadores por carpeta. **Implementada (Etapa 5):** eliminado por completo `_omite_sincronizacion`; `_alcance_sincronizacion` (mismo conjunto efectivo que la cola de escaneo); sincronización **por ruta** en modo multicarpeta (`detectar_diferencias(..., carpetas_protegidas=...)` con `_es_subcarpeta`), de modo que una carpeta no elimina registros de otras raíces del alcance y el modo tradicional (una carpeta) permanece idéntico; **normalización del alcance efectivo** cuando "Incluir subcarpetas" está activado (se eliminan las raíces descendientes redundantes contenidas en otra del alcance, con `_alcance_efectivo`/`_ruta_contiene`, comparación robusta con `os.path.commonpath`); transición correcta A → A+B → A. Sin cambios de esquema SQLite. |
 | 6 | **Selector de modo (unificación del alcance)** — reemplazo del checkbox "Incluir subcarpetas" por un único selector de alcance. **Implementada (Etapa 6):** `QComboBox` con tres modos — "Solo carpeta actual", "Carpeta actual y todas las subcarpetas" y "Selección personalizada" (que reutiliza la infraestructura del Bloque 4 y activa el modo de selección del árbol) — como **única fuente de verdad** del alcance; persistencia (`modo_alcance`) y **migración retrocompatible** desde el booleano `incluir_subcarpetas`; el checkbox anterior queda únicamente como **adaptador de compatibilidad oculto** (no visible; sincronizado con el modo). Sin cambios en el motor de escaneo ni en la sincronización. |
-| 7 | **Auditoría integral del Bloque 4 y cierre funcional de la Beta 3** — UX, escala, regresiones integrales. **Completada (Etapa 7):** auditoría final del Bloque 4 con la batería completa de suites; se detectó y corrigió la regresión de `_duracion_valida` (`duracion > 0`, la duración 0 es inválida) introducida en la refinación de la Etapa 5; se incorporó la verificación integrada de transiciones de modo; la **Beta 3 queda funcionalmente cerrada** (congelada sobre el código definitivo), pendiente solo la revisión del procedimiento de empaquetado para producir el instalador definitivo. |
+| 7 | **Auditoría integral del Bloque 4 y cierre funcional de la Beta 3** — UX, escala, regresiones integrales. **Completada (Etapa 7):** auditoría final del Bloque 4 con la batería completa de suites; se detectó y corrigió la regresión de `_duracion_valida` (`duracion > 0`, la duración 0 es inválida) introducida en la refinación de la Etapa 5; se incorporó la verificación integrada de transiciones de modo; la **Beta 3 queda funcionalmente cerrada** (congelada sobre el código definitivo). Posteriormente se reconstruyó la infraestructura oficial de empaquetado (`instalador.iss` + `EMPACADO.md`) y se generó el instalador definitivo; resta únicamente la **validación manual integral**. |
 
 ---
 
 # Prioridad inmediata
 
--   ~~Opción de incluir o excluir subcarpetas en el escaneo.~~ Implementada
-    con persistencia de la preferencia entre ejecuciones.
+-   ~~Opción de incluir o excluir subcarpetas en el escaneo.~~ Implementada.
+    El antiguo checkbox "Incluir subcarpetas" fue reemplazado por el **selector
+    de alcance** — "Solo carpeta actual" / "Carpeta actual y todas las
+    subcarpetas" / "Selección personalizada" — como única fuente de verdad
+    (Bloque de trabajo 4, Etapa 6).
 -   ~~Infraestructura de paneles (QSplitter).~~ Implementada.
 -   ~~Árbol de carpetas en el panel izquierdo.~~ Implementadas las Etapas 2.1 a
     2.9 (árbol con "Este equipo", discos, carpetas con carga diferida,
@@ -385,10 +392,10 @@ actual" / "Carpeta actual y todas las subcarpetas" / "Selección personalizada�
     carga manual de una página adicional con el botón "Cargar más" ya
     existe.
 -   Deduplicación de nombres repetidos en el plan de sincronización.
--   Persistencia de preferencias generales de configuración — más allá
-    de la última carpeta seleccionada, que ya se persiste. **Prevista en la
-    Beta 3** (Bloque de trabajo 3, Bloque D — "Persistencia de nuevas
-    preferencias").
+-   ~~Persistencia de preferencias generales de configuración~~ — más allá
+    de la última carpeta seleccionada, que ya se persiste. **Implementada**
+    durante la Beta 3 (tamaño de miniaturas, retardo y factor de la vista
+    ampliada, modo de alcance y selección de carpetas, entre otras).
 
 ------------------------------------------------------------------------
 
@@ -400,9 +407,9 @@ actual" / "Carpeta actual y todas las subcarpetas" / "Selección personalizada�
     copiar rutas de los seleccionados, abrir carpetas de los seleccionados),
     restauración automática de la selección tras reconstruir tarjetas y selección
     por rango con Shift+clic basada en ancla y orden visible.
--   Cancelación de tareas — la **cancelación del escaneo** está **pendiente de
-    evaluación técnica** en la Beta 3 (Bloque de trabajo 3, Bloque C); no es
-    una mejora aprobada.
+-   Cancelación de tareas — la **cancelación del escaneo** quedó **diferida**:
+    no formó parte del alcance aprobado de la Beta 3 y no se incluye en el
+    cierre; permanece abierta para etapas futuras.
 -   Reanudación de trabajos.
 -   Configuración persistente.
 -   Mejor navegación entre videos.
@@ -484,3 +491,19 @@ actual" / "Carpeta actual y todas las subcarpetas" / "Selección personalizada�
 
 Las funcionalidades solo pasarán de este documento al desarrollo cuando
 exista una etapa aprobada para implementarlas.
+
+------------------------------------------------------------------------
+
+# Próximo ciclo: Beta 4
+
+La Beta 3 quedó **finalizada, congelada y lista para la validación manual**
+sobre una instalación limpia. Finalizada esa validación y publicada la
+versión, el desarrollo se reanudará con un **nuevo ciclo de desarrollo
+(Beta 4)**, que recogerá las mejoras y correcciones detectadas durante la
+validación manual y el uso real de la Beta 3.
+
+El alcance, los bloques de trabajo y el plan de implementación de la Beta 4
+se definirán mediante una etapa de planificación exclusivamente documental
+(equivalente a la Etapa B3.0 de la Beta 3), siguiendo la metodología del
+proyecto (`REGLAS_PROYECTO.md`) y la dirección estratégica de
+`VISION_PRODUCTO.md`.

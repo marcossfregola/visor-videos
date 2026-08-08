@@ -5,44 +5,51 @@
 Proyecto de escritorio profesional para Windows orientado a explorar
 grandes colecciones de videos mediante miniaturas representativas.
 
-**Fase actual:** quedó **aprobado el alcance de la Beta 3** (Etapa B3.0,
-exclusivamente documental) y la **implementación de la Beta 3 está en
-marcha**: el **Bloque A — Experiencia visual** quedó **completo funcional y
-técnicamente** (B3.1 a B3.9, más las ampliaciones **B3.14a** "Desactivado" y
-**B3.14b** "tamaños 3.0x/3.5x" de la vista ampliada), el **Bloque B —
-Selección y operaciones** quedó **completo** (B3.11 a B3.17 más la corrección
-técnica **B3.18**) y el **Bloque C — Progreso** quedó **completo**
-(**B3.20–B3.23**), con lo que la **Beta 3 queda funcionalmente cerrada**
-salvo problemas en las pruebas finales. El **Bloque de trabajo 4 — Catálogo
-por selección de carpetas** quedó **completo** (Etapas 1-7: infraestructura de
+**Fase actual:** la **Beta 3 está terminada y congelada sobre el código
+definitivo**. La **implementación quedó completa**: el **Bloque A — Experiencia
+visual** quedó **completo funcional y técnicamente** (B3.1 a B3.9, más las
+ampliaciones **B3.14a** "Desactivado" y **B3.14b** "tamaños 3.0x/3.5x" de la
+vista ampliada), el **Bloque B — Selección y operaciones** quedó **completo**
+(B3.11 a B3.17 más la corrección técnica **B3.18**) y el **Bloque C — Progreso**
+quedó **completo** (**B3.20–B3.23**). El **Bloque de trabajo 4 — Catálogo por
+selección de carpetas** quedó **completo** (Etapas 1-7: infraestructura de
 selección, modo de selección del árbol, herramientas rápidas, escaneo
 multicarpeta, sincronización multicarpeta, selector de alcance unificado y
-auditoría integral) y con la **Etapa 7** la **Beta 3 queda funcionalmente
-cerrada y congelada sobre el código definitivo**. El plan de trabajo se
-documenta en `ROADMAP.md` (Bloques de trabajo 3 y 4). La Beta 2 permanece
-como la última versión estable publicada. Pendiente: revisión del
-procedimiento de empaquetado para producir el instalador definitivo de la
-Beta 3.
+auditoría integral). El plan de trabajo se
+documenta en `ROADMAP.md` (Bloques de trabajo 3 y 4). La **regresión crítica
+de previews** detectada en las pruebas manuales fue **corregida y auditada**
+(cada video usa su propia carpeta real del catálogo) y el **instalador
+definitivo de la Beta 3 ya fue generado** (`VisorVideos_Beta3_Setup.exe`,
+`Distribucion\Beta3\`) con la infraestructura oficial de empaquetado
+(`instalador.iss` + `EMPACADO.md`). La Beta 2 permanece
+como la última versión estable publicada. **Únicamente resta la validación
+manual completa** de la Beta 3 sobre una instalación limpia y su publicación.
 
 ## Último commit aprobado
 
-**Mensaje:** Auditar integralmente el Bloque 4 y cerrar la Beta 3 (Etapa 7)
+**Mensaje:** Eliminar la dependencia de carpeta_seleccionada en la generación de
+previews: carpeta real por video desde el catálogo
 
-**Etapa:** Auditoría integral del Bloque 4 y cierre funcional de la Beta 3 (Bloque de trabajo 4, Etapa 7):
-- `visor_videos.py` — **regresión corregida** en `_duracion_valida` (restaurado el criterio
-  `duracion > 0`; la duración 0 vuelve a ser inválida, detectada por la auditoría final).
-- `prueba_modo_alcance_escaneo.py` — incorporada la verificación integrada de **transiciones
-  de modo en la misma ventana** (Solo → +subcarpetas → Selección personalizada → Solo) con
-  estados SQLite exactos.
-- La batería completa de suites (~95) se ejecutó en la auditoría: todas en verde salvo las dos
+**Etapa:** Corrección de la regresión de previews (cierre de la Beta 3):
+- `escanear_videos.py` — `listar_videos` y `listar_videos_paginado` incluyen la columna `ruta`
+  del catálogo, de modo que el registro del video transporta su carpeta real.
+- `visor_videos.py` — el subsistema de previews deja de depender de `carpeta_seleccionada`;
+  cada video usa su propia carpeta real del catálogo (correcta también para videos en
+  subcarpetas).
+- La batería completa de suites (~95) se ejecutó en la corrección: todas en verde salvo las dos
   fallas preexistentes documentadas (`prueba_persistencia_carpeta.py` 18/20 T11/T16 y
   `prueba_aplicar_incorporaciones.py` 14/15 T15).
 
-**Pruebas superadas:** `prueba_pulido_bloque_a.py` 29/29, `prueba_tiempo_previews.py` 35/35,
-`prueba_duracion_simplificada.py` 23/23 (tras la corrección de `_duracion_valida`);
-`prueba_modo_alcance_escaneo.py` 15/15 (con las transiciones integradas); `prueba_smoke.py` OK;
-y el resto de la batería completa en verde (árbol, selección, escaneo, sincronización, progreso,
-persistencia, catálogo, interfaz). `python -m py_compile` OK. `git diff --check` OK.
+**Pruebas superadas:** `prueba_previews_multicarpeta.py` 5/5 (los cuatro escenarios); regresiones
+en verde: `prueba_previews_progresivas.py` 16/16, `prueba_previews_automaticas.py` 22/22,
+`prueba_recarga_catalogo.py` 20/20, `prueba_pagina_siguiente.py` 20/20, `prueba_lectura.py`
+15/15, `prueba_lectura_paginada.py` 32/32, `prueba_escaneo_interfaz.py` 36/36,
+`prueba_escaneo_guardado.py` 24/24, `prueba_escaneo_multicarpeta.py` 20/20,
+`prueba_modo_alcance_escaneo.py` 15/15, `prueba_sincronizacion_multicarpeta.py` 17/17,
+`prueba_sincronizacion_interfaz.py` 18/18, `prueba_interfaz_asincrona.py` 29/29,
+`prueba_smoke.py` OK y el resto de la batería completa en verde (árbol, selección, escaneo,
+sincronización, progreso, persistencia, catálogo, interfaz). `python -m py_compile` OK.
+`git diff --check` OK.
 
 ## Hitos completados
 
@@ -262,7 +269,12 @@ persistencia, catálogo, interfaz). `python -m py_compile` OK. `git diff --check
   `_duracion_valida`** (restaurado `duracion > 0`; la duración 0 vuelve a ser inválida), se
   incorporó la verificación integrada de transiciones de modo y se confirmó el resto del Bloque 4
   sin problemas. Con esto la **Beta 3 queda funcionalmente cerrada y congelada** sobre el código
-  definitivo, pendiente solo la revisión del procedimiento de empaquetado para el instalador.
+  definitivo.
+- **Corrección de la regresión de previews (cierre de la Beta 3).** El subsistema de previews
+  deja de depender de `carpeta_seleccionada`: cada video usa su propia carpeta real del catálogo
+  (columna `ruta` incorporada a `listar_videos`/`listar_videos_paginado`); carpeta única,
+  carpeta + subcarpetas y selección personalizada (una o varias carpetas) generan previews
+  correctamente, verificadas por `prueba_previews_multicarpeta.py` (5/5).
 
 ## Pendientes prioritarios
 
@@ -327,6 +339,10 @@ video usa su propia carpeta real del catálogo). La siguiente actividad es exclu
 **validación manual integral** del instalador en otra computadora limpia (instalación por
 usuario, primer inicio, escaneo de los cuatro escenarios de alcance, previews, operaciones y
 desinstalación total). **No corresponde implementar ninguna funcionalidad nueva.**
+
+Finalizada la validación y publicada la Beta 3, el **próximo ciclo de desarrollo será la
+Beta 4**, cuyo alcance y plan de trabajo se definirán mediante una etapa de planificación
+exclusivamente documental (ver `ROADMAP.md`, sección "Próximo ciclo: Beta 4").
 
 ## Documentos del proyecto
 
