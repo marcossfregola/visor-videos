@@ -17,55 +17,52 @@ salvo problemas en las pruebas finales. Además está en marcha el **Bloque de
 trabajo 4 — Catálogo por selección de carpetas**: implementadas la **Etapa 1
 — Infraestructura de selección**, la **entrega conjunta Etapas 2-3 — Modo
 de selección del árbol y herramientas de selección rápida**, la **Etapa 4 —
-Escaneo multicarpeta** y la **Etapa 5 — Sincronización multicarpeta** (que
-elimina la limitación temporal de la Etapa 4). El plan de trabajo se documenta
-en `ROADMAP.md` (Bloques de trabajo 3 y 4). La Beta 2 permanece como la
-última versión estable publicada.
+Escaneo multicarpeta**, la **Etapa 5 — Sincronización multicarpeta** y la
+**Etapa 6 — Unificación del selector de alcance del escaneo**. Queda pendiente
+solo la **Etapa 7 — Auditoría integral del Bloque 4 y cierre funcional de la
+Beta 3**. El plan de trabajo se documenta en `ROADMAP.md` (Bloques de trabajo
+3 y 4). La Beta 2 permanece como la última versión estable publicada.
 
 ## Último commit aprobado
 
-**Mensaje:** Implementar sincronizacion multicarpeta segura (Etapa 5)
+**Mensaje:** Unificar el selector de alcance del escaneo (Etapa 6)
 
-**Etapa:** Sincronización multicarpeta (Bloque de trabajo 4, Etapa 5):
-- `escanear_videos.py` — `detectar_diferencias(carpeta, ruta_db=None, carpetas_protegidas=None)`
-  con `_es_subcarpeta` (`os.path.commonpath`): en modo multicarpeta un registro solo es ausente
-  si su **ruta pertenece a la carpeta** y no está en disco (no elimina registros de otras raíces
-  del alcance); el modo tradicional (sin parámetro) permanece idéntico. Sin cambios de esquema.
-- `tareas_videos.py` — `TareaSincronizacionCatalogo` acepta `carpetas_protegidas` opcional y la
-  reenvía a `detectar_diferencias` (mismo conjunto de métodos).
-- `visor_videos.py` — eliminado por completo `_omite_sincronizacion`; `_alcance_sincronizacion`
-  (mismo conjunto efectivo que la cola de escaneo); `_iniciar_sincronizacion` calcula las
-  carpetas protegidas del alcance; **normalización del alcance efectivo** `_alcance_efectivo`/
-  `_ruta_contiene` en `iniciar_escaneo` (con "Incluir subcarpetas" activado se eliminan las
-  raíces descendientes redundantes; con OFF se conservan). Transición correcta A → A+B → A.
-- `prueba_escaneo_multicarpeta.py` — actualizada (flag eliminado) + secciones de alcance
-  efectivo (función pura) y escenario A/B contra SQLite.
-- `prueba_sincronizacion_multicarpeta.py` — 17 verificaciones de la etapa (nuevo), incluidas las
-  fases SQLite [A]/[A,B]/[A] y el caso solapado A⊇B.
+**Etapa:** Unificación del selector de alcance del escaneo (Bloque de trabajo 4, Etapa 6):
+- `configuracion.py` — `MODO_ALCANCE_SOLO`/`MODO_ALCANCE_SUBCARPETAS`/`MODO_ALCANCE_SELECCION`,
+  `CLAVE_MODO_ALCANCE`, `guardar_modo_alcance` (persiste el modo y mantiene el booleano
+  `incluir_subcarpetas` sincronizado) y `obtener_modo_alcance` con **migración retrocompatible**
+  desde el booleano antiguo.
+- `visor_videos.py` — `combo_modo_alcance` (QComboBox con tres modos) como **única fuente de
+  verdad visible** del alcance; `_modo_alcance` restaurado al iniciar; `_recursivo_actual()`;
+  `iniciar_escaneo` mapea el modo ("Selección personalizada" → `seleccion_carpetas.obtener_seleccion()`
+  y activa el modo de selección del árbol); el checkbox "Incluir subcarpetas" queda como
+  **adaptador de compatibilidad oculto** (sincronizado bidireccionalmente con guard de reentrada).
+  Sin cambios en el motor de escaneo ni en la sincronización.
+- `prueba_escaneo_subcarpetas.py` — actualizada la aserción de visibilidad del checkbox por el
+  nuevo contrato (selector de alcance visible + funcionamiento del modo subcarpetas).
+- `prueba_modo_alcance_escaneo.py` — 11 verificaciones de la etapa (nuevo).
 
-**Pruebas superadas:** `prueba_sincronizacion_multicarpeta.py` 17/17 (protección por ruta con y
-sin protección; sincronización de una carpeta sin regresión; ausente de una carpeta del conjunto
-eliminado conservando la otra; flag eliminado; marcado por carpeta; transición A → A+B → A contra
-SQLite; caso solapado A⊇B); `prueba_escaneo_multicarpeta.py` 20/20 (incluye alcance efectivo
-ON/OFF, tres niveles, dos padres, prefijos engañosos y escenario A/B: ON → {a.mp4, "B\b.mp4"},
-OFF → {a.mp4, b.mp4}); regresiones relevantes OK: `prueba_sincronizacion_asincrona.py` 27/27,
-`prueba_plan_sincronizacion.py` 12/12, `prueba_detectar.py` 15/15,
-`prueba_eliminar_candidatos.py` 16/16, `prueba_sincronizacion_interfaz.py` 18/18,
-`prueba_escaneo.py` 12/12, `prueba_escaneo_guardado.py` 24/24, `prueba_escaneo_interfaz.py`
-36/36, `prueba_escaneo_automatico.py` 19/19, `prueba_escaneo_subcarpetas.py` 12/12,
-`prueba_subcarpetas_arbol.py` 15/15, `prueba_guardar.py` 19/19, `prueba_guardar_videos.py`
+**Pruebas superadas:** `prueba_modo_alcance_escaneo.py` 11/11 (los tres modos, persistencia,
+restauración, migración True/False/sin config, compatibilidad Etapas 4-5 con el espejo y
+multicarpeta con recursividad ON); `prueba_escaneo_subcarpetas.py` 13/13 (tras la corrección del
+contrato); `prueba_smoke.py` OK; regresiones relevantes OK: `prueba_escaneo_automatico.py` 19/19,
+`prueba_subcarpetas_arbol.py` 15/15, `prueba_persistencia_subcarpetas.py` 10/10,
+`prueba_escaneo_multicarpeta.py` 20/20, `prueba_sincronizacion_multicarpeta.py` 17/17,
+`prueba_escaneo_interfaz.py` 36/36, `prueba_sincronizacion_interfaz.py` 18/18, `prueba_escaneo.py`
+12/12, `prueba_escaneo_guardado.py` 24/24, `prueba_guardar.py` 19/19, `prueba_guardar_videos.py`
 34/34, `prueba_lectura.py` 15/15, `prueba_lectura_paginada.py` 32/32,
-`prueba_progreso_pipeline.py` 11/11, `prueba_progreso_operaciones.py` 12/12,
-`prueba_progreso_visual_pulido.py` 7/7, `prueba_interfaz_asincrona.py` 29/29,
-`prueba_recarga_catalogo.py` 20/20, `prueba_modo_seleccion_arbol.py` 16/16,
+`prueba_progreso_pipeline.py` 11/11, `prueba_progreso_operaciones.py` 12/12, `prueba_ffprobe.py`
+12/12, `prueba_tamano_archivo.py` 15/15, `prueba_modo_seleccion_arbol.py` 16/16,
 `prueba_herramientas_seleccion_arbol.py` 20/20, `prueba_seleccion_carpetas.py` 22/22,
 `prueba_arbol_navegacion.py`, `prueba_seleccion_carpeta.py` 26/26, `prueba_carpeta_actual.py`
-19/19, `prueba_persistencia_arbol.py` 15/15, `prueba_persistencia_subcarpetas.py` 10/10,
-`prueba_expansion_carpetas.py` 35/35, `prueba_atajos_operaciones.py` 16/16,
-`prueba_seleccion.py` 28/28, `prueba_restauracion_seleccion.py` 15/15,
-`prueba_duracion_simplificada.py` 23/23, `prueba_ffprobe.py` 12/12,
-`prueba_tamano_archivo.py` 15/15, `prueba_smoke.py` OK. `prueba_aplicar_incorporaciones.py`
-14/15: **T15 preexistente** (operada sobre la copia de `biblioteca.db`), verificada en HEAD.
+19/19, `prueba_persistencia_arbol.py` 15/15, `prueba_expansion_carpetas.py` 35/35,
+`prueba_preferencias_miniaturas.py` 31/31, `prueba_interfaz_asincrona.py` 29/29,
+`prueba_recarga_catalogo.py` 20/20, `prueba_progreso_visual_pulido.py` 7/7,
+`prueba_atajos_operaciones.py` 16/16, `prueba_seleccion.py` 28/28,
+`prueba_restauracion_seleccion.py` 15/15, `prueba_sincronizacion_asincrona.py` 27/27,
+`prueba_detectar.py` 15/15, `prueba_plan_sincronizacion.py` 12/12,
+`prueba_eliminar_candidatos.py` 16/16, `prueba_smoke.py` OK. `prueba_persistencia_carpeta.py`
+18/20: **falla preexistente conocida** (T11/T16).
 
 ## Hitos completados
 
@@ -274,6 +271,12 @@ OFF → {a.mp4, b.mp4}); regresiones relevantes OK: `prueba_sincronizacion_asinc
   elimina raíces descendientes redundantes cuando "Incluir subcarpetas" está activado (comportamiento
   ON/OFF diferenciado), y la **transición A → A+B → A** queda verificada contra SQLite. Sin cambios
   de esquema SQLite.
+- **Unificación del selector de alcance (Bloque 4, Etapa 6).** El checkbox "Incluir subcarpetas" es
+  reemplazado por un **selector de modo único** (`combo_modo_alcance`) con tres opciones — "Solo
+  carpeta actual", "Carpeta actual y todas las subcarpetas" y "Selección personalizada" — como
+  **única fuente de verdad visible** del alcance; persistencia (`modo_alcance`) y **migración
+  retrocompatible** desde el booleano antiguo; el checkbox queda como **adaptador de compatibilidad
+  oculto**. Con esto el Bloque 4 queda funcionalmente completo, pendiente solo la auditoría integral.
 
 ## Pendientes prioritarios
 
@@ -330,13 +333,11 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
 
 ## Próxima etapa
 
-**Etapa 6 — Selector de modo** (Bloque de trabajo 4). Reemplazar el checkbox "Incluir
-subcarpetas" por un selector de modo ("Solo carpeta actual" / "Carpeta actual y todas las
-subcarpetas" / "Selección personalizada…", que activa el modo de selección), con migración
-retrocompatible, según `ROADMAP.md` (Bloque de trabajo 4). Su definición detallada se realizará
-con la inspección técnica previa, en bloques pequeños, verificables y acumulativos, sin
-adelantar funcionalidades excluidas del alcance ni agregar funcionalidades nuevas fuera del
-plan aprobado.
+**Etapa 7 — Auditoría integral del Bloque 4 y cierre funcional de la Beta 3.** Revisión final
+del Bloque de trabajo 4 (UX, escala con cientos/miles de carpetas, rendimiento del escaneo
+multicarpeta y regresiones integrales) y cierre funcional de la Beta 3, según `ROADMAP.md`
+(Bloques de trabajo 3 y 4). Es la última etapa del Bloque 4; sin nuevas funcionalidades fuera
+del alcance aprobado.
 
 ## Documentos del proyecto
 

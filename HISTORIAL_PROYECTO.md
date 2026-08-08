@@ -5,6 +5,58 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 86. Unificar el selector de alcance del escaneo (Etapa 6)
+
+- **Fecha:** 2026-08-07
+- **Objetivo:** Reemplazar definitivamente el checkbox "Incluir subcarpetas" por un **único
+  selector de alcance del catálogo** con tres modos (Solo carpeta actual / Carpeta actual y
+  todas las subcarpetas / Selección personalizada), que se convierte en la **única fuente de
+  verdad** del alcance del escaneo, con persistencia, restauración y migración retrocompatible,
+  sin modificar el motor de escaneo ni la sincronización (Etapas 4-5).
+- **Archivos creados:**
+  - `prueba_modo_alcance_escaneo.py` — 11 verificaciones: los tres modos (solo carpeta actual;
+    carpeta + subcarpetas; selección personalizada con activación del modo de selección del
+    árbol), persistencia y restauración del modo, migración desde `incluir_subcarpetas`
+    (True/False/sin config), y compatibilidad con las Etapas 4-5 (espejo `setChecked` y
+    multicarpeta con recursividad ON).
+- **Archivos modificados:**
+  - `configuracion.py` — `MODO_ALCANCE_SOLO`/`MODO_ALCANCE_SUBCARPETAS`/`MODO_ALCANCE_SELECCION`
+    (`MODOS_ALCANCE_VALIDOS`), `CLAVE_MODO_ALCANCE`, `guardar_modo_alcance` (persiste el modo y
+    mantiene el booleano `incluir_subcarpetas` sincronizado) y `obtener_modo_alcance` con
+    **migración retrocompatible**.
+  - `visor_videos.py` — `combo_modo_alcance` (QComboBox) como única fuente de verdad visible;
+    `_modo_alcance` restaurado al iniciar; `_recursivo_actual()`; `iniciar_escaneo` mapea el modo
+    ("Selección personalizada" → `seleccion_carpetas.obtener_seleccion()` y activa el modo de
+    selección del árbol); el checkbox "Incluir subcarpetas" queda como **adaptador de
+    compatibilidad oculto** (sincronizado bidireccionalmente con guard `_sincronizando_alcance`).
+    Sin cambios en el motor de escaneo ni en la sincronización.
+  - `prueba_escaneo_subcarpetas.py` — actualizada la aserción de visibilidad del antiguo checkbox
+    por el nuevo contrato (selector de alcance visible + funcionamiento del modo subcarpetas),
+    con la corrección menor aprobada por la auditoría.
+  - `ROADMAP.md` — Bloque 4: Etapa 6 marcada como implementada (selector de modo).
+  - `DOCUMENTO_TECNICO.md` — selector de alcance, migración y adaptador de compatibilidad
+    documentados en `iniciar_escaneo` y `configuracion.py`.
+  - `ESTADO_PROYECTO.md` — última etapa aprobada, fase actual, hitos y próxima etapa (Etapa 7).
+  - `HISTORIAL_PROYECTO.md` — este documento (registro de la etapa).
+- **Pruebas:** `prueba_modo_alcance_escaneo.py` 11/11, `prueba_escaneo_subcarpetas.py` 13/13,
+  `prueba_smoke.py` OK, y regresiones relevantes OK (`prueba_escaneo_automatico.py` 19/19,
+  `prueba_subcarpetas_arbol.py` 15/15, `prueba_persistencia_subcarpetas.py` 10/10,
+  `prueba_escaneo_multicarpeta.py` 20/20, `prueba_sincronizacion_multicarpeta.py` 17/17,
+  `prueba_escaneo_interfaz.py` 36/36, `prueba_sincronizacion_interfaz.py` 18/18,
+  `prueba_modo_seleccion_arbol.py` 16/16, `prueba_herramientas_seleccion_arbol.py` 20/20,
+  `prueba_seleccion_carpetas.py` 22/22, `prueba_smoke.py` OK, entre otras).
+  `prueba_persistencia_carpeta.py` 18/20: **falla preexistente conocida** (T11/T16).
+- **Commit:** Aprobado y commiteado.
+- **Resultado:** una sola forma oficial de definir qué carpetas participan del escaneo; el
+  checkbox anterior queda solo como adaptador de compatibilidad interno; los tres modos funcionan
+  sobre el mismo mecanismo y el modo "Selección personalizada" reutiliza íntegramente la
+  infraestructura del Bloque 4.
+- **Decisiones importantes:** selector de modo como única fuente de verdad visible; migración
+  retrocompatible; adaptador de compatibilidad oculto (sin coexistir como mecanismo visible);
+  "Selección personalizada" con recursión y activación del modo de selección del árbol.
+
+---
+
 ## 85. Implementar sincronizacion multicarpeta segura (Etapa 5)
 
 - **Fecha:** 2026-08-07

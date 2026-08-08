@@ -14,6 +14,15 @@ RETARDOS_VALIDOS_VISTA_AMPLIADA = (-1, 0, 250, 400, 600)
 CLAVE_TAMANO_VISTA_AMPLIADA = "tamano_vista_ampliada"
 FACTORES_VALIDOS_VISTA_AMPLIADA = (1.2, 1.6, 2.0, 2.5, 3.0, 3.5)
 CLAVE_SELECCION_CARPETAS = "carpetas_seleccionadas"
+CLAVE_MODO_ALCANCE = "modo_alcance"
+MODO_ALCANCE_SOLO = "solo_carpeta"
+MODO_ALCANCE_SUBCARPETAS = "con_subcarpetas"
+MODO_ALCANCE_SELECCION = "seleccion_personalizada"
+MODOS_ALCANCE_VALIDOS = (
+    MODO_ALCANCE_SOLO,
+    MODO_ALCANCE_SUBCARPETAS,
+    MODO_ALCANCE_SELECCION,
+)
 VARIABLE_ENTORNO = "VISOR_CONFIG"
 
 
@@ -235,3 +244,30 @@ def obtener_seleccion_carpetas(ruta_config=None):
         if ruta not in rutas and os.path.isdir(ruta):
             rutas.append(ruta)
     return rutas
+
+
+def guardar_modo_alcance(modo, ruta_config=None):
+    if not isinstance(modo, str) or modo not in MODOS_ALCANCE_VALIDOS:
+        return None
+    datos = _leer(ruta_config) or {}
+    datos[CLAVE_MODO_ALCANCE] = modo
+    datos[CLAVE_SUBCARPETAS] = modo == MODO_ALCANCE_SUBCARPETAS
+    _escribir(datos, ruta_config)
+    return modo
+
+
+def obtener_modo_alcance(ruta_config=None):
+    datos = _leer(ruta_config)
+    if datos is None:
+        return MODO_ALCANCE_SOLO
+    valor = datos.get(CLAVE_MODO_ALCANCE)
+    if isinstance(valor, str) and valor in MODOS_ALCANCE_VALIDOS:
+        return valor
+    subcarpetas = datos.get(CLAVE_SUBCARPETAS)
+    if isinstance(subcarpetas, bool):
+        return (
+            MODO_ALCANCE_SUBCARPETAS
+            if subcarpetas
+            else MODO_ALCANCE_SOLO
+        )
+    return MODO_ALCANCE_SOLO

@@ -6,6 +6,7 @@ import time
 from PySide6.QtWidgets import QApplication
 
 import escanear_videos
+from configuracion import MODO_ALCANCE_SUBCARPETAS
 from escanear_videos import (
     _nombre_seguro,
     configurar_escaneo_recursivo,
@@ -169,12 +170,23 @@ def main():
         "VisorVideos tiene atributo incluir_subcarpetas",
     )
     verifica(
-        ventana.incluir_subcarpetas.isVisible(),
-        "checkbox incluir_subcarpetas es visible",
+        hasattr(ventana, "combo_modo_alcance")
+        and ventana.combo_modo_alcance.isVisible(),
+        "existe un selector de alcance visible",
     )
     verifica(
         not ventana.incluir_subcarpetas.isChecked(),
         "checkbox comienza desmarcado",
+    )
+    indice = ventana.combo_modo_alcance.findData(MODO_ALCANCE_SUBCARPETAS)
+    if indice >= 0:
+        ventana.combo_modo_alcance.setCurrentIndex(indice)
+        QApplication.processEvents()
+    verifica(
+        ventana._modo_alcance == MODO_ALCANCE_SUBCARPETAS
+        and ventana.combo_modo_alcance.currentData()
+        == MODO_ALCANCE_SUBCARPETAS,
+        "el modo 'Carpeta actual y todas las subcarpetas' funciona",
     )
 
     ventana.close()

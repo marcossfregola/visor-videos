@@ -36,7 +36,11 @@ from PySide6.QtWidgets import (
 )
 
 from configuracion import (
+    MODO_ALCANCE_SELECCION,
+    MODO_ALCANCE_SOLO,
+    MODO_ALCANCE_SUBCARPETAS,
     guardar_cantidad_previews,
+    guardar_modo_alcance,
     guardar_preferencia_escaneo_automatico,
     guardar_preferencia_subcarpetas,
     guardar_retardo_vista_ampliada,
@@ -44,6 +48,7 @@ from configuracion import (
     guardar_tamano_vista_ampliada,
     guardar_ultima_carpeta,
     obtener_cantidad_previews,
+    obtener_modo_alcance,
     obtener_preferencia_escaneo_automatico,
     obtener_preferencia_subcarpetas,
     obtener_retardo_vista_ampliada,
@@ -794,6 +799,8 @@ class VisorVideos(QMainWindow):
         self.visibles = []
         self._ruta_db = ruta_db
         self._ruta_config = ruta_config
+        self._modo_alcance = obtener_modo_alcance(ruta_config)
+        self._sincronizando_alcance = False
         self.seleccion_carpetas = SeleccionCarpetas(ruta_config=ruta_config)
         self._carga_completada = False
         self.tarea_lectura = None
@@ -859,8 +866,25 @@ class VisorVideos(QMainWindow):
             lambda _marcado=False: self.iniciar_escaneo()
         )
 
-        self.incluir_subcarpetas = QCheckBox("Incluir subcarpetas")
-        self.incluir_subcarpetas.stateChanged.connect(self._al_cambiar_subcarpetas)
+        self.combo_modo_alcance = QComboBox()
+        self.combo_modo_alcance.addItem(
+            "Solo carpeta actual", MODO_ALCANCE_SOLO
+        )
+        self.combo_modo_alcance.addItem(
+            "Carpeta actual y todas las subcarpetas",
+            MODO_ALCANCE_SUBCARPETAS,
+        )
+        self.combo_modo_alcance.addItem(
+            "Selección personalizada", MODO_ALCANCE_SELECCION
+        )
+        self.combo_modo_alcance.currentIndexChanged.connect(
+            self._al_cambiar_modo_alcance
+        )
+        self.incluir_subcarpetas = QCheckBox("Incluir subcarpetas", self)
+        self.incluir_subcarpetas.setVisible(False)
+        self.incluir_subcarpetas.stateChanged.connect(
+            self._al_cambiar_subcarpetas
+        )
 
         self.escaneo_automatico = QCheckBox("Escaneo automático")
         self.escaneo_automatico.stateChanged.connect(
@@ -919,7 +943,7 @@ class VisorVideos(QMainWindow):
         fila_carpeta = QHBoxLayout()
         fila_carpeta.addWidget(self.boton_seleccionar_carpeta)
         fila_carpeta.addWidget(self.boton_escanear)
-        fila_carpeta.addWidget(self.incluir_subcarpetas)
+        fila_carpeta.addWidget(self.combo_modo_alcance)
         fila_carpeta.addWidget(self.escaneo_automatico)
         fila_carpeta.addWidget(self.etiqueta_cantidad_previews)
         fila_carpeta.addWidget(self.combo_cantidad_previews)
@@ -1077,9 +1101,7 @@ class VisorVideos(QMainWindow):
                 self.carpeta_seleccionada = None
                 self.etiqueta_carpeta.setText(MENSAJE_SIN_CARPETA)
             self._actualizar_botones_carpeta()
-        self.incluir_subcarpetas.setChecked(
-            obtener_preferencia_subcarpetas(self._ruta_config)
-        )
+        self._sincronizar_alcance_desde_modo()
         self.escaneo_automatico.setChecked(
             obtener_preferencia_escaneo_automatico(self._ruta_config)
         )
@@ -1103,10 +1125,43 @@ class VisorVideos(QMainWindow):
         self.tarea_lectura = self._crear_tarea_lectura()
         self.gestor.iniciar(self.tarea_lectura)
 
+    def _sincronizar_alcance_desde_modo(self):
+        self._sincronizando_alcance = True
+        try:
+            indice = self.combo_modo_alcance.findData(self._modo_alcance)
+            if indice >= 0:
+                self.combo_modo_alcance.setCurrentIndex(indice)
+            self.incluir_subcarpetas.setChecked(
+                self._modo_alcance == MODO_ALCANCE_SUBCARPETAS
+            )
+        finally:
+            self._sincronizando_alcance = False
+
+    def _al_cambiar_modo_alcance(self, _indice):
+        if self._sincronizando_alcance:
+            return
+        modo = self.combo_modo_alcance.currentData()
+        if modo is None:
+            return
+        self._modo_alcance = modo
+        guardar_modo_alcance(modo, self._ruta_config)
+        self._sincronizar_alcance_desde_modo()
+        if (
+            modo == MODO_ALCANCE_SELECCION
+            and getattr(self, "toggle_modo_seleccion", None) is not None
+        ):
+            self.toggle_modo_seleccion.setChecked(True)
+
     def _al_cambiar_subcarpetas(self, _estado):
-        guardar_preferencia_subcarpetas(
-            self.incluir_subcarpetas.isChecked(), self._ruta_config
+        if self._sincronizando_alcance:
+            return
+        self._modo_alcance = (
+            MODO_ALCANCE_SUBCARPETAS
+            if self.incluir_subcarpetas.isChecked()
+            else MODO_ALCANCE_SOLO
         )
+        guardar_modo_alcance(self._modo_alcance, self._ruta_config)
+        self._sincronizar_alcance_desde_modo()
 
     def _al_cambiar_escaneo_automatico(self, _estado):
         guardar_preferencia_escaneo_automatico(
@@ -1656,11 +1711,20 @@ class VisorVideos(QMainWindow):
     def nombres_seleccionados(self):
         return set(self._nombres_seleccionados)
 
+    def _recursivo_actual(self):
+        return self._modo_alcance in (
+            MODO_ALCANCE_SUBCARPETAS,
+            MODO_ALCANCE_SELECCION,
+        )
+
     def iniciar_escaneo(self, carpetas=None):
         if self.gestor.activo:
             return
         if carpetas is None or isinstance(carpetas, bool):
-            carpetas = [self.carpeta_seleccionada]
+            if self._modo_alcance == MODO_ALCANCE_SELECCION:
+                carpetas = self.seleccion_carpetas.obtener_seleccion()
+            else:
+                carpetas = [self.carpeta_seleccionada]
         elif isinstance(carpetas, str):
             carpetas = [carpetas]
         carpetas_validas = [
@@ -1674,7 +1738,7 @@ class VisorVideos(QMainWindow):
         carpetas_sin_repetir = list(dict.fromkeys(carpetas_validas))
         carpetas_efectivas = _alcance_efectivo(
             carpetas_sin_repetir,
-            self.incluir_subcarpetas.isChecked(),
+            self._recursivo_actual(),
         )
         self._cola_carpetas_escaneo = list(carpetas_efectivas[1:])
         self._alcance_sincronizacion = (
@@ -1685,7 +1749,7 @@ class VisorVideos(QMainWindow):
         self._iniciar_escaneo_carpeta(carpetas_efectivas[0])
 
     def _iniciar_escaneo_carpeta(self, carpeta):
-        configurar_escaneo_recursivo(self.incluir_subcarpetas.isChecked())
+        configurar_escaneo_recursivo(self._recursivo_actual())
         tarea = TareaEscaneo(carpeta)
         self._escaneo_pendiente = True
         self._tamanos_pendiente = False
