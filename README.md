@@ -1,32 +1,44 @@
 # Visor de Videos
 
-Visor de escritorio para Windows orientado a explorar colecciones de videos mediante miniaturas representativas y previews.
-
-## Descripción
-
-La aplicación permite cargar un catálogo de videos desde una o más carpetas, escanearlas y navegar visualmente por el contenido mediante tarjetas con miniatura y previews. Incluye un Centro de Navegación con el árbol del sistema de archivos ("Este equipo" → discos → carpetas), selección de carpeta, escaneo (con opciones de incluir subcarpetas y de escaneo automático al seleccionar), persistencia de preferencias, búsqueda por nombre, carga de páginas adicionales ("Cargar más") y apertura del video con la aplicación predeterminada del sistema.
-
-## Objetivo del proyecto
-
-Explorar de forma visual y eficiente grandes colecciones de videos, facilitando la identificación del contenido mediante miniaturas y previews sin necesidad de abrir cada archivo.
-
-## Tecnologías utilizadas
-
-- **Python 3.13**
-- **PySide6** (Qt 6)
-- **SQLite** (catálogo)
-- **FFmpeg** y **FFprobe** (extracción de fotogramas y metadatos)
-
-> Nota: FFmpeg/FFprobe no se empaquetan en el instalador; deben estar disponibles en el `PATH` del sistema.
+Visor de escritorio para Windows que permite explorar, organizar y analizar grandes colecciones de videos mediante miniaturas y previews representativas, sin abrir cada archivo.
 
 ## Estado actual
 
-**Beta 2** — versión congelada en fase de pruebas reales. El Centro de Navegación (Bloque de trabajo 2) está completo y aprobado.
+**Beta 3: terminada, validada y publicada.** El estado detallado y la deuda conocida se registran en `STATUS.md`.
 
-## Distribución
+## Stack
 
-Los instaladores oficiales se publican en la sección **Releases** de este repositorio.
+- Python 3.13 y PySide6 (Qt 6).
+- SQLite (catalogo).
+- FFmpeg y FFprobe (fotogramas y metadatos; no se empaquetan, deben estar en el PATH).
+- Inno Setup 6 (instalador por usuario).
+
+## Ejecucion
+
+```text
+python visor_videos.py
+```
+
+Para escanear por CLI: `python escanear_videos.py`. Detalles de entorno en `ENVIRONMENT.md`.
+
+## Distribucion
+
+El procedimiento oficial de empaquetado (PyInstaller + Inno Setup) y los instaladores publicados se documentan en `EMPACADO.md`; los instaladores oficiales se publican en la seccion Releases del repositorio.
 
 ## Licencia
 
 Pendiente de definir.
+
+## Indice documental
+
+| Documento | Contenido |
+| --- | --- |
+| `PROJECT.md` | Identidad, vision, alcance y principios del producto |
+| `STATUS.md` | Estado actual, deuda y problemas conocidos |
+| `ARCHITECTURE.md` | Arquitectura vigente y decisiones duraderas |
+| `ENVIRONMENT.md` | Entorno verificado y reproduccion |
+| `RULES.md` | Reglas permanentes del proyecto |
+| `ROADMAP.md` | Trabajo futuro decidido/priorizado |
+| `BACKLOG.md` | Ideas futuras no comprometidas |
+| `HISTORIAL_PROYECTO.md` | Registro historico de etapas aprobadas |
+| `EMPACADO.md` | Procedimiento de empaquetado y distribucion |

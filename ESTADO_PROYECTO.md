@@ -1,5 +1,7 @@
 # VISOR DE VIDEOS
 
+> **DOCUMENTO HISTÓRICO (sustituido durante la adopción documental).** La fuente oficial vigente de estado actual, deuda y problemas conocidos es `STATUS.md`. Este documento se conserva únicamente como referencia histórica; su contenido puede estar desactualizado y no debe usarse para determinar el estado vigente.
+
 ## Estado general
 
 Proyecto de escritorio profesional para Windows orientado a explorar
