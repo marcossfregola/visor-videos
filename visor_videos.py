@@ -569,7 +569,21 @@ class Tarjeta(QFrame):
         self.setFrameShadow(QFrame.Raised)
         layout = QHBoxLayout(self)
 
-        nombre, duracion, ancho, alto, codec, miniaturas, tamano = fila
+        nombre, duracion, ancho, alto, codec, miniaturas, tamano, *_resto = fila
+
+        ruta_video_registro = _resto[0] if _resto else None
+        carpeta_video = None
+        if (
+            isinstance(ruta_video_registro, str)
+            and ruta_video_registro
+            and isinstance(nombre, str)
+            and nombre
+        ):
+            base = ruta_video_registro
+            if ruta_video_registro.endswith(nombre):
+                base = ruta_video_registro[: -len(nombre)]
+            carpeta_video = base.rstrip(os.sep) or base
+        self._carpeta_video = carpeta_video
 
         resolucion = "No disponible"
         if ancho is not None and alto is not None:
@@ -2121,16 +2135,10 @@ class VisorVideos(QMainWindow):
     def _programar_previews(self):
         if not self._carga_completada:
             return
-        carpeta = self.carpeta_seleccionada
-        if not carpeta or not os.path.isdir(carpeta):
-            return
         self._timer_previews.start()
 
     def _iniciar_previews(self):
         if not self._carga_completada:
-            return
-        carpeta = self.carpeta_seleccionada
-        if not carpeta or not os.path.isdir(carpeta):
             return
         nombres = [nombre for nombre, _ in self.tarjetas]
         if not nombres:
@@ -2140,15 +2148,22 @@ class VisorVideos(QMainWindow):
 
     def _encolar_previews(self, nombres):
         con_previews = set()
-        for nombre, _ in self.tarjetas:
+        carpetas = {}
+        for nombre, tarjeta in self.tarjetas:
             existentes = previews_de(nombre) or []
             if len(existentes) >= escanear_videos.CANTIDAD_PREVIEWS:
                 con_previews.add(nombre)
-        pendientes = set(self._cola_previews)
+            carpeta = getattr(tarjeta, "_carpeta_video", None)
+            if isinstance(carpeta, str) and carpeta:
+                carpetas[nombre] = carpeta
+        pendientes = {item[0] for item in self._cola_previews}
         for nombre in nombres:
             if nombre in con_previews or nombre in pendientes:
                 continue
-            self._cola_previews.append(nombre)
+            carpeta = carpetas.get(nombre)
+            if carpeta is None:
+                continue
+            self._cola_previews.append((nombre, carpeta))
 
     def _al_previews_finalizada(self):
         if self.gestor_previews.estado != Estado.INACTIVO:
@@ -2158,17 +2173,27 @@ class VisorVideos(QMainWindow):
     def _siguiente_lote_previews(self):
         if self.gestor_previews.activo:
             return
+        carpeta_lote = None
         lote = []
-        while self._cola_previews and len(lote) < TAMANIO_LOTE_PREVIEWS:
-            lote.append(self._cola_previews.pop(0))
+        restantes = []
+        for item in self._cola_previews:
+            nombre, carpeta = item
+            if not (isinstance(carpeta, str) and carpeta and os.path.isdir(carpeta)):
+                continue
+            if carpeta_lote is None:
+                carpeta_lote = carpeta
+            if carpeta == carpeta_lote and len(lote) < TAMANIO_LOTE_PREVIEWS:
+                lote.append(nombre)
+            else:
+                restantes.append(item)
+        self._cola_previews = restantes
         if not lote:
             return
-        carpeta = self.carpeta_seleccionada
-        if not carpeta or not os.path.isdir(carpeta):
-            self._cola_previews = []
-            return
-        tarea = TareaPreviewsProgresivas(lote, carpeta)
+        tarea = TareaPreviewsProgresivas(lote, carpeta_lote)
         if not self.gestor_previews.iniciar(tarea):
+            self._cola_previews = restantes + [
+                (nombre, carpeta_lote) for nombre in lote
+            ]
             return
         self.tarea_previews = tarea
 

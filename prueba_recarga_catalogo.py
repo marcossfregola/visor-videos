@@ -703,6 +703,11 @@ def test_13():
             _esperar(lambda v=ventana2: _cadena_terminada(v))
         finally:
             tv.listar_videos_paginado = orig_listar
+        _esperar(
+            lambda v=ventana2: not v.gestor_previews.activo
+            and not v._cola_previews
+            and not v._timer_previews.isActive()
+        )
         ok_error = (
             ventana2.gestor.estado == Estado.INACTIVO
             and ventana2.gestor.hilo is None

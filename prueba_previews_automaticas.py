@@ -94,9 +94,9 @@ def _espia_generar_preview():
         escanear_mod.generar_preview = original
 
 
-def _fila_bd(nombre, duracion):
+def _fila_bd(nombre, duracion, carpeta_videos):
     return (
-        nombre, f"C:\\{nombre}", os.path.splitext(nombre)[1].lower(),
+        nombre, os.path.join(carpeta_videos, nombre), os.path.splitext(nombre)[1].lower(),
         "2026-08-06T00:00:00", duracion, 1920, 1080, "h264", 1, 1024,
     )
 
@@ -128,8 +128,8 @@ def _entorno():
     )
     conn.executemany(
         "INSERT INTO videos (nombre, ruta, extension, fecha_importacion, duracion_segundos, ancho, alto, codec_video, cantidad_miniaturas, tamano_bytes) VALUES (?,?,?,?,?,?,?,?,?,?)",
-        [_fila_bd("clip.mp4", 100.0)]
-        + [_fila_bd(f"extra_{i:02d}.mp4", 100.0) for i in range(20)],
+        [_fila_bd("clip.mp4", 100.0, videos.name)]
+        + [_fila_bd(f"extra_{i:02d}.mp4", 100.0, videos.name) for i in range(20)],
     )
     conn.commit()
     conn.close()

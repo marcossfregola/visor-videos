@@ -32,13 +32,13 @@ _CONFIG_TEMPORAL = tempfile.TemporaryDirectory()
 os.environ["VISOR_CONFIG"] = os.path.join(_CONFIG_TEMPORAL.name, "configuracion.json")
 
 
-def _filas(nombres):
+def _filas(nombres, carpeta="C:\\"):
     filas = []
     for i, nombre in enumerate(nombres, start=1):
         filas.append(
             (
                 nombre,
-                os.path.join("C:\\", nombre),
+                os.path.join(carpeta, nombre),
                 os.path.splitext(nombre)[1].lower(),
                 "2026-08-03T00:00:00",
                 float(i % 5),
@@ -569,7 +569,7 @@ def test_12():
 def test_13():
     with _miniaturas_temporales() as carpeta_min:
         carpeta = _carpeta_con(["a.mp4", "b.mp4", "c.mp4"])
-        temp, ruta_db = _crear_bd(_filas(["a.mp4", "b.mp4", "c.mp4"]))
+        temp, ruta_db = _crear_bd(_filas(["a.mp4", "b.mp4", "c.mp4"], carpeta.name))
         try:
             def _generar(ruta_video, destino, indice=None):
                 return _generar_exitoso(ruta_video, destino, indice)
@@ -578,7 +578,6 @@ def test_13():
             escanear_mod.generar_preview = _generar
             ventana = VisorVideos(ruta_db=ruta_db)
             _esperar(lambda v=ventana: v._carga_completada and v.gestor.hilo is None)
-            ventana.carpeta_seleccionada = carpeta.name
             ventana._programar_previews()
             terminado = _esperar_previews_ventana(ventana, 9)
             generadas = {
@@ -607,7 +606,7 @@ def test_14():
     with _miniaturas_temporales() as carpeta_min:
         carpeta = _carpeta_con(["v01.mp4", "v02.mp4", "v03.mp4", "v04.mp4"])
         temp, ruta_db = _crear_bd(
-            _filas(["v01.mp4", "v02.mp4", "v03.mp4", "v04.mp4"])
+            _filas(["v01.mp4", "v02.mp4", "v03.mp4", "v04.mp4"], carpeta.name)
         )
         try:
             def _generar(ruta_video, destino, indice=None):
@@ -617,7 +616,6 @@ def test_14():
             escanear_mod.generar_preview = _generar
             ventana = VisorVideos(ruta_db=ruta_db)
             _esperar(lambda v=ventana: v._carga_completada and v.gestor.hilo is None)
-            ventana.carpeta_seleccionada = carpeta.name
             ventana._programar_previews()
             terminado = _esperar_previews_ventana(ventana, 12)
             sin_placeholder = all(

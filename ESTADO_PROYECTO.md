@@ -319,13 +319,14 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
 
 ## Próxima etapa
 
-**Generación del instalador definitivo de la Beta 3.** La **infraestructura oficial de
-empaquetado ya está restaurada y documentada** (`instalador.iss` — script Inno Setup 6.7.3 con
-instalación por usuario en `{localappdata}\Programs`, sin permisos de administrador — y
-`EMPACADO.md` — procedimiento reproducible PyInstaller `--onedir --windowed` + Inno Setup).
-Siguiente paso: instalar **Inno Setup 6.7.3** en la máquina de build y generar el ejecutable
-portable y el instalador definitivo (`VisorVideos_Beta3.0_Setup.exe`) para las pruebas manuales
-en otra computadora. No corresponde iniciar nuevas funcionalidades.
+**Validación manual completa de la Beta 3 sobre una instalación limpia, antes de publicar la
+versión.** El instalador oficial (`VisorVideos_Beta3_Setup.exe`, `Distribucion\Beta3\`) ya fue
+generado, y la **regresión crítica de previews** detectada en las pruebas manuales fue
+**corregida y auditada** (el subsistema de previews ya no depende de `carpeta_seleccionada`: cada
+video usa su propia carpeta real del catálogo). La siguiente actividad es exclusivamente la
+**validación manual integral** del instalador en otra computadora limpia (instalación por
+usuario, primer inicio, escaneo de los cuatro escenarios de alcance, previews, operaciones y
+desinstalación total). **No corresponde implementar ninguna funcionalidad nueva.**
 
 ## Documentos del proyecto
 

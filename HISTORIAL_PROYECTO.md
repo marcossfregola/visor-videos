@@ -5,6 +5,96 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 88. Corregir la regresión de previews: carpeta real por video desde el catálogo
+
+- **Fecha:** 2026-08-07
+- **Objetivo:** Corregir la **regresión crítica** detectada en las pruebas manuales de la Beta 3
+  (Etapas 4-6, Bloque 4): el subsistema de previews progresivas seguía dependiendo de
+  `carpeta_seleccionada` (carpeta activa de navegación) para resolver la carpeta base de
+  generación, cuando el escaneo ya no trabaja necesariamente sobre esa carpeta sino sobre un
+  conjunto proveniente de `SeleccionCarpetas`. Con una única carpeta seleccionada, las previews
+  **nunca comenzaban**; con varias carpetas, se generaban contra una única base (intentos fallidos
+  y degradación). La corrección hace que cada video use **su propia carpeta real**, tomada de su
+  registro del catálogo (columna `ruta`), eliminando por completo la dependencia de
+  `carpeta_seleccionada` en el flujo de previews. No se modificó el pipeline de escaneo ni el
+  contrato de `TareaPreviewsProgresivas`.
+- **Archivos modificados:**
+  - `escanear_videos.py` — `listar_videos` y `listar_videos_paginado` ahora incluyen la columna
+    `ruta` del catálogo (última columna de la fila), de modo que el registro del video transporta
+    su carpeta real.
+  - `visor_videos.py` — `Tarjeta.__init__` desempaqueta la `ruta` opcional (`*_resto`, compatible
+    con filas de 7 columnas) y deriva `self._carpeta_video` (base de escaneo = `ruta` menos el
+    nombre relativo, correcta también para videos en subcarpetas). En el subsistema de previews:
+    `_programar_previews` y `_iniciar_previews` pierden la guarda de `carpeta_seleccionada`;
+    `_encolar_previews` encola pares `(nombre, carpeta)` con la carpeta del propio registro;
+    `_siguiente_lote_previews` agrupa por carpeta (un lote por carpeta) y crea
+    `TareaPreviewsProgresivas(lote, carpeta)` con la firma intacta.
+  - `prueba_previews_multicarpeta.py` — **nueva**: 5 pruebas que cubren los cuatro escenarios
+    (carpeta única; carpeta + subcarpetas; selección personalizada con una carpeta y
+    `carpeta_seleccionada=None` —la regresión original—; selección personalizada con múltiples
+    carpetas) verificando que las previews se generan con la carpeta correcta.
+  - `prueba_previews_progresivas.py` y `prueba_previews_automaticas.py` — fixtures con **rutas
+    reales** del catálogo (los previews ahora se resuelven por el registro, no por
+    `carpeta_seleccionada`).
+  - `prueba_recarga_catalogo.py` (T13) y `prueba_pagina_siguiente.py` (T19) — esperan a que
+    termine el trabajo legítimo de previews de inicio (incluida la inactividad del timer) antes de
+    verificar la higiene de gestores.
+  - `prueba_lectura.py` y `prueba_lectura_paginada.py` — aserciones de filas actualizadas a las
+    **ocho columnas** (con `ruta`).
+  - `DOCUMENTO_TECNICO.md` — subsistema de previews, `Tarjeta._carpeta_video` y columnas de
+    `listar_videos`/`listar_videos_paginado` documentados.
+  - `ESTADO_PROYECTO.md` — próxima etapa: validación manual completa de la Beta 3 sobre una
+    instalación limpia.
+  - `HISTORIAL_PROYECTO.md` — este documento (registro de la etapa).
+- **Pruebas:** `prueba_previews_multicarpeta.py` 5/5 (los cuatro escenarios). Regresiones en
+  verde: `prueba_previews_progresivas.py` 16/16, `prueba_previews_automaticas.py` 22/22,
+  `prueba_recarga_catalogo.py` 20/20, `prueba_pagina_siguiente.py` 20/20, `prueba_lectura.py`
+  15/15, `prueba_lectura_paginada.py` 32/32, `prueba_escaneo_interfaz.py` 36/36,
+  `prueba_escaneo_guardado.py` 24/24, `prueba_escaneo_multicarpeta.py` 20/20,
+  `prueba_modo_alcance_escaneo.py` 15/15, `prueba_sincronizacion_multicarpeta.py` 17/17,
+  `prueba_sincronizacion_interfaz.py` 18/18, `prueba_interfaz_asincrona.py` 29/29,
+  `prueba_escaneo.py` 12/12, `prueba_escaneo_arbol.py` 11/11, `prueba_escaneo_automatico.py`
+  19/19, `prueba_escaneo_subcarpetas.py` 13/13, `prueba_resincronizacion_incremental.py` 9/9,
+  `prueba_smoke.py` OK, `prueba_pulido_bloque_a.py` 29/29, `prueba_tiempo_previews.py` 35/35,
+  `prueba_duracion_simplificada.py` 23/23, `prueba_cantidad_previews.py` 14/14,
+  `prueba_preferencias_miniaturas.py` 31/31, `prueba_tamano_miniaturas.py` 32/32,
+  `prueba_tamano_muy_grande.py` 27/27, `prueba_vista_ampliada.py` 24/24,
+  `prueba_vista_ampliada_desactivada.py` 20/20, `prueba_tamano_vista_ampliada.py` 38/38,
+  `prueba_tamano_vista_ampliada_grande.py` 28/28, `prueba_filas_horizontales.py` 16/16,
+  `prueba_doble_clic.py` 14/14, `prueba_restauracion_seleccion.py` 15/15,
+  `prueba_modo_seleccion.py` 20/20, `prueba_menu_contextual.py` 18/18, `prueba_seleccion.py`
+  28/28, `prueba_copiar_archivos.py` 15/15, `prueba_pegar_archivos.py` 15/15,
+  `prueba_eliminar_archivos.py` 18/18, `prueba_guardar.py` 19/19, `prueba_guardar_videos.py`
+  34/34, `prueba_seleccion_arbol.py` 25/25, `prueba_modo_seleccion_arbol.py` 16/16,
+  `prueba_herramientas_seleccion_arbol.py` 20/20, `prueba_persistencia_subcarpetas.py` 10/10,
+  `prueba_persistencia_arbol.py` 15/15, `prueba_expansion_carpetas.py` 35/35,
+  `prueba_carpeta_actual.py` 19/19, `prueba_copiar_rutas_seleccionados.py` 8/8,
+  `prueba_abrir_carpetas_seleccionados.py` 10/10, `prueba_atajos_basicos.py` 13/13,
+  `prueba_atajos_operaciones.py` 16/16, `prueba_resumen_seleccion.py` 17/17,
+  `prueba_shift_clic.py` 28/28, `prueba_progreso_operaciones.py` 12/12,
+  `prueba_progreso_pipeline.py` 11/11, `prueba_infraestructura_progreso.py` 9/9,
+  `prueba_seleccion_carpetas.py` 22/22, `prueba_indicador_escaneado.py` 14/14,
+  `prueba_progreso.py` 13/13, `prueba_detectar.py` 15/15, `prueba_plan_sincronizacion.py`
+  12/12, `prueba_eliminar_candidatos.py` 16/16, `prueba_ffprobe.py` 12/12,
+  `prueba_tamano_archivo.py` 15/15, `prueba_tareas.py` 13/13,
+  `prueba_sincronizacion_asincrona.py` 27/27. Únicas fallas restantes (preexistentes,
+  documentadas): `prueba_persistencia_carpeta.py` 18/20 (T11/T16) y
+  `prueba_aplicar_incorporaciones.py` 14/15 (T15). `python -m py_compile` OK. `git diff --check`
+  OK.
+- **Commit:** Aprobado y commiteado (cierre de la corrección de la regresión).
+- **Resultado:** la dependencia de `carpeta_seleccionada` en el subsistema de previews queda
+  **eliminada definitivamente**; carpeta única, carpeta + subcarpetas y selección personalizada
+  (una o varias carpetas) generan previews correctamente con la carpeta real de cada video.
+  La Beta 3 queda **funcionalmente cerrada y lista para la validación manual integral** sobre una
+  instalación limpia antes de publicar la versión.
+- **Decisiones importantes:** la corrección se limita al subsistema de previews (el pipeline de
+  escaneo y el contrato de `TareaPreviewsProgresivas` no cambian); la carpeta de cada preview
+  proviene del registro del video (`ruta` del catálogo), nunca del estado de navegación; las
+  pruebas de previews usan ahora rutas reales del catálogo porque el nuevo contrato las requiere.
+  No se implementa ninguna funcionalidad nueva.
+
+---
+
 ## 87. Auditar integralmente el Bloque 4 y cerrar la Beta 3 (Etapa 7)
 
 - **Fecha:** 2026-08-07

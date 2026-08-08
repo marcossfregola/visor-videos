@@ -527,7 +527,7 @@ def listar_videos(ruta_db=None):
     try:
         return conn.execute(
             """
-            SELECT nombre, duracion_segundos, ancho, alto, codec_video, cantidad_miniaturas, tamano_bytes
+            SELECT nombre, duracion_segundos, ancho, alto, codec_video, cantidad_miniaturas, tamano_bytes, ruta
             FROM videos
             ORDER BY nombre
             """
@@ -709,7 +709,7 @@ def listar_videos_paginado(limite, desplazamiento=0, texto=None, ruta_db=None):
         if texto is None:
             filas = conn.execute(
                 """
-                SELECT nombre, duracion_segundos, ancho, alto, codec_video, cantidad_miniaturas, tamano_bytes
+                SELECT nombre, duracion_segundos, ancho, alto, codec_video, cantidad_miniaturas, tamano_bytes, ruta
                 FROM videos
                 ORDER BY nombre
                 LIMIT ? OFFSET ?
@@ -721,7 +721,7 @@ def listar_videos_paginado(limite, desplazamiento=0, texto=None, ruta_db=None):
             patron = f"%{texto}%"
             filas = conn.execute(
                 """
-                SELECT nombre, duracion_segundos, ancho, alto, codec_video, cantidad_miniaturas, tamano_bytes
+                SELECT nombre, duracion_segundos, ancho, alto, codec_video, cantidad_miniaturas, tamano_bytes, ruta
                 FROM videos
                 WHERE nombre LIKE ?
                 ORDER BY nombre

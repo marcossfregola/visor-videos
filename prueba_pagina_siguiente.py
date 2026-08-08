@@ -779,6 +779,11 @@ def test_19():
         _esperar(lambda v=ventana: v._carga_completada and v.gestor.hilo is None)
         ventana.boton_cargar_mas.click()
         _esperar(lambda v=ventana: _cadena_terminada(v))
+        _esperar(
+            lambda v=ventana: not v.gestor_previews.activo
+            and not v._cola_previews
+            and not v._timer_previews.isActive()
+        )
         ok_estado = (
             ventana.gestor.estado == Estado.INACTIVO
             and ventana.gestor.hilo is None
