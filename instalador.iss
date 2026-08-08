@@ -1,0 +1,65 @@
+; Script Inno Setup del instalador oficial del Visor de Videos.
+; Compatible con Inno Setup 6.7.3. Instalacion por usuario, sin permisos
+; de administrador, destino %LOCALAPPDATA%\Programs\VisorVideos.
+;
+; Para futuras versiones: pasar /DAplicacionVersion=X.Y y /DBetaEtiqueta=BetaN
+; al compilador o editar los #define por defecto.
+;
+; Ejemplo:
+;   "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DAplicacionVersion=3.0 /DBetaEtiqueta=Beta3 instalador.iss
+
+#ifndef AplicacionVersion
+  #define AplicacionVersion "3.0"
+#endif
+
+#ifndef BetaEtiqueta
+  #define BetaEtiqueta "Beta3"
+#endif
+
+[Setup]
+; GUID fijo del producto (por usuario), independiente de Beta1/Beta2
+AppId={{3A5B7C9D-E1F2-4A3B-9C8D-0E1F2A3B4C5D}
+AppName=Visor de Videos
+AppVersion={#AplicacionVersion}
+AppVerName=Visor de Videos {#AplicacionVersion}
+AppPublisher=Visor de Videos
+DefaultDirName={localappdata}\Programs\VisorVideos
+DefaultGroupName=Visor de Videos
+DisableProgramGroupPage=yes
+PrivilegesRequired=lowest
+ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
+OutputDir=Distribucion\{#BetaEtiqueta}
+OutputBaseFilename=VisorVideos_{#BetaEtiqueta}_Setup
+Compression=lzma2
+SolidCompression=yes
+WizardStyle=modern
+UninstallDisplayIcon={app}\VisorVideos.exe
+SetupLogging=yes
+
+[Languages]
+Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
+
+[Tasks]
+Name: "desktopicon"; Description: "Crear acceso directo en el escritorio"; GroupDescription: "Accesos directos:"; Flags: unchecked
+
+[Files]
+; Ejecutable y bibliotecas empaquetadas por PyInstaller (dist\VisorVideos\)
+Source: "dist\VisorVideos\VisorVideos.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "dist\VisorVideos\_internal\*"; DestDir: "{app}\_internal"; Flags: ignoreversion recursesubdirs createallsubdirs
+; Base de datos vacia con el esquema vigente (se genera en el paso previo del build;
+; onlyifdoesntexist preserva el catalogo del usuario en reinstalaciones)
+Source: "dist\VisorVideos\biblioteca.db"; DestDir: "{app}"; Flags: ignoreversion onlyifdoesntexist
+
+[Icons]
+Name: "{autoprograms}\Visor de Videos"; Filename: "{app}\VisorVideos.exe"
+Name: "{autodesktop}\Visor de Videos"; Filename: "{app}\VisorVideos.exe"; Tasks: desktopicon
+
+[Run]
+Filename: "{app}\VisorVideos.exe"; Description: "Ejecutar Visor de Videos"; Flags: nowait postinstall skipifsilent
+
+[UninstallDelete]
+; Elimina tambien los datos creados en tiempo de ejecucion (biblioteca.db,
+; configuracion.json, miniaturas/ y cualquier dato generado por la aplicacion)
+; para una desinstalacion completa
+Type: filesandordirs; Name: "{app}"

@@ -30,6 +30,11 @@ configuracion.json
 # Artefactos de distribución de la Beta (instalador + app portable)
 VisorVideoBeta1/
 
+# Salidas del build oficial de PyInstaller (regenerables con: python -m PyInstaller --onedir --windowed --name VisorVideos visor_videos.py; ver EMPACADO.md)
+build/
+dist/
+VisorVideos.spec
+
 # Artefactos locales de trabajo (no versionar)
 Distribucion/
 AUDITORIA_CLAUDE/

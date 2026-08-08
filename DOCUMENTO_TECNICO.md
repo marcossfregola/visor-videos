@@ -12,6 +12,8 @@ prueba/
 ├── main.py                Script de prueba de operaciones (ajeno al visor)
 ├── operaciones.py         Lógica pura de operaciones sobre archivos (copiar B3.14, pegar B3.15, eliminar B3.16)
 ├── seleccion_carpetas.py  Conjunto de carpetas seleccionadas por ruta (Selección personalizada, Bloque 4)
+├── instalador.iss         Script oficial Inno Setup 6.7.3 del instalador (instalación por usuario; ver `EMPACADO.md`)
+├── EMPACADO.md            Procedimiento oficial de empaquetado (PyInstaller + Inno Setup, reproducible)
 ├── prueba_agente.py       Artifacto de prueba (ajeno al visor)
 ├── escanear_videos.py     CLI / backend: escaneo + SQLite + FFprobe
 ├── rutas.py               Resolución centralizada de rutas del proyecto (independiente del CWD)

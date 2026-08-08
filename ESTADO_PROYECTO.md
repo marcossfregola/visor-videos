@@ -319,11 +319,13 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
 
 ## Próxima etapa
 
-**Revisión del procedimiento de empaquetado y generación del instalador definitivo de la Beta 3.**
-Con la Beta 3 funcionalmente cerrada, el siguiente paso es revisar el procedimiento oficial de
-empaquetado (PyInstaller `--onedir --windowed` + script Inno Setup) para producir el ejecutable
-portable y el instalador definitivo para las pruebas manuales en otra computadora. Según
-`ROADMAP.md` y el historial del proyecto (Etapa 34). No corresponde iniciar nuevas funcionalidades.
+**Generación del instalador definitivo de la Beta 3.** La **infraestructura oficial de
+empaquetado ya está restaurada y documentada** (`instalador.iss` — script Inno Setup 6.7.3 con
+instalación por usuario en `{localappdata}\Programs`, sin permisos de administrador — y
+`EMPACADO.md` — procedimiento reproducible PyInstaller `--onedir --windowed` + Inno Setup).
+Siguiente paso: instalar **Inno Setup 6.7.3** en la máquina de build y generar el ejecutable
+portable y el instalador definitivo (`VisorVideos_Beta3.0_Setup.exe`) para las pruebas manuales
+en otra computadora. No corresponde iniciar nuevas funcionalidades.
 
 ## Documentos del proyecto
 
