@@ -13,56 +13,36 @@ técnicamente** (B3.1 a B3.9, más las ampliaciones **B3.14a** "Desactivado" y
 Selección y operaciones** quedó **completo** (B3.11 a B3.17 más la corrección
 técnica **B3.18**) y el **Bloque C — Progreso** quedó **completo**
 (**B3.20–B3.23**), con lo que la **Beta 3 queda funcionalmente cerrada**
-salvo problemas en las pruebas finales. Además está en marcha el **Bloque de
-trabajo 4 — Catálogo por selección de carpetas**: implementadas la **Etapa 1
-— Infraestructura de selección**, la **entrega conjunta Etapas 2-3 — Modo
-de selección del árbol y herramientas de selección rápida**, la **Etapa 4 —
-Escaneo multicarpeta**, la **Etapa 5 — Sincronización multicarpeta** y la
-**Etapa 6 — Unificación del selector de alcance del escaneo**. Queda pendiente
-solo la **Etapa 7 — Auditoría integral del Bloque 4 y cierre funcional de la
-Beta 3**. El plan de trabajo se documenta en `ROADMAP.md` (Bloques de trabajo
-3 y 4). La Beta 2 permanece como la última versión estable publicada.
+salvo problemas en las pruebas finales. El **Bloque de trabajo 4 — Catálogo
+por selección de carpetas** quedó **completo** (Etapas 1-7: infraestructura de
+selección, modo de selección del árbol, herramientas rápidas, escaneo
+multicarpeta, sincronización multicarpeta, selector de alcance unificado y
+auditoría integral) y con la **Etapa 7** la **Beta 3 queda funcionalmente
+cerrada y congelada sobre el código definitivo**. El plan de trabajo se
+documenta en `ROADMAP.md` (Bloques de trabajo 3 y 4). La Beta 2 permanece
+como la última versión estable publicada. Pendiente: revisión del
+procedimiento de empaquetado para producir el instalador definitivo de la
+Beta 3.
 
 ## Último commit aprobado
 
-**Mensaje:** Unificar el selector de alcance del escaneo (Etapa 6)
+**Mensaje:** Auditar integralmente el Bloque 4 y cerrar la Beta 3 (Etapa 7)
 
-**Etapa:** Unificación del selector de alcance del escaneo (Bloque de trabajo 4, Etapa 6):
-- `configuracion.py` — `MODO_ALCANCE_SOLO`/`MODO_ALCANCE_SUBCARPETAS`/`MODO_ALCANCE_SELECCION`,
-  `CLAVE_MODO_ALCANCE`, `guardar_modo_alcance` (persiste el modo y mantiene el booleano
-  `incluir_subcarpetas` sincronizado) y `obtener_modo_alcance` con **migración retrocompatible**
-  desde el booleano antiguo.
-- `visor_videos.py` — `combo_modo_alcance` (QComboBox con tres modos) como **única fuente de
-  verdad visible** del alcance; `_modo_alcance` restaurado al iniciar; `_recursivo_actual()`;
-  `iniciar_escaneo` mapea el modo ("Selección personalizada" → `seleccion_carpetas.obtener_seleccion()`
-  y activa el modo de selección del árbol); el checkbox "Incluir subcarpetas" queda como
-  **adaptador de compatibilidad oculto** (sincronizado bidireccionalmente con guard de reentrada).
-  Sin cambios en el motor de escaneo ni en la sincronización.
-- `prueba_escaneo_subcarpetas.py` — actualizada la aserción de visibilidad del checkbox por el
-  nuevo contrato (selector de alcance visible + funcionamiento del modo subcarpetas).
-- `prueba_modo_alcance_escaneo.py` — 11 verificaciones de la etapa (nuevo).
+**Etapa:** Auditoría integral del Bloque 4 y cierre funcional de la Beta 3 (Bloque de trabajo 4, Etapa 7):
+- `visor_videos.py` — **regresión corregida** en `_duracion_valida` (restaurado el criterio
+  `duracion > 0`; la duración 0 vuelve a ser inválida, detectada por la auditoría final).
+- `prueba_modo_alcance_escaneo.py` — incorporada la verificación integrada de **transiciones
+  de modo en la misma ventana** (Solo → +subcarpetas → Selección personalizada → Solo) con
+  estados SQLite exactos.
+- La batería completa de suites (~95) se ejecutó en la auditoría: todas en verde salvo las dos
+  fallas preexistentes documentadas (`prueba_persistencia_carpeta.py` 18/20 T11/T16 y
+  `prueba_aplicar_incorporaciones.py` 14/15 T15).
 
-**Pruebas superadas:** `prueba_modo_alcance_escaneo.py` 11/11 (los tres modos, persistencia,
-restauración, migración True/False/sin config, compatibilidad Etapas 4-5 con el espejo y
-multicarpeta con recursividad ON); `prueba_escaneo_subcarpetas.py` 13/13 (tras la corrección del
-contrato); `prueba_smoke.py` OK; regresiones relevantes OK: `prueba_escaneo_automatico.py` 19/19,
-`prueba_subcarpetas_arbol.py` 15/15, `prueba_persistencia_subcarpetas.py` 10/10,
-`prueba_escaneo_multicarpeta.py` 20/20, `prueba_sincronizacion_multicarpeta.py` 17/17,
-`prueba_escaneo_interfaz.py` 36/36, `prueba_sincronizacion_interfaz.py` 18/18, `prueba_escaneo.py`
-12/12, `prueba_escaneo_guardado.py` 24/24, `prueba_guardar.py` 19/19, `prueba_guardar_videos.py`
-34/34, `prueba_lectura.py` 15/15, `prueba_lectura_paginada.py` 32/32,
-`prueba_progreso_pipeline.py` 11/11, `prueba_progreso_operaciones.py` 12/12, `prueba_ffprobe.py`
-12/12, `prueba_tamano_archivo.py` 15/15, `prueba_modo_seleccion_arbol.py` 16/16,
-`prueba_herramientas_seleccion_arbol.py` 20/20, `prueba_seleccion_carpetas.py` 22/22,
-`prueba_arbol_navegacion.py`, `prueba_seleccion_carpeta.py` 26/26, `prueba_carpeta_actual.py`
-19/19, `prueba_persistencia_arbol.py` 15/15, `prueba_expansion_carpetas.py` 35/35,
-`prueba_preferencias_miniaturas.py` 31/31, `prueba_interfaz_asincrona.py` 29/29,
-`prueba_recarga_catalogo.py` 20/20, `prueba_progreso_visual_pulido.py` 7/7,
-`prueba_atajos_operaciones.py` 16/16, `prueba_seleccion.py` 28/28,
-`prueba_restauracion_seleccion.py` 15/15, `prueba_sincronizacion_asincrona.py` 27/27,
-`prueba_detectar.py` 15/15, `prueba_plan_sincronizacion.py` 12/12,
-`prueba_eliminar_candidatos.py` 16/16, `prueba_smoke.py` OK. `prueba_persistencia_carpeta.py`
-18/20: **falla preexistente conocida** (T11/T16).
+**Pruebas superadas:** `prueba_pulido_bloque_a.py` 29/29, `prueba_tiempo_previews.py` 35/35,
+`prueba_duracion_simplificada.py` 23/23 (tras la corrección de `_duracion_valida`);
+`prueba_modo_alcance_escaneo.py` 15/15 (con las transiciones integradas); `prueba_smoke.py` OK;
+y el resto de la batería completa en verde (árbol, selección, escaneo, sincronización, progreso,
+persistencia, catálogo, interfaz). `python -m py_compile` OK. `git diff --check` OK.
 
 ## Hitos completados
 
@@ -276,7 +256,13 @@ contrato); `prueba_smoke.py` OK; regresiones relevantes OK: `prueba_escaneo_auto
   carpeta actual", "Carpeta actual y todas las subcarpetas" y "Selección personalizada" — como
   **única fuente de verdad visible** del alcance; persistencia (`modo_alcance`) y **migración
   retrocompatible** desde el booleano antiguo; el checkbox queda como **adaptador de compatibilidad
-  oculto**. Con esto el Bloque 4 queda funcionalmente completo, pendiente solo la auditoría integral.
+  oculto**.
+- **Auditoría integral del Bloque 4 y cierre funcional de la Beta 3 (Bloque 4, Etapa 7).**
+  Auditoría final con la batería completa de suites: se detectó y **corrigió la regresión de
+  `_duracion_valida`** (restaurado `duracion > 0`; la duración 0 vuelve a ser inválida), se
+  incorporó la verificación integrada de transiciones de modo y se confirmó el resto del Bloque 4
+  sin problemas. Con esto la **Beta 3 queda funcionalmente cerrada y congelada** sobre el código
+  definitivo, pendiente solo la revisión del procedimiento de empaquetado para el instalador.
 
 ## Pendientes prioritarios
 
@@ -333,11 +319,11 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
 
 ## Próxima etapa
 
-**Etapa 7 — Auditoría integral del Bloque 4 y cierre funcional de la Beta 3.** Revisión final
-del Bloque de trabajo 4 (UX, escala con cientos/miles de carpetas, rendimiento del escaneo
-multicarpeta y regresiones integrales) y cierre funcional de la Beta 3, según `ROADMAP.md`
-(Bloques de trabajo 3 y 4). Es la última etapa del Bloque 4; sin nuevas funcionalidades fuera
-del alcance aprobado.
+**Revisión del procedimiento de empaquetado y generación del instalador definitivo de la Beta 3.**
+Con la Beta 3 funcionalmente cerrada, el siguiente paso es revisar el procedimiento oficial de
+empaquetado (PyInstaller `--onedir --windowed` + script Inno Setup) para producir el ejecutable
+portable y el instalador definitivo para las pruebas manuales en otra computadora. Según
+`ROADMAP.md` y el historial del proyecto (Etapa 34). No corresponde iniciar nuevas funcionalidades.
 
 ## Documentos del proyecto
 

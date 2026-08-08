@@ -249,7 +249,7 @@ def _duracion_valida(duracion):
     return (
         isinstance(duracion, (int, float))
         and not isinstance(duracion, bool)
-        and duracion >= 0
+        and duracion > 0
     )
 
 

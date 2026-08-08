@@ -5,6 +5,44 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 87. Auditar integralmente el Bloque 4 y cerrar la Beta 3 (Etapa 7)
+
+- **Fecha:** 2026-08-07
+- **Objetivo:** Auditoría final del Bloque 4 y cierre funcional de la Beta 3, sin nuevas
+  funcionalidades: verificar el sistema como un todo, detectar regresiones/inconsistencias y
+  aplicar solo correcciones necesarias antes de declarar cerrada la Beta 3.
+- **Archivos modificados:**
+  - `visor_videos.py` — **regresión corregida** en `_duracion_valida`: se restauró el criterio
+    `duracion > 0` (la duración 0 vuelve a ser inválida). La regresión se introdujo
+    accidentalmente en la refinación de la Etapa 5 (`>= 0`) y fue detectada por la auditoría
+    (tarjetas "0:00" y overlays de tiempo en duración 0).
+  - `prueba_modo_alcance_escaneo.py` — incorporada la verificación integrada de **transiciones
+    de modo en la misma ventana** (Solo → +subcarpetas → Selección personalizada → Solo) con
+    estados SQLite exactos (15/15).
+  - `ROADMAP.md` — Bloque 4: Etapa 7 marcada como completada (auditoría integral y cierre).
+  - `DOCUMENTO_TECNICO.md` — contrato de `_duracion_valida` (`> 0`, duración 0 inválida) y la
+    corrección de la auditoría documentados.
+  - `ESTADO_PROYECTO.md` — última etapa aprobada, fase actual (Beta 3 cerrada y congelada),
+    hitos y próxima etapa (revisión del empaquetado).
+  - `HISTORIAL_PROYECTO.md` — este documento (registro de la etapa).
+- **Pruebas:** batería completa (~95 suites) ejecutada en la auditoría. Tras la corrección:
+  `prueba_pulido_bloque_a.py` 29/29, `prueba_tiempo_previews.py` 35/35,
+  `prueba_duracion_simplificada.py` 23/23, `prueba_modo_alcance_escaneo.py` 15/15,
+  `prueba_smoke.py` OK, y el resto en verde. Únicas fallas restantes (preexistentes,
+  documentadas): `prueba_persistencia_carpeta.py` 18/20 (T11/T16) y
+  `prueba_aplicar_incorporaciones.py` 14/15 (T15). `python -m py_compile` OK. `git diff --check`
+  OK.
+- **Commit:** Aprobado y commiteado (cierre técnico de la Etapa 7).
+- **Resultado:** la Beta 3 queda **funcionalmente cerrada y congelada sobre el código
+  definitivo** (con la corrección de `_duracion_valida` incorporada). Pendiente: revisión del
+  procedimiento de empaquetado para producir el instalador definitivo de la Beta 3.
+- **Decisiones importantes:** la auditoría se basa en la batería completa de suites (no solo en
+  las regresiones por etapa); las dos fallas preexistentes se mantienen como deuda documentada;
+  no se declara funcionalidad no verificada manualmente (la verificación manual interactiva queda
+  para las pruebas en otra computadora).
+
+---
+
 ## 86. Unificar el selector de alcance del escaneo (Etapa 6)
 
 - **Fecha:** 2026-08-07

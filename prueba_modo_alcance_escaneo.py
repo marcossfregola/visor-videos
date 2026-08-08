@@ -271,6 +271,47 @@ def main():
             extra=_nombres_bd(ruta_db),
         )
 
+    # --- G) transiciones críticas en la misma ventana entre los tres modos ---
+    with _ventana_con(cfg) as (ventana, ruta_db):
+        ventana.carpeta_seleccionada = carpeta_a
+        _set_modo(ventana, MODO_ALCANCE_SOLO)
+        ventana.iniciar_escaneo()
+        _esperar_escaneo(ventana)
+        verifica(
+            _nombres_bd(ruta_db) == ["a.mp4"],
+            "transición 1: Solo carpeta -> {a.mp4}",
+            extra=_nombres_bd(ruta_db),
+        )
+        _set_modo(ventana, MODO_ALCANCE_SUBCARPETAS)
+        ventana.iniciar_escaneo()
+        _esperar_escaneo(ventana)
+        verifica(
+            _nombres_bd(ruta_db) == sorted(
+                ["a.mp4", os.path.join("B", "b.mp4")]
+            ),
+            "transición 2: Carpeta + subcarpetas -> {a.mp4, B\\b.mp4}",
+            extra=_nombres_bd(ruta_db),
+        )
+        ventana.seleccion_carpetas.seleccionar(carpeta_c)
+        _set_modo(ventana, MODO_ALCANCE_SELECCION)
+        ventana.iniciar_escaneo()
+        _esperar_escaneo(ventana)
+        verifica(
+            _nombres_bd(ruta_db) == sorted(
+                ["a.mp4", os.path.join("B", "b.mp4"), "c.mp4"]
+            ),
+            "transición 3: Selección personalizada -> {a.mp4, B\\b.mp4, c.mp4}",
+            extra=_nombres_bd(ruta_db),
+        )
+        _set_modo(ventana, MODO_ALCANCE_SOLO)
+        ventana.iniciar_escaneo()
+        _esperar_escaneo(ventana)
+        verifica(
+            _nombres_bd(ruta_db) == ["a.mp4"],
+            "transición 4: volver a Solo carpeta restaura {a.mp4}",
+            extra=_nombres_bd(ruta_db),
+        )
+
     base.cleanup()
 
     total = _CONTADOR[0] - 1
