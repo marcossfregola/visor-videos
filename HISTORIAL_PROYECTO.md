@@ -5,6 +5,75 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 89. Implementar exploración temporal interactiva y marcadores visuales (B4.1)
+
+- **Fecha:** 2026-08-09
+- **Objetivo:** Primera etapa del ciclo **Beta 4** (rama `beta4`, punto de partida: cierre de la
+  Beta 3). Incorporar la exploración temporal de videos largos para localizar qué fragmentos
+  sirven y cuáles pueden descartarse: al expandir una tarjeta, una **superficie temporal**
+  representa la duración completa del video (0–100 %) y permite recorrerla con el mouse usando
+  únicamente las previews existentes (todavía sin caché propia de scrubbing), más **marcadores
+  temporales libres** que conservan tiempo real y miniatura fijada.
+- **Comportamiento final:**
+  - Cada `Tarjeta` gana un control "Expandir/Colapsar" con **una sola tarjeta expandida a la vez**.
+  - La segunda fila expandida es la superficie temporal (`FranjaExploracion`): izquierda = 0 %,
+    derecha = 100 %; el movimiento del mouse (solo la coordenada X) emite el instante, el marcador
+    móvil azul acompaña al cursor y el tiempo se muestra en la propia superficie.
+  - La preview mostrada es la existente más cercana al instante por **tiempo real**
+    (`preview_mas_cercana`), y la **preview móvil** se posiciona por el **instante solicitado**
+    (no por el tiempo de la preview elegida); funciona con previews horizontales y verticales
+    (el label se ajusta al tamaño del pixmap, sin huecos internos) y el extremo derecho (100 %)
+    siempre es alcanzable porque la superficie se acota al ancho visible.
+  - El clic sobre la superficie crea **marcadores temporales libres** (lista `_marcadores` con
+    `{"tiempo", "pixmap", "etiqueta"}`; el tiempo es la fuente de verdad); cada uno deja marca
+    visual y miniatura fijada, con **solapamiento permitido** y persistencia **en memoria**
+    mientras vive la tarjeta durante la sesión.
+  - El **clic derecho** sobre una miniatura fijada, o sobre la marca roja, elimina **únicamente**
+    ese marcador (sin menú contextual, sin selección y sin crear otro marcador).
+  - **`mouseMove` = cero FFmpeg + cero acceso a disco + cero creación innecesaria de pixmaps**.
+  - **Sin persistencia permanente**: los marcadores no se guardan todavía (B4.2 lo hará).
+- **Correcciones surgidas de la validación manual:**
+  - La segunda fila pasó de una franja estrecha a una **superficie completa** de scrubbing.
+  - Corrección de geometría: la superficie heredaba el ancho de la tarjeta (dominada por la fila
+    de imágenes) y el extremo derecho quedaba fuera de pantalla; ahora se acota al ancho visible.
+  - Corrección de posicionamiento inicial: el label fijo 320×180 con `AlignCenter` desplazaba el
+    contenido de previews verticales (~100 px ≈ 10 %) dejando un hueco a la izquierda; el label
+    ahora se ajusta al tamaño real del pixmap, de modo que en instante 0 la preview queda pegada
+    al extremo izquierdo.
+  - Marcadores con miniatura fijada (imagen + tiempo real) y eliminación individual por clic
+    derecho.
+- **Pruebas:** `prueba_exploracion_b41.py` **28/28** (lógica pura, widget, integración, geometría,
+  distribución temporal con 9 previews, preview móvil, marcadores con imagen, eliminación, y
+  separación "qué preview / en qué posición"). Regresiones en verde ejecutadas durante la etapa:
+  `prueba_smoke.py` OK, `prueba_previews_progresivas.py` 16/16, `prueba_previews_automaticas.py`
+  22/22, `prueba_seleccion.py` 28/28, `prueba_doble_clic.py` 14/14, `prueba_vista_ampliada.py`
+  24/24, `prueba_filas_horizontales.py` 16/16, `prueba_tamano_miniaturas.py` 32/32,
+  `prueba_cantidad_previews.py` 14/14, `prueba_tiempo_previews.py` 35/35,
+  `prueba_recarga_catalogo.py` 20/20, `prueba_tamano_muy_grande.py` 27/27,
+  `prueba_modo_seleccion.py` 20/20, `prueba_duracion_simplificada.py` 23/23,
+  `prueba_shift_clic.py` 28/28, `prueba_preferencias_miniaturas.py` 31/31,
+  `prueba_menu_contextual.py` 18/18. `python -m py_compile` OK. `git diff --check` OK.
+- **Validación de Marcos:** **satisfactoria** (expansión, scrubbing, extremos, marcadores con
+  miniatura, solapamiento, eliminación por clic derecho, persistencia en sesión y ausencia de
+  regresiones en selección/menú/doble clic/vista ampliada).
+- **Decisiones sobre persistencia futura:** los marcadores temporales son una **función
+  permanente de navegación del producto** (no exclusivamente puntos de corte): representan un
+  instante significativo al que regresar, y en el futuro permitirán iniciar reproducción desde el
+  marcador y ser destino seleccionable durante la reproducción; podrán participar en selección
+  A/B o edición como otra función. La **persistencia permanente** queda delegada a la **B4.2 —
+  Persistencia de marcadores temporales por video** (SQLite + arquitectura de
+  repositorios/migraciones existente; antes de diseñar la relación debe estudiarse la identidad
+  actual de los videos). Después seguirá la **B4.3 — Caché densa de exploración temporal**
+  (fotogramas específicos de scrubbing).
+- **Archivos modificados:** `exploracion_temporal.py` (nuevo), `scrubber.py` (nuevo),
+  `visor_videos.py`, `prueba_exploracion_b41.py` (nueva), y los documentos oficiales
+  (`ESTADO_PROYECTO.md`, `ROADMAP.md`, `DOCUMENTO_TECNICO.md`, `VISION_PRODUCTO.md`,
+  `HISTORIAL_PROYECTO.md`). Sin cambios de SQLite, configuración, `escanear_videos.py`,
+  `tareas*.py` ni `rutas.py`.
+- **Commit:** Aprobado y commiteado (cierre de B4.1).
+
+---
+
 ## 88. Corregir la regresión de previews: carpeta real por video desde el catálogo
 
 - **Fecha:** 2026-08-07

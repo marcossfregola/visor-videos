@@ -63,7 +63,13 @@ from escanear_videos import (
     configurar_escaneo_recursivo,
 )
 from rutas import ruta_carpeta_miniaturas, ruta_configuracion
+from exploracion_temporal import (
+    agregar_marcador_ordenado,
+    preview_mas_cercana,
+    tiempo_a_posicion,
+)
 from seleccion_carpetas import SeleccionCarpetas
+from scrubber import FranjaExploracion, MiniaturaMarcador
 from tareas import Estado, GestorTareas, TareaBase
 from apertura_videos import abrir_video_con_aplicacion_predeterminada
 from arbol_navegacion import ArbolNavegacion
@@ -92,6 +98,7 @@ TAMANIO_LOTE_PREVIEWS = 3
 RETARDO_VISTA_AMPLIADA_MS = 400
 LIMITE_ORIGINAL_MINIATURA = 1280
 RETARDO_OCULTAR_VISTA_MS = 150
+ALTO_FRANJA_EXTRAS = 44
 FACTOR_VISTA_AMPLIADA = 1.6
 FACTORES_VISTA_AMPLIADA = (1.2, 1.6, 2.0, 2.5, 3.0, 3.5)
 TEXTOS_FACTOR_VISTA_AMPLIADA = (
@@ -562,12 +569,13 @@ class Tarjeta(QFrame):
     vista_solicitada = Signal(object)
     vista_abandonada = Signal()
     seleccion_check = Signal(str, bool)
+    expansion_cambiada = Signal(str, bool)
 
     def __init__(self, fila, parent=None):
         super().__init__(parent)
         self.setFrameShape(QFrame.StyledPanel)
         self.setFrameShadow(QFrame.Raised)
-        layout = QHBoxLayout(self)
+        fila_principal = QHBoxLayout()
 
         nombre, duracion, ancho, alto, codec, miniaturas, tamano, *_resto = fila
 
@@ -607,10 +615,14 @@ class Tarjeta(QFrame):
             campo.setWordWrap(True)
             columna_campos.addWidget(campo)
         columna_campos.addStretch()
+        self._boton_expandir = QPushButton("Expandir")
+        self._boton_expandir.setCheckable(True)
+        self._boton_expandir.toggled.connect(self._al_toggle_expansion)
+        columna_campos.insertWidget(0, self._boton_expandir)
         datos_widget = QWidget()
         datos_widget.setMaximumWidth(240)
         datos_widget.setLayout(columna_campos)
-        layout.addWidget(datos_widget)
+        fila_principal.addWidget(datos_widget)
 
         self._nombre = nombre
         self._duracion = duracion
@@ -663,12 +675,17 @@ class Tarjeta(QFrame):
             etiqueta.installEventFilter(self)
 
         contenedor_imagenes.addStretch()
-        layout.addLayout(contenedor_imagenes, 1)
+        fila_principal.addLayout(contenedor_imagenes, 1)
 
         self._check = QCheckBox()
         self._check.setVisible(False)
         self._check.stateChanged.connect(self._al_check_cambiar)
-        layout.insertWidget(0, self._check)
+        fila_principal.insertWidget(0, self._check)
+
+        layout = QVBoxLayout(self)
+        layout.addLayout(fila_principal)
+        self._construir_exploracion()
+        layout.addWidget(self._contenedor_exploracion)
 
     @property
     def nombre(self):
@@ -732,6 +749,8 @@ class Tarjeta(QFrame):
         for indice in range(min(len(self._etiquetas_previews), len(rutas))):
             if self._colocar_preview(indice, rutas[indice]):
                 actualizado = True
+        if actualizado and self._expandida:
+            self._refrescar_exploracion()
         return actualizado
 
     def _asegurar_slots_previews(self, cantidad):
@@ -767,6 +786,11 @@ class Tarjeta(QFrame):
             self._recuadro_sin_miniatura.setFixedSize(ancho, alto)
         for etiqueta in self._etiquetas_previews:
             etiqueta.reajustar()
+        if self._expandida:
+            self._franja.setFixedHeight(alto + ALTO_FRANJA_EXTRAS)
+            self._imagen_exploracion.setFixedSize(ancho, alto)
+            self._refrescar_exploracion()
+            self._renderizar_marcadores()
 
     def _pixmap_ampliada(self, objeto):
         if objeto is self._imagen_miniatura:
@@ -774,6 +798,289 @@ class Tarjeta(QFrame):
         if isinstance(objeto, PreviewConTiempo):
             return objeto._pixmap_original
         return None
+
+    def _construir_exploracion(self):
+        self._expandida = False
+        self._previews_exploracion = []
+        self._marcadores = []
+        self._franja = FranjaExploracion()
+        self._franja.instante_seleccionado.connect(self._al_instante_exploracion)
+        self._franja.marcador_solicitado.connect(self._al_marcador_solicitado)
+        self._franja.marcador_eliminar_solicitado.connect(
+            self._al_marcador_eliminar_solicitado
+        )
+        ancho, alto = dimensiones_miniatura()
+        self._franja.setFixedHeight(alto + ALTO_FRANJA_EXTRAS)
+        self._imagen_exploracion = QLabel(self._franja)
+        self._imagen_exploracion.setFixedSize(ancho, alto)
+        self._imagen_exploracion.setAlignment(Qt.AlignCenter)
+        self._imagen_exploracion.setStyleSheet(
+            "border: 1px solid #999999; background-color: #fafafa;"
+        )
+        self._imagen_exploracion.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self._imagen_exploracion.hide()
+        self._contenedor_exploracion = QWidget()
+        disposicion = QVBoxLayout(self._contenedor_exploracion)
+        disposicion.setContentsMargins(0, 4, 0, 0)
+        disposicion.addWidget(self._franja)
+        self._contenedor_exploracion.setVisible(False)
+
+    def expandir(self):
+        if not self._expandida:
+            self._set_expansion(True)
+
+    def colapsar(self):
+        if self._expandida:
+            self._set_expansion(False)
+
+    def _al_toggle_expansion(self, marcado):
+        self._set_expansion(bool(marcado))
+
+    def _set_expansion(self, valor):
+        if self._expandida == valor:
+            return
+        self._expandida = valor
+        self._boton_expandir.blockSignals(True)
+        self._boton_expandir.setChecked(valor)
+        self._boton_expandir.setText("Colapsar" if valor else "Expandir")
+        self._boton_expandir.blockSignals(False)
+        if valor:
+            self._contenedor_exploracion.setVisible(True)
+            self._preparar_exploracion()
+        else:
+            self._contenedor_exploracion.setVisible(False)
+            self._previews_exploracion = []
+            self._imagen_exploracion.setPixmap(QPixmap())
+            self._imagen_exploracion.hide()
+        self.expansion_cambiada.emit(self._nombre, valor)
+
+    def _preparar_exploracion(self):
+        self._franja.set_duracion(self._duracion)
+        self._franja.set_instante(0.0)
+        self._franja.set_marcadores(
+            [m["tiempo"] for m in self._marcadores]
+        )
+        self._reconstruir_previews_exploracion()
+        self._limitar_ancho_superficie()
+        self._actualizar_tiempo_exploracion(0.0)
+        self._mostrar_preview_para_instante(0.0)
+        self._renderizar_marcadores()
+        QTimer.singleShot(0, self._reajustar_geometria_exploracion)
+
+    def _ancho_visible_maximo(self):
+        padre = self.parentWidget()
+        while padre is not None:
+            if isinstance(padre, QScrollArea):
+                return padre.viewport().width()
+            padre = padre.parentWidget()
+        return None
+
+    def _limitar_ancho_superficie(self):
+        ancho_max = self._ancho_visible_maximo()
+        if ancho_max is not None and ancho_max > 0:
+            self._franja.setMaximumWidth(max(1, ancho_max - 24))
+        else:
+            self._franja.setMaximumWidth(16777215)
+
+    def _reajustar_geometria_exploracion(self):
+        if not self._expandida:
+            return
+        self._limitar_ancho_superficie()
+        self._reposicionar_preview()
+        self._renderizar_marcadores()
+
+    def _reconstruir_previews_exploracion(self):
+        disponibles = []
+        duracion = self._duracion
+        ancho, alto = dimensiones_miniatura()
+        for indice, etiqueta in enumerate(self._etiquetas_previews):
+            original = getattr(etiqueta, "_pixmap_original", None)
+            if original is None or original.isNull():
+                continue
+            instante = None
+            if _duracion_valida(duracion):
+                instante = calcular_tiempo_preview(duracion, indice + 1)
+            disponibles.append(
+                {
+                    "instante": instante,
+                    "pixmap": original,
+                    "pixmap_escalado": original.scaled(
+                        ancho,
+                        alto,
+                        Qt.KeepAspectRatio,
+                        Qt.SmoothTransformation,
+                    ),
+                }
+            )
+        self._previews_exploracion = disponibles
+
+    def _actualizar_tiempo_exploracion(self, instante):
+        texto = (
+            formatear_tiempo(instante)
+            if isinstance(instante, (int, float))
+            and not isinstance(instante, bool)
+            else None
+        )
+        if texto is None:
+            texto = "No disponible"
+        total = (
+            formatear_tiempo(self._duracion)
+            if _duracion_valida(self._duracion)
+            else "—"
+        )
+        self._franja.set_texto_tiempo(f"{texto} / {total}")
+
+    def _posicionar_preview(self, instante):
+        superficie = self._franja
+        ancho_sup = superficie.width()
+        if ancho_sup <= 0:
+            return
+        x = tiempo_a_posicion(instante, ancho_sup, self._duracion)
+        if x is None:
+            return
+        ancho_img = self._imagen_exploracion.width()
+        alto_img = self._imagen_exploracion.height()
+        alto_sup = superficie.height()
+        maximo = max(0, ancho_sup - ancho_img)
+        izquierda = max(0.0, min(x - ancho_img / 2.0, float(maximo)))
+        y = max(0, alto_sup - alto_img - 4)
+        self._imagen_exploracion.move(int(izquierda), y)
+
+    def _reposicionar_preview(self):
+        if not self._expandida or self._franja.width() <= 0:
+            return
+        instante = self._franja.instante()
+        if isinstance(instante, (int, float)) and not isinstance(instante, bool):
+            self._posicionar_preview(instante)
+
+    def _pixmap_para_instante(self, instante):
+        disponibles = self._previews_exploracion
+        indice = preview_mas_cercana(
+            [d["instante"] for d in disponibles], instante
+        )
+        if indice is None:
+            return None
+        return disponibles[indice]["pixmap_escalado"]
+
+    def _mostrar_preview_para_instante(self, instante):
+        pixmap = self._pixmap_para_instante(instante)
+        if pixmap is None:
+            self._imagen_exploracion.setPixmap(QPixmap())
+            self._imagen_exploracion.setText("")
+            self._imagen_exploracion.hide()
+            return
+        self._imagen_exploracion.setPixmap(pixmap)
+        self._imagen_exploracion.setFixedSize(pixmap.size())
+        self._imagen_exploracion.setText("")
+        self._imagen_exploracion.show()
+        self._posicionar_preview(instante)
+
+    def _al_instante_exploracion(self, instante):
+        self._actualizar_tiempo_exploracion(instante)
+        self._mostrar_preview_para_instante(instante)
+
+    def _al_marcador_solicitado(self, instante):
+        tiempos = [m["tiempo"] for m in self._marcadores]
+        tolerancia = 0.0
+        ancho = self._franja.width()
+        if ancho > 0 and _duracion_valida(self._duracion):
+            tolerancia = self._duracion / ancho * 0.5
+        _, agregado = agregar_marcador_ordenado(
+            instante, tiempos, tolerancia
+        )
+        if not agregado:
+            return
+        marcador = {
+            "tiempo": float(instante),
+            "pixmap": self._pixmap_para_instante(instante),
+        }
+        posicion = 0
+        while (
+            posicion < len(self._marcadores)
+            and self._marcadores[posicion]["tiempo"] < float(instante)
+        ):
+            posicion += 1
+        self._marcadores.insert(posicion, marcador)
+        self._franja.set_marcadores(
+            [m["tiempo"] for m in self._marcadores]
+        )
+        self._renderizar_marcadores()
+
+    def _posicionar_miniatura_marcada(self, marcador):
+        etiqueta = marcador.get("etiqueta")
+        if etiqueta is None:
+            return
+        superficie = self._franja
+        ancho_sup = superficie.width()
+        if ancho_sup <= 0:
+            return
+        x = tiempo_a_posicion(
+            marcador["tiempo"], ancho_sup, self._duracion
+        )
+        if x is None:
+            return
+        ancho_img = etiqueta.width()
+        alto_img = etiqueta.height()
+        alto_sup = superficie.height()
+        maximo = max(0, ancho_sup - ancho_img)
+        izquierda = max(0.0, min(x - ancho_img / 2.0, float(maximo)))
+        y = max(0, alto_sup - alto_img - 4)
+        etiqueta.move(int(izquierda), y)
+        etiqueta.show()
+
+    def _renderizar_marcadores(self):
+        for marcador in self._marcadores:
+            etiqueta = marcador.get("etiqueta")
+            if etiqueta is None:
+                pixmap = marcador.get("pixmap")
+                if pixmap is None:
+                    continue
+                etiqueta = MiniaturaMarcador(self._franja, marcador["tiempo"])
+                etiqueta.setPixmap(pixmap)
+                etiqueta.setFixedSize(pixmap.size())
+                etiqueta.eliminar_solicitado.connect(
+                    self._al_marcador_eliminar_solicitado
+                )
+                marcador["etiqueta"] = etiqueta
+            else:
+                pixmap = marcador.get("pixmap")
+                if pixmap is not None:
+                    etiqueta.setPixmap(pixmap)
+            self._posicionar_miniatura_marcada(marcador)
+
+    def _al_marcador_eliminar_solicitado(self, tiempo):
+        objetivo = float(tiempo)
+        for indice, marcador in enumerate(self._marcadores):
+            if abs(marcador["tiempo"] - objetivo) < 1e-9:
+                etiqueta = marcador.get("etiqueta")
+                if etiqueta is not None:
+                    etiqueta.hide()
+                    etiqueta.deleteLater()
+                del self._marcadores[indice]
+                self._franja.set_marcadores(
+                    [m["tiempo"] for m in self._marcadores]
+                )
+                return
+
+    def _refrescar_exploracion(self):
+        if not self._expandida:
+            return
+        self._reconstruir_previews_exploracion()
+        instante = self._franja.instante()
+        if not (
+            isinstance(instante, (int, float))
+            and not isinstance(instante, bool)
+        ):
+            instante = 0.0
+        self._actualizar_tiempo_exploracion(instante)
+        self._mostrar_preview_para_instante(instante)
+        self._renderizar_marcadores()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        franja = getattr(self, "_franja", None)
+        if franja is not None and self._expandida:
+            QTimer.singleShot(0, self._reajustar_geometria_exploracion)
 
     def eventFilter(self, objeto, evento):
         if evento.type() == QEvent.Enter:
@@ -1425,6 +1732,13 @@ class VisorVideos(QMainWindow):
         else:
             self._nombres_seleccionados.discard(nombre)
             self._marcar_tarjeta(nombre, False)
+
+    def _al_expansion_tarjeta(self, nombre, expandida):
+        if not expandida:
+            return
+        for candidato, tarjeta in self.tarjetas:
+            if candidato != nombre:
+                tarjeta.colapsar()
 
     def _al_cambiar_modo_seleccion(self, activo):
         self._modo_seleccion = bool(activo)
@@ -2228,6 +2542,7 @@ class VisorVideos(QMainWindow):
             tarjeta.vista_solicitada.connect(self._al_vista_solicitada)
             tarjeta.vista_abandonada.connect(self._al_vista_abandonada)
             tarjeta.seleccion_check.connect(self._al_check_tarjeta)
+            tarjeta.expansion_cambiada.connect(self._al_expansion_tarjeta)
             tarjeta.mostrar_check(self._modo_seleccion)
             self.tarjetas.append((fila[0], tarjeta))
             self.visibles.append(fila[0])
@@ -2292,6 +2607,7 @@ class VisorVideos(QMainWindow):
             tarjeta.vista_solicitada.connect(self._al_vista_solicitada)
             tarjeta.vista_abandonada.connect(self._al_vista_abandonada)
             tarjeta.seleccion_check.connect(self._al_check_tarjeta)
+            tarjeta.expansion_cambiada.connect(self._al_expansion_tarjeta)
             tarjeta.mostrar_check(self._modo_seleccion)
             self.tarjetas.append((fila[0], tarjeta))
             self.visibles.append(fila[0])

@@ -6,50 +6,59 @@ Proyecto de escritorio profesional para Windows orientado a explorar
 grandes colecciones de videos mediante miniaturas representativas.
 
 **Fase actual:** la **Beta 3 está terminada y congelada sobre el código
-definitivo**. La **implementación quedó completa**: el **Bloque A — Experiencia
-visual** quedó **completo funcional y técnicamente** (B3.1 a B3.9, más las
-ampliaciones **B3.14a** "Desactivado" y **B3.14b** "tamaños 3.0x/3.5x" de la
-vista ampliada), el **Bloque B — Selección y operaciones** quedó **completo**
-(B3.11 a B3.17 más la corrección técnica **B3.18**) y el **Bloque C — Progreso**
-quedó **completo** (**B3.20–B3.23**). El **Bloque de trabajo 4 — Catálogo por
-selección de carpetas** quedó **completo** (Etapas 1-7: infraestructura de
-selección, modo de selección del árbol, herramientas rápidas, escaneo
-multicarpeta, sincronización multicarpeta, selector de alcance unificado y
-auditoría integral). El plan de trabajo se
-documenta en `ROADMAP.md` (Bloques de trabajo 3 y 4). La **regresión crítica
-de previews** detectada en las pruebas manuales fue **corregida y auditada**
-(cada video usa su propia carpeta real del catálogo) y el **instalador
-definitivo de la Beta 3 ya fue generado** (`VisorVideos_Beta3_Setup.exe`,
-`Distribucion\Beta3\`) con la infraestructura oficial de empaquetado
-(`instalador.iss` + `EMPACADO.md`). La Beta 2 permanece
-como la última versión estable publicada. **Únicamente resta la validación
-manual completa** de la Beta 3 sobre una instalación limpia y su publicación.
+definitivo**, con su instalador oficial generado (`VisorVideos_Beta3_Setup.exe`,
+`Distribucion\Beta3\`) y pendiente únicamente de la validación manual integral
+sobre una instalación limpia y su publicación (la Beta 2 permanece como la
+última versión estable publicada). Sobre esa base congelada se inició el
+**ciclo de desarrollo Beta 4** en la **rama `beta4`** (punto de partida: cierre
+de la Beta 3, commit `4408d542`). La primera etapa, **B4.1 — Exploración
+temporal interactiva y marcadores visuales**, quedó **aprobada e incorporada**:
+cada tarjeta puede expandirse en una **superficie temporal** que representa la
+duración completa del video (0–100 %), con marcador móvil que acompaña al
+cursor, tiempo correspondiente a la posición, preview existente más cercana al
+instante y una **preview móvil** que acompaña horizontalmente al cursor
+(funciona con previews horizontales y verticales). Además permite múltiples
+**marcadores temporales libres** (tiempo real + marca visual + miniatura fijada,
+con solapamiento permitido y persistencia en memoria mientras vive la tarjeta
+durante la sesión) y su **eliminación individual** con clic derecho (sobre la
+miniatura fijada o sobre la marca roja). El scrubbing **no ejecuta FFmpeg ni
+accede a disco por movimiento**. **Próxima etapa: B4.2 — Persistencia de
+marcadores temporales por video** (ver `ROADMAP.md`, sección "Beta 4").
 
 ## Último commit aprobado
 
-**Mensaje:** Eliminar la dependencia de carpeta_seleccionada en la generación de
-previews: carpeta real por video desde el catálogo
+**Mensaje:** Implementar exploracion temporal interactiva y marcadores visuales
 
-**Etapa:** Corrección de la regresión de previews (cierre de la Beta 3):
-- `escanear_videos.py` — `listar_videos` y `listar_videos_paginado` incluyen la columna `ruta`
-  del catálogo, de modo que el registro del video transporta su carpeta real.
-- `visor_videos.py` — el subsistema de previews deja de depender de `carpeta_seleccionada`;
-  cada video usa su propia carpeta real del catálogo (correcta también para videos en
-  subcarpetas).
-- La batería completa de suites (~95) se ejecutó en la corrección: todas en verde salvo las dos
-  fallas preexistentes documentadas (`prueba_persistencia_carpeta.py` 18/20 T11/T16 y
-  `prueba_aplicar_incorporaciones.py` 14/15 T15).
+**Etapa:** B4.1 — Exploración temporal interactiva y marcadores visuales (rama `beta4`):
+- `exploracion_temporal.py` — **nuevo**: lógica pura sin Qt/FFmpeg/SQLite/archivos.
+  `posicion_a_tiempo`/`tiempo_a_posicion` (mapeo posición ↔ instante), `normalizar_posicion`
+  (clamp), `preview_mas_cercana` (selección por tiempo real, no por posición en lista) y
+  `agregar_marcador_ordenado` (marcadores ordenados sin duplicados cercanos).
+- `scrubber.py` — **nuevo**: `FranjaExploracion` (superficie temporal de toda la segunda fila;
+  convierte el movimiento/clic en señales de instante y de marcador; dibuja pista, marcador
+  móvil, marcas persistentes y tiempo) y `MiniaturaMarcador` (miniatura fijada que recibe el
+  clic derecho para eliminar y reenvía el movimiento a la superficie).
+- `visor_videos.py` — `Tarjeta` con expansión/colapso (una sola tarjeta expandida a la vez),
+  superficie temporal, preview móvil posicionada por el instante solicitado (label ajustado al
+  tamaño del pixmap, compatible con previews verticales), marcadores en memoria
+  (`{"tiempo", "pixmap", "etiqueta"}`) con eliminación por clic derecho, y superficie acotada al
+  ancho visible (`_limitar_ancho_superficie`).
+- `prueba_exploracion_b41.py` — **nueva**: 28 pruebas de lógica pura, widget, integración,
+  geometría, distribución temporal con 9 previews, marcadores con miniatura, eliminación y
+  separación "qué preview / dónde se coloca".
+- **Sin cambios** de SQLite, configuración, `escanear_videos.py`, `tareas*.py`, `rutas.py` ni
+  persistencia permanente. `mouseMove` = cero FFmpeg + cero acceso a disco.
 
-**Pruebas superadas:** `prueba_previews_multicarpeta.py` 5/5 (los cuatro escenarios); regresiones
-en verde: `prueba_previews_progresivas.py` 16/16, `prueba_previews_automaticas.py` 22/22,
-`prueba_recarga_catalogo.py` 20/20, `prueba_pagina_siguiente.py` 20/20, `prueba_lectura.py`
-15/15, `prueba_lectura_paginada.py` 32/32, `prueba_escaneo_interfaz.py` 36/36,
-`prueba_escaneo_guardado.py` 24/24, `prueba_escaneo_multicarpeta.py` 20/20,
-`prueba_modo_alcance_escaneo.py` 15/15, `prueba_sincronizacion_multicarpeta.py` 17/17,
-`prueba_sincronizacion_interfaz.py` 18/18, `prueba_interfaz_asincrona.py` 29/29,
-`prueba_smoke.py` OK y el resto de la batería completa en verde (árbol, selección, escaneo,
-sincronización, progreso, persistencia, catálogo, interfaz). `python -m py_compile` OK.
-`git diff --check` OK.
+**Pruebas superadas:** `prueba_exploracion_b41.py` **28/28**. Regresiones en verde (ejecutadas
+durante el desarrollo de B4.1): `prueba_smoke.py` OK, `prueba_previews_progresivas.py` 16/16,
+`prueba_previews_automaticas.py` 22/22, `prueba_seleccion.py` 28/28, `prueba_doble_clic.py` 14/14,
+`prueba_vista_ampliada.py` 24/24, `prueba_filas_horizontales.py` 16/16, `prueba_tamano_miniaturas.py`
+32/32, `prueba_cantidad_previews.py` 14/14, `prueba_tiempo_previews.py` 35/35, `prueba_recarga_catalogo.py`
+20/20, `prueba_tamano_muy_grande.py` 27/27, `prueba_modo_seleccion.py` 20/20, `prueba_duracion_simplificada.py`
+23/23, `prueba_shift_clic.py` 28/28, `prueba_preferencias_miniaturas.py` 31/31,
+`prueba_menu_contextual.py` 18/18. `python -m py_compile` OK. `git diff --check` OK. Validación
+manual de Marcos: **satisfactoria** (incluida la corrección menor de posicionamiento inicial con
+previews verticales).
 
 ## Hitos completados
 
@@ -275,6 +284,19 @@ sincronización, progreso, persistencia, catálogo, interfaz). `python -m py_com
   (columna `ruta` incorporada a `listar_videos`/`listar_videos_paginado`); carpeta única,
   carpeta + subcarpetas y selección personalizada (una o varias carpetas) generan previews
   correctamente, verificadas por `prueba_previews_multicarpeta.py` (5/5).
+- **B4.1 — Exploración temporal interactiva y marcadores visuales.** Primera etapa del ciclo
+  Beta 4 (rama `beta4`). Cada tarjeta gana un control "Expandir/Colapsar" con **una sola
+  tarjeta expandida a la vez**; la segunda fila expandida es una **superficie temporal** que
+  mapea horizontalmente 0–100 % de la duración (izquierda = inicio, derecha = final), con
+  marcador móvil que acompaña al cursor, tiempo correspondiente a la posición, preview
+  existente más cercana al instante (por tiempo real) y una **preview móvil** que acompaña
+  horizontalmente al cursor (funciona con previews horizontales y verticales; el extremo
+  derecho siempre es alcanzable porque la superficie se acota al ancho visible). El clic sobre
+  la superficie crea **marcadores temporales libres** que conservan tiempo real, marca visual
+  y miniatura fijada (solapamiento permitido; persisten en memoria mientras vive la tarjeta
+  durante la sesión); el clic derecho sobre la miniatura fijada o sobre la marca roja elimina
+  **únicamente** ese marcador. `mouseMove` = **cero FFmpeg + cero acceso a disco**. Sin
+  persistencia, sin cambios de SQLite ni de `escanear_videos.py`.
 
 ## Pendientes prioritarios
 
@@ -331,18 +353,15 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
 
 ## Próxima etapa
 
-**Validación manual completa de la Beta 3 sobre una instalación limpia, antes de publicar la
-versión.** El instalador oficial (`VisorVideos_Beta3_Setup.exe`, `Distribucion\Beta3\`) ya fue
-generado, y la **regresión crítica de previews** detectada en las pruebas manuales fue
-**corregida y auditada** (el subsistema de previews ya no depende de `carpeta_seleccionada`: cada
-video usa su propia carpeta real del catálogo). La siguiente actividad es exclusivamente la
-**validación manual integral** del instalador en otra computadora limpia (instalación por
-usuario, primer inicio, escaneo de los cuatro escenarios de alcance, previews, operaciones y
-desinstalación total). **No corresponde implementar ninguna funcionalidad nueva.**
-
-Finalizada la validación y publicada la Beta 3, el **próximo ciclo de desarrollo será la
-Beta 4**, cuyo alcance y plan de trabajo se definirán mediante una etapa de planificación
-exclusivamente documental (ver `ROADMAP.md`, sección "Próximo ciclo: Beta 4").
+**B4.2 — Persistencia de marcadores temporales por video.** Guardar los marcadores
+temporales de forma **permanente**, relacionarlos correctamente con el video del
+catálogo y **recuperarlos automáticamente** cuando ese video vuelva a cargarse,
+usando **SQLite** y la arquitectura de repositorios/migraciones existente. Antes de
+diseñar la relación debe **estudiarse la identidad actual de los videos** en el
+catálogo. Después de B4.2 quedará prevista la **B4.3 — Caché densa de exploración
+temporal** (fotogramas específicos de scrubbing para reemplazar la resolución
+visual limitada de las previews normales). Ver la secuencia en `ROADMAP.md`,
+sección "Beta 4".
 
 ## Documentos del proyecto
 

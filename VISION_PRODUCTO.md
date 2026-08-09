@@ -68,6 +68,25 @@ Ideas registradas para etapas futuras:
 
 ---
 
+## Marcadores temporales como función de navegación
+
+Decisión de producto (cerrada en la validación de la B4.1):
+
+- Los **marcadores temporales** son una **función permanente de navegación
+  del producto**, no exclusivamente puntos de corte.
+- Un marcador representa un **instante significativo dentro de un video**,
+  un punto al que el usuario quiera regresar días o meses después.
+- Deberán permitir, en etapas futuras, **iniciar reproducción desde el
+  marcador** y actuar como **destino seleccionable durante la reproducción**
+  para saltar exactamente a ese instante.
+- Los marcadores se asocian a los videos del catálogo de forma
+  **permanente** (persistencia prevista en B4.2).
+- Los mismos puntos podrán participar posteriormente en **selección A/B o
+  edición**, pero eso es otra función: el marcador conserva su significado
+  de navegación.
+
+---
+
 ## Herramientas futuras
 
 - Recorte de videos utilizando previews como puntos de inicio y fin.

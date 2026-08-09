@@ -7,11 +7,13 @@ Videos. No representa el estado actual del proyecto, sino la dirección
 de desarrollo. El orden podrá cambiar según las decisiones
 arquitectónicas.
 
-> **Estado (Beta 3):** la **Beta 3 quedó finalizada, funcionalmente cerrada y
-> congelada sobre el código definitivo**, lista para la **validación manual
-> integral** sobre una instalación limpia antes de su publicación. El
-> desarrollo funcional se reanudará con el **próximo ciclo (Beta 4)** (ver
-> la sección "Próximo ciclo: Beta 4").
+> **Estado (Beta 4):** la **Beta 3 quedó finalizada, funcionalmente cerrada y
+> congelada sobre el código definitivo**, con su instalador generado y pendiente
+> únicamente de la **validación manual integral** y su publicación (la Beta 2
+> permanece como la última versión estable publicada). El desarrollo funcional
+> se reanudó en el **ciclo Beta 4** (rama `beta4`): la **etapa B4.1 —
+> Exploración temporal interactiva y marcadores visuales — quedó completada y
+> aprobada** (ver la sección "Beta 4").
 
 ------------------------------------------------------------------------
 
@@ -494,16 +496,33 @@ exista una etapa aprobada para implementarlas.
 
 ------------------------------------------------------------------------
 
-# Próximo ciclo: Beta 4
+# Beta 4
 
-La Beta 3 quedó **finalizada, congelada y lista para la validación manual**
-sobre una instalación limpia. Finalizada esa validación y publicada la
-versión, el desarrollo se reanudará con un **nuevo ciclo de desarrollo
-(Beta 4)**, que recogerá las mejoras y correcciones detectadas durante la
-validación manual y el uso real de la Beta 3.
+La Beta 4 recoge las mejoras y correcciones detectadas durante la validación manual
+y el uso real de la Beta 3, priorizando la **inspección rápida de videos largos**
+para localizar qué fragmentos sirven y cuáles pueden descartarse. El ciclo se
+desarrolla sobre la rama `beta4` (punto de partida: cierre de la Beta 3).
 
-El alcance, los bloques de trabajo y el plan de implementación de la Beta 4
-se definirán mediante una etapa de planificación exclusivamente documental
-(equivalente a la Etapa B3.0 de la Beta 3), siguiendo la metodología del
-proyecto (`REGLAS_PROYECTO.md`) y la dirección estratégica de
-`VISION_PRODUCTO.md`.
+## Secuencia de etapas
+
+1. **B4.1 — Exploración temporal interactiva y marcadores visuales.** **Completada.**
+   Tarjeta expandible con **superficie temporal** que representa la duración completa
+   del video (0–100 %): marcador móvil que acompaña al cursor, tiempo de la posición,
+   preview existente más cercana al instante y **preview móvil** que acompaña
+   horizontalmente al cursor. Múltiples **marcadores temporales libres** (tiempo real +
+   marca visual + miniatura fijada, con solapamiento permitido) y eliminación individual
+   con clic derecho. Sin persistencia todavía.
+2. **B4.2 — Persistencia de marcadores temporales por video.** **Próxima.** Guardar los
+   marcadores de forma **permanente**, relacionarlos correctamente con el video del
+   catálogo y **recuperarlos automáticamente** cuando ese video vuelva a cargarse, usando
+   **SQLite** y la arquitectura de repositorios/migraciones existente. Antes de diseñar la
+   relación debe **estudiarse la identidad actual de los videos** en el catálogo.
+3. **B4.3 — Caché densa de exploración temporal.** **Posterior.** Reemplazar la resolución
+   visual limitada de las previews normales por **fotogramas específicos de scrubbing**.
+4. **Reproducción / navegación mediante marcadores.** **Futura.** Los marcadores temporales
+   son una **función permanente de navegación del producto** (no exclusivamente puntos de
+   corte): representan un instante significativo al que el usuario quiera regresar, permitirán
+   iniciar reproducción desde el marcador y ser destino seleccionable durante la reproducción.
+5. **Selección A/B, loops y edición.** **Posterior**, sin adelantar implementación. Los mismos
+   puntos podrán participar en selección A/B o edición como otra función, conservando su
+   significado de navegación.

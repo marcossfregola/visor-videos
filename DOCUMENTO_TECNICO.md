@@ -291,6 +291,56 @@ Capa de **tareas asíncronas**: no define lógica de catálogo ni de datos. Re-e
 - `TareaGuardarVideos(TareaBase)` — guarda una **colección de registros** en segundo plano invocando `guardar_videos(datos_videos, ruta_db, self.reportar_progreso)` (progreso real por registro, Etapa B3.21); devuelve el resumen `{"guardados": <cantidad>, "nombres": [...]}`. Acepta la ruta de base opcional (para pruebas); por defecto usa `ruta_biblioteca()`. **Instantánea de la colección y de cada registro**: el constructor materializa la colección (`list(...)`) y toma una **copia superficial por registro** (`dict(d)`) al construirse; no conserva la colección mutable original, de modo que mutaciones posteriores de la lista o de los diccionarios del llamador no afectan la ejecución; la propiedad `datos` devuelve copias frescas y nunca expone el estado interno. **El constructor nunca lanza ante entradas inválidas**: si la colección no es iterable, es texto, contiene un elemento no copiable, o incluso si su materialización falla a mitad de la iteración (p. ej. un generador que lanza una excepción), la tarea se construye igualmente, se conserva la causa como colección inválida y `_trabajo()` la comunica mediante `error` (un `TypeError` que envuelve la causa) sin tocar la base; los errores de contrato que solo `guardar_videos` detecta al validar (p. ej. una clave obligatoria ausente en un registro ya copiado) también se comunican por `error` durante la ejecución. **Regla de conexión SQLite por hilo**: la conexión se abre dentro de `_trabajo()` (mediante la función síncrona) y realiza un único `commit` por colección en el hilo de trabajo; `rollback` ante cualquier error; se cierra siempre en `finally`; no se almacena como atributo de la tarea; sin `check_same_thread=False`. Los errores (`FileNotFoundError`, `sqlite3.DatabaseError`, `ValueError`/`TypeError` por contrato inválido, fallo durante el registro intermedio con rollback total) se convierten en la señal `error`. No sincroniza el catálogo, no elimina registros, no encadena tareas, no implementa escritura por lotes concurrentes y no se conecta a la interfaz.
 - `TareaSincronizacionCatalogo(TareaBase)` — **sincronización asíncrona del catálogo**: orquesta en segundo plano la sincronización disco ↔ BD encadenando las cuatro operaciones de la capa de catálogo en la secuencia exacta `detectar_diferencias` → `preparar_plan_sincronizacion` → `aplicar_incorporaciones` → `eliminar_candidatos`. El constructor recibe `carpeta` (ruta de texto de la carpeta de videos) y `ruta_db` **opcional** (ruta SQLite; por defecto se delega el default a las funciones de `escanear_videos`, es decir `ruta_biblioteca()`), más `parent` como **padre Qt compatible con `QObject`** (no específicamente un `QWidget`) y `carpetas_protegidas` **opcional** (Etapa 5: raíces del alcance multicarpeta a proteger); conserva ambos valores y los expone mediante las propiedades de solo lectura `carpeta` y `ruta_db`, que **devuelven directamente los valores actualmente inmutables (`str` o `None`) recibidos en el constructor** — no realizan copias generales ni devuelven nuevas copias. `_trabajo()` invoca las cuatro funciones mediante el módulo `escanear_videos` en el orden exacto indicado (pasando `carpetas_protegidas` a `detectar_diferencias`) y devuelve el resultado `{"diferencias", "plan", "incorporaciones", "eliminaciones", "resumen"}`; `resumen` contiene `nuevos`, `ya_sincronizados`, `incorporados`, `eliminados` y `candidatos_restantes` (no se afirma que el resultado completo sea inmutable). **La tarea no contiene SQL, no abre SQLite directamente, no almacena conexiones y no usa `check_same_thread=False`**: todo el acceso a la base ocurre dentro de las funciones síncronas de `escanear_videos`, cada una con su propia conexión abierta y cerrada en el hilo de trabajo. **No ejecuta FFprobe, FFmpeg, miniaturas ni subprocesos y no accede a la interfaz.** **Atomicidad**: la incorporación y la eliminación son **transacciones independientes**, no una única transacción global; si falla la incorporación **no se ejecuta la eliminación** (la excepción propaga y `TareaBase` emite `error`); si falla la eliminación, las **incorporaciones ya confirmadas permanecen** y la eliminación fallida revierte **únicamente su propia transacción** (rollback interno de `eliminar_candidatos`), sin revertir las incorporaciones previas. Se ejecuta en segundo plano por la infraestructura `tareas.py` (`TareaBase` + `GestorTareas` en un `QThread` por ejecución) con las señales `inicio`, `resultado`, `error` y `finalizada`; el hilo de trabajo es distinto del principal. **No está integrada todavía con `visor_videos.py`**: la tarea existe como pieza orquestadora y la **próxima etapa pendiente es integrar esta tarea con el flujo de la interfaz**.
 
+### `exploracion_temporal.py` — lógica pura de exploración temporal (B4.1)
+Módulo **puro** (sin Qt, sin FFmpeg, sin SQLite, sin archivos ni caché persistente) que
+concentra el mapeo espacial/temporal y la selección de la preview existente más cercana:
+
+- `ancho_valido(ancho)` / `duracion_valida(duracion)` — validación de ancho (px) y duración (s)
+  como números positivos no `bool`.
+- `normalizar_posicion(posicion, ancho)` — acota la posición horizontal al intervalo `[0, ancho]`
+  (devuelve `None` si el ancho o la posición no son válidos).
+- `posicion_a_tiempo(posicion, ancho, duracion)` — **mapeo posición → instante**: `x=0 → 0`,
+  `x=ancho → duracion`, proporcional en el medio; fuera de rango se acota. Es la base de la
+  conversión del cursor en la superficie temporal.
+- `tiempo_a_posicion(instante, ancho, duracion)` — inversa (instante → px), usada para dibujar el
+  marcador móvil, las marcas persistentes y posicionar la preview móvil.
+- `preview_mas_cercana(instantes, instante)` — índice de la preview (dentro de la lista original)
+  cuyo **tiempo real** es el más cercano al instante solicitado por distancia temporal absoluta;
+  descarta `None` y en empate elige el menor índice. No es "posición dentro de la lista": usa el
+  tiempo asociado a cada preview.
+- `agregar_marcador_ordenado(instante, marcadores, tolerancia)` — inserta el instante real
+  conservando el orden temporal y evitando duplicados absurdamente cercanos.
+
+### `scrubber.py` — superficie temporal y miniatura de marcador (B4.1)
+Módulo **de interfaz** con dos clases:
+
+- `FranjaExploracion(QWidget)` — la **superficie temporal**: toda la segunda fila expandida
+  representa la duración completa del video (izquierda = 0 %, derecha = 100 %). Convierte el
+  movimiento del mouse (usa **solo la coordenada X**; la altura es irrelevante) en la señal
+  `instante_seleccionado(float)`, el clic izquierdo en `marcador_solicitado(float)` y el clic
+  derecho sobre una marca en `marcador_eliminar_solicitado(float)`. Dibuja la pista, el marcador
+  móvil azul del cursor, las marcas rojas persistentes y el texto del tiempo. No conoce videos,
+  previews, FFmpeg, SQLite ni caché.
+- `MiniaturaMarcador(QLabel)` — miniatura fijada de un marcador: recibe el **clic derecho** y
+  emite `eliminar_solicitado(tiempo)`; el clic izquierdo queda reservado (no crea ni elimina);
+  reenvía el movimiento del mouse a la superficie en coordenadas de la superficie para que el
+  scrubbing continúe aunque el cursor pase por encima de la miniatura.
+
+**Integración con `Tarjeta` (`visor_videos.py`):** la tarjeta conserva el **estado de los
+marcadores** (`_marcadores` = lista de `{"tiempo": float, "pixmap": QPixmap, "etiqueta": QLabel}`,
+con el **tiempo real como fuente de verdad**), decide **qué pixmap mostrar**
+(`preview_mas_cercana` sobre los tiempos reales de las previews cargadas) y **dónde mostrarlo**
+(`tiempo_a_posicion` del instante solicitado, con clamp para mantener la imagen dentro de la
+superficie). La separación **"qué imagen / dónde"** es explícita: la posición de la preview móvil
+depende **solo del instante solicitado**, nunca del tiempo propio de la preview elegida; el label
+de la preview se ajusta al tamaño real del pixmap (compatible con previews horizontales y
+verticales, sin huecos internos). La superficie se acota al ancho visible del `QScrollArea`
+(`_limitar_ancho_superficie`) para que el extremo derecho (100 %) siempre sea alcanzable.
+**`mouseMove` = cero FFmpeg + cero acceso a disco + cero creación innecesaria de pixmaps** (se
+reutilizan pixmaps ya cargados en memoria). Los marcadores son **solo en memoria** (persisten
+mientras vive la tarjeta durante la sesión); la **persistencia queda deliberadamente fuera de
+B4.1** y será responsabilidad de B4.2.
+
 ### Módulos ajenos al visor (preservados, no forman parte de la arquitectura)
 - `main.py` — prueba que escribe el resultado en `datos.txt`.
 - `prueba_agente.py` — artifacto de validación del agente.
