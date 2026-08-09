@@ -389,10 +389,12 @@ class TareaExploracionDensa(TareaBase):
     La generación es en dos fases secuenciales:
     - Fase rápida: los `FOTOGRAMAS_INICIALES` prioritarios, sin cambio de
       comportamiento respecto de Etapa 1.
-    - Fase secundaria: solo si el objetivo total de densidad
-      (`objetivo_total_densidad`) supera la fase rápida, se completa hasta
+    - Fase secundaria: solo si el objetivo total (auto por duración o
+      manual `objetivo_manual`) supera la fase rápida, se completa hasta
       ese total reutilizando lo ya existente y generando únicamente los
-      faltantes (nunca se regeneran los ya presentes).
+      faltantes (nunca se regeneran los ya presentes). El objetivo manual
+      (B4.3.3) permite pedir una cantidad fija incluso en videos cortos;
+      la distribución siempre usa `tiempos_objetivo(duración, total)`.
 
     Además de reportar progreso, emite `resultado_parcial` con los
     fotogramas que ya están disponibles en disco (ms + QImage decodificada
@@ -404,12 +406,13 @@ class TareaExploracionDensa(TareaBase):
     resultado_parcial = Signal(object)
 
     def __init__(self, video_id, ruta_video, duracion=None, cantidad=None,
-                 parent=None):
+                 parent=None, objetivo_manual=None):
         super().__init__(parent)
         self._video_id = video_id
         self._ruta_video = ruta_video
         self._duracion = duracion
         self._cantidad = cantidad
+        self._objetivo_manual = objetivo_manual
         self._cancelada = False
         self._emitidos = set()
 
@@ -429,6 +432,10 @@ class TareaExploracionDensa(TareaBase):
     def cantidad(self):
         return self._cantidad
 
+    @property
+    def objetivo_manual(self):
+        return self._objetivo_manual
+
     def cancelar(self):
         self._cancelada = True
 
@@ -439,34 +446,44 @@ class TareaExploracionDensa(TareaBase):
         fase_rapida = self._cantidad
         if fase_rapida is None or fase_rapida <= 0:
             fase_rapida = FOTOGRAMAS_INICIALES
-        objetivo_total = (
-            objetivo_total_densidad(duracion)
-            if duracion_valida(duracion)
-            else 0
-        )
+        manual = self._objetivo_manual
+        if isinstance(manual, bool) or not isinstance(manual, int):
+            manual = None
+        if manual is not None and manual > 0:
+            objetivo_total = manual
+        elif duracion_valida(duracion):
+            objetivo_total = objetivo_total_densidad(duracion)
+        else:
+            objetivo_total = 0
         emitidos = self._emitidos
+        permitidos = set()
 
         def _fase(cantidad):
+            nonlocal permitidos
             if not duracion_valida(duracion):
-                objetivos = set()
                 version = None
+                permitidos = set()
             else:
-                objetivos = set(tiempos_objetivo(duracion, cantidad))
+                # Conjunto permitido de esta fase: exactamente los instantes
+                # objetivo de `cantidad`. La caché en disco puede contener un
+                # superset (densidades manuales previas); la tarea decide qué
+                # subconjunto utiliza y nunca emite fotogramas ajenos a él.
+                permitidos = set(tiempos_objetivo(duracion, cantidad))
                 version = version_actual(
                     self._video_id, self._ruta_video, duracion
                 )
 
             def al_progreso(procesado, total):
                 self.reportar_progreso(procesado, total)
-                if self._cancelada or version is None or not objetivos:
+                if self._cancelada or version is None or not permitidos:
                     return
                 presentes = listar_fotogramas_version(
-                    self._video_id, version, duracion=duracion
+                    self._video_id, version
                 )
                 nuevos = [
                     ms
                     for ms in presentes
-                    if ms in objetivos and ms not in emitidos
+                    if ms in permitidos and ms not in emitidos
                 ]
                 if not nuevos:
                     return
@@ -503,17 +520,21 @@ class TareaExploracionDensa(TareaBase):
             and not self._cancelada
         ):
             resultado = _fase(objetivo_total)
-        if isinstance(resultado, dict) and resultado.get("version") and not resultado.get("cancelado"):
+        if (
+            isinstance(resultado, dict)
+            and resultado.get("version")
+            and not resultado.get("cancelado")
+            and permitidos
+        ):
             imagenes = []
             for ms in resultado.get("fotogramas") or []:
-                if ms in emitidos:
-                    continue
-                ruta = ruta_fotograma_version(
-                    self._video_id, ms, resultado["version"]
-                )
-                imagen = QImage(ruta)
-                if not imagen.isNull():
-                    imagenes.append((ms, imagen))
+                if ms in permitidos and ms not in emitidos:
+                    ruta = ruta_fotograma_version(
+                        self._video_id, ms, resultado["version"]
+                    )
+                    imagen = QImage(ruta)
+                    if not imagen.isNull():
+                        imagenes.append((ms, imagen))
             if imagenes:
                 resultado = dict(resultado)
                 resultado["imagenes"] = imagenes

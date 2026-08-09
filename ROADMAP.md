@@ -15,8 +15,9 @@ arquitectónicas.
 > Exploración temporal interactiva y marcadores visuales**, **B4.2 —
 > Persistencia de marcadores temporales por video**, **B4.3.1 — Motor de
 > caché temporal versionada y reanudable**, **B4.3.2 — Cobertura rápida
-> asíncrona integrada con la UI** y **B4.3.2 — Etapa 2: Densidad secundaria
-> adaptativa** quedaron **completadas y aprobadas** (ver la sección "Beta 4").
+> asíncrona integrada con la UI**, **B4.3.2 — Etapa 2: Densidad secundaria
+> adaptativa** y **B4.3.3 — Ajustes de interacción y densidad manual**
+> quedaron **completadas y aprobadas** (ver la sección "Beta 4").
 
 ------------------------------------------------------------------------
 
@@ -576,11 +577,35 @@ desarrolla sobre la rama `beta4` (punto de partida: cierre de la Beta 3).
       (confirmar que la densidad secundaria no perjudica la fluidez); **NO se requiere una
       campaña adicional de benchmarks exhaustivos**. Suites: `prueba_exploracion_densidad_b432.py`
       **12/12** y regresiones verdes.
-4. **Reproducción / navegación mediante marcadores.** **Futura.** Los marcadores temporales
-   son una **función permanente de navegación del producto** (no exclusivamente puntos de
-   corte): representan un instante significativo al que el usuario quiera regresar, permitirán
-   **iniciar reproducción desde el marcador** y ser **destino seleccionable durante la
-   reproducción** (navegación entre marcadores durante la reproducción).
+    - **B4.3.3 — Ajustes de interacción y densidad manual.** **Completada.** (A) **Prioridad
+      visual dinámica**: durante el hover la preview dinámica queda **por encima** de las
+      miniaturas fijas de marcadores (`raise_()` al mover el puntero; `lower()` al salir de la
+      superficie); los marcadores conservan tiempo/id y su eliminación por clic derecho sigue
+      funcionando; un marcador nunca tapa el instante que se está explorando. (B) **Densidad
+      manual**: control `Auto | 15 | 30 | 60 | 120 | 200` en la tarjeta expandida; los valores
+      manuales son el **total objetivo independiente de la duración** (video de 30 s: Auto → 15,
+      manual 60 → 60, manual 120 → 120) — permite inspección fina de clips cortos; siempre los
+      **15 prioritarios primero** y luego se completa hasta el total solicitado. **Aumentar**
+      reutiliza lo existente (15→60 reutiliza 15 y genera 45; 60→120 reutiliza 60 y genera 60);
+      **disminuir** no borra disco ni regenera (la RAM/UI se limita al conjunto objetivo
+      `tiempos_objetivo(duración, cantidad_actual)`; la caché puede contener un **superset** y la
+      tarea emite/decodifica solo el subconjunto permitido); **volver a Auto** recalcula el
+      objetivo automático y conserva los extras de disco. Valor **por tarjeta/sesión** (persiste
+      en colapso/reexpansión; vuelve a Auto si se reconstruye por recarga), **sin SQLite ni
+      persistencia en `configuracion.json`** (la persistencia futura queda separada). Generación
+      individual/secuencial en background, un solo FFmpeg activo, mouseMove exclusivamente RAM,
+      colapso libera RAM y la caché permanece en disco. **B4.3 queda funcionalmente muy avanzada**;
+      **no se declara la Beta 4 completa todavía**. Suites: `prueba_exploracion_b433.py` **22/22**
+      y regresiones verdes.
+4. **Reproducción / navegación mediante marcadores.** **Próxima prioridad de Beta 4 (no
+   implementada): reproducción de marcadores en VLC.** Los marcadores temporales son una
+   **función permanente de navegación del producto** (no exclusivamente puntos de corte):
+   representan un instante significativo al que el usuario quiera regresar. Objetivo futuro:
+   **seleccionar varios videos en el Visor**, **abrir reproducción**, usar **Siguiente/Anterior**
+   para recorrer los **marcadores del video actual** y, al terminar sus marcadores, **pasar al
+   siguiente video**, manteniendo una experiencia fluida y simple. Permitirá además **iniciar
+   reproducción desde el marcador** y ser **destino seleccionable durante la reproducción**
+   (navegación entre marcadores durante la reproducción).
 5. **Selección A/B, loops, fragmentos y edición.** **Posterior**, sin adelantar implementación.
    Los mismos puntos podrán participar en **selección A/B**, **loops**, **selección de
    fragmentos** o **corte/unión** como otra función, conservando su significado de navegación.

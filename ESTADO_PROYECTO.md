@@ -63,59 +63,77 @@ valores **provisionales** (30 s / mín 15 / máx 200) centralizados en
 `exploracion_cache.py` para configurarlos después, **sin controles visibles por
 ahora**. Reutiliza lo existente (nunca regenera los presentes), es
 **progresiva**, **reanudable** y **cancelable**; cambiar/colapsar detiene la
-continuación y lo generado queda reutilizable.
-**Próximo paso:** **comprobación visual sencilla de esta Etapa 2 en la notebook
-objetivo** (la Etapa 1 ya fue validada allí con un video real de ~56 min); sin
-campaña adicional de benchmarks exhaustivos. El **batch NO está implementado**
-(ver `ROADMAP.md`, sección "Beta 4").
+continuación y lo generado queda reutilizable. Validada en el PC de desarrollo
+(app real + FFmpeg real) y posteriormente en la **notebook objetivo** (B4.3 en
+conjunto quedó validada satisfactoriamente en la notebook).
+La sexta etapa, **B4.3.3 — Ajustes de interacción y densidad manual**, quedó
+**aprobada e incorporada**: (A) **prioridad visual de la preview dinámica**
+durante el hover: al mover el puntero por la tira temporal la miniatura dinámica
+queda **por encima** de las miniaturas fijas de marcadores (un marcador nunca
+tapa el instante que se está explorando activamente); los tiempos/ids de los
+marcadores no cambian y al salir del hover las fijas vuelven a su orden visual
+normal. (B) **densidad manual**: control `Auto | 15 | 30 | 60 | 120 | 200` en la
+tarjeta expandida; los valores manuales representan el **total objetivo
+independiente de la duración** (video de 30 s: Auto → 15, manual 60 → 60, manual
+120 → 120); siempre los **15 prioritarios primero**; **aumentar** reutiliza lo
+existente (15→60, 60→120); **disminuir** no borra disco ni regenera (la RAM se
+limita al conjunto objetivo `tiempos_objetivo(duración, cantidad_actual)`; la
+caché puede contener un **superset** y la tarea emite/decodifica solo el
+subconjunto permitido); **volver a Auto** recalcula el objetivo y conserva los
+extras de disco. El valor de densidad es **por tarjeta/sesión** (se conserva en
+colapso/reexpansión de la misma tarjeta; vuelve a Auto si se reconstruye por
+recarga); **sin SQLite y sin persistencia en `configuracion.json`**.
+**Próximo paso: reproducción de marcadores en VLC** (seleccionar varios videos,
+usar Siguiente/Anterior para recorrer los marcadores del video actual y, al
+terminar, pasar al siguiente video) — **NO implementado todavía**. Se conserva
+también como **pendiente separado**: la demora perceptible al **cargar una
+carpeta de 121 videos** y generar las miniaturas normales iniciales (no
+corresponde a B4.3; sin optimizar aún). El **batch NO está implementado** (ver
+`ROADMAP.md`, sección "Beta 4").
 
 ## Último commit aprobado
 
-**Mensaje:** Agregar densidad temporal adaptativa en segundo plano
+**Mensaje:** Agregar densidad manual y priorizar la vista dinamica temporal
 
-**Etapa:** B4.3.2 — Etapa 2: Densidad secundaria adaptativa (rama `beta4`):
-- `exploracion_cache.py` — **densidad secundaria centralizada**: constantes provisionales
-  `FOTOGRAMAS_INICIALES = 15`, `PASO_SEGUNDOS_DENSIDAD = 30.0`,
-  `MINIMO_FOTOGRAMAS_DENSIDAD = 15` y `MAXIMO_FOTOGRAMAS_DENSIDAD = 200`, y la función
-  `objetivo_total_densidad(duración)` = `clamp(max(15, ceil(d/30)), 15, 200)` (duración
-  inválida/cero/negativa/bool → 0). El motor `generar_fotogramas` no cambia: reutiliza lo
-  presente y genera solo faltantes, un FFmpeg por objetivo, serial.
-- `tareas_videos.py` — **`TareaExploracionDensa._trabajo()` en dos fases secuenciales**: la
-  **fase rápida** genera los `FOTOGRAMAS_INICIALES = 15` prioritarios (comportamiento de la
-  Etapa 1 intacto) y, solo después de terminar y sin cancelarse, la **fase secundaria** genera
-  hasta `objetivo_total_densidad(duración)` reutilizando lo existente y completando únicamente
-  los faltantes; ambas fases emiten `resultado_parcial` progresivo y comparten `_emitidos`
-  (sin duplicados). Sin batch y con un solo FFmpeg activo.
-- `visor_videos.py` — `FOTOGRAMAS_INICIALES` pasa a referenciar
-  `exploracion_cache.MINIMO_FOTOGRAMAS_DENSIDAD` (valor único centralizado; sin controles
-  visibles).
-- `prueba_exploracion_densidad_b432.py` — **nueva**: 12 pruebas (fórmula de densidad con
-  ejemplos/límites/inválidos, fase rápida primero con orden `[15, objetivo_total]`, los 15 no se
-  regeneran, reutiliza 45/55, máximo un FFmpeg concurrente, secundarios progresivos, A→B sin
-  fugas, colapso libera RAM, reexpansión reutiliza, mouseMove solo RAM, marcadores mejoran).
+**Etapa:** B4.3.3 — Ajustes de interacción y densidad manual (rama `beta4`):
+- `tareas_videos.py` — **`TareaExploracionDensa` con objetivo manual**: nuevo parámetro
+  `objetivo_manual` (None = Auto). `_trabajo()` calcula el objetivo total como
+  `objetivo_manual` si es positivo, o `objetivo_total_densidad(duración)` en Auto; la **fase
+  rápida** siempre son los 15 prioritarios y la **fase secundaria** completa hasta ese total.
+  En cada fase se construye explícitamente el **conjunto permitido**
+  `tiempos_objetivo(duración, cantidad_actual)` y la emisión (`resultado_parcial`) y la cola
+  final **solo decodifican/emiten ese subconjunto**: la caché en disco puede contener un
+  **superset** (densidades manuales previas) y la tarea decide qué subconjunto utiliza (RAM/UI
+  limitada al conjunto objetivo actual; los extras permanecen en disco sin regenerar ni
+  borrar). `al_progreso` lista los existentes de la versión e intersecta con `permitidos`.
+- `visor_videos.py` — **prioridad visual dinámica** (Mejora A): `_al_instante_exploracion`
+  hace `raise_()` a la preview dinámica (queda por encima de las miniaturas fijas de
+  marcadores durante el hover) y `eventFilter` sobre el franja baja la preview (`lower()`) al
+  salir de la superficie; tiempos/ids de marcadores intactos. **Densidad manual** (Mejora B):
+  constante `DENSIDADES_DISPONIBLES = (Auto, 15, 30, 60, 120, 200)`, `QComboBox` "Densidad:" en
+  la tarjeta expandida, señal `densidad_cambiada`, `aplicar_densidad(valor)` filtra los densos
+  de RAM al conjunto objetivo de la cantidad elegida, y `_procesar_siguiente_exploracion`
+  pasa `objetivo_manual` a la tarea (solo cuando hay valor manual). El valor es por
+  tarjeta/sesión.
+- `prueba_exploracion_b433.py` — **nueva**: 22 pruebas (z-order 1/varios marcadores y leave;
+  eliminación clic derecho; Auto/manual en videos cortos 30 s y 2 min; 56 min + 120; incremento
+  15→60 y 60→120; disminución 120→30 sin borrar disco ni regenerar; volver a Auto sin borrar
+  extras; máximo un FFmpeg; mouseMove solo RAM; marcadores tiempo/id intactos; caché superset
+  120→30, 120→60, 120→Auto; fase rápida limitada a 15 con superset).
 
-**Validación visual (PC de desarrollo, app real + FFmpeg real, video de ~56 min, caché en
-temporal):** expansión inmediata (primer fotograma prioritario ≈0.10 s); primeros 15 ≈1.13 s;
-fase secundaria solo después (primer secundario ≈1.21 s, sin solapamiento); total 112 ≈8.39 s;
-scrub fluido desde RAM; colapso libera RAM; reexpansión con caché completa ≈0.08 s sin
-regenerar. Sin problemas perceptibles. La **notebook objetivo** ya validó la Etapa 1 (expansión
-y scrub correctos con un video real de ~56 min); la **Etapa 2** recibirá una **comprobación
-visual sencilla** posterior.
+**Validación visual (PC de desarrollo, app real + FFmpeg real, video de 30 s, caché temporal):**
+Auto → 15; marcador en 15 s: hover con dinámica arriba y al salir la fija vuelve arriba;
+Auto→60 → 60 densos con scrub fluido; 60→120 → 120 densos; 120→Auto → RAM filtrada a 15 sin
+errores y marcador con tiempo 15.0 intacto. B4.3 quedó validada satisfactoriamente también en
+la **notebook objetivo**.
 
-**Medidas de referencia (PC de desarrollo, video ≈56 min — no garantizan igualdad en la
-notebook):** primer fotograma prioritario ≈0.10 s; 15 prioritarios ≈1.13 s; primer secundario
-(16.º) ≈1.21 s (después de la fase rápida); total 112 ≈8.39 s; reexpansión ≈0.08 s/0 archivos;
-scrub en RAM sin lectura de disco. **Hardware objetivo:** Intel i7-7500U 2.70 GHz, 16 GB RAM,
-NVIDIA 940MX 2 GB, Intel HD 620 — Etapa 1 validada en notebook; Etapa 2 pendiente de
-comprobación visual sencilla.
-
-**Pruebas superadas:** `prueba_exploracion_densidad_b432.py` **12/12**. Regresiones en verde
-(ejecutadas en el cierre): `prueba_exploracion_b432.py` **20/20**,
-`prueba_exploracion_cache_b431.py` **29/29**, `prueba_exploracion_b41.py` **28/28**,
-`prueba_marcadores_b42.py` **17/17**, `prueba_previews_progresivas.py` **16/16**,
-`prueba_tamano_miniaturas.py` **32/32**, `prueba_recarga_catalogo.py` **20/20**,
-`prueba_pagina_siguiente.py` **20/20**, `prueba_smoke.py` OK. `python -m py_compile` OK.
-`git diff --check` OK.
+**Pruebas superadas:** `prueba_exploracion_b433.py` **22/22**. Regresiones en verde
+(ejecutadas en el cierre): `prueba_exploracion_densidad_b432.py` **12/12**,
+`prueba_exploracion_b432.py` **20/20**, `prueba_exploracion_cache_b431.py` **29/29**,
+`prueba_exploracion_b41.py` **28/28**, `prueba_marcadores_b42.py` **17/17**,
+`prueba_previews_progresivas.py` **16/16**, `prueba_tamano_miniaturas.py` **32/32**,
+`prueba_recarga_catalogo.py` **20/20**, `prueba_pagina_siguiente.py` **20/20**,
+`prueba_smoke.py` OK. `python -m py_compile` OK. `git diff --check` OK.
 - `exploracion_cache.py` — **nuevo**: motor de caché densa de exploración en disco, **sin Qt,
   sin SQLite y sin acoplamiento con `escanear_videos`**. Estructura
   `miniaturas/exploracion/<video_id>/<version_fingerprint>/` con `meta.json` + `f{ms:010d}.jpg`;
@@ -457,7 +475,25 @@ de huecos) con `fotograma_mas_cercano` por `bisect`. Sin UI (la integración es 
   fotograma prioritario ≈0.10 s, 15 prioritarios ≈1.13 s, primer secundario ≈1.21 s (después de
   la fase rápida), total 112 ≈8.39 s, reexpansión ≈0.08 s sin regenerar, scrub fluido desde RAM.
   Los parámetros **siguen siendo provisionales** (no congelados) y **no hay configuración
-  visible**; la Etapa 2 recibirá una **comprobación visual sencilla** en la notebook objetivo.
+  visible**; la Etapa 2 recibió su comprobación y **B4.3 quedó validada satisfactoriamente en la
+  notebook objetivo**.
+- **B4.3.3 — Ajustes de interacción y densidad manual.** Sexta etapa del ciclo Beta 4 (rama
+  `beta4`), cuarta subetapa de **B4.3 — Caché densa de exploración temporal**. (A) **Prioridad
+  visual dinámica**: durante el hover la preview dinámica queda **por encima** de las
+  miniaturas fijas de marcadores (`raise_()` en `_al_instante_exploracion`; `lower()` al salir
+  de la superficie vía `eventFilter` del franja); los tiempos/ids de marcadores no cambian y la
+  eliminación por clic derecho sigue funcionando. (B) **Densidad manual**: `QComboBox`
+  `Auto | 15 | 30 | 60 | 120 | 200` en la tarjeta expandida; los valores manuales son el
+  **total objetivo independiente de la duración** (30 s → Auto 15, manual 60 → 60, manual 120 →
+  120); siempre los **15 prioritarios primero**; **aumentar** reutiliza lo existente (15→60
+  reutiliza 15 y genera 45; 60→120 reutiliza 60 y genera 60); **disminuir** no borra disco ni
+  regenera (la RAM se limita al conjunto objetivo `tiempos_objetivo(duración, cantidad_actual)`
+  y la caché puede contener un **superset** cuyo subconjunto decide la tarea — emite/decodifica
+  solo el permitido); **volver a Auto** recalcula el objetivo automático y conserva los extras
+  de disco. El valor es **por tarjeta/sesión** (se conserva en colapso/reexpansión; vuelve a
+  Auto si se reconstruye por recarga), **sin SQLite ni persistencia en `configuracion.json`**.
+  Generación individual/secuencial, un FFmpeg activo, mouseMove solo RAM. Pruebas:
+  `prueba_exploracion_b433.py` **22/22**.
 
 ## Pendientes prioritarios
 
@@ -514,16 +550,16 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
 
 ## Próxima etapa
 
-**Comprobación visual sencilla de la densidad secundaria (B4.3.2 Etapa 2) en la notebook
-objetivo.** La Etapa 1 ya fue validada en la notebook (i7-7500U / 16 GB RAM / 940MX) con un
-video real de ~56 min: expansión y scrub correctos. La Etapa 2 quedó **aprobada** e integrada
-(validada en el PC de desarrollo); el próximo paso es **confirmar que agregar la densidad
-secundaria no perjudica esa fluidez** en la notebook. **NO se requiere una campaña adicional de
-benchmarks exhaustivos.** El **batch NO está implementado** (decisión de producto: generación
-individual y secuencial). Se conservan como funciones futuras: la **reproducción desde el
-marcador** y la **navegación entre marcadores durante la reproducción**; la **selección A/B**,
-los **loops**, la **selección de fragmentos** y el **corte/unión**; y la **detección de
-archivos movidos** con la **reasociación futura de marcadores huérfanos**. Pendiente aparte (no
+**Reproducción de marcadores en VLC.** Siguiente línea prioritaria de Beta 4 (no implementada):
+seleccionar varios videos en el Visor, abrir reproducción, usar **Siguiente/Anterior** para
+recorrer los **marcadores del video actual** y, al terminar sus marcadores, **pasar al
+siguiente video**, manteniendo una experiencia fluida y simple. **B4.3 quedó funcionalmente muy
+avanzada** (exploración temporal, marcadores persistentes, caché densa, cobertura rápida,
+densidad secundaria, densidad manual y prioridad visual correcta) y **no se declara la Beta 4
+completa todavía**. El **batch NO está implementado** (decisión de producto: generación
+individual y secuencial). Se conservan además como funciones futuras: la **selección A/B**, los
+**loops**, la **selección de fragmentos** y el **corte/unión**; y la **detección de archivos
+movidos** con la **reasociación futura de marcadores huérfanos**. Pendiente aparte (no
 corresponde a B4.3, sin optimizar ahora): la demora perceptible de Marcos al **cargar una
 carpeta de 121 videos** y generar las miniaturas normales iniciales. Ver la secuencia en
 `ROADMAP.md`, sección "Beta 4".

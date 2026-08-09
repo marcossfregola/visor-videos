@@ -68,6 +68,7 @@ from exploracion_temporal import (
     agregar_marcador_ordenado,
     preview_mas_cercana,
     tiempo_a_posicion,
+    tiempos_objetivo,
 )
 from seleccion_carpetas import SeleccionCarpetas
 from scrubber import FranjaExploracion, MiniaturaMarcador
@@ -105,6 +106,14 @@ LIMITE_ORIGINAL_MINIATURA = 1280
 RETARDO_OCULTAR_VISTA_MS = 150
 ALTO_FRANJA_EXTRAS = 44
 FOTOGRAMAS_INICIALES = exploracion_cache.MINIMO_FOTOGRAMAS_DENSIDAD
+DENSIDADES_DISPONIBLES = (
+    ("Auto", None),
+    ("15", 15),
+    ("30", 30),
+    ("60", 60),
+    ("120", 120),
+    ("200", 200),
+)
 FACTOR_VISTA_AMPLIADA = 1.6
 FACTORES_VISTA_AMPLIADA = (1.2, 1.6, 2.0, 2.5, 3.0, 3.5)
 TEXTOS_FACTOR_VISTA_AMPLIADA = (
@@ -579,6 +588,7 @@ class Tarjeta(QFrame):
     marcador_creado = Signal(object)
     marcador_eliminado = Signal(object)
     marcadores_solicitados = Signal()
+    densidad_cambiada = Signal(str, object)
 
     def __init__(self, fila, parent=None):
         super().__init__(parent)
@@ -831,6 +841,7 @@ class Tarjeta(QFrame):
         self._franja.marcador_eliminar_solicitado.connect(
             self._al_marcador_eliminar_solicitado
         )
+        self._franja.installEventFilter(self)
         ancho, alto = dimensiones_miniatura()
         self._franja.setFixedHeight(alto + ALTO_FRANJA_EXTRAS)
         self._imagen_exploracion = QLabel(self._franja)
@@ -841,11 +852,59 @@ class Tarjeta(QFrame):
         )
         self._imagen_exploracion.setAttribute(Qt.WA_TransparentForMouseEvents)
         self._imagen_exploracion.hide()
+        self._densidad_manual = None
+        self._selector_densidad = QComboBox()
+        for texto, valor in DENSIDADES_DISPONIBLES:
+            self._selector_densidad.addItem(texto, valor)
+        self._selector_densidad.currentIndexChanged.connect(
+            self._al_cambiar_densidad
+        )
+        fila_densidad = QHBoxLayout()
+        fila_densidad.addStretch(1)
+        fila_densidad.addWidget(QLabel("Densidad:"))
+        fila_densidad.addWidget(self._selector_densidad)
         self._contenedor_exploracion = QWidget()
         disposicion = QVBoxLayout(self._contenedor_exploracion)
         disposicion.setContentsMargins(0, 4, 0, 0)
+        disposicion.addLayout(fila_densidad)
         disposicion.addWidget(self._franja)
         self._contenedor_exploracion.setVisible(False)
+
+    def _al_cambiar_densidad(self):
+        valor = self._selector_densidad.currentData()
+        self.aplicar_densidad(valor)
+        self.densidad_cambiada.emit(self._nombre, valor)
+
+    def aplicar_densidad(self, valor):
+        """Aplica una densidad manual (None = Auto) y filtra los densos en RAM.
+
+        La caché en disco nunca se borra ni se regenera: se conservan solo
+        los densos cargados cuyo instante pertenece al conjunto objetivo de
+        la cantidad elegida (`tiempos_objetivo(duración, cantidad)`); al
+        volver a pedir una densidad mayor, la tarea reincorpora los faltantes
+        reutilizando el disco.
+        """
+        self._densidad_manual = valor
+        if not _duracion_valida(self._duracion) or not self._previews_densos:
+            return
+        cantidad = (
+            valor
+            if valor is not None
+            else exploracion_cache.objetivo_total_densidad(self._duracion)
+        )
+        if (
+            isinstance(cantidad, bool)
+            or not isinstance(cantidad, int)
+            or cantidad <= 0
+        ):
+            return
+        objetivo = set(tiempos_objetivo(self._duracion, cantidad))
+        self._previews_densos = [
+            d
+            for d in self._previews_densos
+            if round(d["instante"] * 1000) in objetivo
+        ]
+        self._refrescar_exploracion()
 
     def expandir(self):
         if not self._expandida:
@@ -1069,6 +1128,7 @@ class Tarjeta(QFrame):
     def _al_instante_exploracion(self, instante):
         self._actualizar_tiempo_exploracion(instante)
         self._mostrar_preview_para_instante(instante)
+        self._imagen_exploracion.raise_()
 
     def _tolerancia_marcadores(self):
         ancho = self._franja.width()
@@ -1186,6 +1246,10 @@ class Tarjeta(QFrame):
             QTimer.singleShot(0, self._reajustar_geometria_exploracion)
 
     def eventFilter(self, objeto, evento):
+        if getattr(self, "_franja", None) is objeto:
+            if evento.type() == QEvent.Leave:
+                self._imagen_exploracion.lower()
+            return super().eventFilter(objeto, evento)
         if evento.type() == QEvent.Enter:
             pixmap = self._pixmap_ampliada(objeto)
             if pixmap is not None:
@@ -1885,6 +1949,12 @@ class VisorVideos(QMainWindow):
         self._cancelar_exploracion_en_curso()
         self._procesar_siguiente_exploracion()
 
+    def _al_densidad_cambiada(self, nombre, _valor):
+        tarjeta = self._tarjeta_por_nombre(nombre)
+        if tarjeta is None or not tarjeta._expandida:
+            return
+        self._encolar_exploracion(nombre)
+
     def _cancelar_exploracion_en_curso(self):
         tarea = self.tarea_exploracion
         if tarea is not None:
@@ -1906,12 +1976,16 @@ class VisorVideos(QMainWindow):
             ruta_video = self._ruta_video_de(tarjeta)
             if video_id is None or not ruta_video:
                 continue
-            tarea = TareaExploracionDensa(
-                video_id,
-                ruta_video,
-                duracion=tarjeta._duracion,
-                cantidad=FOTOGRAMAS_INICIALES,
-            )
+            kwargs_tarea = {
+                "video_id": video_id,
+                "ruta_video": ruta_video,
+                "duracion": tarjeta._duracion,
+                "cantidad": FOTOGRAMAS_INICIALES,
+            }
+            objetivo_manual = getattr(tarjeta, "_densidad_manual", None)
+            if objetivo_manual is not None:
+                kwargs_tarea["objetivo_manual"] = objetivo_manual
+            tarea = TareaExploracionDensa(**kwargs_tarea)
             tarea.resultado_parcial.connect(
                 self._al_resultado_parcial_exploracion
             )
@@ -3034,6 +3108,7 @@ class VisorVideos(QMainWindow):
             tarjeta.marcadores_solicitados.connect(
                 lambda t=tarjeta: self._solicitar_carga_marcadores(t)
             )
+            tarjeta.densidad_cambiada.connect(self._al_densidad_cambiada)
             tarjeta.mostrar_check(self._modo_seleccion)
             self.tarjetas.append((fila[0], tarjeta))
             self.visibles.append(fila[0])
@@ -3108,6 +3183,7 @@ class VisorVideos(QMainWindow):
             tarjeta.marcadores_solicitados.connect(
                 lambda t=tarjeta: self._solicitar_carga_marcadores(t)
             )
+            tarjeta.densidad_cambiada.connect(self._al_densidad_cambiada)
             tarjeta.mostrar_check(self._modo_seleccion)
             self.tarjetas.append((fila[0], tarjeta))
             self.visibles.append(fila[0])
