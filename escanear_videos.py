@@ -1,3 +1,4 @@
+import math
 import os
 import shutil
 import sqlite3
@@ -281,6 +282,31 @@ def _es_archivo_preview(nombre, video):
         f"{_nombre_seguro(os.path.splitext(video)[0])}_preview_"
     )
 
+def _duracion_utilizable(duracion):
+    """Indica si una duración suministrada puede usarse sin FFprobe.
+
+    Debe ser un número real finito mayor que cero (rechaza `None`, bool,
+    no numérico, 0, negativos y NaN/infinito). Si no es utilizable, las
+    funciones de generación usan el fallback existente (FFprobe interno).
+    """
+    if isinstance(duracion, bool) or not isinstance(duracion, (int, float)):
+        return False
+    try:
+        numero = float(duracion)
+    except (TypeError, ValueError):
+        return False
+    return math.isfinite(numero) and numero > 0
+
+
+def _duracion_de_duraciones(duraciones, nombre, ruta_video):
+    """Busca la duración de un video en un mapa por ruta o por nombre."""
+    if not isinstance(duraciones, dict):
+        return None
+    if ruta_video in duraciones:
+        return duraciones[ruta_video]
+    return duraciones.get(nombre)
+
+
 def calcular_tiempo_miniatura(duracion):
     if duracion is None or duracion <= 0:
         return 1.0
@@ -291,9 +317,12 @@ def miniatura_vigente(ruta_video, ruta_miniatura):
         return False
     return os.path.getmtime(ruta_miniatura) >= os.path.getmtime(ruta_video)
 
-def generar_miniatura(ruta_video, ruta_miniatura):
-    datos = obtener_datos_ffprobe(ruta_video)
-    duracion = datos["duracion_segundos"] if datos else None
+def generar_miniatura(ruta_video, ruta_miniatura, duracion_segundos=None):
+    if _duracion_utilizable(duracion_segundos):
+        duracion = duracion_segundos
+    else:
+        datos = obtener_datos_ffprobe(ruta_video)
+        duracion = datos["duracion_segundos"] if datos else None
     tiempo = calcular_tiempo_miniatura(duracion)
     try:
         resultado = subprocess.run(
@@ -333,7 +362,7 @@ def miniatura_reutilizable(video, ruta_video):
                 return ruta
     return None
 
-def asegurar_miniatura(video, ruta_video):
+def asegurar_miniatura(video, ruta_video, duracion_segundos=None):
     if not ffmpeg_disponible() or os.path.getsize(ruta_video) == 0:
         return 0
     if miniatura_reutilizable(video, ruta_video) is not None:
@@ -342,9 +371,13 @@ def asegurar_miniatura(video, ruta_video):
     ruta = ruta_miniatura(video, siguiente_indice_libre(video))
     if os.path.isfile(ruta):
         return 0
-    return 1 if generar_miniatura(ruta_video, ruta) else 0
+    return (
+        1
+        if generar_miniatura(ruta_video, ruta, duracion_segundos)
+        else 0
+    )
 
-def asegurar_miniaturas(videos, carpeta, on_progreso=None):
+def asegurar_miniaturas(videos, carpeta, on_progreso=None, duraciones=None):
     if isinstance(videos, (str, bytes, bytearray)):
         raise TypeError("videos debe ser una colección de nombres, no texto")
     try:
@@ -364,7 +397,8 @@ def asegurar_miniaturas(videos, carpeta, on_progreso=None):
             if on_progreso is not None:
                 on_progreso(indice + 1, total)
             continue
-        asegurada = asegurar_miniatura(nombre, ruta_video)
+        duracion = _duracion_de_duraciones(duraciones, nombre, ruta_video)
+        asegurada = asegurar_miniatura(nombre, ruta_video, duracion)
         resultados.append(
             {
                 "ruta": ruta_video,
@@ -421,9 +455,12 @@ def calcular_tiempo_preview(duracion, indice=None):
     fraccion = posicion / (CANTIDAD_PREVIEWS + 1)
     return max(0.1, min(duracion * fraccion, duracion * 0.95))
 
-def generar_preview(ruta_video, destino, indice=None):
-    datos = obtener_datos_ffprobe(ruta_video)
-    duracion = datos["duracion_segundos"] if datos else None
+def generar_preview(ruta_video, destino, indice=None, duracion_segundos=None):
+    if _duracion_utilizable(duracion_segundos):
+        duracion = duracion_segundos
+    else:
+        datos = obtener_datos_ffprobe(ruta_video)
+        duracion = datos["duracion_segundos"] if datos else None
     tiempo = calcular_tiempo_preview(duracion, indice)
     try:
         resultado = subprocess.run(
@@ -442,7 +479,7 @@ def generar_preview(ruta_video, destino, indice=None):
     except (OSError, subprocess.SubprocessError):
         return False
 
-def generar_previews_faltantes(videos, carpeta):
+def generar_previews_faltantes(videos, carpeta, duraciones=None):
     if isinstance(videos, (str, bytes, bytearray)):
         raise TypeError("videos debe ser una colección de nombres, no texto")
     try:
@@ -458,6 +495,7 @@ def generar_previews_faltantes(videos, carpeta):
         generados = 0
         reutilizados = 0
         errores = 0
+        duracion = _duracion_de_duraciones(duraciones, nombre, ruta_video)
         if faltantes:
             os.makedirs(ruta_carpeta_miniaturas(), exist_ok=True)
             base = None
@@ -468,7 +506,7 @@ def generar_previews_faltantes(videos, carpeta):
                 if (
                     os.path.isfile(ruta_video)
                     and os.path.getsize(ruta_video) > 0
-                    and generar_preview(ruta_video, destino, indice)
+                    and generar_preview(ruta_video, destino, indice, duracion)
                 ):
                     generados += 1
                 elif base is not None and os.path.isfile(base):

@@ -5,6 +5,73 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 96. Eliminar FFprobe redundante al generar miniaturas y previews (B4.5 — Etapas 1-2)
+
+- **Fecha:** 2026-08-09
+- **Objetivo:** Octava etapa del ciclo **Beta 4** (rama `beta4`), **B4.5 — Rendimiento de carga
+  inicial**. La demora perceptible de Marcos con carpetas de ~121 videos (carga inicial,
+  procesamiento y miniaturas normales) se investigó y optimizó **sin tocar la exploración
+  temporal B4.3**. Dos subetapas: **Etapa 1** (diagnóstico, sin cambios de producción) y
+  **Etapa 2** (eliminar FFprobe redundante en la generación normal de imágenes).
+- **Etapa 1 — Diagnóstico del cuello de botella (aprobada):** con un dataset temporal de 121
+  videos funcionales (hardlinks de los videos reales de muestra) y base/caché temporales se
+  midió el pipeline normal de catálogo/miniaturas en la PC de desarrollo: escaneo y tamaños
+  despreciables; **FFprobe de metadata ~4.5 s (121 procesos, secuenciales)**; **miniaturas
+  normales ~12.3 s** (121 FFmpeg + 121 FFprobe internos); **previews normales ~38.6 s** (363
+  FFmpeg + 363 FFprobe internos); SQLite y lectura despreciables; UI ~1.5 s (tarjetas + QPixmap
+  en el hilo principal). El **reescaneo caliente re-ejecuta los 121 FFprobe de metadata de forma
+  redundante** (~4.6 s de ~4.9 s). **Cuello dominante: FFmpeg+FFprobe de las previews normales
+  (~70 % del tiempo en frío)**; secundarios: FFprobe redundante del reescaneo y el doble proceso
+  (FFprobe interno por cada FFmpeg).
+- **Etapa 2 — Eliminar FFprobe redundante:** `generar_miniatura` y `generar_preview` aceptan
+  `duracion_segundos=None` (B4.5): con una duración **utilizable** (`_duracion_utilizable`:
+  número real finito > 0; rechaza `None`, bool, no numérico, 0, negativos, NaN/infinito) usan esa
+  duración **sin ejecutar FFprobe interno**, con el **mismo cálculo temporal** y el **mismo
+  FFmpeg**; si es inválida o ausente conservan el **fallback FFprobe** anterior (compatibilidad
+  con callers antiguos). `asegurar_miniatura`/`asegurar_miniaturas`/`generar_previews_faltantes`
+  propagan un mapa de duraciones (por ruta o por nombre); `TareaMiniaturas`/`TareaPreviewsProgresivas`
+  lo reciben; la interfaz lo construye desde `TareaFFprobe` (`_duraciones_desde_ffprobe`) para las
+  miniaturas y desde las tarjetas (`Tarjeta._duracion`) para las previews.
+- **Rendimiento (PC de desarrollo, dataset temporal de 121 videos, caché fría):** **FFprobe
+  internos 484 → 0** (121 miniaturas + 363 previews), mismos 484 FFmpeg; total backend
+  **~55.6 s → ~37.1 s**; miniaturas **12.3 → 7.9 s**; previews **38.6 → 24.8 s**. No se
+  extrapolan tiempos absolutos a la notebook. Verificación funcional con la app real (dataset
+  temporal): carga inicial ~0.83 s, previews generadas progresivamente con **ffprobe interno =
+  0**, UI fluida y sin ventanas de consola.
+- **No alterado:** cantidad de imágenes, posiciones, resolución, calidad, progresividad, lotes,
+  caché, nombres/rutas, parámetros FFmpeg, paralelismo ni GPU. `TareaFFprobe` del pipeline
+  continúa igual (la Etapa 3, evitar el FFprobe de metadata en reescaneos, queda registrada y NO
+  iniciada). Pendiente técnico registrado sin corregir: las **previews normales existentes se
+  consideran reutilizables por existencia del archivo** (sin validación equivalente por cambio
+  del video).
+- **Fallos preexistentes confirmados sobre el HEAD base limpio `507ec81`:** `prueba_eliminar_candidatos.py`
+  **T02** (AST de estructura) y `prueba_aplicar_incorporaciones.py` **T15** (documentado:
+  base real con `tamano_bytes` poblado); se registran como preexistentes, **no se corrigen** y no
+  se consideran regresión de B4.5.
+- **Pruebas:** `prueba_optimizacion_ffprobe_b452.py` **14/14** (miniatura/preview con duración
+  conocida sin FFprobe interno; fallback sin duración; duración inválida; tiempos equivalentes
+  (`-ss` idéntico); pipelines miniaturas y previews con 0 FFprobe internos; cache existente sin
+  procesos; callers antiguos sin parámetro; `_duracion_utilizable`). Regresiones en verde en el
+  cierre: `prueba_previews_progresivas.py` **16/16**, `prueba_tamano_miniaturas.py` **32/32**,
+  `prueba_recarga_catalogo.py` **20/20**, `prueba_pagina_siguiente.py` **20/20**,
+  `prueba_escaneo_interfaz.py` **36/36**, `prueba_escaneo_guardado.py` **24/24**,
+  `prueba_previews_multicarpeta.py` **5/5**, `prueba_previews_automaticas.py` **22/22**,
+  `prueba_reproduccion_marcadores_b44.py` **24/24**, `prueba_smoke.py` OK. `python -m py_compile`
+  OK. `git diff --check` OK.
+- **Próxima etapa:** **B4.5 — Etapa 3 — evitar el FFprobe de metadata en reescaneos de videos
+  sin cambios** (reescaneo caliente ≈4.9 s con ~93 % en FFprobe); registrada, **no iniciada**.
+  **B4.5 queda completada en sus Etapas 1-2; no se declara la Beta 4 completa todavía.**
+- **Archivos modificados:** producción `escanear_videos.py`, `tareas_videos.py`, `visor_videos.py`;
+  pruebas `prueba_optimizacion_ffprobe_b452.py` (nueva) y adaptadas a la firma nueva
+  `prueba_previews_progresivas.py`, `prueba_previews_multicarpeta.py`, `prueba_previews_automaticas.py`,
+  `prueba_escaneo_guardado.py`; más los documentos oficiales (`ESTADO_PROYECTO.md`, `ROADMAP.md`,
+  `DOCUMENTO_TECNICO.md`, `HISTORIAL_PROYECTO.md`). Sin cambios en exploración B4.3, VLC, SQLite,
+  configuración ni scrubber.
+- **Commit:** `Eliminar FFprobe redundante al generar miniaturas y previews` (cierre de B4.5 —
+  Etapa 2).
+
+---
+
 ## 95. Integrar reproduccion de marcadores mediante playlists VLC (B4.4)
 
 - **Fecha:** 2026-08-09

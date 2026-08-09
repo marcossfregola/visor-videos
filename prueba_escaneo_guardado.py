@@ -540,7 +540,7 @@ def test_11():
             "contar_miniaturas": escanear_mod.contar_miniaturas,
         }
 
-        def _asegurar(video, ruta_video):
+        def _asegurar(video, ruta_video, duracion_segundos=None):
             info["asegurar"] += 1
             info["asegurar_principal"] = QThread.isMainThread()
             return 1
@@ -1004,7 +1004,7 @@ def test_20():
         orig_asegurar = escanear_mod.asegurar_miniatura
         orig_contar = escanear_mod.contar_miniaturas
 
-        def _asegurar(video, ruta_video):
+        def _asegurar(video, ruta_video, duracion_segundos=None):
             llamadas["asegurar"].append((video, ruta_video))
             return 1 if video == "real.mp4" else 0
 
@@ -1162,7 +1162,7 @@ def test_22():
         orig_asegurar = escanear_mod.asegurar_miniatura
         orig_contar = escanear_mod.contar_miniaturas
 
-        def _asegurar(video, ruta_video):
+        def _asegurar(video, ruta_video, duracion_segundos=None):
             info["asegurar"] += 1
             info["ident"] = threading.get_ident()
             info["principal"] = QThread.isMainThread()

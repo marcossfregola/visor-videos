@@ -130,7 +130,7 @@ class TareaTamanosArchivos(TareaBase):
 
 
 class TareaMiniaturas(TareaBase):
-    def __init__(self, videos, carpeta, parent=None):
+    def __init__(self, videos, carpeta, duraciones=None, parent=None):
         super().__init__(parent)
         if videos is None:
             videos = []
@@ -138,6 +138,7 @@ class TareaMiniaturas(TareaBase):
             videos = [videos]
         self._videos = list(videos)
         self._carpeta = carpeta
+        self._duraciones = dict(duraciones) if duraciones is not None else None
 
     @property
     def videos(self):
@@ -147,14 +148,21 @@ class TareaMiniaturas(TareaBase):
     def carpeta(self):
         return self._carpeta
 
+    @property
+    def duraciones(self):
+        return dict(self._duraciones) if self._duraciones is not None else None
+
     def _trabajo(self):
         return asegurar_miniaturas(
-            self._videos, self._carpeta, self.reportar_progreso
+            self._videos,
+            self._carpeta,
+            self.reportar_progreso,
+            self._duraciones,
         )
 
 
 class TareaPreviewsProgresivas(TareaBase):
-    def __init__(self, videos, carpeta, parent=None):
+    def __init__(self, videos, carpeta, duraciones=None, parent=None):
         super().__init__(parent)
         if videos is None:
             videos = []
@@ -162,6 +170,7 @@ class TareaPreviewsProgresivas(TareaBase):
             videos = [videos]
         self._videos = list(videos)
         self._carpeta = carpeta
+        self._duraciones = dict(duraciones) if duraciones is not None else None
 
     @property
     def videos(self):
@@ -171,8 +180,14 @@ class TareaPreviewsProgresivas(TareaBase):
     def carpeta(self):
         return self._carpeta
 
+    @property
+    def duraciones(self):
+        return dict(self._duraciones) if self._duraciones is not None else None
+
     def _trabajo(self):
-        return generar_previews_faltantes(self._videos, self._carpeta)
+        return generar_previews_faltantes(
+            self._videos, self._carpeta, self._duraciones
+        )
 
 
 class TareaLecturaCatalogo(TareaBase):

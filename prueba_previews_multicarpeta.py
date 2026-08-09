@@ -76,7 +76,7 @@ def _escenario(nombres_carpetas):
                 f.write(b"video")
         carpetas.append(carpeta.name)
 
-    def _generar(ruta_video, destino, indice=None):
+    def _generar(ruta_video, destino, indice=None, duracion_segundos=None):
         imagen = QImage(40, 30, QImage.Format_RGB32)
         imagen.fill(QColor("green"))
         imagen.save(destino, "PNG")

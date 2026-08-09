@@ -2822,13 +2822,34 @@ class VisorVideos(QMainWindow):
             self._limpiar_cadena()
             self._actualizar_botones_carpeta()
             return
-        tarea = TareaMiniaturas(self.videos_detectados, self.tarea_escaneo.carpeta)
+        duraciones = self._duraciones_desde_ffprobe()
+        tarea = TareaMiniaturas(
+            self.videos_detectados,
+            self.tarea_escaneo.carpeta,
+            duraciones=duraciones,
+        )
         if not self.gestor.iniciar(tarea):
             self._limpiar_cadena()
             self._actualizar_botones_carpeta()
             return
         self.tarea_miniaturas = tarea
         self._mostrar_progreso("Generando miniaturas…")
+
+    def _duraciones_desde_ffprobe(self):
+        """Mapa ruta -> duracion a partir del resultado de `TareaFFprobe`."""
+        duraciones = {}
+        resultado = self.resultado_ffprobe or {}
+        for item in resultado.get("resultados", []):
+            if not isinstance(item, dict):
+                continue
+            ruta = item.get("ruta")
+            datos = item.get("datos")
+            if not (isinstance(ruta, str) and ruta and isinstance(datos, dict)):
+                continue
+            duracion = datos.get("duracion_segundos")
+            if isinstance(duracion, (int, float)) and not isinstance(duracion, bool):
+                duraciones[ruta] = duracion
+        return duraciones
 
     def _al_resultado_miniaturas(self, resultado):
         self._miniaturas_pendiente = False
@@ -3075,7 +3096,17 @@ class VisorVideos(QMainWindow):
         self._cola_previews = restantes
         if not lote:
             return
-        tarea = TareaPreviewsProgresivas(lote, carpeta_lote)
+        duraciones = {}
+        for nombre in lote:
+            tarjeta = self._tarjeta_por_nombre(nombre)
+            if tarjeta is None:
+                continue
+            duracion = getattr(tarjeta, "_duracion", None)
+            if isinstance(duracion, (int, float)) and not isinstance(duracion, bool):
+                duraciones[nombre] = duracion
+        tarea = TareaPreviewsProgresivas(
+            lote, carpeta_lote, duraciones=duraciones
+        )
         if not self.gestor_previews.iniciar(tarea):
             self._cola_previews = restantes + [
                 (nombre, carpeta_lote) for nombre in lote

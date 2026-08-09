@@ -16,9 +16,10 @@ arquitectónicas.
 > Persistencia de marcadores temporales por video**, **B4.3.1 — Motor de
 > caché temporal versionada y reanudable**, **B4.3.2 — Cobertura rápida
 > asíncrona integrada con la UI**, **B4.3.2 — Etapa 2: Densidad secundaria
-> adaptativa**, **B4.3.3 — Ajustes de interacción y densidad manual** y
-> **B4.4 — Reproducción de marcadores en VLC** quedaron **completadas y
-> aprobadas** (ver la sección "Beta 4").
+> adaptativa**, **B4.3.3 — Ajustes de interacción y densidad manual**,
+> **B4.4 — Reproducción de marcadores en VLC** y **B4.5 — Rendimiento de
+> carga inicial (diagnóstico y eliminación de FFprobe redundante)** quedaron
+> **completadas y aprobadas** (ver la sección "Beta 4").
 
 ------------------------------------------------------------------------
 
@@ -626,11 +627,40 @@ desarrolla sobre la rama `beta4` (punto de partida: cierre de la Beta 3).
      completada; no se declara la Beta 4 completa todavía.** Evoluciones futuras (no
      implementadas): **iniciar reproducción desde el marcador**, ser **destino seleccionable
      durante la reproducción** y evaluar la UX de **múltiples instancias de VLC**. Suites:
-     `prueba_reproduccion_marcadores_b44.py` **24/24** y regresiones verdes.
-5. **Selección A/B, loops, fragmentos y edición.** **Posterior**, sin adelantar implementación.
+      `prueba_reproduccion_marcadores_b44.py` **24/24** y regresiones verdes.
+5. **B4.5 — Rendimiento de carga inicial.** **Completada (Etapa 1: diagnóstico; Etapa 2:
+   eliminación de FFprobe redundante).** La demora perceptible de Marcos con carpetas de ~121
+   videos (carga inicial, procesamiento y miniaturas normales) se investigó **sin tocar la
+   exploración temporal B4.3**.
+   - **Etapa 1 — Diagnóstico del cuello de botella.** **Completada.** Con un dataset temporal de
+     121 videos funcionales (hardlinks de los videos reales de muestra) y base/caché temporales,
+     se midió el costo por etapa del pipeline normal de catálogo/miniaturas en la PC de
+     desarrollo: escaneo y tamaños despreciables; **FFprobe de metadata ~4.5 s (121 procesos,
+     secuenciales)**; **miniaturas normales ~12.3 s** (121 FFmpeg + **121 FFprobe internos**);
+     **previews normales ~38.6 s** (363 FFmpeg + **363 FFprobe internos**); SQLite y lectura
+     despreciables; UI ~1.5 s (construcción de tarjetas + QPixmap en el hilo principal). El
+     reescaneo con caché caliente re-ejecuta los **121 FFprobe de metadata de forma redundante**
+     (~4.6 s de ~4.9 s). **Cuello dominante: FFmpeg+FFprobe de las previews normales (~70 % del
+     tiempo en frío)**; secundarios: FFprobe redundante del reescaneo y el doble proceso
+     (FFprobe interno por cada FFmpeg). Sin cambios de producción.
+   - **Etapa 2 — Eliminar FFprobe redundante en generación normal de imágenes.** **Completada.**
+     `generar_miniatura` y `generar_preview` aceptan `duracion_segundos=None`: si la duración es
+     válida la usan sin ejecutar FFprobe interno (mismo cálculo temporal y mismo FFmpeg); si no,
+     conservan el fallback FFprobe anterior. `asegurar_miniaturas` y `generar_previews_faltantes`
+     aceptan un mapa de duraciones; `TareaMiniaturas`/`TareaPreviewsProgresivas` lo propagan; la
+     interfaz lo construye desde `TareaFFprobe` (miniaturas) y desde la tarjeta (previews). En
+     frío con 121 videos: **484 FFprobe internos → 0** (121 miniaturas + 363 previews), mismos
+     484 FFmpeg; total backend **~55.6 s → ~37.1 s** (miniaturas 12.3→7.9 s, previews 38.6→24.8 s)
+     como medición de la PC de desarrollo (no extrapolable a la notebook). Sin cambios de
+     cantidad, posiciones, calidad, progresividad, lotes, caché, paralelismo ni FFmpeg. Suites:
+     `prueba_optimizacion_ffprobe_b452.py` **14/14** y regresiones verdes.
+   - **Próxima etapa registrada (no iniciada): B4.5 — Etapa 3 — evitar el FFprobe de metadata en
+     reescaneos de videos sin cambios** (el reescaneo caliente ≈4.9 s con ~93 % en FFprobe). No
+     se diseñó ni implementó todavía el criterio de reutilización.
+6. **Selección A/B, loops, fragmentos y edición.** **Posterior**, sin adelantar implementación.
    Los mismos puntos podrán participar en **selección A/B**, **loops**, **selección de
    fragmentos** o **corte/unión** como otra función, conservando su significado de navegación.
-6. **Detección de archivos movidos / reasociación de marcadores huérfanos.** **Futura.**
+7. **Detección de archivos movidos / reasociación de marcadores huérfanos.** **Futura.**
    Detectar archivos movidos o renombrados y reasociar los marcadores que queden huérfanos
    (hoy los marcadores no se eliminan automáticamente si el registro del video desaparece, y
    no se intenta reasociar por nombre o ruta).

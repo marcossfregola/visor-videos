@@ -102,9 +102,68 @@ lanzada). Sin HTTP, sin python-vlc/libVLC, sin loop automático. Se conserva com
 generar las miniaturas normales iniciales (no corresponde a B4.4; sin optimizar aún). El
 **batch NO está implementado** (ver `ROADMAP.md`, sección "Beta 4").
 
+La octava etapa, **B4.5 — Rendimiento de carga inicial**, quedó **aprobada e incorporada**
+(Etapa 1: diagnóstico del cuello de botella; Etapa 2: eliminación de FFprobe redundante). El
+diagnóstico (dataset temporal de 121 videos funcionales, base y caché temporales) midió el
+pipeline normal de catálogo/miniaturas en la PC de desarrollo: escaneo, tamaños, SQLite y
+lectura despreciables; **FFprobe de metadata ~4.5 s (121 procesos, secuenciales)**; **miniaturas
+normales ~12.3 s** (121 FFmpeg + 121 FFprobe internos); **previews normales ~38.6 s** (363 FFmpeg
++ 363 FFprobe internos); reescaneo caliente con **FFprobe de metadata redundante (~4.6 s de
+~4.9 s)**. El cuello dominante es el **FFmpeg+FFprobe de las previews normales (~70 % del tiempo
+en frío)**. La Etapa 2 eliminó los **FFprobe internos redundantes**: `generar_miniatura` y
+`generar_preview` aceptan `duracion_segundos=None` (válida → usa esa duración sin FFprobe
+interno y con el mismo cálculo temporal y FFmpeg; inválida o ausente → fallback FFprobe
+anterior); `asegurar_miniaturas`/`generar_previews_faltantes` y sus tareas
+(`TareaMiniaturas`/`TareaPreviewsProgresivas`) propagan las duraciones, que la interfaz toma de
+`TareaFFprobe` (miniaturas) y de la tarjeta (previews). En frío con 121 videos: **484 FFprobe
+internos → 0**, mismos 484 FFmpeg; total backend **~55.6 s → ~37.1 s** (miniaturas 12.3→7.9 s,
+previews 38.6→24.8 s) como medición de la PC de desarrollo (no extrapolable a la notebook). Sin
+cambios de cantidad, posiciones, calidad, progresividad, lotes, caché, paralelismo ni FFmpeg.
+**Pendiente técnico registrado, sin corregir**: las previews existentes se consideran
+reutilizables por existencia del archivo (sin validación por cambio del video). **Próxima etapa
+registrada (no iniciada): B4.5 — Etapa 3 — evitar el FFprobe de metadata en reescaneos de
+videos sin cambios** (reescaneo caliente ≈4.9 s con ~93 % en FFprobe).
+
 ## Último commit aprobado
 
-**Mensaje:** Integrar reproduccion de marcadores mediante playlists VLC
+**Mensaje:** Eliminar FFprobe redundante al generar miniaturas y previews
+
+**Etapa:** B4.5 — Rendimiento de carga inicial, Etapa 2 (rama `beta4`):
+- `escanear_videos.py` — `_duracion_utilizable` (número real finito > 0; rechaza `None`, bool, no
+  numérico, 0, negativos, NaN/infinito), `_duracion_de_duraciones` (busca por ruta o nombre),
+  `generar_miniatura`/`generar_preview` con `duracion_segundos=None` (válida → sin FFprobe
+  interno, mismo cálculo temporal y FFmpeg; inválida → fallback FFprobe anterior),
+  `asegurar_miniatura`/`asegurar_miniaturas`/`generar_previews_faltantes` con propagación de
+  duraciones.
+- `tareas_videos.py` — `TareaMiniaturas(videos, carpeta, duraciones=None)` y
+  `TareaPreviewsProgresivas(videos, carpeta, duraciones=None)`.
+- `visor_videos.py` — `_iniciar_miniaturas` pasa el mapa ruta→duración construido desde
+  `self.resultado_ffprobe` (`_duraciones_desde_ffprobe`); `_siguiente_lote_previews` pasa las
+  duraciones de las tarjetas (`Tarjeta._duracion`) al lote.
+- `prueba_optimizacion_ffprobe_b452.py` — **nueva**: 14 pruebas (miniatura/preview con duración
+  conocida sin FFprobe interno; fallback sin duración; duración inválida; tiempos equivalentes;
+  pipelines miniaturas y previews con 0 FFprobe internos; cache existente sin procesos; callers
+  antiguos sin parámetro).
+- Suites adaptadas a la firma nueva (mocks): `prueba_previews_progresivas.py`,
+  `prueba_previews_multicarpeta.py`, `prueba_previews_automaticas.py`, `prueba_escaneo_guardado.py`.
+
+**Medición (PC de desarrollo, dataset temporal de 121 videos, caché fría):** FFprobe internos
+**484 → 0** (121 miniaturas + 363 previews), mismos 484 FFmpeg; total backend **~55.6 s →
+~37.1 s**; miniaturas **12.3 → 7.9 s**; previews **38.6 → 24.8 s**. Verificación funcional con
+la app real: carga inicial ~0.83 s, previews generadas progresivamente con **ffprobe interno = 0**
+y UI fluida.
+
+**Pruebas superadas:** `prueba_optimizacion_ffprobe_b452.py` **14/14**. Regresiones en verde
+(ejecutadas en el cierre): `prueba_previews_progresivas.py` **16/16**, `prueba_tamano_miniaturas.py`
+**32/32**, `prueba_recarga_catalogo.py` **20/20**, `prueba_pagina_siguiente.py` **20/20**,
+`prueba_escaneo_interfaz.py` **36/36**, `prueba_escaneo_guardado.py` **24/24**,
+`prueba_previews_multicarpeta.py` **5/5**, `prueba_previews_automaticas.py` **22/22**,
+`prueba_reproduccion_marcadores_b44.py` **24/24**, `prueba_smoke.py` OK. `python -m py_compile`
+OK. `git diff --check` OK.
+
+---
+
+**Commit anterior — Mensaje:** Integrar reproduccion de marcadores mediante playlists VLC
 
 **Etapa:** B4.4 — Reproducción de marcadores en VLC (Etapa 1: validación de playlist; Etapa 2:
 integración mínima) (rama `beta4`):
@@ -604,17 +663,26 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
   archivo en el arranque. No atribuible a B3.3 ni a etapas recientes; corregir en
   una futura etapa específica (p. ej. alinear la restauración con `blockSignals` o
   actualizar el contrato de los tests).
+- **`prueba_eliminar_candidatos.py` T02** — falla **preexistente** (verificada en el
+  HEAD base limpio `507ec81` durante el cierre de B4.5): es una verificación AST de
+  estructura (`eliminar_candidatos` definida solo en `escanear_videos`, sin estar
+  definida ni importada en `tareas_videos`/`visor_videos`, y sin identificadores
+  prohibidos) cuyo contrato no coincide con el estado actual del código; el resto de
+  la suite (15/16) pasa y el subsistema funciona correctamente. No atribuible a B4.5;
+  revisar el contrato de T02 en una etapa futura.
 
 ## Próxima etapa
 
-**B4.4 quedó completada** (reproducción de marcadores en VLC) y **no se declara la Beta 4
-completa todavía**. Siguientes líneas del ciclo (no iniciadas): la **selección A/B**, los
+**B4.5 — Etapa 2 quedó completada** (eliminación de FFprobe redundante en miniaturas/previews) y
+**no se declara la Beta 4 completa todavía**. **Próxima etapa registrada, no iniciada: B4.5 —
+Etapa 3 — evitar el FFprobe de metadata en reescaneos de videos sin cambios** (el reescaneo
+caliente de 121 videos ≈4.9 s con ~93 % en FFprobe de metadata; no se diseñó ni implementó el
+criterio de reutilización). Pendiente técnico registrado sin corregir: las **previews normales
+existentes se consideran reutilizables por existencia del archivo** (sin validación equivalente
+por cambio del video). Siguientes líneas del ciclo (no iniciadas): la **selección A/B**, los
 **loops**, la **selección de fragmentos** y el **corte/unión**; la **detección de archivos
 movidos** con la **reasociación futura de marcadores huérfanos**; y las evoluciones de
-reproducción indicadas en `ROADMAP.md` (iniciar desde el marcador, destino durante la
-reproducción y evaluación de UX de múltiples instancias de VLC). Pendiente aparte (no
-corresponde a B4.4, sin optimizar ahora): la demora perceptible al **cargar una carpeta de 121
-videos** y generar las miniaturas normales iniciales. El **batch NO está implementado**.
+reproducción indicadas en `ROADMAP.md`. El **batch NO está implementado**.
 
 ## Documentos del proyecto
 

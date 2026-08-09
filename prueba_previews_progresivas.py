@@ -106,7 +106,7 @@ def _miniaturas_temporales():
         temp.cleanup()
 
 
-def _generar_exitoso(ruta_video, destino, indice=None):
+def _generar_exitoso(ruta_video, destino, indice=None, duracion_segundos=None):
     imagen = QImage(50, 30, QImage.Format_RGB32)
     imagen.fill(QColor("green"))
     if not imagen.save(destino):
@@ -313,7 +313,7 @@ def test_06():
         original = escanear_mod.generar_preview
         llamadas = {"n": 0}
         try:
-            def _generar(ruta_video, destino, indice=None):
+            def _generar(ruta_video, destino, indice=None, duracion_segundos=None):
                 llamadas["n"] += 1
                 return _generar_exitoso(ruta_video, destino, indice)
 
@@ -348,7 +348,7 @@ def test_07():
         carpeta_videos = _carpeta_con(["peli.mp4"])
         original = escanear_mod.generar_preview
         try:
-            def _generar(ruta_video, destino, indice=None):
+            def _generar(ruta_video, destino, indice=None, duracion_segundos=None):
                 return _generar_exitoso(ruta_video, destino, indice)
 
             escanear_mod.generar_preview = _generar
@@ -361,7 +361,7 @@ def test_07():
 
         errores = {"llamadas": 0}
 
-        def _prohibido(ruta_video, destino, indice=None):
+        def _prohibido(ruta_video, destino, indice=None, duracion_segundos=None):
             errores["llamadas"] += 1
             raise AssertionError("no debe regenerarse una preview existente")
 
@@ -397,7 +397,7 @@ def test_08():
         carpeta_videos = _carpeta_con(["peli.mp4"])
         original = escanear_mod.generar_preview
         try:
-            def _generar(ruta_video, destino, indice=None):
+            def _generar(ruta_video, destino, indice=None, duracion_segundos=None):
                 return _generar_exitoso(ruta_video, destino, indice)
 
             escanear_mod.generar_preview = _generar
@@ -426,7 +426,7 @@ def test_09():
         original = escanear_mod.generar_preview
         info = {"llamadas": 0, "ident": None, "principal": None}
         try:
-            def _generar(ruta_video, destino, indice=None):
+            def _generar(ruta_video, destino, indice=None, duracion_segundos=None):
                 info["llamadas"] += 1
                 info["ident"] = threading.get_ident()
                 info["principal"] = QThread.isMainThread()
@@ -523,7 +523,7 @@ def test_12():
         carpeta_videos = _carpeta_con(["peli.mp4"])
         original = escanear_mod.generar_preview
         try:
-            def _generar(ruta_video, destino, indice=None):
+            def _generar(ruta_video, destino, indice=None, duracion_segundos=None):
                 return _generar_exitoso(ruta_video, destino, indice)
 
             escanear_mod.generar_preview = _generar
@@ -571,7 +571,7 @@ def test_13():
         carpeta = _carpeta_con(["a.mp4", "b.mp4", "c.mp4"])
         temp, ruta_db = _crear_bd(_filas(["a.mp4", "b.mp4", "c.mp4"], carpeta.name))
         try:
-            def _generar(ruta_video, destino, indice=None):
+            def _generar(ruta_video, destino, indice=None, duracion_segundos=None):
                 return _generar_exitoso(ruta_video, destino, indice)
 
             original = escanear_mod.generar_preview
@@ -609,7 +609,7 @@ def test_14():
             _filas(["v01.mp4", "v02.mp4", "v03.mp4", "v04.mp4"], carpeta.name)
         )
         try:
-            def _generar(ruta_video, destino, indice=None):
+            def _generar(ruta_video, destino, indice=None, duracion_segundos=None):
                 return _generar_exitoso(ruta_video, destino, indice)
 
             original = escanear_mod.generar_preview
@@ -644,7 +644,7 @@ def test_15():
         original = escanear_mod.generar_preview
         info = {"n": 0, "prohibido": False}
         try:
-            def _generar(ruta_video, destino, indice=None):
+            def _generar(ruta_video, destino, indice=None, duracion_segundos=None):
                 info["n"] += 1
                 return _generar_exitoso(ruta_video, destino, indice)
 
@@ -657,7 +657,7 @@ def test_15():
             escanear_mod.generar_preview = original
 
         try:
-            def _prohibido(ruta_video, destino, indice=None):
+            def _prohibido(ruta_video, destino, indice=None, duracion_segundos=None):
                 info["prohibido"] = True
                 raise AssertionError("no debe regenerar")
 
