@@ -50,52 +50,68 @@ cooperativa**, **aislamiento A→B**, **colapso que libera las referencias densa
 de RAM** y **reexpansión que reutiliza la caché**; los **marcadores** conservan
 su tiempo/id y pueden mejorar visualmente al llegar fotogramas densos. La
 validación visual manual (puntos A–G) en el PC de desarrollo fue **aprobada por
-Marcos**.
-**Próxima etapa: validación de esta implementación exacta en el hardware
-objetivo (notebook)**; después de esa medición se decidirá entre mantener solo
-esta cobertura, implementar una segunda fase batch/híbrida o ajustar la
-cantidad inicial/densidad. El **batch/híbrido completo NO está implementado**
+Marcos**, y la cobertura rápida también quedó validada en la **notebook objetivo**
+(expansión y scrub correctos con un video real de ~56 min).
+La quinta etapa, **B4.3.2 — Etapa 2: Densidad secundaria adaptativa**, quedó
+**aprobada e incorporada**: tras el **benchmark de estrategias** sobre un video
+de 56 min, por **decisión de producto** se adoptó la **generación individual y
+secuencial (un FFmpeg por objetivo, sin batch, sin paralelismo)**. Los **15
+prioritarios** se mantienen exactamente como en la Etapa 1 y la **fase
+secundaria** (solo después de la fase rápida, sin solapamiento) completa hasta
+`objetivo_total_densidad(duración)` = `clamp(max(15, ceil(d/30 s)), 15, 200)` —
+valores **provisionales** (30 s / mín 15 / máx 200) centralizados en
+`exploracion_cache.py` para configurarlos después, **sin controles visibles por
+ahora**. Reutiliza lo existente (nunca regenera los presentes), es
+**progresiva**, **reanudable** y **cancelable**; cambiar/colapsar detiene la
+continuación y lo generado queda reutilizable.
+**Próximo paso:** **comprobación visual sencilla de esta Etapa 2 en la notebook
+objetivo** (la Etapa 1 ya fue validada allí con un video real de ~56 min); sin
+campaña adicional de benchmarks exhaustivos. El **batch NO está implementado**
 (ver `ROADMAP.md`, sección "Beta 4").
 
 ## Último commit aprobado
 
-**Mensaje:** Integrar cobertura temporal densa progresiva en la interfaz
+**Mensaje:** Agregar densidad temporal adaptativa en segundo plano
 
-**Etapa:** B4.3.2 — Cobertura rápida asíncrona integrada con la UI (rama `beta4`):
-- `tareas_videos.py` — **nuevo `TareaExploracionDensa`**: tarea asíncrona que genera la cobertura
-  densa de exploración temporal de un video. Duración/versión/objetivos capturados en el
-  constructor (instantáneas inmutables); `_trabajo()` genera los **`FOTOGRAMAS_INICIALES = 15`**
-  provisionales con el motor de B4.3.1, emite **resultados parciales progresivos**
-  (`resultado_parcial = Signal(object)`) en cuanto hay fotogramas, y termina con la cola
-  final `{"imagenes": [...]}` de **`QImage`** decodificadas en el worker. Exposición de
-  `FOTOGRAMAS_INICIALES` (para pruebas) y límite de cancelación cooperativa.
-- `visor_videos.py` — **consumo de la caché densa en la tarjeta**: `_procesar_siguiente_exploracion`
-  conecta la señal de parciales y `_al_resultado_parcial_exploracion` los recibe; `_aplicar_exploracion_densa`
-  (compatible con `(ms, QImage)` y con deduplicación) convierte la `QImage` del worker en `QPixmap`
-  **en la GUI** y la aplica al fotograma temporal. Comportamiento: **fallback inmediato a las previews
-  normales** mientras no hay caché; **generación asíncrona**; **mejora progresiva** de la cobertura;
-  `mouseMove` con selección **exclusivamente en RAM**; **selección temporal por la imagen más cercana**
-  entre preview normal y densa (la preview normal gana el empate); **cancelación cooperativa** al cambiar
-  de video; **aislamiento A→B** (cada tarjeta usa su caché, no la del vecino); **colapso que libera las
-  referencias densas de RAM** y **reexpansión que reutiliza la caché** (sin regenerar); los **marcadores**
-  conservan su tiempo/id y pueden mejorar visualmente al llegar fotogramas densos.
-- `prueba_exploracion_b432.py` — **nueva**: 20 pruebas (parciales en vivo con la señal, guardas
-  aislamiento A–B/colapso/sin-op, `QImage` directo + deduplicación, `_trabajo` real con parciales
-  + cola `QImage`, y cancelación con parcial aplicado).
+**Etapa:** B4.3.2 — Etapa 2: Densidad secundaria adaptativa (rama `beta4`):
+- `exploracion_cache.py` — **densidad secundaria centralizada**: constantes provisionales
+  `FOTOGRAMAS_INICIALES = 15`, `PASO_SEGUNDOS_DENSIDAD = 30.0`,
+  `MINIMO_FOTOGRAMAS_DENSIDAD = 15` y `MAXIMO_FOTOGRAMAS_DENSIDAD = 200`, y la función
+  `objetivo_total_densidad(duración)` = `clamp(max(15, ceil(d/30)), 15, 200)` (duración
+  inválida/cero/negativa/bool → 0). El motor `generar_fotogramas` no cambia: reutiliza lo
+  presente y genera solo faltantes, un FFmpeg por objetivo, serial.
+- `tareas_videos.py` — **`TareaExploracionDensa._trabajo()` en dos fases secuenciales**: la
+  **fase rápida** genera los `FOTOGRAMAS_INICIALES = 15` prioritarios (comportamiento de la
+  Etapa 1 intacto) y, solo después de terminar y sin cancelarse, la **fase secundaria** genera
+  hasta `objetivo_total_densidad(duración)` reutilizando lo existente y completando únicamente
+  los faltantes; ambas fases emiten `resultado_parcial` progresivo y comparten `_emitidos`
+  (sin duplicados). Sin batch y con un solo FFmpeg activo.
+- `visor_videos.py` — `FOTOGRAMAS_INICIALES` pasa a referenciar
+  `exploracion_cache.MINIMO_FOTOGRAMAS_DENSIDAD` (valor único centralizado; sin controles
+  visibles).
+- `prueba_exploracion_densidad_b432.py` — **nueva**: 12 pruebas (fórmula de densidad con
+  ejemplos/límites/inválidos, fase rápida primero con orden `[15, objetivo_total]`, los 15 no se
+  regeneran, reutiliza 45/55, máximo un FFmpeg concurrente, secundarios progresivos, A→B sin
+  fugas, colapso libera RAM, reexpansión reutiliza, mouseMove solo RAM, marcadores mejoran).
 
-**Validación visual (manual, PC de desarrollo):** aprobada por Marcos — respuesta inmediata del
-scrub, imágenes correctas, sin tirones ni en blanco, mejora progresiva, marcadores correctos,
-cambio A→B correcto, colapso correcto y reexpansión/reutilización correctas. El rendimiento en la
-**notebook objetivo aún NO está medido** (ese es el próximo paso obligatorio).
+**Validación visual (PC de desarrollo, app real + FFmpeg real, video de ~56 min, caché en
+temporal):** expansión inmediata (primer fotograma prioritario ≈0.10 s); primeros 15 ≈1.13 s;
+fase secundaria solo después (primer secundario ≈1.21 s, sin solapamiento); total 112 ≈8.39 s;
+scrub fluido desde RAM; colapso libera RAM; reexpansión con caché completa ≈0.08 s sin
+regenerar. Sin problemas perceptibles. La **notebook objetivo** ya validó la Etapa 1 (expansión
+y scrub correctos con un video real de ~56 min); la **Etapa 2** recibirá una **comprobación
+visual sencilla** posterior.
 
-**Medidas de referencia (PC de desarrollo):** `FOTOGRAMAS_INICIALES=15`; video ≈4.36 s; primer
-denso ≈0.883 s; reexpansión 12.5 ms/20 ms/0 archivos; scrub 300 consultas ≈1.15 ms
-(~4 µs/consulta); worker decode ≈2.5 ms/15; GUI `fromImage` + escala ≈3.5 ms/15; RAM del lote
-≈3.3 MiB. **Hardware objetivo:** Intel i7-7500U 2.70 GHz, 16 GB RAM, NVIDIA 940MX 2 GB,
-Intel HD 620 — pendiente de probar en la notebook.
+**Medidas de referencia (PC de desarrollo, video ≈56 min — no garantizan igualdad en la
+notebook):** primer fotograma prioritario ≈0.10 s; 15 prioritarios ≈1.13 s; primer secundario
+(16.º) ≈1.21 s (después de la fase rápida); total 112 ≈8.39 s; reexpansión ≈0.08 s/0 archivos;
+scrub en RAM sin lectura de disco. **Hardware objetivo:** Intel i7-7500U 2.70 GHz, 16 GB RAM,
+NVIDIA 940MX 2 GB, Intel HD 620 — Etapa 1 validada en notebook; Etapa 2 pendiente de
+comprobación visual sencilla.
 
-**Pruebas superadas:** `prueba_exploracion_b432.py` **20/20**. Regresiones en verde (ejecutadas
-en el cierre): `prueba_exploracion_cache_b431.py` **29/29**, `prueba_exploracion_b41.py` **28/28**,
+**Pruebas superadas:** `prueba_exploracion_densidad_b432.py` **12/12**. Regresiones en verde
+(ejecutadas en el cierre): `prueba_exploracion_b432.py` **20/20**,
+`prueba_exploracion_cache_b431.py` **29/29**, `prueba_exploracion_b41.py` **28/28**,
 `prueba_marcadores_b42.py` **17/17**, `prueba_previews_progresivas.py` **16/16**,
 `prueba_tamano_miniaturas.py` **32/32**, `prueba_recarga_catalogo.py` **20/20**,
 `prueba_pagina_siguiente.py` **20/20**, `prueba_smoke.py` OK. `python -m py_compile` OK.
@@ -412,7 +428,7 @@ OK. `git diff --check` OK.
 de huecos) con `fotograma_mas_cercano` por `bisect`. Sin UI (la integración es **B4.3.2**),
   sin SQLite (`videos`, `marcadores_video` y `biblioteca.db` intactos) y sin acoplamiento con
   `escanear_videos`. Costo de versión ≈ 13 µs.
-- **B4.3.2 — Cobertura rápida asíncrona integrada con la UI.** Cuarta etapa del ciclo
+- **B4.3.2 — Cobertura rápida asíncrona integrada con la UI (Etapa 1).** Cuarta etapa del ciclo
   Beta 4 (rama `beta4`), segunda subetapa de **B4.3 — Caché densa de exploración temporal**.
   La tarjeta consume el motor de B4.3.1 con una **tarea asíncrona dedicada**
   (`TareaExploracionDensa` en `tareas_videos.py`) que genera los **`FOTOGRAMAS_INICIALES = 15`**
@@ -425,9 +441,23 @@ de huecos) con `fotograma_mas_cercano` por `bisect`. Sin UI (la integración es 
   caché), **colapso que libera las referencias densas de RAM** y **reexpansión que reutiliza la
   caché** (sin regenerar). Los **marcadores** conservan su tiempo/id y pueden mejorar
   visualmente al llegar fotogramas densos. **Validación visual manual A–G aprobada por Marcos**
-  en el PC de desarrollo; el **rendimiento en el hardware objetivo (notebook) NO está medido**
-  aún. El **batch/híbrido completo NO está implementado**: B4.3.2 usa generación individual
-  solo para los 15 fotogramas iniciales.
+  en el PC de desarrollo y validada en la **notebook objetivo** con un video real de ~56 min.
+- **B4.3.2 — Etapa 2: Densidad secundaria adaptativa.** Quinta etapa del ciclo Beta 4 (rama
+  `beta4`), tercera subetapa de **B4.3 — Caché densa de exploración temporal**. Tras el
+  **benchmark de estrategias** sobre un video de 56 min, por **decisión de producto** se adoptó
+  la **generación individual y secuencial: un FFmpeg por objetivo, sin batch, sin paralelismo**.
+  `exploracion_cache.py` centraliza los parámetros **provisionales**
+  (`PASO_SEGUNDOS_DENSIDAD = 30.0`, `MINIMO_FOTOGRAMAS_DENSIDAD = 15`,
+  `MAXIMO_FOTOGRAMAS_DENSIDAD = 200`, `FOTOGRAMAS_INICIALES = 15`) y `objetivo_total_densidad`
+  = `clamp(max(15, ceil(d/30)), 15, 200)`. `TareaExploracionDensa._trabajo()` genera en **dos
+  fases secuenciales**: la **fase rápida** (los 15 prioritarios, Etapa 1 intacta) y solo después,
+  sin cancelarse, la **fase secundaria** que reutiliza lo existente y completa únicamente los
+  faltantes hasta el objetivo de densidad; ambas fases emiten `resultado_parcial` progresivo sin
+  duplicados. **Verificado en PC de desarrollo** (app real + FFmpeg real, video ~56 min): primer
+  fotograma prioritario ≈0.10 s, 15 prioritarios ≈1.13 s, primer secundario ≈1.21 s (después de
+  la fase rápida), total 112 ≈8.39 s, reexpansión ≈0.08 s sin regenerar, scrub fluido desde RAM.
+  Los parámetros **siguen siendo provisionales** (no congelados) y **no hay configuración
+  visible**; la Etapa 2 recibirá una **comprobación visual sencilla** en la notebook objetivo.
 
 ## Pendientes prioritarios
 
@@ -484,18 +514,19 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
 
 ## Próxima etapa
 
-**Validación en el hardware objetivo (notebook) de la cobertura densa de B4.3.2.**
-La implementación de B4.3.2 quedó **aprobada** e **integrada en la interfaz**; el próximo paso
-obligatorio es **probar esta implementación exacta en la notebook objetivo** (16 GB RAM,
-Intel Core i7-7500U @ 2.70 GHz, NVIDIA GeForce 940MX 2 GB, Intel HD Graphics 620). Esa
-medición decidirá: mantener solo esta cobertura (opción A), implementar una **segunda fase
-batch/híbrida** con uno/pocos lotes eficientes (opción B) o **ajustar la densidad** —
-`FOTOGRAMAS_INICIALES`, `MAX`, tamaño de lote y concurrencia (opción C) — **sin anticipar
-cuál**; NO se asume que el batch sea obligatorio. Se conservan como funciones futuras: la
-**reproducción desde el marcador** y la **navegación entre marcadores durante la
-reproducción**; la **selección A/B**, los **loops**, la **selección de fragmentos** y el
-**corte/unión**; y la **detección de archivos movidos** con la **reasociación futura de
-marcadores huérfanos**. Ver la secuencia en `ROADMAP.md`, sección "Beta 4".
+**Comprobación visual sencilla de la densidad secundaria (B4.3.2 Etapa 2) en la notebook
+objetivo.** La Etapa 1 ya fue validada en la notebook (i7-7500U / 16 GB RAM / 940MX) con un
+video real de ~56 min: expansión y scrub correctos. La Etapa 2 quedó **aprobada** e integrada
+(validada en el PC de desarrollo); el próximo paso es **confirmar que agregar la densidad
+secundaria no perjudica esa fluidez** en la notebook. **NO se requiere una campaña adicional de
+benchmarks exhaustivos.** El **batch NO está implementado** (decisión de producto: generación
+individual y secuencial). Se conservan como funciones futuras: la **reproducción desde el
+marcador** y la **navegación entre marcadores durante la reproducción**; la **selección A/B**,
+los **loops**, la **selección de fragmentos** y el **corte/unión**; y la **detección de
+archivos movidos** con la **reasociación futura de marcadores huérfanos**. Pendiente aparte (no
+corresponde a B4.3, sin optimizar ahora): la demora perceptible de Marcos al **cargar una
+carpeta de 121 videos** y generar las miniaturas normales iniciales. Ver la secuencia en
+`ROADMAP.md`, sección "Beta 4".
 
 ## Documentos del proyecto
 

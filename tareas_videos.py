@@ -27,14 +27,16 @@ from escanear_videos import (
     previews_existentes,
 )
 from exploracion_cache import (
+    FOTOGRAMAS_INICIALES,
     duracion_valida,
     duracion_video,
     generar_fotogramas,
     listar_fotogramas_version,
+    objetivo_total_densidad,
     ruta_fotograma_version,
     version_actual,
 )
-from exploracion_temporal import cantidad_fotogramas, tiempos_objetivo
+from exploracion_temporal import tiempos_objetivo
 from rutas import ruta_carpeta_videos
 from tareas import TareaBase
 
@@ -381,12 +383,21 @@ class TareaExploracionDensa(TareaBase):
 
     El trabajo corre en el hilo del gestor: `generar_fotogramas` invoca
     FFmpeg una vez por fotograma faltante de la versión actual y la
-    cancelación es cooperativa (se revisa entre fotogramas).
+    cancelación es cooperativa (se revisa entre fotogramas). Un solo
+    FFmpeg activo en todo momento.
+
+    La generación es en dos fases secuenciales:
+    - Fase rápida: los `FOTOGRAMAS_INICIALES` prioritarios, sin cambio de
+      comportamiento respecto de Etapa 1.
+    - Fase secundaria: solo si el objetivo total de densidad
+      (`objetivo_total_densidad`) supera la fase rápida, se completa hasta
+      ese total reutilizando lo ya existente y generando únicamente los
+      faltantes (nunca se regeneran los ya presentes).
 
     Además de reportar progreso, emite `resultado_parcial` con los
     fotogramas que ya están disponibles en disco (ms + QImage decodificada
-    en el hilo del worker). Así la GUI incorpora resultados antes de que
-    terminen los 15 objetivos y la lectura/decodificación JPEG queda en el
+    en el hilo del worker) en ambas fases. Así la GUI incorpora resultados
+    de forma progresiva y la lectura/decodificación JPEG queda en el
     worker, no en el hilo de la GUI.
     """
 
@@ -425,54 +436,73 @@ class TareaExploracionDensa(TareaBase):
         duracion = self._duracion
         if not duracion_valida(duracion):
             duracion = duracion_video(self._ruta_video)
-        cantidad = self._cantidad
-        if cantidad is None:
-            cantidad = cantidad_fotogramas(duracion)
-        objetivos = set(tiempos_objetivo(duracion, cantidad))
-        version = None
-        if duracion_valida(duracion):
-            version = version_actual(
-                self._video_id, self._ruta_video, duracion
-            )
+        fase_rapida = self._cantidad
+        if fase_rapida is None or fase_rapida <= 0:
+            fase_rapida = FOTOGRAMAS_INICIALES
+        objetivo_total = (
+            objetivo_total_densidad(duracion)
+            if duracion_valida(duracion)
+            else 0
+        )
         emitidos = self._emitidos
 
-        def al_progreso(procesado, total):
-            self.reportar_progreso(procesado, total)
-            if self._cancelada or version is None or not objetivos:
-                return
-            presentes = listar_fotogramas_version(
-                self._video_id, version, duracion=duracion
-            )
-            nuevos = [
-                ms
-                for ms in presentes
-                if ms in objetivos and ms not in emitidos
-            ]
-            if not nuevos:
-                return
-            imagenes = []
-            for ms in nuevos:
-                ruta = ruta_fotograma_version(self._video_id, ms, version)
-                imagen = QImage(ruta)
-                if imagen.isNull():
-                    continue
-                imagenes.append((ms, imagen))
-                emitidos.add(ms)
-            if imagenes:
-                self.resultado_parcial.emit({
-                    "video_id": self._video_id,
-                    "version": version,
-                    "fotogramas": imagenes,
-                })
+        def _fase(cantidad):
+            if not duracion_valida(duracion):
+                objetivos = set()
+                version = None
+            else:
+                objetivos = set(tiempos_objetivo(duracion, cantidad))
+                version = version_actual(
+                    self._video_id, self._ruta_video, duracion
+                )
 
-        resultado = generar_fotogramas(
-            self._video_id,
-            self._ruta_video,
-            duracion=duracion,
-            cantidad=self._cantidad,
-            on_progreso=al_progreso,
-            cancelar=lambda: self._cancelada,
-        )
+            def al_progreso(procesado, total):
+                self.reportar_progreso(procesado, total)
+                if self._cancelada or version is None or not objetivos:
+                    return
+                presentes = listar_fotogramas_version(
+                    self._video_id, version, duracion=duracion
+                )
+                nuevos = [
+                    ms
+                    for ms in presentes
+                    if ms in objetivos and ms not in emitidos
+                ]
+                if not nuevos:
+                    return
+                imagenes = []
+                for ms in nuevos:
+                    ruta = ruta_fotograma_version(self._video_id, ms, version)
+                    imagen = QImage(ruta)
+                    if imagen.isNull():
+                        continue
+                    imagenes.append((ms, imagen))
+                    emitidos.add(ms)
+                if imagenes:
+                    self.resultado_parcial.emit({
+                        "video_id": self._video_id,
+                        "version": version,
+                        "fotogramas": imagenes,
+                    })
+
+            return generar_fotogramas(
+                self._video_id,
+                self._ruta_video,
+                duracion=duracion,
+                cantidad=cantidad,
+                on_progreso=al_progreso,
+                cancelar=lambda: self._cancelada,
+            )
+
+        resultado = _fase(fase_rapida)
+        if (
+            objetivo_total > fase_rapida
+            and isinstance(resultado, dict)
+            and not resultado.get("cancelado")
+            and resultado.get("version")
+            and not self._cancelada
+        ):
+            resultado = _fase(objetivo_total)
         if isinstance(resultado, dict) and resultado.get("version") and not resultado.get("cancelado"):
             imagenes = []
             for ms in resultado.get("fotogramas") or []:

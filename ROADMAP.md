@@ -14,9 +14,9 @@ arquitectónicas.
 >    se reanudó en el **ciclo Beta 4** (rama `beta4`): las etapas **B4.1 —
 > Exploración temporal interactiva y marcadores visuales**, **B4.2 —
 > Persistencia de marcadores temporales por video**, **B4.3.1 — Motor de
-> caché temporal versionada y reanudable** y **B4.3.2 — Cobertura rápida
-> asíncrona integrada con la UI** quedaron **completadas y
-> aprobadas** (ver la sección "Beta 4").
+> caché temporal versionada y reanudable**, **B4.3.2 — Cobertura rápida
+> asíncrona integrada con la UI** y **B4.3.2 — Etapa 2: Densidad secundaria
+> adaptativa** quedaron **completadas y aprobadas** (ver la sección "Beta 4").
 
 ------------------------------------------------------------------------
 
@@ -542,29 +542,40 @@ desarrolla sobre la rama `beta4` (punto de partida: cierre de la Beta 3).
      necesariamente el final** desde la UI. Sin UI, sin SQLite (`videos`, `marcadores_video`,
    `biblioteca.db` intactos) y sin acoplamiento con `escanear_videos`. Suites: B4.3.1
       **29/29** y regresiones B4.1 **28/28**, B4.2 **17/17**, previews **16/16**, smoke OK.
-    - **B4.3.2 — Cobertura rápida asíncrona integrada con la UI.** **Completada.** La tarjeta
-      consume el motor de B4.3.1 con una **tarea asíncrona dedicada** (`TareaExploracionDensa`)
-      que genera los **`FOTOGRAMAS_INICIALES = 15`** provisionales y emite **resultados
-      parciales progresivos** (`QImage` decodificada en el worker; conversión final a `QPixmap`
-      en la GUI). **Fallback a las previews normales** mientras no hay caché y **mejora
-      progresiva**; `mouseMove` con selección **exclusivamente en RAM**; imagen mostrada = la
-      **más cercana** entre preview normal y densa (la preview normal gana el empate);
-      **cancelación cooperativa** al cambiar de tarjeta/video; **aislamiento A→B** (cada tarjeta
-      usa su caché); **colapso que libera las referencias densas de RAM**; **reexpansión que
-      reutiliza la caché** (sin regenerar); los **marcadores** conservan su tiempo/id y mejoran
-      visualmente al llegar fotogramas densos. **Validación visual manual A–G aprobada por
-      Marcos** en el PC de desarrollo. El **batch/híbrido completo NO está implementado**: B4.3.2
-      usa generación individual solo para los 15 fotogramas iniciales. Suites: B4.3.2 **20/20**
-      y regresiones B4.3.1 **29/29**, B4.1 **28/28**, B4.2 **17/17**, previews **16/16**,
-      tamaño miniaturas **32/32**, recarga catálogo **20/20**, página siguiente **20/20**, smoke OK.
-      **Próximo paso:** validación de esta implementación exacta en el **hardware objetivo**
-      (notebook 16 GB RAM, Intel Core i7-7500U @ 2.70 GHz, NVIDIA GeForce 940MX 2 GB, Intel HD
-      Graphics 620), priorizando **agilidad y fluidez**. Esa medición decidirá entre **A**
-      mantener solo esta cobertura, **B** una **segunda fase batch/híbrida** (uno/pocos lotes
-      eficientes) o **C** ajustar la densidad (`FOTOGRAMAS_INICIALES`, `MAX`, tamaño de lote y
-      concurrencia) — **sin anticipar cuál**; **NO se asume que el batch sea obligatorio**. La
-      prueba en la notebook debe realizarse **antes de congelar** MAX, cantidad inicial, tamaño
-      de lote y concurrencia.
+    - **B4.3.2 — Cobertura rápida asíncrona integrada con la UI (Etapa 1).** **Completada.** La
+      tarjeta consume el motor de B4.3.1 con una **tarea asíncrona dedicada**
+      (`TareaExploracionDensa`) que genera los **`FOTOGRAMAS_INICIALES = 15`** prioritarios y
+      emite **resultados parciales progresivos** (`QImage` decodificada en el worker; conversión
+      final a `QPixmap` en la GUI). **Fallback a las previews normales** mientras no hay caché y
+      **mejora progresiva**; `mouseMove` con selección **exclusivamente en RAM**; imagen mostrada
+      = la **más cercana** entre preview normal y densa (la preview normal gana el empate);
+      **cancelación cooperativa**; **aislamiento A→B**; **colapso que libera las referencias
+      densas de RAM**; **reexpansión que reutiliza la caché** (sin regenerar); los **marcadores**
+      conservan su tiempo/id y mejoran visualmente. **Validación visual manual A–G aprobada por
+      Marcos** en el PC de desarrollo y validada en la **notebook objetivo** (expansión y scrub
+      correctos con un video real de ~56 min). Suites: B4.3.2 **20/20** y regresiones verdes.
+    - **B4.3.2 — Etapa 2: Densidad secundaria adaptativa.** **Completada.** Tras el **benchmark de
+      estrategias** sobre un video de 56 min (individual ≈7 s; batch por orden de cobertura ≈41 s
+      → descartado; batch cronológico ≈10.5 s; pasada uniforme ≈10.8 s sin ventaja suficiente),
+      por **decisión de producto** se adoptó la **generación individual y secuencial: un FFmpeg
+      por objetivo, sin batch, sin paralelismo**. Los **15 prioritarios** se mantienen exactamente
+      como en la Etapa 1 y la **fase secundaria** completa hasta el objetivo de densidad
+      `objetivo_total_densidad(duración)` = `clamp(max(15, ceil(duración/30 s)), 15, 200)` —
+      valores **provisionales** (30 s / mín 15 / máx 200), centralizados en `exploracion_cache.py`
+      para exponerlos/configurarlos después, **sin controles visibles por ahora**. La fase
+      secundaria solo arranca cuando termina la fase rápida (**sin solapamiento**), reutiliza los
+      JPEG ya existentes (nunca regenera los presentes), es **progresiva** (`resultado_parcial`
+      en ambas fases), **reanudable** y **cancelable** de forma cooperativa (cambiar/colapsar
+      detiene la continuación; lo ya generado queda reutilizable). **Medidas de referencia en el
+      PC de desarrollo** (video de ~56 min; no garantizan igualdad en la notebook): primer
+      fotograma prioritario ≈**0.10 s**; **15 prioritarios ≈1.13 s**; primer secundario (16.º)
+      ≈1.21 s (después de la fase rápida); **total 112 ≈8.39 s**; reexpansión con caché completa
+      ≈**0.08 s sin regenerar**; scrub en RAM sin problema perceptible. **Notebook:** la Etapa 1
+      ya fue validada en el hardware objetivo (i7-7500U / 16 GB RAM / 940MX) con un video real de
+      ~56 min; la **Etapa 2** debe recibir una **comprobación visual sencilla** posterior
+      (confirmar que la densidad secundaria no perjudica la fluidez); **NO se requiere una
+      campaña adicional de benchmarks exhaustivos**. Suites: `prueba_exploracion_densidad_b432.py`
+      **12/12** y regresiones verdes.
 4. **Reproducción / navegación mediante marcadores.** **Futura.** Los marcadores temporales
    son una **función permanente de navegación del producto** (no exclusivamente puntos de
    corte): representan un instante significativo al que el usuario quiera regresar, permitirán

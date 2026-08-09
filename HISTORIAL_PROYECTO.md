@@ -5,6 +5,74 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 93. Agregar densidad temporal adaptativa en segundo plano (B4.3.2 — Etapa 2)
+
+- **Fecha:** 2026-08-09
+- **Objetivo:** Quinta etapa del ciclo **Beta 4** (rama `beta4`), tercera subetapa de
+  **B4.3 — Caché densa de exploración temporal**. Agregar una **densidad secundaria
+  adaptativa** en segundo plano detrás de los 15 fotogramas prioritarios, con la **menor
+  complejidad** y sin degradar la fluidez ya validada.
+- **Decisión de estrategia:** tras un **benchmark experimental** sobre un video de ~56 min en el
+  PC de desarrollo (individual ≈7 s; batch por orden de cobertura ≈41 s → **descartado**; batch
+  cronológico ≈10.5 s; pasada uniforme ≈10.8 s sin ventaja suficiente), por **decisión de
+  producto** se adoptó la **generación individual y secuencial**: **un FFmpeg por objetivo, sin
+  batch, sin paralelismo**. La Etapa 1 ya funcionaba correctamente en la notebook objetivo, por
+  lo que la fase rápida no se modifica.
+- **Comportamiento final:**
+  - `exploracion_cache.py` — **densidad secundaria centralizada**: `FOTOGRAMAS_INICIALES = 15`,
+    `PASO_SEGUNDOS_DENSIDAD = 30.0`, `MINIMO_FOTOGRAMAS_DENSIDAD = 15`,
+    `MAXIMO_FOTOGRAMAS_DENSIDAD = 200` y `objetivo_total_densidad(duración)` =
+    `clamp(max(15, ceil(d/30)), 15, 200)` (duración inválida → 0). El motor `generar_fotogramas`
+    no cambia: reutiliza lo presente y genera solo faltantes, serial.
+  - `tareas_videos.py` — **`TareaExploracionDensa._trabajo()` en dos fases secuenciales**:
+    **fase rápida** = los 15 prioritarios (comportamiento de la Etapa 1 intacto); **fase
+    secundaria** = solo después de terminar la rápida y sin cancelarse, genera hasta
+    `objetivo_total_densidad(duración)` reutilizando lo existente y completando únicamente los
+    faltantes. Ambas fases emiten `resultado_parcial` progresivo y comparten `_emitidos` (sin
+    duplicados). **Un solo FFmpeg activo** en todo momento.
+  - `visor_videos.py` — `FOTOGRAMAS_INICIALES` pasa a referenciar
+    `exploracion_cache.MINIMO_FOTOGRAMAS_DENSIDAD` (valor único centralizado; **sin controles
+    visibles**).
+- **Densidad (ejemplos aprobados):** 2 min → 15, 10 min → 20, 30 min → 60, 50 min → 100,
+  56 min → 112, 2 h → 200. Parámetros **provisionales** (30 s / mín 15 / máx 200), no congelados
+  y sin configuración visible; la arquitectura permite exponerlos en una etapa separada
+  (p. ej. 60 / 30 / 15 s).
+- **Reutilización y cancelación:** la fase secundaria **nunca regenera** los fotogramas ya
+  presentes (reanudación por `objetivos - existentes`); cambiar de video o colapsar la tarjeta
+  **cancela** la continuación de forma cooperativa y lo ya generado queda **reutilizable**.
+- **Medidas de referencia (PC de desarrollo, video ≈56 min — no garantizan igualdad en la
+  notebook):** primer fotograma prioritario ≈**0.10 s**; **15 prioritarios ≈1.13 s**; primer
+  secundario (16.º) ≈1.21 s (**después** de la fase rápida, sin solapamiento); **total 112
+  ≈8.39 s**; reexpansión con caché completa ≈**0.08 s** sin regenerar; scrub en RAM sin
+  problema perceptible.
+- **Validación visual (PC de desarrollo, app real + FFmpeg real):** aprobada — expansión
+  inmediata, 15 prioritarios primero, densidad creciente progresiva, scrub fluido, colapso libera
+  RAM, reexpansión reutiliza (0.08 s). La **notebook objetivo** ya validó la **Etapa 1**
+  (expansión y scrub correctos con un video real de ~56 min en i7-7500U / 16 GB / 940MX); la
+  **Etapa 2** recibirá una **comprobación visual sencilla** posterior (sin campaña adicional de
+  benchmarks).
+- **SQLite intacto:** `videos`, `marcadores_video` y `biblioteca.db` no fueron modificados.
+- **Pruebas:** `prueba_exploracion_densidad_b432.py` **12/12** (P01 py_compile; P02 fórmula de
+  densidad; P03 fase rápida primero con orden `[15, objetivo_total]`; P04 los 15 no se regeneran
+  (15+85); P05 reutiliza 45 y genera 55; P06 máximo un FFmpeg concurrente; P07 secundarios
+  progresivos; P08 A→B sin fugas; P09 colapso libera RAM; P10 reexpansión reutiliza; P11
+  mouseMove solo RAM; P12 marcadores conservan tiempo/id y mejoran). Regresiones en verde en el
+  cierre: `prueba_exploracion_b432.py` **20/20**, `prueba_exploracion_cache_b431.py` **29/29**,
+  `prueba_exploracion_b41.py` **28/28**, `prueba_marcadores_b42.py` **17/17**,
+  `prueba_previews_progresivas.py` **16/16**, `prueba_tamano_miniaturas.py` **32/32**,
+  `prueba_recarga_catalogo.py` **20/20**, `prueba_pagina_siguiente.py` **20/20**,
+  `prueba_smoke.py` OK. `python -m py_compile` OK. `git diff --check` OK.
+- **Pendiente separado (no corresponde a B4.3, sin optimizar ahora):** Marcos observó en la
+  notebook una demora perceptible al **cargar una carpeta de 121 videos** y generar las
+  miniaturas normales iniciales; quedó registrado como cuello de botella aparte.
+- **Archivos modificados:** `exploracion_cache.py`, `tareas_videos.py`, `visor_videos.py`,
+  `prueba_exploracion_densidad_b432.py` (nueva), y los documentos oficiales (`ESTADO_PROYECTO.md`,
+  `ROADMAP.md`, `DOCUMENTO_TECNICO.md`, `HISTORIAL_PROYECTO.md`). Sin cambios en
+  `exploracion_temporal.py`, `escanear_videos.py`, SQLite ni configuración.
+- **Commit:** `Agregar densidad temporal adaptativa en segundo plano` (cierre de B4.3.2 Etapa 2).
+
+---
+
 ## 92. Integrar cobertura temporal densa progresiva en la interfaz (B4.3.2)
 
 - **Fecha:** 2026-08-09

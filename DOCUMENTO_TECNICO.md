@@ -18,7 +18,7 @@ prueba/
 ├── escanear_videos.py     CLI / backend: escaneo + SQLite + FFprobe
 ├── rutas.py               Resolución centralizada de rutas del proyecto (independiente del CWD); incluye `ruta_carpeta_exploracion()` (`miniaturas/exploracion`, B4.3.1)
 ├── tareas.py              Infraestructura reutilizable de trabajos en segundo plano (QThread)
-├── tareas_videos.py       Tareas de video asíncronas (TareaFFprobe, TareaEscaneo, TareaTamanosArchivos, TareaLecturaCatalogo, TareaLecturaCatalogoPaginada, TareaGuardarVideo, TareaGuardarVideos, TareaMiniaturas, TareaPreviewsProgresivas, TareaSincronizacionCatalogo, y desde B4.2 TareaListarMarcadores, TareaGuardarMarcador, TareaEliminarMarcador; desde B4.3.2 TareaExploracionDensa)
+├── tareas_videos.py       Tareas de video asíncronas (TareaFFprobe, TareaEscaneo, TareaTamanosArchivos, TareaLecturaCatalogo, TareaLecturaCatalogoPaginada, TareaGuardarVideo, TareaGuardarVideos, TareaMiniaturas, TareaPreviewsProgresivas, TareaSincronizacionCatalogo, y desde B4.2 TareaListarMarcadores, TareaGuardarMarcador, TareaEliminarMarcador; desde B4.3.2 TareaExploracionDensa — cobertura densa en dos fases: 15 prioritarios + densidad secundaria adaptativa)
 ├── prueba_tareas.py       Pruebas automatizadas de la infraestructura de trabajos
 ├── prueba_ffprobe.py      Pruebas automatizadas de TareaFFprobe
 ├── prueba_escaneo.py      Pruebas automatizadas de TareaEscaneo
@@ -62,10 +62,12 @@ prueba/
 ├── prueba_subcarpetas_arbol.py  Pruebas de verificación de la paridad árbol/botón/diálogo respecto de "Incluir subcarpetas" (Etapa 2.7)
 ├── prueba_escaneo_automatico.py  Pruebas automatizadas de la preferencia independiente de "Escaneo automático" y sus cuatro combinaciones con "Incluir subcarpetas" (Etapa 2.8)
 ├── prueba_indicador_escaneado.py  Pruebas automatizadas de los indicadores visuales de carpetas escaneadas (Etapa 2.9)
-├── exploracion_cache.py    Motor de caché temporal versionada y reanudable en disco (B4.3.1): estructura `miniaturas/exploracion/<video_id>/<version_fingerprint>/` (`meta.json` + `f{ms:010d}.jpg`), fingerprint sin hash, reanudación y escritura atómica; sin UI ni SQLite
-├── visor_videos.py        Interfaz gráfica (PySide6): panel izquierdo con árbol de navegación (`ArbolNavegacion`) + carga asíncrona de la primera página + carga manual de una página adicional ("Cargar más") + selección de carpeta + persistencia de la última carpeta seleccionada (servicio `configuracion`) + escaneo asíncrono de la carpeta elegida + encadenamiento escaneo → tamaños → FFprobe → miniaturas → registros con tamaño/metadatos → guardado → sincronización completa del catálogo → recarga asíncrona del catálogo (reemplazo de tarjetas) + generación progresiva de previews con gestor propio + apertura del video por doble clic (señal `Tarjeta.doble_clic` → `_abrir_video` → servicio `apertura_videos`) + **persistencia de marcadores temporales con gestor dedicado `gestor_marcadores` (B4.2)** (la `Tarjeta` recibe `video_id`, carga marcadores al expandir y persiste altas/bajas sin SQLite directo, con reconciliación de la carga como snapshot antiguo) + **cobertura densa de exploración temporal integrada con la tarjeta (B4.3.2)**: `TareaExploracionDensa` con `resultado_parcial` progresivo, decodificación `QImage` en el worker y conversión `QPixmap` en la GUI, fallback a previews normales, selección en RAM durante `mouseMove`, cancelación cooperativa, aislamiento A→B, colapso que libera RAM y reexpansión que reutiliza la caché; `main()` es el **punto de entrada de producción** (solo UI, sin pruebas)
+├── exploracion_cache.py    Motor de caché temporal versionada y reanudable en disco (B4.3.1): estructura `miniaturas/exploracion/<video_id>/<version_fingerprint>/` (`meta.json` + `f{ms:010d}.jpg`), fingerprint sin hash, reanudación y escritura atómica; densidad secundaria provisional centralizada (`objetivo_total_densidad`, 1/30 s, mín 15, máx 200) para B4.3.2 Etapa 2; sin UI ni SQLite
+├── visor_videos.py        Interfaz gráfica (PySide6): panel izquierdo con árbol de navegación (`ArbolNavegacion`) + carga asíncrona de la primera página + carga manual de una página adicional ("Cargar más") + selección de carpeta + persistencia de la última carpeta seleccionada (servicio `configuracion`) + escaneo asíncrono de la carpeta elegida + encadenamiento escaneo → tamaños → FFprobe → miniaturas → registros con tamaño/metadatos → guardado → sincronización completa del catálogo → recarga asíncrona del catálogo (reemplazo de tarjetas) + generación progresiva de previews con gestor propio + apertura del video por doble clic (señal `Tarjeta.doble_clic` → `_abrir_video` → servicio `apertura_videos`) + **persistencia de marcadores temporales con gestor dedicado `gestor_marcadores` (B4.2)** (la `Tarjeta` recibe `video_id`, carga marcadores al expandir y persiste altas/bajas sin SQLite directo, con reconciliación de la carga como snapshot antiguo) + **cobertura densa de exploración temporal integrada con la tarjeta (B4.3.2)**: `TareaExploracionDensa` con `resultado_parcial` progresivo, decodificación `QImage` en el worker y conversión `QPixmap` en la GUI, fallback a previews normales, selección en RAM durante `mouseMove`, cancelación cooperativa, aislamiento A→B, colapso que libera RAM y reexpansión que reutiliza la caché; **densidad secundaria adaptativa en segundo plano (Etapa 2)**; `main()` es el **punto de entrada de producción** (solo UI, sin pruebas)
 ├── prueba_smoke.py        Arnés de smoke tests (ejecución explícita con `python prueba_smoke.py`): verifica el pipeline completo (paginación, escaneo + carpeta + sincronización, previews, doble clic y persistencia) con una base SQLite temporal; no se ejecuta al iniciar la aplicación
 ├── prueba_exploracion_cache_b431.py  Pruebas automatizadas del motor de caché temporal (B4.3.1, 29)
+├── prueba_exploracion_b432.py  Pruebas de la cobertura rápida integrada con la UI (B4.3.2 Etapa 1, 20)
+├── prueba_exploracion_densidad_b432.py  Pruebas de la densidad secundaria adaptativa (B4.3.2 Etapa 2, 12)
 ├── DOCUMENTO_TECNICO.md   Este documento
 ├── miniaturas/            Imágenes de miniatura (JPG, generadas automáticamente)
 │   └── <prefijo>_<NN>.jpg  Convención de nombres; caché ignorada, contenido variable
@@ -332,16 +334,20 @@ Capa de **tareas asíncronas**: no define lógica de catálogo ni de datos. Re-e
 - `TareaExploracionDensa(TareaBase)` — **cobertura densa de exploración temporal de un video**
   (B4.3.2): recibe `video_id`, `ruta_video`, `duracion` y `parent`; captura **instantáneas
   inmutables** de esos valores en el constructor y expone las propiedades de solo lectura
-  `video_id`, `ruta_video` y `duracion`. `_trabajo()` genera la cobertura inicial de
-  **`FOTOGRAMAS_INICIALES = 15`** provisionales con el motor `exploracion_cache.py` de B4.3.1,
-  emite **resultados parciales progresivos** a través de la señal **`resultado_parcial =
-  Signal(object)`** en cuanto hay fotogramas (un diccionario con `tipo`, `video_id`, `ms` y la
-  `QImage` ya decodificada en el worker) y termina con la cola final
-  `{"imagenes": [{"ms": ..., "imagen": QImage}, ...]}`. La decodificación de los JPEG
-  (`QImage`) ocurre **en el hilo de trabajo**; la conversión a `QPixmap` y su aplicación se
-  delega a la GUI. Expone el módulo `FOTOGRAMAS_INICIALES` (para que las pruebas y la
+  `video_id`, `ruta_video` y `duracion`. `_trabajo()` genera en **dos fases secuenciales** con
+  el motor `exploracion_cache.py`: la **fase rápida** produce los **`FOTOGRAMAS_INICIALES = 15`**
+  prioritarios (Etapa 1, sin cambios) y, solo después de terminar y sin cancelarse, la **fase
+  secundaria** genera hasta `objetivo_total_densidad(duración)` reutilizando lo existente y
+  completando únicamente los faltantes (**un FFmpeg por objetivo, serial, sin batch**). En
+  ambas fases emite **resultados parciales progresivos** a través de la señal
+  **`resultado_parcial = Signal(object)`** (un diccionario con `video_id`, `version` y una lista
+  `(ms, QImage)` ya decodificada en el worker) y termina con la cola final
+  `{"imagenes": [(ms, QImage), ...]}` de los fotogramas aún no emitidos. La decodificación de
+  los JPEG (`QImage`) ocurre **en el hilo de trabajo**; la conversión a `QPixmap` y su
+  aplicación se delega a la GUI. Expone `FOTOGRAMAS_INICIALES` (para que las pruebas y la
   configuración futura puedan variarlo) y usa la **cancelación cooperativa** de la caché para
-  abortar la generación al cambiar de video/tarjeta. No abre SQLite y no toca la interfaz.
+  abortar la generación al cambiar de video/tarjeta (la fase secundaria no arranca si la tarea
+  fue cancelada). No abre SQLite y no toca la interfaz.
 
 ### `exploracion_temporal.py` — lógica pura de exploración temporal (B4.1 y B4.3.1)
 Módulo **puro** (sin Qt, sin FFmpeg, sin SQLite, sin archivos ni caché persistente) que
@@ -505,11 +511,17 @@ en disco la caché densa de exploración temporal:
   consulta la duración con ffprobe si no se pasa (timeout 30 s), usa la densidad
   `cantidad_fotogramas` y la cobertura `tiempos_objetivo`, reutiliza los JPEGs ya presentes y
   emite una **invocación de FFmpeg por fotograma** (`-ss` + `-frames:v 1` + reducción de
-  resolución durante la extracción, timeout 30 s, sin ventana de consola) como **mecanismo
-  actual de validación**, que **no será necesariamente el final** desde la UI (la estrategia
-  híbrida de B4.3.2 quedó registrada pero no implementada). Callbacks opcionales
-  `on_progreso(indice, total)` y cancelación cooperativa `cancelar()`. Devuelve un resumen con
-  `generados`, `reutilizados`, `errores`, `cancelado`, `faltantes`, `version` y `fotogramas`.
+  resolución durante la extracción, timeout 30 s, sin ventana de consola) — **serial, un FFmpeg
+  a la vez**. Callbacks opcionales `on_progreso(indice, total)` y cancelación cooperativa
+  `cancelar()`. Devuelve un resumen con `generados`, `reutilizados`, `errores`, `cancelado`,
+  `faltantes`, `version` y `fotogramas`.
+- **Densidad secundaria (B4.3.2 Etapa 2, provisional):** constantes centralizadas
+  `FOTOGRAMAS_INICIALES = 15`, `PASO_SEGUNDOS_DENSIDAD = 30.0`,
+  `MINIMO_FOTOGRAMAS_DENSIDAD = 15` y `MAXIMO_FOTOGRAMAS_DENSIDAD = 200`, y la función
+  `objetivo_total_densidad(duración)` = `clamp(max(15, ceil(d/30)), 15, 200)` (duración
+  inválida/cero/negativa/bool → 0). Son **provisionales** (30 s / mín 15 / máx 200) y NO se
+  exponen en la interfaz; la arquitectura permite configurarlos después (p. ej. 60 / 30 / 15 s)
+  en una etapa separada.
 - **API para consumidores** (sin gestionar versiones): `listar_fotogramas`, `faltantes`,
   `cache_vigente`, `fotograma_mas_cercano_en_cache`, `ruta_carpeta_actual`, `version_actual`.
   `fotograma_mas_cercano_en_cache` consulta **solo la versión vigente**, nunca fotogramas de
@@ -542,34 +554,44 @@ de tareas** (un solo lanzamiento por tarjeta): mientras no existe caché la supe
   accede al disco; elige la imagen **más cercana** entre las previews normales y los fotogramas
   densos cargados (la preview normal gana el empate; los fotogramas densos solo entran cuando
   mejoran la distancia temporal).
-- **`FOTOGRAMAS_INICIALES = 15` provisional**: la cobertura inicial que genera la tarea; NO es
-  el `MAX` de la densidad de B4.3.1 (40–200) ni está congelado — la cantidad inicial y sus
-  parámetros se decidirán tras la prueba en el hardware objetivo.
+- **Dos fases secuenciales (Etapa 2):** `_trabajo()` primero genera la **fase rápida** con los
+  **`FOTOGRAMAS_INICIALES = 15`** prioritarios (Etapa 1) y, solo después de terminar y sin
+  cancelarse, la **fase secundaria** completa hasta `objetivo_total_densidad(duración)`
+  (densidad ~1/30 s, mín 15, máx provisional 200) reutilizando lo existente y generando
+  únicamente los faltantes. **Sin solapamiento**: una imagen secundaria no aparece antes de
+  finalizar la fase rápida. Generación **individual y secuencial, un FFmpeg por objetivo, sin
+  batch y sin paralelismo**.
+- **`FOTOGRAMAS_INICIALES = 15` y densidad provisionales**: la cobertura inicial y el objetivo
+  secundario (`PASO_SEGUNDOS_DENSIDAD`, mínimo y máximo) NO están congelados ni se exponen en la
+  interfaz; están centralizados en `exploracion_cache.py` para configurarlos después
+  (p. ej. 60 / 30 / 15 s) en una etapa separada.
 - **Decodificación en el worker**: los JPEG se leen y decodifican a `QImage` dentro del hilo de
   trabajo y viajan por señal; la conversión a `QPixmap` (objeto ligado a la GUI) y su pintado
-  ocurren en el hilo principal.
+  ocurren en el hilo principal. Aplica a ambas fases.
 - **Cancelación cooperativa**: al cambiar de video/tarjeta la tarea anterior se cancela de
-  forma cooperativa (la caché aborta la generación entre fotogramas); el estado de la tarjeta
-  sigue el video correcto.
+  forma cooperativa (la caché aborta la generación entre fotogramas; la fase secundaria no
+  arranca si la tarea fue cancelada); el estado de la tarjeta sigue el video correcto. Cambiar o
+  colapsar detiene la continuación del trabajo y lo ya generado queda reutilizable.
 - **Aislamiento A→B**: cada tarjeta usa su propia caché (`video_id` + versión vigente); la
   cobertura de una tarjeta nunca se aplica a la vecina.
 - **Colapso que libera RAM**: al colapsar la tarjeta se sueltan las referencias a los `QPixmap`
   densos (queda el `QPixmap` de la miniatura/previews y el estado de marcadores); la caché en
   disco no se borra.
 - **Reexpansión que reutiliza**: al reexpandir, si la versión sigue vigente, no se regenera
-  nada (medido ≈ 12.5/20 ms y 0 archivos); si el video cambió (nuevo fingerprint) se genera una
-  versión nueva sin tocar la anterior.
+  nada (medido ≈ 0.08 s para 112 fotogramas en PC de desarrollo); si el video cambió (nuevo
+  fingerprint) se genera una versión nueva sin tocar la anterior.
 - **Marcadores**: conservan su tiempo e `id` y pueden **mejorar visualmente** su miniatura al
-  llegar fotogramas densos más cercanos a su instante.
+  llegar fotogramas densos más cercanos a su instante (incluidos los secundarios).
 
-**Medidas de referencia (B4.3.2, PC de desarrollo — no garantizan rendimiento en el hardware
-objetivo):** primer denso ≈ **0.883 s**; reexpansión 12.5 ms/20 ms/0 archivos; scrub de 300
-consultas ≈ **1.15 ms** (~4 µs/consulta, selección en RAM); worker decode ≈ **2.5 ms/15**;
-GUI `fromImage` + escala ≈ **3.5 ms/15**; RAM del lote ≈ **3.3 MiB**. Video de prueba ≈ 4.36 s.
-La validación visual manual (puntos A–G) fue **aprobada** en el PC de desarrollo; el
-**rendimiento en la notebook objetivo NO está medido** (próximo paso obligatorio). El
-**batch/híbrido completo NO está implementado**: B4.3.2 usa generación individual solo para los
-15 fotogramas iniciales.
+**Medidas de referencia (B4.3.2 Etapa 2, PC de desarrollo — no garantizan rendimiento en el
+hardware objetivo):** video sintético de ~56 min (1280×720, 30 fps), objetivo total 112.
+Primer fotograma prioritario ≈ **0.10 s**; **15 prioritarios ≈ 1.13 s**; **primer secundario
+(16.º) ≈ 1.21 s** (después de la fase rápida, sin solapamiento); **total 112 ≈ 8.39 s**;
+reexpansión con caché completa ≈ **0.08 s** (sin regenerar); scrub desde RAM sin lectura de
+disco. La **notebook objetivo** (i7-7500U / 16 GB / 940MX) ya validó la **Etapa 1** (expansión
+y scrub correctos con un video real de ~56 min); la **Etapa 2** recibirá una **comprobación
+visual sencilla** posterior. **NO se requiere una campaña adicional de benchmarks exhaustivos**;
+el **batch NO está implementado** (decisión de producto: generación individual y secuencial).
 
 ### Módulos ajenos al visor (preservados, no forman parte de la arquitectura)
 - `main.py` — prueba que escribe el resultado en `datos.txt`.
@@ -893,7 +915,7 @@ Durante un escaneo se genera **como máximo una miniatura nueva por video**, y �
 | 14 | Baja | **Estado de "escaneada" por sesión** (Etapa 2.9): el indicador de carpetas escaneadas vive en memoria (`carpetas_escaneadas` del visor) y se pierde al reiniciar; no se persiste ni se deriva del catálogo (requeriría cambios de esquema o en módulos restringidos). La API (`EstadoNodo` + `_icono_para`) ya está preparada; documentada como **deuda técnica** para una etapa específica de persistencia del estado. |
 | 15 | Informativa | **Marcadores huérfanos por diseño** (B4.2): si el registro del video desaparece (eliminación del catálogo, archivo fuera de disco, etc.) los marcadores de `marcadores_video` **no** se eliminan automáticamente (sin `ON DELETE CASCADE`); pueden quedar huérfanos, y no existe aún reasociación de movidos/renombrados ni por nombre/ruta. Deliberado para evitar pérdida automática de datos del usuario; la **reasociación futura** de marcadores huérfanos está prevista (ver `ROADMAP.md`, sección "Beta 4"). |
 | 16 | Informativa | **Fingerprint sin hash de contenido** (B4.3.1): la versión de la caché densa de exploración se deriva de ruta + tamaño + `mtime_ns` + duración (SHA-256 reducido a 16 hex); dos archivos con exactamente esos mismos metadatos no son distinguibles y compartirían caché aunque el contenido difiera. **Limitación aceptada** para B4.3.1; no se intenta resolver (un hash de contenido encarecería el cálculo por video). |
-| 17 | Informativa | **Rendimiento en el hardware objetivo sin medir** (B4.3.2): la cobertura densa integrada con la UI fue validada visualmente en el PC de desarrollo, pero el rendimiento real en la notebook objetivo (i7-7500U / 16 GB / 940MX) **NO está medido**; las cantidades (`FOTOGRAMAS_INICIALES`, `MAX` 40–200) y los parámetros de lote/concurrencia **no están congelados** y se decidirán tras esa prueba (A mantener, B batch/híbrido, C ajustar densidad). El **batch/híbrido completo NO está implementado**: B4.3.2 usa generación individual solo para los 15 fotogramas iniciales. |
+| 17 | Informativa | **Densidad secundaria provisional (B4.3.2 Etapa 2):** por decisión de producto la generación es **individual y secuencial (un FFmpeg por objetivo, sin batch)**; los parámetros (`PASO_SEGUNDOS_DENSIDAD = 30`, `MINIMO = 15`, `MAXIMO = 200`) quedaron centralizados en `exploracion_cache.py` como **provisionales**, NO congelados y **sin configuración visible** (exponerlos en una etapa separada). La Etapa 2 fue validada en el PC de desarrollo (total 112 ≈8.39 s, reexpansión ≈0.08 s); la **notebook objetivo** (i7-7500U / 16 GB / 940MX) ya validó la **Etapa 1** con un video real de ~56 min y la **Etapa 2** quedó pendiente de una **comprobación visual sencilla** (sin campaña adicional de benchmarks). |
 
 ## 9. Dirección arquitectónica futura
 
@@ -915,23 +937,24 @@ más el Bloque de trabajo 4 — catálogo por selección de carpetas — y las
 correcciones finales incluidas). El desarrollo continuó en el **ciclo Beta 4**
 (rama `beta4`): las etapas **B4.1 — Exploración temporal interactiva y
 marcadores visuales**, **B4.2 — Persistencia de marcadores temporales por
-video**, **B4.3.1 — Motor de caché temporal versionada y reanudable** y
-**B4.3.2 — Cobertura rápida asíncrona integrada con la UI** quedaron
-**completadas y aprobadas**, en bloques pequeños y acumulativos y
-**sin introducir cambios arquitectónicos** que todavía no existieran; cada
-etapa extiende la arquitectura únicamente en la medida que su propio alcance
-aprobado lo requiere (B4.2 incorporó la tabla `marcadores_video` y un gestor
-dedicado `gestor_marcadores` en la interfaz, ambos aditivos; B4.3.1 incorporó
-`exploracion_cache.py` y `ruta_carpeta_exploracion()` en `rutas.py`, también
-aditivos, **sin tocar SQLite** — `videos`, `marcadores_video` y
-`biblioteca.db` intactos; B4.3.2 incorporó la tarea `TareaExploracionDensa` y el
-consumo de la caché densa en la superficie temporal, aditivo, con decodificación
-`QImage` en el worker, conversión `QPixmap` en la GUI y fallback a las previews
-normales).
-**Próxima etapa: validación de la cobertura densa de B4.3.2 en el hardware
-objetivo (notebook)**; esa medición decidirá entre mantener solo esta cobertura,
-implementar una segunda fase batch/híbrida o ajustar la cantidad inicial y sus
-parámetros — sin anticipar cuál (ver `ROADMAP.md`, sección "Beta 4").
+video**, **B4.3.1 — Motor de caché temporal versionada y reanudable**,
+**B4.3.2 — Cobertura rápida asíncrona integrada con la UI** y **B4.3.2 — Etapa
+2: Densidad secundaria adaptativa** quedaron **completadas y aprobadas**, en
+bloques pequeños y acumulativos y **sin introducir cambios arquitectónicos** que
+todavía no existieran; cada etapa extiende la arquitectura únicamente en la
+medida que su propio alcance aprobado lo requiere (B4.2 incorporó la tabla
+`marcadores_video` y un gestor dedicado `gestor_marcadores` en la interfaz,
+ambos aditivos; B4.3.1 incorporó `exploracion_cache.py` y
+`ruta_carpeta_exploracion()` en `rutas.py`, también aditivos, **sin tocar
+SQLite** — `videos`, `marcadores_video` y `biblioteca.db` intactos; B4.3.2
+incorporó la tarea `TareaExploracionDensa` y el consumo de la caché densa en la
+superficie temporal, aditivo, con decodificación `QImage` en el worker,
+conversión `QPixmap` en la GUI y fallback a las previews normales; y la **Etapa
+2** extendió `_trabajo()` con la **fase secundaria** de densidad adaptativa,
+individual y secuencial, sin batch).
+**Próxima etapa: comprobación visual sencilla de la densidad secundaria
+(B4.3.2 Etapa 2) en la notebook objetivo**, confirmando que no perjudica la
+fluidez ya validada en la Etapa 1; sin campaña adicional de benchmarks.
 
 **Observación arquitectónica (Etapa B3.1):** el instante que se muestra sobre
 cada preview se deriva de `(duración, índice)` con `calcular_tiempo_preview`,

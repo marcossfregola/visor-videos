@@ -36,6 +36,7 @@ Sin Qt, sin SQLite y sin acoplamiento con `escanear_videos`.
 import contextlib
 import hashlib
 import json
+import math
 import os
 import shutil
 import subprocess
@@ -62,6 +63,32 @@ ALTURA_FOTOGRAMA = 120
 TIEMPO_FPROBE_SEGUNDOS = 30
 TIEMPO_FFMPEG_SEGUNDOS = 30
 LONGITUD_VERSION = 16
+
+# Densidad secundaria (B4.3.2 Etapa 2). Valores provisionales centralizados
+# para exponerlos/configurarlos más adelante sin tocar la interfaz.
+FOTOGRAMAS_INICIALES = 15
+PASO_SEGUNDOS_DENSIDAD = 30.0
+MINIMO_FOTOGRAMAS_DENSIDAD = FOTOGRAMAS_INICIALES
+MAXIMO_FOTOGRAMAS_DENSIDAD = 200
+
+
+def objetivo_total_densidad(duracion):
+    """Total de fotogramas para la densidad secundaria de la interfaz.
+
+    Fórmula provisional aprobada:
+    `clamp(max(15, ceil(duracion_segundos / PASO_SEGUNDOS_DENSIDAD)), 15, 200)`.
+
+    Ejemplos: 2 min -> 15, 10 min -> 20, 30 min -> 60, 50 min -> 100,
+    56 min -> 112, 2 h -> 200. Una duración inválida (no numérica, cero,
+    negativa o booleana) devuelve 0, que significa "sin caché secundaria".
+    """
+    if isinstance(duracion, bool) or not isinstance(duracion, (int, float)):
+        return 0
+    if duracion <= 0:
+        return 0
+    estimado = math.ceil(duracion / PASO_SEGUNDOS_DENSIDAD)
+    return max(MINIMO_FOTOGRAMAS_DENSIDAD,
+               min(MAXIMO_FOTOGRAMAS_DENSIDAD, estimado))
 
 
 def _validar_video_id(video_id):
