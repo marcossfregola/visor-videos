@@ -78,12 +78,21 @@ Decisión de producto (cerrada en la validación de la B4.1):
   un punto al que el usuario quiera regresar días o meses después.
 - Deberán permitir, en etapas futuras, **iniciar reproducción desde el
   marcador** y actuar como **destino seleccionable durante la reproducción**
-  para saltar exactamente a ese instante.
-- Los marcadores se asocian a los videos del catálogo de forma
-  **permanente** (persistencia prevista en B4.2).
-- Los mismos puntos podrán participar posteriormente en **selección A/B o
-  edición**, pero eso es otra función: el marcador conserva su significado
-  de navegación.
+  para saltar exactamente a ese instante (navegación entre marcadores
+  durante la reproducción).
+- Los marcadores se asocian a los videos del catálogo de forma **permanente**:
+  desde la **B4.2** se persisten en SQLite (`marcadores_video`, relacionados
+  mediante `videos.id`) y reaparecen entre sesiones; pueden eliminarse
+  permanentemente y recuperan su representación visual con las previews
+  disponibles.
+- Los mismos puntos podrán participar posteriormente en **selección A/B,
+  loops, selección de fragmentos o corte/unión**, pero eso es otra función:
+  el marcador conserva su significado de navegación.
+- **Conservación de datos del usuario**: la persistencia es deliberadamente
+  no destructiva — si el registro del video desaparece, los marcadores **no**
+  se eliminan automáticamente (pueden quedar huérfanos) y su **reasociación**
+  a archivos movidos/renombrados (o por nombre/ruta) es una **función
+  futura**, para evitar pérdida automática de datos creados por el usuario.
 
 ---
 

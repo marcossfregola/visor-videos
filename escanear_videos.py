@@ -202,7 +202,29 @@ def conectar_bd(ruta_db=None):
     for nombre_col, tipo in COLUMNAS_EXTRA:
         if nombre_col not in existentes:
             conn.execute(f"ALTER TABLE videos ADD COLUMN {nombre_col} {tipo}")
+    _asegurar_tabla_marcadores(conn)
     return conn
+
+
+def _asegurar_tabla_marcadores(conn):
+    """Migración aditiva e idempotente de la tabla de marcadores (B4.2).
+
+    Crea `marcadores_video` (y su índice) si no existen. No activa
+    `PRAGMA foreign_keys` ni usa `ON DELETE CASCADE`: los marcadores son
+    datos del usuario y su coherencia con `videos.id` se gestiona en la
+    capa de servicio, no por borrado automático.
+    """
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS marcadores_video (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            video_id INTEGER NOT NULL,
+            tiempo REAL NOT NULL
+        )
+    """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_marcadores_video_video_id_tiempo
+        ON marcadores_video(video_id, tiempo)
+    """)
 
 def obtener_datos_ffprobe(ruta):
     try:
@@ -527,7 +549,7 @@ def listar_videos(ruta_db=None):
     try:
         return conn.execute(
             """
-            SELECT nombre, duracion_segundos, ancho, alto, codec_video, cantidad_miniaturas, tamano_bytes, ruta
+            SELECT nombre, duracion_segundos, ancho, alto, codec_video, cantidad_miniaturas, tamano_bytes, ruta, id
             FROM videos
             ORDER BY nombre
             """
@@ -709,7 +731,7 @@ def listar_videos_paginado(limite, desplazamiento=0, texto=None, ruta_db=None):
         if texto is None:
             filas = conn.execute(
                 """
-                SELECT nombre, duracion_segundos, ancho, alto, codec_video, cantidad_miniaturas, tamano_bytes, ruta
+                SELECT nombre, duracion_segundos, ancho, alto, codec_video, cantidad_miniaturas, tamano_bytes, ruta, id
                 FROM videos
                 ORDER BY nombre
                 LIMIT ? OFFSET ?
@@ -721,7 +743,7 @@ def listar_videos_paginado(limite, desplazamiento=0, texto=None, ruta_db=None):
             patron = f"%{texto}%"
             filas = conn.execute(
                 """
-                SELECT nombre, duracion_segundos, ancho, alto, codec_video, cantidad_miniaturas, tamano_bytes, ruta
+                SELECT nombre, duracion_segundos, ancho, alto, codec_video, cantidad_miniaturas, tamano_bytes, ruta, id
                 FROM videos
                 WHERE nombre LIKE ?
                 ORDER BY nombre
@@ -828,6 +850,98 @@ def guardar_videos(datos_videos, ruta_db=None, on_progreso=None):
     finally:
         conn.close()
     return {"guardados": len(registros), "nombres": [d["nombre"] for d in registros]}
+
+def _conectar_repositorio_marcadores(ruta_db):
+    if ruta_db is None:
+        ruta_db = ruta_biblioteca()
+    if not os.path.isfile(ruta_db):
+        raise FileNotFoundError(f"Base de datos no encontrada: {ruta_db}")
+    conn = sqlite3.connect(ruta_db)
+    _asegurar_tabla_marcadores(conn)
+    return conn
+
+
+def _validar_video_id(video_id):
+    if isinstance(video_id, bool) or not isinstance(video_id, int):
+        raise TypeError("video_id debe ser un entero")
+    if video_id <= 0:
+        raise ValueError("video_id debe ser un entero positivo")
+
+
+def _validar_tiempo_marcador(tiempo):
+    if isinstance(tiempo, bool) or not isinstance(tiempo, (int, float)):
+        raise TypeError("tiempo debe ser numérico")
+    if tiempo < 0:
+        raise ValueError("tiempo no puede ser negativo")
+
+
+def _validar_marcador_id(marcador_id):
+    if isinstance(marcador_id, bool) or not isinstance(marcador_id, int):
+        raise TypeError("marcador_id debe ser un entero")
+    if marcador_id <= 0:
+        raise ValueError("marcador_id debe ser un entero positivo")
+
+
+def listar_marcadores(video_id, ruta_db=None):
+    """Marcadores persistidos de un video, ordenados por tiempo.
+
+    Devuelve una lista de tuplas `(id, video_id, tiempo)`.
+    """
+    _validar_video_id(video_id)
+    conn = _conectar_repositorio_marcadores(ruta_db)
+    try:
+        return conn.execute(
+            """
+            SELECT id, video_id, tiempo
+            FROM marcadores_video
+            WHERE video_id = ?
+            ORDER BY tiempo
+            """,
+            (video_id,),
+        ).fetchall()
+    finally:
+        conn.close()
+
+
+def guardar_marcador(video_id, tiempo, ruta_db=None):
+    """Persiste un marcador y devuelve su `id` de la base."""
+    _validar_video_id(video_id)
+    _validar_tiempo_marcador(tiempo)
+    conn = _conectar_repositorio_marcadores(ruta_db)
+    try:
+        cursor = conn.execute(
+            "INSERT INTO marcadores_video (video_id, tiempo) VALUES (?, ?)",
+            (video_id, tiempo),
+        )
+        conn.commit()
+        return cursor.lastrowid
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def eliminar_marcador(marcador_id, ruta_db=None):
+    """Elimina un marcador por su `id` de la base.
+
+    Devuelve `True` si se eliminó una fila; `False` si no existía.
+    """
+    _validar_marcador_id(marcador_id)
+    conn = _conectar_repositorio_marcadores(ruta_db)
+    try:
+        cursor = conn.execute(
+            "DELETE FROM marcadores_video WHERE id = ?",
+            (marcador_id,),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
 
 def main():
     conn = conectar_bd()

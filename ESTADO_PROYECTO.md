@@ -19,46 +19,53 @@ cursor, tiempo correspondiente a la posición, preview existente más cercana al
 instante y una **preview móvil** que acompaña horizontalmente al cursor
 (funciona con previews horizontales y verticales). Además permite múltiples
 **marcadores temporales libres** (tiempo real + marca visual + miniatura fijada,
-con solapamiento permitido y persistencia en memoria mientras vive la tarjeta
-durante la sesión) y su **eliminación individual** con clic derecho (sobre la
-miniatura fijada o sobre la marca roja). El scrubbing **no ejecuta FFmpeg ni
-accede a disco por movimiento**. **Próxima etapa: B4.2 — Persistencia de
-marcadores temporales por video** (ver `ROADMAP.md`, sección "Beta 4").
+con solapamiento permitido) y su **eliminación individual** con clic derecho
+(sobre la miniatura fijada o sobre la marca roja). La segunda etapa, **B4.2 —
+Persistencia de marcadores temporales por video**, quedó **aprobada e
+incorporada**: los marcadores creados por el usuario se almacenan
+**permanentemente en SQLite** (tabla `marcadores_video`, relacionados mediante
+`videos.id`), reaparecen entre sesiones, pueden eliminarse permanentemente y
+recuperan su representación visual usando las previews disponibles. El
+scrubbing **no ejecuta FFmpeg ni accede a disco por movimiento**.
+**Próxima etapa: B4.3 — Caché densa de exploración temporal** (ver
+`ROADMAP.md`, sección "Beta 4").
 
 ## Último commit aprobado
 
-**Mensaje:** Implementar exploracion temporal interactiva y marcadores visuales
+**Mensaje:** Persistir marcadores temporales asociados a videos
 
-**Etapa:** B4.1 — Exploración temporal interactiva y marcadores visuales (rama `beta4`):
-- `exploracion_temporal.py` — **nuevo**: lógica pura sin Qt/FFmpeg/SQLite/archivos.
-  `posicion_a_tiempo`/`tiempo_a_posicion` (mapeo posición ↔ instante), `normalizar_posicion`
-  (clamp), `preview_mas_cercana` (selección por tiempo real, no por posición en lista) y
-  `agregar_marcador_ordenado` (marcadores ordenados sin duplicados cercanos).
-- `scrubber.py` — **nuevo**: `FranjaExploracion` (superficie temporal de toda la segunda fila;
-  convierte el movimiento/clic en señales de instante y de marcador; dibuja pista, marcador
-  móvil, marcas persistentes y tiempo) y `MiniaturaMarcador` (miniatura fijada que recibe el
-  clic derecho para eliminar y reenvía el movimiento a la superficie).
-- `visor_videos.py` — `Tarjeta` con expansión/colapso (una sola tarjeta expandida a la vez),
-  superficie temporal, preview móvil posicionada por el instante solicitado (label ajustado al
-  tamaño del pixmap, compatible con previews verticales), marcadores en memoria
-  (`{"tiempo", "pixmap", "etiqueta"}`) con eliminación por clic derecho, y superficie acotada al
-  ancho visible (`_limitar_ancho_superficie`).
-- `prueba_exploracion_b41.py` — **nueva**: 28 pruebas de lógica pura, widget, integración,
-  geometría, distribución temporal con 9 previews, marcadores con miniatura, eliminación y
-  separación "qué preview / dónde se coloca".
-- **Sin cambios** de SQLite, configuración, `escanear_videos.py`, `tareas*.py`, `rutas.py` ni
-  persistencia permanente. `mouseMove` = cero FFmpeg + cero acceso a disco.
+**Etapa:** B4.2 — Persistencia de marcadores temporales por video (rama `beta4`):
+- `escanear_videos.py` — **migración aditiva e idempotente** de la tabla `marcadores_video`
+  (`id INTEGER PRIMARY KEY AUTOINCREMENT`, `video_id INTEGER NOT NULL`, `tiempo REAL NOT NULL`)
+  con el índice `idx_marcadores_video_video_id_tiempo`, invocada desde `conectar_bd`
+  (`_asegurar_tabla_marcadores`); nuevas funciones `listar_marcadores(video_id)`,
+  `guardar_marcador(video_id, tiempo)` y `eliminar_marcador(marcador_id)` con validación
+  previa de contrato y conexión propia por operación (patrón de `listar_videos`/
+  `guardar_videos`). `listar_videos` y `listar_videos_paginado` exponen ahora **9 campos**
+  agregando `id` como última columna.
+- `tareas_videos.py` — **nuevas tareas asíncronas**: `TareaListarMarcadores`,
+  `TareaGuardarMarcador` y `TareaEliminarMarcador`.
+- `visor_videos.py` — `Tarjeta` recibe `video_id` del registro del catálogo y **no ejecuta
+  SQLite directamente**: mantiene la representación optimista en memoria, carga los marcadores
+  al expandir (señal `marcadores_solicitados`), persiste altas/bajas mediante un **gestor
+  dedicado** (`gestor_marcadores`, con cola serializada) y usa `marcador_id` como identidad
+  técnica persistente. La carga desde SQLite se trata como **snapshot potencialmente antiguo**
+  y se **reconcilia** conservando altas/bajas locales pendientes, IDs persistentes existentes
+  y deduplicando por la misma tolerancia temporal de la interacción (carreras cubiertas:
+  crear+borrar antes de terminar el INSERT, cargar+crear, carga+marcador equivalente,
+  carga+baja local y recuperación tras DELETE fallido).
+- `prueba_lectura.py` y `prueba_lectura_paginada.py` — aserciones actualizadas al contrato de
+  **9 campos** (con `id`).
+- `prueba_marcadores_b42.py` — **nueva**: 17 pruebas de migración, persistencia, contrato de
+  lectura, tareas asíncronas y reconciliación de la cola de marcadores.
 
-**Pruebas superadas:** `prueba_exploracion_b41.py` **28/28**. Regresiones en verde (ejecutadas
-durante el desarrollo de B4.1): `prueba_smoke.py` OK, `prueba_previews_progresivas.py` 16/16,
-`prueba_previews_automaticas.py` 22/22, `prueba_seleccion.py` 28/28, `prueba_doble_clic.py` 14/14,
-`prueba_vista_ampliada.py` 24/24, `prueba_filas_horizontales.py` 16/16, `prueba_tamano_miniaturas.py`
-32/32, `prueba_cantidad_previews.py` 14/14, `prueba_tiempo_previews.py` 35/35, `prueba_recarga_catalogo.py`
-20/20, `prueba_tamano_muy_grande.py` 27/27, `prueba_modo_seleccion.py` 20/20, `prueba_duracion_simplificada.py`
-23/23, `prueba_shift_clic.py` 28/28, `prueba_preferencias_miniaturas.py` 31/31,
-`prueba_menu_contextual.py` 18/18. `python -m py_compile` OK. `git diff --check` OK. Validación
-manual de Marcos: **satisfactoria** (incluida la corrección menor de posicionamiento inicial con
-previews verticales).
+**Pruebas superadas:** `prueba_marcadores_b42.py` **17/17**. Regresiones en verde (ejecutadas
+en el cierre): `prueba_exploracion_b41.py` **28/28**, `prueba_lectura.py` **15/15**,
+`prueba_lectura_paginada.py` **32/32**. `python -m py_compile` OK. `git diff --check` OK.
+Validación manual de Marcos: **satisfactoria** en la aplicación real de desarrollo con videos
+de prueba (crear marcador → cerrar la aplicación → volver a abrir → el marcador reaparece;
+eliminar marcador → cerrar/reabrir → el eliminado no reaparece). Sin afirmar otra computadora
+ni instalador.
 
 ## Hitos completados
 
@@ -297,6 +304,28 @@ previews verticales).
   durante la sesión); el clic derecho sobre la miniatura fijada o sobre la marca roja elimina
   **únicamente** ese marcador. `mouseMove` = **cero FFmpeg + cero acceso a disco**. Sin
   persistencia, sin cambios de SQLite ni de `escanear_videos.py`.
+- **B4.2 — Persistencia de marcadores temporales por video.** Segunda etapa del ciclo
+  Beta 4 (rama `beta4`). Los marcadores creados por el usuario se almacenan
+  **permanentemente en SQLite** en la tabla `marcadores_video` (`id INTEGER PRIMARY KEY
+  AUTOINCREMENT`, `video_id INTEGER NOT NULL`, `tiempo REAL NOT NULL`, índice
+  `idx_marcadores_video_video_id_tiempo`), relacionados mediante **`videos.id`** (la columna
+  `id` se expone en el contrato de lectura: `listar_videos` y `listar_videos_paginado`
+  devuelven ahora **9 campos**); reaparecen entre sesiones, pueden eliminarse
+  permanentemente y recuperan su representación visual usando las previews disponibles.
+  Sin cascade automático, sin nombre/ruta como identidad, sin imagen persistida, sin
+  nota/color/tipo ni JSON. **Política de conservación**: reescaneo del mismo registro →
+  conserva; cambios de metadatos → conserva; reemplazo silencioso manteniendo el mismo
+  registro → conserva; si el registro de video desaparece los marcadores **no** se eliminan
+  automáticamente (pueden quedar huérfanos); no existe aún reasociación de
+  movidos/renombrados ni por nombre/ruta. Deliberado para evitar pérdida automática de datos
+  creados por el usuario. `visor_videos.py` **no ejecuta SQLite directamente**: mantiene la
+  representación optimista en memoria, carga marcadores al expandir y persiste altas/bajas con
+  un gestor dedicado (`gestor_marcadores`) usando `marcador_id` como identidad técnica
+  persistente. La carga desde SQLite se trata como **snapshot potencialmente antiguo** y se
+  **reconcilia** conservando altas/bajas locales pendientes, IDs persistentes existentes y
+  deduplicando por la misma tolerancia temporal de la interacción (carreras cubiertas:
+  crear+borrar antes de terminar el INSERT, cargar+crear, carga+marcador equivalente,
+  carga+baja local y recuperación tras DELETE fallido).
 
 ## Pendientes prioritarios
 
@@ -353,14 +382,13 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
 
 ## Próxima etapa
 
-**B4.2 — Persistencia de marcadores temporales por video.** Guardar los marcadores
-temporales de forma **permanente**, relacionarlos correctamente con el video del
-catálogo y **recuperarlos automáticamente** cuando ese video vuelva a cargarse,
-usando **SQLite** y la arquitectura de repositorios/migraciones existente. Antes de
-diseñar la relación debe **estudiarse la identidad actual de los videos** en el
-catálogo. Después de B4.2 quedará prevista la **B4.3 — Caché densa de exploración
-temporal** (fotogramas específicos de scrubbing para reemplazar la resolución
-visual limitada de las previews normales). Ver la secuencia en `ROADMAP.md`,
+**B4.3 — Caché densa de exploración temporal.** Mejorar la resolución visual del scrubbing
+reemplazando la dependencia de las pocas previews normales por una **caché específica de
+fotogramas temporales** (fotogramas de exploración densa). B4.3 **no debe implementarse
+todavía**. Se conservan como funciones futuras: la **reproducción desde el marcador** y la
+**navegación entre marcadores durante la reproducción**; la **selección A/B**, los **loops**,
+la **selección de fragmentos** y el **corte/unión**; y la **detección de archivos movidos**
+con la **reasociación futura de marcadores huérfanos**. Ver la secuencia en `ROADMAP.md`,
 sección "Beta 4".
 
 ## Documentos del proyecto

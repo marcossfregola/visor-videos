@@ -76,8 +76,11 @@ from arbol_navegacion import ArbolNavegacion
 from tareas_videos import (
     TareaEscaneo,
     TareaFFprobe,
+    TareaGuardarMarcador,
     TareaGuardarVideos,
+    TareaEliminarMarcador,
     TareaLecturaCatalogoPaginada,
+    TareaListarMarcadores,
     TareaMiniaturas,
     TareaPreviewsProgresivas,
     TareaSincronizacionCatalogo,
@@ -570,6 +573,9 @@ class Tarjeta(QFrame):
     vista_abandonada = Signal()
     seleccion_check = Signal(str, bool)
     expansion_cambiada = Signal(str, bool)
+    marcador_creado = Signal(object)
+    marcador_eliminado = Signal(object)
+    marcadores_solicitados = Signal()
 
     def __init__(self, fila, parent=None):
         super().__init__(parent)
@@ -580,6 +586,7 @@ class Tarjeta(QFrame):
         nombre, duracion, ancho, alto, codec, miniaturas, tamano, *_resto = fila
 
         ruta_video_registro = _resto[0] if _resto else None
+        self._video_id = _resto[1] if len(_resto) > 1 else None
         carpeta_video = None
         if (
             isinstance(ruta_video_registro, str)
@@ -803,6 +810,8 @@ class Tarjeta(QFrame):
         self._expandida = False
         self._previews_exploracion = []
         self._marcadores = []
+        self._marcadores_cargados = False
+        self._marcadores_eliminados_carga = set()
         self._franja = FranjaExploracion()
         self._franja.instante_seleccionado.connect(self._al_instante_exploracion)
         self._franja.marcador_solicitado.connect(self._al_marcador_solicitado)
@@ -865,6 +874,7 @@ class Tarjeta(QFrame):
         self._actualizar_tiempo_exploracion(0.0)
         self._mostrar_preview_para_instante(0.0)
         self._renderizar_marcadores()
+        self.marcadores_solicitados.emit()
         QTimer.singleShot(0, self._reajustar_geometria_exploracion)
 
     def _ancho_visible_maximo(self):
@@ -979,20 +989,26 @@ class Tarjeta(QFrame):
         self._actualizar_tiempo_exploracion(instante)
         self._mostrar_preview_para_instante(instante)
 
-    def _al_marcador_solicitado(self, instante):
-        tiempos = [m["tiempo"] for m in self._marcadores]
-        tolerancia = 0.0
+    def _tolerancia_marcadores(self):
         ancho = self._franja.width()
         if ancho > 0 and _duracion_valida(self._duracion):
-            tolerancia = self._duracion / ancho * 0.5
+            return self._duracion / ancho * 0.5
+        return 0.0
+
+    def _al_marcador_solicitado(self, instante):
+        tiempos = [m["tiempo"] for m in self._marcadores]
+        tolerancia = self._tolerancia_marcadores()
         _, agregado = agregar_marcador_ordenado(
             instante, tiempos, tolerancia
         )
         if not agregado:
             return
         marcador = {
+            "id": None,
             "tiempo": float(instante),
             "pixmap": self._pixmap_para_instante(instante),
+            "etiqueta": None,
+            "eliminada": False,
         }
         posicion = 0
         while (
@@ -1005,6 +1021,7 @@ class Tarjeta(QFrame):
             [m["tiempo"] for m in self._marcadores]
         )
         self._renderizar_marcadores()
+        self.marcador_creado.emit(marcador)
 
     def _posicionar_miniatura_marcada(self, marcador):
         etiqueta = marcador.get("etiqueta")
@@ -1030,6 +1047,10 @@ class Tarjeta(QFrame):
 
     def _renderizar_marcadores(self):
         for marcador in self._marcadores:
+            if marcador.get("pixmap") is None:
+                marcador["pixmap"] = self._pixmap_para_instante(
+                    marcador["tiempo"]
+                )
             etiqueta = marcador.get("etiqueta")
             if etiqueta is None:
                 pixmap = marcador.get("pixmap")
@@ -1060,6 +1081,7 @@ class Tarjeta(QFrame):
                 self._franja.set_marcadores(
                     [m["tiempo"] for m in self._marcadores]
                 )
+                self.marcador_eliminado.emit(marcador)
                 return
 
     def _refrescar_exploracion(self):
@@ -1388,6 +1410,19 @@ class VisorVideos(QMainWindow):
         self.gestor_operaciones.tarea_progreso.connect(
             self._al_progreso_pipeline
         )
+
+        self.gestor_marcadores = GestorTareas(self)
+        self.gestor_marcadores.tarea_resultado.connect(
+            self._al_resultado_marcadores
+        )
+        self.gestor_marcadores.tarea_error.connect(
+            self._al_error_marcadores
+        )
+        self.gestor_marcadores.tarea_finalizada.connect(
+            self._al_marcadores_finalizada
+        )
+        self._cola_marcadores = []
+        self._marcador_op_actual = None
 
         self._timer_previews = QTimer(self)
         self._timer_previews.setSingleShot(True)
@@ -1739,6 +1774,216 @@ class VisorVideos(QMainWindow):
         for candidato, tarjeta in self.tarjetas:
             if candidato != nombre:
                 tarjeta.colapsar()
+
+    def _encolar_marcador(self, op):
+        self._cola_marcadores.append(op)
+        self._procesar_siguiente_marcador()
+
+    def _procesar_siguiente_marcador(self):
+        if self.gestor_marcadores.activo:
+            return
+        if not self._cola_marcadores:
+            return
+        op = self._cola_marcadores.pop(0)
+        self._marcador_op_actual = op
+        tipo = op.get("tipo")
+        if tipo == "cargar":
+            tarea = TareaListarMarcadores(op["video_id"], self._ruta_db)
+        elif tipo == "crear":
+            tarea = TareaGuardarMarcador(
+                op["video_id"], op["tiempo"], self._ruta_db
+            )
+        elif tipo == "eliminar":
+            tarea = TareaEliminarMarcador(
+                op["marcador_id"], self._ruta_db
+            )
+        else:
+            self._marcador_op_actual = None
+            self._procesar_siguiente_marcador()
+            return
+        if not self.gestor_marcadores.iniciar(tarea):
+            self._marcador_op_actual = None
+            self._procesar_siguiente_marcador()
+
+    def _al_marcadores_finalizada(self):
+        self._marcador_op_actual = None
+        self._procesar_siguiente_marcador()
+
+    def _al_resultado_marcadores(self, resultado):
+        op = self._marcador_op_actual
+        if op is None:
+            return
+        tipo = op.get("tipo")
+        if tipo == "cargar":
+            self._aplicar_marcadores_cargados(op, resultado)
+        elif tipo == "crear":
+            registro = op["registro"]
+            registro["id"] = resultado
+            if registro.get("eliminada"):
+                self._encolar_marcador(
+                    {
+                        "tipo": "eliminar",
+                        "marcador_id": resultado,
+                        "video_id": op["video_id"],
+                        "nombre": op["nombre"],
+                    }
+                )
+
+    def _al_error_marcadores(self, mensaje):
+        op = self._marcador_op_actual
+        if op is None:
+            return
+        tipo = op.get("tipo")
+        if tipo == "crear":
+            registro = op["registro"]
+            registro["eliminada"] = False
+            self.mensaje_carpeta.setText(
+                f"No se pudo guardar el marcador: {mensaje}"
+            )
+        elif tipo == "eliminar":
+            self.mensaje_carpeta.setText(
+                f"No se pudo eliminar el marcador: {mensaje}"
+            )
+            self._encolar_marcador(
+                {
+                    "tipo": "cargar",
+                    "video_id": op["video_id"],
+                    "nombre": op["nombre"],
+                }
+            )
+        elif tipo == "cargar":
+            self.mensaje_carpeta.setText(
+                f"No se pudieron cargar los marcadores: {mensaje}"
+            )
+            tarjeta = self._tarjeta_por_nombre(op["nombre"])
+            if tarjeta is not None:
+                tarjeta._marcadores_eliminados_carga.clear()
+
+    def _al_marcador_creado(self, tarjeta, registro):
+        video_id = getattr(tarjeta, "_video_id", None)
+        if video_id is None:
+            return
+        self._encolar_marcador(
+            {
+                "tipo": "crear",
+                "registro": registro,
+                "video_id": video_id,
+                "tiempo": registro["tiempo"],
+                "nombre": tarjeta.nombre,
+            }
+        )
+
+    def _al_marcador_eliminado(self, tarjeta, registro):
+        video_id = getattr(tarjeta, "_video_id", None)
+        if video_id is None:
+            return
+        marcador_id = registro.get("id")
+        if marcador_id is not None:
+            self._encolar_marcador(
+                {
+                    "tipo": "eliminar",
+                    "marcador_id": marcador_id,
+                    "video_id": video_id,
+                    "nombre": tarjeta.nombre,
+                }
+            )
+        else:
+            registro["eliminada"] = True
+            self._cancelar_crear_pendiente(registro)
+            if self._hay_carga_pendiente(tarjeta):
+                tarjeta._marcadores_eliminados_carga.add(
+                    registro["tiempo"]
+                )
+
+    def _hay_carga_pendiente(self, tarjeta):
+        op = self._marcador_op_actual
+        if (
+            op is not None
+            and op.get("tipo") == "cargar"
+            and op.get("nombre") == tarjeta.nombre
+        ):
+            return True
+        return any(
+            op.get("tipo") == "cargar"
+            and op.get("nombre") == tarjeta.nombre
+            for op in self._cola_marcadores
+        )
+
+    def _cancelar_crear_pendiente(self, registro):
+        self._cola_marcadores = [
+            op
+            for op in self._cola_marcadores
+            if not (op.get("tipo") == "crear" and op.get("registro") is registro)
+        ]
+
+    def _solicitar_carga_marcadores(self, tarjeta):
+        video_id = getattr(tarjeta, "_video_id", None)
+        if video_id is None or tarjeta._marcadores_cargados:
+            return
+        tarjeta._marcadores_cargados = True
+        self._encolar_marcador(
+            {
+                "tipo": "cargar",
+                "video_id": video_id,
+                "nombre": tarjeta.nombre,
+            }
+        )
+
+    def _tarjeta_por_nombre(self, nombre):
+        for candidato, tarjeta in self.tarjetas:
+            if candidato == nombre:
+                return tarjeta
+        return None
+
+    def _aplicar_marcadores_cargados(self, op, filas):
+        tarjeta = self._tarjeta_por_nombre(op["nombre"])
+        if tarjeta is None:
+            return
+        tarjeta._marcadores_cargados = True
+        video_id = op["video_id"]
+        nombre = op["nombre"]
+        tolerancia = tarjeta._tolerancia_marcadores()
+        for marcador_id, video_de_fila, tiempo in filas:
+            if video_de_fila != video_id:
+                continue
+            if any(
+                abs(tiempo - t) <= tolerancia
+                for t in tarjeta._marcadores_eliminados_carga
+            ):
+                self._encolar_marcador(
+                    {
+                        "tipo": "eliminar",
+                        "marcador_id": marcador_id,
+                        "video_id": video_id,
+                        "nombre": nombre,
+                    }
+                )
+                continue
+            encontrado = False
+            for marcador in tarjeta._marcadores:
+                if abs(marcador["tiempo"] - tiempo) <= tolerancia:
+                    if marcador["id"] is None:
+                        marcador["id"] = marcador_id
+                        self._cancelar_crear_pendiente(marcador)
+                    encontrado = True
+                    break
+            if encontrado:
+                continue
+            tarjeta._marcadores.append(
+                {
+                    "id": marcador_id,
+                    "tiempo": float(tiempo),
+                    "pixmap": None,
+                    "etiqueta": None,
+                    "eliminada": False,
+                }
+            )
+        tarjeta._marcadores_eliminados_carga.clear()
+        tarjeta._marcadores.sort(key=lambda m: m["tiempo"])
+        tarjeta._franja.set_marcadores(
+            [m["tiempo"] for m in tarjeta._marcadores]
+        )
+        tarjeta._renderizar_marcadores()
 
     def _al_cambiar_modo_seleccion(self, activo):
         self._modo_seleccion = bool(activo)
@@ -2543,6 +2788,15 @@ class VisorVideos(QMainWindow):
             tarjeta.vista_abandonada.connect(self._al_vista_abandonada)
             tarjeta.seleccion_check.connect(self._al_check_tarjeta)
             tarjeta.expansion_cambiada.connect(self._al_expansion_tarjeta)
+            tarjeta.marcador_creado.connect(
+                lambda registro, t=tarjeta: self._al_marcador_creado(t, registro)
+            )
+            tarjeta.marcador_eliminado.connect(
+                lambda registro, t=tarjeta: self._al_marcador_eliminado(t, registro)
+            )
+            tarjeta.marcadores_solicitados.connect(
+                lambda t=tarjeta: self._solicitar_carga_marcadores(t)
+            )
             tarjeta.mostrar_check(self._modo_seleccion)
             self.tarjetas.append((fila[0], tarjeta))
             self.visibles.append(fila[0])
@@ -2608,6 +2862,15 @@ class VisorVideos(QMainWindow):
             tarjeta.vista_abandonada.connect(self._al_vista_abandonada)
             tarjeta.seleccion_check.connect(self._al_check_tarjeta)
             tarjeta.expansion_cambiada.connect(self._al_expansion_tarjeta)
+            tarjeta.marcador_creado.connect(
+                lambda registro, t=tarjeta: self._al_marcador_creado(t, registro)
+            )
+            tarjeta.marcador_eliminado.connect(
+                lambda registro, t=tarjeta: self._al_marcador_eliminado(t, registro)
+            )
+            tarjeta.marcadores_solicitados.connect(
+                lambda t=tarjeta: self._solicitar_carga_marcadores(t)
+            )
             tarjeta.mostrar_check(self._modo_seleccion)
             self.tarjetas.append((fila[0], tarjeta))
             self.visibles.append(fila[0])
@@ -2702,6 +2965,8 @@ class VisorVideos(QMainWindow):
             self.gestor_previews.cerrar()
         if self.gestor_operaciones is not None:
             self.gestor_operaciones.cerrar()
+        if self.gestor_marcadores is not None:
+            self.gestor_marcadores.cerrar()
         super().closeEvent(event)
 
 

@@ -5,6 +5,82 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 90. Persistir marcadores temporales asociados a videos (B4.2)
+
+- **Fecha:** 2026-08-09
+- **Objetivo:** Segunda etapa del ciclo **Beta 4** (rama `beta4`). Guardar los marcadores
+  temporales de forma **permanente** en SQLite, relacionarlos correctamente con el video del
+  catálogo y **recuperarlos automáticamente** cuando ese video vuelva a cargarse, usando la
+  arquitectura de repositorios/migraciones existente y **sin que la interfaz acceda a SQLite
+  directamente**.
+- **Comportamiento final:**
+  - Los marcadores creados por el usuario se almacenan **permanentemente en SQLite** en la
+    tabla `marcadores_video` (`id INTEGER PRIMARY KEY AUTOINCREMENT`, `video_id INTEGER NOT
+    NULL`, `tiempo REAL NOT NULL`, índice `idx_marcadores_video_video_id_tiempo`), relacionados
+    mediante **`videos.id`**; reaparecen entre sesiones, pueden eliminarse permanentemente y
+    recuperan su representación visual usando las previews disponibles.
+  - **Sin** cascade automático, **sin** nombre/ruta como identidad, **sin** imagen persistida,
+    **sin** nota/color/tipo y **sin** JSON.
+  - `escanear_videos.py` — **migración aditiva e idempotente** de `marcadores_video`
+    (`_asegurar_tabla_marcadores`, invocada desde `conectar_bd`) y nuevas funciones
+    `listar_marcadores(video_id)`, `guardar_marcador(video_id, tiempo)` y
+    `eliminar_marcador(marcador_id)` con validación previa de contrato y conexión propia por
+    operación. `listar_videos` y `listar_videos_paginado` exponen ahora **9 campos** (se
+    agrega `id` como última columna).
+  - `tareas_videos.py` — **nuevas tareas asíncronas**: `TareaListarMarcadores`,
+    `TareaGuardarMarcador` y `TareaEliminarMarcador`.
+  - `visor_videos.py` — `Tarjeta` recibe `video_id` (de `_resto[1]` de la fila) y **no ejecuta
+    SQLite directamente**: mantiene la **representación optimista en memoria**
+    (`_marcadores` con `{"id", "tiempo", "pixmap", "etiqueta", "eliminada"}`; `marcador_id`
+    como identidad técnica persistente), carga los marcadores al expandir
+    (`marcadores_solicitados` → `_solicitar_carga_marcadores`, una sola vez por tarjeta) y
+    persiste altas/bajas mediante el **gestor dedicado `gestor_marcadores`** (cuarto
+    `GestorTareas`, cola serializada `_cola_marcadores` + `_procesar_siguiente_marcador`,
+    cerrado en `closeEvent`). Ante un DELETE fallido se vuelve a cargar; ante un CREATE
+    fallido se deshace la marca local de eliminación pendiente.
+  - **Reconciliación asíncrona.** La carga desde SQLite se trata como un **snapshot
+    potencialmente antiguo** que **NO reemplaza ciegamente** el estado local: conserva las
+    **altas locales** ocurridas mientras la carga estaba pendiente, respeta las **bajas
+    locales** (`_marcadores_eliminados_carga`, con DELETE compensatorio de la fila
+    persistida), conserva los **IDs persistentes existentes** y **deduplica por la misma
+    tolerancia temporal** de la interacción (`_tolerancia_marcadores` = duración / ancho ×
+    0.5), cancelando el INSERT redundante ante una fila equivalente.
+  - **Carreras cubiertas:** *crear y borrar antes de terminar el INSERT* (si el CREATE sigue
+    en cola se cancela con `_cancelar_crear_pendiente`; si ya se ejecutó se emite un DELETE
+    compensatorio); *cargar + crear* (la carga tardía no elimina la nueva marca); *carga +
+    marcador equivalente* (un solo marcador, se adopta el ID persistente y se cancela el
+    INSERT redundante); *carga + baja local* (el snapshot viejo no resucita el marcador; puede
+    ejecutarse DELETE compensatorio); *recuperación tras DELETE fallido* (se vuelve a
+    consultar sin destruir altas locales pendientes).
+- **Política de conservación (registrada en la documentación):** reescaneo del mismo registro
+  → conserva marcadores; cambios de metadatos → conserva; reemplazo silencioso manteniendo el
+  mismo registro → conserva; si el registro de video desaparece → los marcadores **no** se
+  eliminan automáticamente (pueden quedar huérfanos); no existe aún reasociación de
+  movidos/renombrados ni se intenta por nombre o ruta. Deliberado para evitar pérdida
+  automática de datos creados por el usuario.
+- **Pruebas:** `prueba_marcadores_b42.py` **17/17** (migración e idempotencia, persistencia y
+  eliminación, contrato de lectura con 9 campos, tareas asíncronas y reconciliación de la
+  cola). Regresiones en verde en el cierre: `prueba_exploracion_b41.py` **28/28**,
+  `prueba_lectura.py` **15/15**, `prueba_lectura_paginada.py` **32/32**. `python -m py_compile`
+  OK. `git diff --check` OK.
+- **Validación de Marcos:** **satisfactoria** en la aplicación real de desarrollo con videos
+  de prueba: crear marcador → cerrar la aplicación → volver a abrir → el marcador reaparece;
+  eliminar marcador → cerrar/reabrir → el eliminado no reaparece. No se afirma otra
+  computadora ni un instalador.
+- **Próxima etapa:** **B4.3 — Caché densa de exploración temporal** (mejorar la resolución
+  visual del scrubbing reemplazando la dependencia de las pocas previews normales por una
+  caché específica de fotogramas temporales). No implementar todavía. Se conservan como
+  funciones futuras: reproducción desde el marcador; navegación entre marcadores durante la
+  reproducción; A/B; loops; selección de fragmentos; corte/unión; detección de archivos
+  movidos; reasociación futura de marcadores huérfanos.
+- **Archivos modificados:** `escanear_videos.py`, `tareas_videos.py`, `visor_videos.py`,
+  `prueba_lectura.py`, `prueba_lectura_paginada.py`, `prueba_marcadores_b42.py` (nueva), y
+  los documentos oficiales (`ESTADO_PROYECTO.md`, `ROADMAP.md`, `DOCUMENTO_TECNICO.md`,
+  `VISION_PRODUCTO.md`, `HISTORIAL_PROYECTO.md`).
+- **Commit:** Aprobado y commiteado (cierre de B4.2).
+
+---
+
 ## 89. Implementar exploración temporal interactiva y marcadores visuales (B4.1)
 
 - **Fecha:** 2026-08-09

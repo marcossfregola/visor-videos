@@ -9,10 +9,13 @@ from escanear_videos import (
     combinar_registros_con_miniaturas,
     combinar_registros_con_tamanos,
     conectar_bd,
+    eliminar_marcador,
     escanear_videos,
     generar_previews_faltantes,
+    guardar_marcador,
     guardar_video,
     guardar_videos,
+    listar_marcadores,
     listar_videos,
     listar_videos_paginado,
     obtener_datos_ffprobe,
@@ -294,3 +297,68 @@ class TareaSincronizacionCatalogo(TareaBase):
                 "candidatos_restantes": eliminaciones["restantes"],
             },
         }
+
+
+class TareaListarMarcadores(TareaBase):
+    """Lee los marcadores persistidos de un video (B4.2)."""
+
+    def __init__(self, video_id, ruta_db=None, parent=None):
+        super().__init__(parent)
+        self._video_id = video_id
+        self._ruta_db = ruta_db
+
+    @property
+    def video_id(self):
+        return self._video_id
+
+    @property
+    def ruta_db(self):
+        return self._ruta_db
+
+    def _trabajo(self):
+        return listar_marcadores(self._video_id, self._ruta_db)
+
+
+class TareaGuardarMarcador(TareaBase):
+    """Persiste un marcador y devuelve su `id` de la base (B4.2)."""
+
+    def __init__(self, video_id, tiempo, ruta_db=None, parent=None):
+        super().__init__(parent)
+        self._video_id = video_id
+        self._tiempo = tiempo
+        self._ruta_db = ruta_db
+
+    @property
+    def video_id(self):
+        return self._video_id
+
+    @property
+    def tiempo(self):
+        return self._tiempo
+
+    @property
+    def ruta_db(self):
+        return self._ruta_db
+
+    def _trabajo(self):
+        return guardar_marcador(self._video_id, self._tiempo, self._ruta_db)
+
+
+class TareaEliminarMarcador(TareaBase):
+    """Elimina un marcador persistido por su `id` (B4.2)."""
+
+    def __init__(self, marcador_id, ruta_db=None, parent=None):
+        super().__init__(parent)
+        self._marcador_id = marcador_id
+        self._ruta_db = ruta_db
+
+    @property
+    def marcador_id(self):
+        return self._marcador_id
+
+    @property
+    def ruta_db(self):
+        return self._ruta_db
+
+    def _trabajo(self):
+        return eliminar_marcador(self._marcador_id, self._ruta_db)

@@ -11,9 +11,10 @@ arquitectónicas.
 > congelada sobre el código definitivo**, con su instalador generado y pendiente
 > únicamente de la **validación manual integral** y su publicación (la Beta 2
 > permanece como la última versión estable publicada). El desarrollo funcional
-> se reanudó en el **ciclo Beta 4** (rama `beta4`): la **etapa B4.1 —
-> Exploración temporal interactiva y marcadores visuales — quedó completada y
-> aprobada** (ver la sección "Beta 4").
+> se reanudó en el **ciclo Beta 4** (rama `beta4`): las etapas **B4.1 —
+> Exploración temporal interactiva y marcadores visuales** y **B4.2 —
+> Persistencia de marcadores temporales por video** quedaron **completadas y
+> aprobadas** (ver la sección "Beta 4").
 
 ------------------------------------------------------------------------
 
@@ -511,18 +512,31 @@ desarrolla sobre la rama `beta4` (punto de partida: cierre de la Beta 3).
    preview existente más cercana al instante y **preview móvil** que acompaña
    horizontalmente al cursor. Múltiples **marcadores temporales libres** (tiempo real +
    marca visual + miniatura fijada, con solapamiento permitido) y eliminación individual
-   con clic derecho. Sin persistencia todavía.
-2. **B4.2 — Persistencia de marcadores temporales por video.** **Próxima.** Guardar los
-   marcadores de forma **permanente**, relacionarlos correctamente con el video del
-   catálogo y **recuperarlos automáticamente** cuando ese video vuelva a cargarse, usando
-   **SQLite** y la arquitectura de repositorios/migraciones existente. Antes de diseñar la
-   relación debe **estudiarse la identidad actual de los videos** en el catálogo.
-3. **B4.3 — Caché densa de exploración temporal.** **Posterior.** Reemplazar la resolución
-   visual limitada de las previews normales por **fotogramas específicos de scrubbing**.
+   con clic derecho. Sin persistencia todavía (responsabilidad de B4.2).
+2. **B4.2 — Persistencia de marcadores temporales por video.** **Completada.** Los
+   marcadores se guardan **permanentemente en SQLite** (tabla `marcadores_video`: `id`,
+   `video_id`, `tiempo`, con el índice `idx_marcadores_video_video_id_tiempo`), relacionados
+   mediante **`videos.id`**; reaparecen entre sesiones, pueden eliminarse permanentemente y
+   recuperan su representación visual con las previews disponibles. Sin cascade automático.
+   Política de conservación: reescaneo del mismo registro, cambios de metadatos y reemplazo
+   silencioso del mismo registro conservan los marcadores; si el registro del video desaparece
+   los marcadores **no** se eliminan automáticamente (pueden quedar huérfanos; la reasociación
+   por nombre/ruta o de movidos/renombrados es futura). La carga desde SQLite se trata como
+   snapshot potencialmente antiguo y se reconcilia contra el estado local optimista, sin
+   perder altas/bajas pendientes.
+3. **B4.3 — Caché densa de exploración temporal.** **Próxima.** Mejorar la resolución visual
+   del scrubbing reemplazando la dependencia de las pocas previews normales por una **caché
+   específica de fotogramas temporales** (fotogramas de exploración densa). **No implementar
+   todavía.**
 4. **Reproducción / navegación mediante marcadores.** **Futura.** Los marcadores temporales
    son una **función permanente de navegación del producto** (no exclusivamente puntos de
    corte): representan un instante significativo al que el usuario quiera regresar, permitirán
-   iniciar reproducción desde el marcador y ser destino seleccionable durante la reproducción.
-5. **Selección A/B, loops y edición.** **Posterior**, sin adelantar implementación. Los mismos
-   puntos podrán participar en selección A/B o edición como otra función, conservando su
-   significado de navegación.
+   **iniciar reproducción desde el marcador** y ser **destino seleccionable durante la
+   reproducción** (navegación entre marcadores durante la reproducción).
+5. **Selección A/B, loops, fragmentos y edición.** **Posterior**, sin adelantar implementación.
+   Los mismos puntos podrán participar en **selección A/B**, **loops**, **selección de
+   fragmentos** o **corte/unión** como otra función, conservando su significado de navegación.
+6. **Detección de archivos movidos / reasociación de marcadores huérfanos.** **Futura.**
+   Detectar archivos movidos o renombrados y reasociar los marcadores que queden huérfanos
+   (hoy los marcadores no se eliminan automáticamente si el registro del video desaparece, y
+   no se intenta reasociar por nombre o ruta).
