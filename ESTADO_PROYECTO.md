@@ -83,17 +83,74 @@ subconjunto permitido); **volver a Auto** recalcula el objetivo y conserva los
 extras de disco. El valor de densidad es **por tarjeta/sesión** (se conserva en
 colapso/reexpansión de la misma tarjeta; vuelve a Auto si se reconstruye por
 recarga); **sin SQLite y sin persistencia en `configuracion.json`**.
-**Próximo paso: reproducción de marcadores en VLC** (seleccionar varios videos,
-usar Siguiente/Anterior para recorrer los marcadores del video actual y, al
-terminar, pasar al siguiente video) — **NO implementado todavía**. Se conserva
-también como **pendiente separado**: la demora perceptible al **cargar una
-carpeta de 121 videos** y generar las miniaturas normales iniciales (no
-corresponde a B4.3; sin optimizar aún). El **batch NO está implementado** (ver
-`ROADMAP.md`, sección "Beta 4").
+La séptima etapa, **B4.4 — Reproducción de marcadores en VLC**, quedó **aprobada e
+incorporada** (Etapa 1: inspección y validación física de la estrategia **playlist
+pura** con VLC **3.0.23**; Etapa 2: integración mínima). La acción **"Reproducir
+marcadores en VLC"** (menú contextual, habilitada con al menos un video seleccionado)
+lee los marcadores persistentes (B4.2) y genera una playlist temporal `.m3u` con una
+entrada por marcador (`#EXTVLCOPT:start-time`, precisión decimal) en el **orden visible
+actual del catálogo** y con marcadores **cronológicos ascendentes**; abre **VLC una
+única vez**. **Siguiente/Anterior visibles de VLC recorren la secuencia naturalmente** y
+Play/Pause, volumen, fullscreen y seek manual permanecen intactos. Videos seleccionados
+sin marcadores → **diálogo por ocasión** (Omitir / Reproducir desde el inicio / Cancelar,
+sin persistir). Archivos inexistentes → omitidos con aviso (sin borrar marcadores ni
+registros). VLC ausente → mensaje claro, sin instalar. Playlists temporales
+`visor_marcadores_*.m3u` en `%TEMP%` con encoding **UTF-8** (espacios/acentos/Unicode) y
+**limpieza propia previa** (solo patrón propio; bloqueos ignorados; no se borra la recién
+lanzada). Sin HTTP, sin python-vlc/libVLC, sin loop automático. Se conserva como
+**pendiente separado**: la demora perceptible al **cargar una carpeta de 121 videos** y
+generar las miniaturas normales iniciales (no corresponde a B4.4; sin optimizar aún). El
+**batch NO está implementado** (ver `ROADMAP.md`, sección "Beta 4").
 
 ## Último commit aprobado
 
-**Mensaje:** Agregar densidad manual y priorizar la vista dinamica temporal
+**Mensaje:** Integrar reproduccion de marcadores mediante playlists VLC
+
+**Etapa:** B4.4 — Reproducción de marcadores en VLC (Etapa 1: validación de playlist; Etapa 2:
+integración mínima) (rama `beta4`):
+- `escanear_videos.py` — **`listar_marcadores_de(video_ids)`** (B4.4): lee los marcadores
+  persistidos de varios `video_id` (tuplas `(id, video_id, tiempo)`), agrupados en el orden
+  recibido y ordenados cronológicamente dentro de cada video; validación previa y conexión
+  propia por operación, reutilizando el repositorio de B4.2.
+- `tareas_videos.py` — **`TareaListarMarcadoresVarios`** (B4.4): lectura asíncrona de los
+  marcadores de varios videos.
+- `playlist_vlc.py` — **nuevo** (B4.4): módulo de servicio que aísla de la interfaz la
+  integración con VLC: `localizar_vlc()` (ProgramFiles → ProgramFiles(x86) → `shutil.which`),
+  `formatear_tiempo_vlc` (precisión decimal), `formatear_titulo_marcador` (H:MM:SS.mmm),
+  `limpiar_playlists_anteriores` (solo `visor_marcadores_*.m3u`, un solo directorio, bloqueos
+  ignorados), `generar_m3u` (UTF-8 explícito; limpia primero, escribe después) y
+  `abrir_playlist_en_vlc` (un único `Popen`). Sin HTTP, sin libVLC, sin automatización de
+  botones, sin loop automático.
+- `visor_videos.py` — acción **"Reproducir marcadores en VLC"** en el menú contextual
+  (habilitada con selección): recolecta los videos seleccionados en **orden visible del
+  catálogo** (patrón de `_copiar_rutas_seleccionados`), obtiene sus marcadores vía
+  `gestor_reproduccion` (nuevo gestor dedicado), diálogo Omitir/Desde el inicio/Cancelar para
+  videos sin marcadores (sin persistir), omite archivos inexistentes con aviso (sin borrar
+  marcadores/registros), genera la playlist temporal y abre VLC una única vez.
+- `prueba_reproduccion_marcadores_b44.py` — **nueva**: 24 pruebas (orden visible, orden
+  cronológico, generación M3U, tiempos decimales, mismo archivo múltiples entradas, mezcla de
+  videos, decisiones Omitir/Desde inicio/Cancelar, todos sin marcadores, playlist vacía, VLC no
+  encontrado, archivo inexistente, no modificación de marcadores, lanzamiento único, limpieza
+  de playlists propias, no borrar archivos ajenos, eliminación bloqueada, rutas con espacios y
+  rutas Unicode).
+
+**Validación física (PC de desarrollo, VLC 3.0.23, videos reales de `Videos de muestra`):**
+primera reproducción con A (1.5 / 17.83 / 30 s) + B (2 s): VLC abrió una sola vez, primer
+marcador en ~1.5 s, Siguiente recorrió A→A→A→B, Anterior correcto, play/pause y fullscreen
+normales; segunda reproducción con A + video sin marcadores (Desde el inicio): diálogo con las
+3 opciones y comportamiento correcto. Playlists temporales: al final solo queda la última
+(`visor_marcadores_*.m3u`); la anterior y un residuo previo fueron eliminados por la limpieza.
+Se observó que la configuración actual de VLC abre una instancia por ejecución (sin impedir la
+reproducción ni la limpieza; no corregido en esta etapa).
+
+**Pruebas superadas:** `prueba_reproduccion_marcadores_b44.py` **24/24**. Regresiones en verde
+(ejecutadas en el cierre): `prueba_exploracion_b433.py` **22/22**, `prueba_marcadores_b42.py`
+**17/17**, `prueba_recarga_catalogo.py` **20/20**, `prueba_pagina_siguiente.py` **20/20**,
+`prueba_smoke.py` OK. `python -m py_compile` OK. `git diff --check` OK.
+
+---
+
+**Commit anterior — Mensaje:** Agregar densidad manual y priorizar la vista dinamica temporal
 
 **Etapa:** B4.3.3 — Ajustes de interacción y densidad manual (rama `beta4`):
 - `tareas_videos.py` — **`TareaExploracionDensa` con objetivo manual**: nuevo parámetro
@@ -550,19 +607,14 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
 
 ## Próxima etapa
 
-**Reproducción de marcadores en VLC.** Siguiente línea prioritaria de Beta 4 (no implementada):
-seleccionar varios videos en el Visor, abrir reproducción, usar **Siguiente/Anterior** para
-recorrer los **marcadores del video actual** y, al terminar sus marcadores, **pasar al
-siguiente video**, manteniendo una experiencia fluida y simple. **B4.3 quedó funcionalmente muy
-avanzada** (exploración temporal, marcadores persistentes, caché densa, cobertura rápida,
-densidad secundaria, densidad manual y prioridad visual correcta) y **no se declara la Beta 4
-completa todavía**. El **batch NO está implementado** (decisión de producto: generación
-individual y secuencial). Se conservan además como funciones futuras: la **selección A/B**, los
-**loops**, la **selección de fragmentos** y el **corte/unión**; y la **detección de archivos
-movidos** con la **reasociación futura de marcadores huérfanos**. Pendiente aparte (no
-corresponde a B4.3, sin optimizar ahora): la demora perceptible de Marcos al **cargar una
-carpeta de 121 videos** y generar las miniaturas normales iniciales. Ver la secuencia en
-`ROADMAP.md`, sección "Beta 4".
+**B4.4 quedó completada** (reproducción de marcadores en VLC) y **no se declara la Beta 4
+completa todavía**. Siguientes líneas del ciclo (no iniciadas): la **selección A/B**, los
+**loops**, la **selección de fragmentos** y el **corte/unión**; la **detección de archivos
+movidos** con la **reasociación futura de marcadores huérfanos**; y las evoluciones de
+reproducción indicadas en `ROADMAP.md` (iniciar desde el marcador, destino durante la
+reproducción y evaluación de UX de múltiples instancias de VLC). Pendiente aparte (no
+corresponde a B4.4, sin optimizar ahora): la demora perceptible al **cargar una carpeta de 121
+videos** y generar las miniaturas normales iniciales. El **batch NO está implementado**.
 
 ## Documentos del proyecto
 

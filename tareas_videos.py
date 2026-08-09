@@ -19,6 +19,7 @@ from escanear_videos import (
     guardar_video,
     guardar_videos,
     listar_marcadores,
+    listar_marcadores_de,
     listar_videos,
     listar_videos_paginado,
     obtener_datos_ffprobe,
@@ -331,6 +332,26 @@ class TareaListarMarcadores(TareaBase):
 
     def _trabajo(self):
         return listar_marcadores(self._video_id, self._ruta_db)
+
+
+class TareaListarMarcadoresVarios(TareaBase):
+    """Lee los marcadores persistidos de varios videos (B4.4)."""
+
+    def __init__(self, video_ids, ruta_db=None, parent=None):
+        super().__init__(parent)
+        self._video_ids = list(video_ids)
+        self._ruta_db = ruta_db
+
+    @property
+    def video_ids(self):
+        return list(self._video_ids)
+
+    @property
+    def ruta_db(self):
+        return self._ruta_db
+
+    def _trabajo(self):
+        return listar_marcadores_de(self._video_ids, self._ruta_db)
 
 
 class TareaGuardarMarcador(TareaBase):

@@ -3,6 +3,7 @@ import exploracion_cache
 import operaciones
 import os
 import sys
+import tempfile
 
 from PySide6.QtCore import QEvent, QPoint, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import (
@@ -75,6 +76,11 @@ from scrubber import FranjaExploracion, MiniaturaMarcador
 from tareas import Estado, GestorTareas, TareaBase
 from apertura_videos import abrir_video_con_aplicacion_predeterminada
 from arbol_navegacion import ArbolNavegacion
+from playlist_vlc import (
+    abrir_playlist_en_vlc,
+    generar_m3u,
+    localizar_vlc,
+)
 from tareas_videos import (
     TareaEscaneo,
     TareaFFprobe,
@@ -84,6 +90,7 @@ from tareas_videos import (
     TareaExploracionDensa,
     TareaLecturaCatalogoPaginada,
     TareaListarMarcadores,
+    TareaListarMarcadoresVarios,
     TareaMiniaturas,
     TareaPreviewsProgresivas,
     TareaSincronizacionCatalogo,
@@ -1568,6 +1575,15 @@ class VisorVideos(QMainWindow):
         )
         self._cola_marcadores = []
         self._marcador_op_actual = None
+
+        self.gestor_reproduccion = GestorTareas(self)
+        self.gestor_reproduccion.tarea_resultado.connect(
+            self._al_resultado_reproduccion
+        )
+        self.gestor_reproduccion.tarea_error.connect(
+            self._al_error_reproduccion
+        )
+        self._reproduccion_pendiente = None
 
         self.gestor_exploracion = GestorTareas(self)
         self.gestor_exploracion.tarea_resultado.connect(
@@ -3209,11 +3225,18 @@ class VisorVideos(QMainWindow):
         accion_copiar_ruta = menu.addAction("Copiar ruta")
         accion_copiar_seleccionados = menu.addAction("Copiar rutas de los seleccionados")
         accion_abrir_seleccionados = menu.addAction("Abrir carpetas de los seleccionados")
+        accion_reproducir_marcadores = menu.addAction(
+            "Reproducir marcadores en VLC"
+        )
         accion_abrir.triggered.connect(lambda: self._abrir_video(nombre))
         accion_abrir_carpeta.triggered.connect(lambda: self._abrir_carpeta(nombre))
         accion_copiar_ruta.triggered.connect(lambda: self._copiar_ruta(nombre))
         accion_copiar_seleccionados.triggered.connect(self._copiar_rutas_seleccionados)
         accion_abrir_seleccionados.triggered.connect(self._abrir_carpetas_seleccionados)
+        accion_reproducir_marcadores.setEnabled(bool(self._nombres_seleccionados))
+        accion_reproducir_marcadores.triggered.connect(
+            self._reproducir_marcadores_en_vlc
+        )
         menu.exec(QCursor.pos())
 
     def _abrir_carpeta(self, nombre):
@@ -3250,6 +3273,171 @@ class VisorVideos(QMainWindow):
         for c in dict.fromkeys(carpetas):
             os.startfile(c)
 
+    def _reproducir_marcadores_en_vlc(self):
+        seleccionados = self._seleccionados_para_reproduccion()
+        if not seleccionados:
+            return
+        video_ids = [
+            s["video_id"] for s in seleccionados if s["video_id"] is not None
+        ]
+        if not video_ids:
+            self._procesar_reproduccion(seleccionados, {})
+            return
+        self._reproduccion_pendiente = seleccionados
+        tarea = TareaListarMarcadoresVarios(video_ids, self._ruta_db)
+        if not self.gestor_reproduccion.iniciar(tarea):
+            self._reproduccion_pendiente = None
+
+    def _seleccionados_para_reproduccion(self):
+        seleccionados = []
+        for nombre in self.tarjetas_visibles():
+            if nombre not in self._nombres_seleccionados:
+                continue
+            tarjeta = self._tarjeta_por_nombre(nombre)
+            if tarjeta is None:
+                continue
+            seleccionados.append(
+                {
+                    "nombre": nombre,
+                    "video_id": getattr(tarjeta, "_video_id", None),
+                    "ruta": self._ruta_video_de(tarjeta),
+                }
+            )
+        return seleccionados
+
+    def _al_resultado_reproduccion(self, filas):
+        seleccionados = self._reproduccion_pendiente
+        self._reproduccion_pendiente = None
+        if not seleccionados:
+            return
+        marcadores_por_video = {}
+        for _marcador_id, video_id, tiempo in filas:
+            marcadores_por_video.setdefault(video_id, []).append(tiempo)
+        self._procesar_reproduccion(seleccionados, marcadores_por_video)
+
+    def _al_error_reproduccion(self, mensaje):
+        self._reproduccion_pendiente = None
+        self.mensaje_carpeta.setText(
+            f"No se pudieron cargar los marcadores: {mensaje}"
+        )
+
+    def _procesar_reproduccion(self, seleccionados, marcadores_por_video):
+        faltantes = [s for s in seleccionados if not s["ruta"]]
+        disponibles = [s for s in seleccionados if s["ruta"]]
+        if faltantes:
+            caja = QMessageBox(self)
+            caja.setIcon(QMessageBox.Information)
+            caja.setWindowTitle("Reproducir marcadores en VLC")
+            caja.setText(
+                "Algunos archivos seleccionados ya no están disponibles "
+                "y serán omitidos de la reproducción."
+            )
+            caja.exec()
+        if not disponibles:
+            self.mensaje_carpeta.setText(
+                "No hay archivos disponibles para reproducir"
+            )
+            return
+        sin_marcadores = [
+            s
+            for s in disponibles
+            if not marcadores_por_video.get(s["video_id"])
+        ]
+        incluir_inicio = False
+        if sin_marcadores:
+            decision = self._preguntar_videos_sin_marcadores(len(sin_marcadores))
+            if decision == "omitir":
+                disponibles = [s for s in disponibles if s not in sin_marcadores]
+            elif decision == "inicio":
+                incluir_inicio = True
+            else:
+                return
+        entradas = []
+        for video in disponibles:
+            tiempos = list(marcadores_por_video.get(video["video_id"], []))
+            if not tiempos and incluir_inicio:
+                tiempos = [0.0]
+            for tiempo in tiempos:
+                entradas.append(
+                    {
+                        "ruta": video["ruta"],
+                        "nombre": video["nombre"],
+                        "tiempo": tiempo,
+                    }
+                )
+        if not entradas:
+            caja = QMessageBox(self)
+            caja.setIcon(QMessageBox.Information)
+            caja.setWindowTitle("Reproducir marcadores en VLC")
+            caja.setText("No hay marcadores para reproducir.")
+            caja.exec()
+            return
+        self._generar_y_abrir_playlist(entradas)
+
+    def _preguntar_videos_sin_marcadores(self, cantidad):
+        caja = QMessageBox(self)
+        caja.setIcon(QMessageBox.Question)
+        caja.setWindowTitle("Reproducir marcadores en VLC")
+        palabra = "video" if cantidad == 1 else "videos"
+        caja.setText(
+            f"{cantidad} {palabra} seleccionado(s) no tiene(n) marcadores. "
+            "¿Qué desea hacer?"
+        )
+        boton_omitir = caja.addButton(
+            "Omitir videos sin marcadores", QMessageBox.AcceptRole
+        )
+        boton_inicio = caja.addButton(
+            "Reproducir desde el inicio", QMessageBox.ActionRole
+        )
+        boton_cancelar = caja.addButton("Cancelar", QMessageBox.RejectRole)
+        caja.setDefaultButton(boton_omitir)
+        caja.exec()
+        if caja.clickedButton() == boton_omitir:
+            return "omitir"
+        if caja.clickedButton() == boton_inicio:
+            return "inicio"
+        return "cancelar"
+
+    def _generar_y_abrir_playlist(self, entradas):
+        ruta_vlc = localizar_vlc()
+        if ruta_vlc is None:
+            caja = QMessageBox(self)
+            caja.setIcon(QMessageBox.Warning)
+            caja.setWindowTitle("Reproducir marcadores en VLC")
+            caja.setText("VLC no está instalado o no pudo encontrarse.")
+            caja.exec()
+            return
+        archivo_temporal = None
+        try:
+            archivo_temporal = tempfile.NamedTemporaryFile(
+                mode="w",
+                suffix=".m3u",
+                prefix="visor_marcadores_",
+                delete=False,
+                encoding="utf-8",
+            )
+            ruta_m3u = archivo_temporal.name
+            archivo_temporal.close()
+            generar_m3u(entradas, ruta_m3u)
+        except OSError:
+            if archivo_temporal is not None:
+                try:
+                    os.remove(archivo_temporal.name)
+                except OSError:
+                    pass
+            self.mensaje_carpeta.setText(
+                "No se pudo crear la playlist temporal"
+            )
+            return
+        try:
+            abrir_playlist_en_vlc(ruta_m3u, ruta_vlc)
+        except OSError:
+            self.mensaje_carpeta.setText("No se pudo abrir VLC")
+            try:
+                os.remove(ruta_m3u)
+            except OSError:
+                pass
+
     def filtrar(self, texto):
         texto = texto.lower()
         visibles = []
@@ -3280,6 +3468,8 @@ class VisorVideos(QMainWindow):
             self.gestor_operaciones.cerrar()
         if self.gestor_marcadores is not None:
             self.gestor_marcadores.cerrar()
+        if self.gestor_reproduccion is not None:
+            self.gestor_reproduccion.cerrar()
         super().closeEvent(event)
 
 

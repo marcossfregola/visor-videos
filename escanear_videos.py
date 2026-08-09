@@ -903,6 +903,43 @@ def listar_marcadores(video_id, ruta_db=None):
         conn.close()
 
 
+def listar_marcadores_de(video_ids, ruta_db=None):
+    """Marcadores persistidos de varios videos (B4.4).
+
+    Devuelve una lista de tuplas `(id, video_id, tiempo)` agrupada por
+    `video_id` en el orden recibido y, dentro de cada video, ordenada por
+    tiempo ascendente.
+    """
+    if isinstance(video_ids, (str, bytes, bytearray)):
+        raise TypeError("video_ids debe ser una colección de enteros")
+    try:
+        lista = list(video_ids)
+    except TypeError:
+        raise TypeError("video_ids debe ser una colección de enteros")
+    for video_id in lista:
+        _validar_video_id(video_id)
+    if not lista:
+        return []
+    conn = _conectar_repositorio_marcadores(ruta_db)
+    try:
+        marcadores = []
+        for video_id in lista:
+            marcadores.extend(
+                conn.execute(
+                    """
+                    SELECT id, video_id, tiempo
+                    FROM marcadores_video
+                    WHERE video_id = ?
+                    ORDER BY tiempo
+                    """,
+                    (video_id,),
+                ).fetchall()
+            )
+        return marcadores
+    finally:
+        conn.close()
+
+
 def guardar_marcador(video_id, tiempo, ruta_db=None):
     """Persiste un marcador y devuelve su `id` de la base."""
     _validar_video_id(video_id)

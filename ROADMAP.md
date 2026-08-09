@@ -16,8 +16,9 @@ arquitectónicas.
 > Persistencia de marcadores temporales por video**, **B4.3.1 — Motor de
 > caché temporal versionada y reanudable**, **B4.3.2 — Cobertura rápida
 > asíncrona integrada con la UI**, **B4.3.2 — Etapa 2: Densidad secundaria
-> adaptativa** y **B4.3.3 — Ajustes de interacción y densidad manual**
-> quedaron **completadas y aprobadas** (ver la sección "Beta 4").
+> adaptativa**, **B4.3.3 — Ajustes de interacción y densidad manual** y
+> **B4.4 — Reproducción de marcadores en VLC** quedaron **completadas y
+> aprobadas** (ver la sección "Beta 4").
 
 ------------------------------------------------------------------------
 
@@ -597,15 +598,35 @@ desarrolla sobre la rama `beta4` (punto de partida: cierre de la Beta 3).
       colapso libera RAM y la caché permanece en disco. **B4.3 queda funcionalmente muy avanzada**;
       **no se declara la Beta 4 completa todavía**. Suites: `prueba_exploracion_b433.py` **22/22**
       y regresiones verdes.
-4. **Reproducción / navegación mediante marcadores.** **Próxima prioridad de Beta 4 (no
-   implementada): reproducción de marcadores en VLC.** Los marcadores temporales son una
-   **función permanente de navegación del producto** (no exclusivamente puntos de corte):
-   representan un instante significativo al que el usuario quiera regresar. Objetivo futuro:
-   **seleccionar varios videos en el Visor**, **abrir reproducción**, usar **Siguiente/Anterior**
-   para recorrer los **marcadores del video actual** y, al terminar sus marcadores, **pasar al
-   siguiente video**, manteniendo una experiencia fluida y simple. Permitirá además **iniciar
-   reproducción desde el marcador** y ser **destino seleccionable durante la reproducción**
-   (navegación entre marcadores durante la reproducción).
+4. **B4.4 — Reproducción de marcadores en VLC.** **Completada.** Los marcadores temporales son
+   una **función permanente de navegación del producto** (no exclusivamente puntos de corte):
+   representan un instante significativo al que el usuario quiera regresar.
+   - **Etapa 1 — Inspección y prototipo técnico (playlist).** **Completada.** Validación física
+     con **VLC 3.0.23** (`C:\Program Files\VideoLAN\VLC\vlc.exe`) de la estrategia **playlist
+     pura**: una entrada por marcador con `#EXTVLCOPT:start-time=<segundos>`; los botones
+     **Siguiente/Anterior visibles de VLC recorren los marcadores**; marcadores consecutivos del
+     mismo archivo fluidos (sin negro/parpadeo perceptible); `--loop` correcto; controles
+     normales intactos. Se descartó HTTP/telnet/libVLC para esta integración.
+   - **Etapa 2 — Integración mínima "Reproducir marcadores en VLC".** **Completada.** El Visor
+     permite **seleccionar uno o varios videos** y ejecutar **"Reproducir marcadores en VLC"**
+     (menú contextual, habilitada con selección): lee los marcadores persistentes (B4.2) y
+     genera una playlist temporal `.m3u` con **una entrada por marcador**
+     (`#EXTVLCOPT:start-time`, **precisión decimal**, p. ej. `12.437`), en el **orden visible
+     actual del catálogo** y con los marcadores de cada video en **orden cronológico
+     ascendente**; abre **VLC una única vez** con la playlist completa. Videos sin marcadores →
+     **diálogo por ocasión**: **Omitir videos sin marcadores** / **Reproducir desde el inicio
+     (00:00)** / **Cancelar** (sin persistir la elección; si todos carecen y se elige Omitir, no
+     abre VLC e informa que no hay marcadores). Archivos inexistentes → **omitidos con aviso**,
+     sin borrar marcadores ni registros. VLC ausente → mensaje claro, sin instalar ni buscar
+     discos. Playlists temporales `visor_marcadores_*.m3u` en el directorio temporal del sistema
+     con encoding **UTF-8** (espacios, acentos y Unicode) y **limpieza propia antes de cada
+     reproducción** (solo patrón propio, sin tocar archivos ajenos ni subdirectorios; una
+     playlist bloqueada se conserva y se continúa; no se borra la recién lanzada). Sin HTTP, sin
+     python-vlc/libVLC, sin automatización de teclas/botones, sin loop automático. **B4.4 queda
+     completada; no se declara la Beta 4 completa todavía.** Evoluciones futuras (no
+     implementadas): **iniciar reproducción desde el marcador**, ser **destino seleccionable
+     durante la reproducción** y evaluar la UX de **múltiples instancias de VLC**. Suites:
+     `prueba_reproduccion_marcadores_b44.py` **24/24** y regresiones verdes.
 5. **Selección A/B, loops, fragmentos y edición.** **Posterior**, sin adelantar implementación.
    Los mismos puntos podrán participar en **selección A/B**, **loops**, **selección de
    fragmentos** o **corte/unión** como otra función, conservando su significado de navegación.

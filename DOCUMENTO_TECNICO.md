@@ -18,7 +18,7 @@ prueba/
 ├── escanear_videos.py     CLI / backend: escaneo + SQLite + FFprobe
 ├── rutas.py               Resolución centralizada de rutas del proyecto (independiente del CWD); incluye `ruta_carpeta_exploracion()` (`miniaturas/exploracion`, B4.3.1)
 ├── tareas.py              Infraestructura reutilizable de trabajos en segundo plano (QThread)
-├── tareas_videos.py       Tareas de video asíncronas (TareaFFprobe, TareaEscaneo, TareaTamanosArchivos, TareaLecturaCatalogo, TareaLecturaCatalogoPaginada, TareaGuardarVideo, TareaGuardarVideos, TareaMiniaturas, TareaPreviewsProgresivas, TareaSincronizacionCatalogo, y desde B4.2 TareaListarMarcadores, TareaGuardarMarcador, TareaEliminarMarcador; desde B4.3.2 TareaExploracionDensa — cobertura densa en dos fases: 15 prioritarios + densidad secundaria adaptativa; desde B4.3.3 con `objetivo_manual` y conjunto permitido explícito)
+├── tareas_videos.py       Tareas de video asíncronas (TareaFFprobe, TareaEscaneo, TareaTamanosArchivos, TareaLecturaCatalogo, TareaLecturaCatalogoPaginada, TareaGuardarVideo, TareaGuardarVideos, TareaMiniaturas, TareaPreviewsProgresivas, TareaSincronizacionCatalogo, y desde B4.2 TareaListarMarcadores, TareaGuardarMarcador, TareaEliminarMarcador; desde B4.3.2 TareaExploracionDensa — cobertura densa en dos fases: 15 prioritarios + densidad secundaria adaptativa; desde B4.3.3 con `objetivo_manual` y conjunto permitido explícito; desde B4.4 TareaListarMarcadoresVarios — lectura asíncrona de marcadores de varios videos)
 ├── prueba_tareas.py       Pruebas automatizadas de la infraestructura de trabajos
 ├── prueba_ffprobe.py      Pruebas automatizadas de TareaFFprobe
 ├── prueba_escaneo.py      Pruebas automatizadas de TareaEscaneo
@@ -41,6 +41,7 @@ prueba/
 ├── prueba_tamano_archivo.py  Pruebas automatizadas del tamaño de archivo (15)
 ├── prueba_previews_progresivas.py  Pruebas automatizadas de los previews progresivos (16)
 ├── apertura_videos.py     Servicio de apertura de videos con la aplicación predeterminada del sistema (único módulo que ejecuta `os.startfile`)
+├── playlist_vlc.py       Integración de playlists VLC (B4.4): localiza `vlc.exe`, genera el `.m3u` temporal con `#EXTVLCOPT:start-time` por entrada (encoding UTF-8), limpia playlists propias anteriores y lanza VLC una única vez; sin HTTP ni libVLC
 ├── prueba_doble_clic.py   Pruebas automatizadas de la apertura del video por doble clic (14)
 ├── prueba_menu_contextual.py  Pruebas automatizadas del menú contextual con clic derecho (14)
 ├── prueba_restauracion_seleccion.py  Pruebas automatizadas de la restauración de selección tras reemplazo de tarjetas (15)
@@ -63,12 +64,13 @@ prueba/
 ├── prueba_escaneo_automatico.py  Pruebas automatizadas de la preferencia independiente de "Escaneo automático" y sus cuatro combinaciones con "Incluir subcarpetas" (Etapa 2.8)
 ├── prueba_indicador_escaneado.py  Pruebas automatizadas de los indicadores visuales de carpetas escaneadas (Etapa 2.9)
 ├── exploracion_cache.py    Motor de caché temporal versionada y reanudable en disco (B4.3.1): estructura `miniaturas/exploracion/<video_id>/<version_fingerprint>/` (`meta.json` + `f{ms:010d}.jpg`), fingerprint sin hash, reanudación y escritura atómica; densidad secundaria provisional centralizada (`objetivo_total_densidad`, 1/30 s, mín 15, máx 200) para B4.3.2 Etapa 2; sin UI ni SQLite
-├── visor_videos.py        Interfaz gráfica (PySide6): panel izquierdo con árbol de navegación (`ArbolNavegacion`) + carga asíncrona de la primera página + carga manual de una página adicional ("Cargar más") + selección de carpeta + persistencia de la última carpeta seleccionada (servicio `configuracion`) + escaneo asíncrono de la carpeta elegida + encadenamiento escaneo → tamaños → FFprobe → miniaturas → registros con tamaño/metadatos → guardado → sincronización completa del catálogo → recarga asíncrona del catálogo (reemplazo de tarjetas) + generación progresiva de previews con gestor propio + apertura del video por doble clic (señal `Tarjeta.doble_clic` → `_abrir_video` → servicio `apertura_videos`) + **persistencia de marcadores temporales con gestor dedicado `gestor_marcadores` (B4.2)** (la `Tarjeta` recibe `video_id`, carga marcadores al expandir y persiste altas/bajas sin SQLite directo, con reconciliación de la carga como snapshot antiguo) + **cobertura densa de exploración temporal integrada con la tarjeta (B4.3.2)**: `TareaExploracionDensa` con `resultado_parcial` progresivo, decodificación `QImage` en el worker y conversión `QPixmap` en la GUI, fallback a previews normales, selección en RAM durante `mouseMove`, cancelación cooperativa, aislamiento A→B, colapso que libera RAM y reexpansión que reutiliza la caché; **densidad secundaria adaptativa en segundo plano (Etapa 2)** y **prioridad visual dinámica + densidad manual (B4.3.3)**; `main()` es el **punto de entrada de producción** (solo UI, sin pruebas)
+├── visor_videos.py        Interfaz gráfica (PySide6): panel izquierdo con árbol de navegación (`ArbolNavegacion`) + carga asíncrona de la primera página + carga manual de una página adicional ("Cargar más") + selección de carpeta + persistencia de la última carpeta seleccionada (servicio `configuracion`) + escaneo asíncrono de la carpeta elegida + encadenamiento escaneo → tamaños → FFprobe → miniaturas → registros con tamaño/metadatos → guardado → sincronización completa del catálogo → recarga asíncrona del catálogo (reemplazo de tarjetas) + generación progresiva de previews con gestor propio + apertura del video por doble clic (señal `Tarjeta.doble_clic` → `_abrir_video` → servicio `apertura_videos`) + **persistencia de marcadores temporales con gestor dedicado `gestor_marcadores` (B4.2)** (la `Tarjeta` recibe `video_id`, carga marcadores al expandir y persiste altas/bajas sin SQLite directo, con reconciliación de la carga como snapshot antiguo) + **cobertura densa de exploración temporal integrada con la tarjeta (B4.3.2)**: `TareaExploracionDensa` con `resultado_parcial` progresivo, decodificación `QImage` en el worker y conversión `QPixmap` en la GUI, fallback a previews normales, selección en RAM durante `mouseMove`, cancelación cooperativa, aislamiento A→B, colapso que libera RAM y reexpansión que reutiliza la caché; **densidad secundaria adaptativa en segundo plano (Etapa 2)** y **prioridad visual dinámica + densidad manual (B4.3.3)** y **reproducción de marcadores en VLC (B4.4)**: acción de menú contextual "Reproducir marcadores en VLC" que recolecta los videos seleccionados en orden visible, lee sus marcadores (gestor dedicado `gestor_reproduccion`), dialoga sobre videos sin marcadores, omite archivos inexistentes y abre VLC una única vez con una playlist temporal; `main()` es el **punto de entrada de producción** (solo UI, sin pruebas)
 ├── prueba_smoke.py        Arnés de smoke tests (ejecución explícita con `python prueba_smoke.py`): verifica el pipeline completo (paginación, escaneo + carpeta + sincronización, previews, doble clic y persistencia) con una base SQLite temporal; no se ejecuta al iniciar la aplicación
 ├── prueba_exploracion_cache_b431.py  Pruebas automatizadas del motor de caché temporal (B4.3.1, 29)
 ├── prueba_exploracion_b432.py  Pruebas de la cobertura rápida integrada con la UI (B4.3.2 Etapa 1, 20)
 ├── prueba_exploracion_densidad_b432.py  Pruebas de la densidad secundaria adaptativa (B4.3.2 Etapa 2, 12)
 ├── prueba_exploracion_b433.py  Pruebas de prioridad visual dinámica y densidad manual (B4.3.3, 22)
+├── prueba_reproduccion_marcadores_b44.py  Pruebas de la reproducción de marcadores en VLC (B4.4, 24)
 ├── DOCUMENTO_TECNICO.md   Este documento
 ├── miniaturas/            Imágenes de miniatura (JPG, generadas automáticamente)
 │   └── <prefijo>_<NN>.jpg  Convención de nombres; caché ignorada, contenido variable
@@ -167,6 +169,16 @@ Diseñado como punto único de extensión para futuras rutas de configuración; 
 Módulo **de servicio** que separa de la interfaz la apertura de un video con la aplicación predeterminada de Windows. Es el **único módulo que ejecuta `os.startfile`** (verificado por AST de `visor_videos.py` en `prueba_doble_clic.py`):
 
 - `abrir_video_con_aplicacion_predeterminada(nombre, carpeta)` — recibe el **nombre** del video y la **carpeta** en la que se encuentra; **valida ambos** como texto no vacío (tras `strip()`; `None`, `""`, solo espacios o un no-texto → `ValueError`), construye la **ruta absoluta** (`os.path.abspath(os.path.join(carpeta, nombre))`) **fuera de la interfaz**, valida con `os.path.isfile` que el archivo exista (si no → `FileNotFoundError` con la ruta) y abre el video con `os.startfile(ruta)`. Devuelve la ruta absoluta. Un fallo del propio `os.startfile` (p. ej. falta la aplicación asociada) propaga `OSError`. No abre SQLite, no ejecuta FFprobe/FFmpeg, no usa subprocesos (`Popen`/`subprocess`) y no toca la interfaz.
+
+### `playlist_vlc.py` — integración de playlists VLC (B4.4)
+Módulo **de servicio** que aísla de la interfaz la integración con **VLC** mediante **playlists puras** (una entrada por marcador). Sin HTTP, sin libVLC, sin automatización de teclas ni de botones:
+
+- `localizar_vlc()` — resuelve `vlc.exe` en orden: `%ProgramFiles%\VideoLAN\VLC\vlc.exe`, `%ProgramFiles(x86)%\VideoLAN\VLC\vlc.exe` y `shutil.which("vlc")`. Sin registro ni búsquedas recursivas de discos; devuelve `None` si no se encuentra.
+- `formatear_tiempo_vlc(segundos)` — texto de `start-time` conservando **precisión decimal** razonable (p. ej. `12.437`), recortando el ruido de punto flotante (`0.30000000000000004` → `0.3`). No modifica los datos persistidos.
+- `formatear_titulo_marcador(nombre, segundos)` — título descriptivo tipo `video.mp4 — 00:01:12.437` (`H:MM:SS.mmm`), limpiando saltos de línea.
+- `limpiar_playlists_anteriores(directorio)` — elimina **solo** las playlists propias previas `visor_marcadores_*.m3u` del directorio indicado (un solo nivel, sin subdirectorios). Un archivo bloqueado se ignora (`except OSError: pass`) y la limpieza continúa. Nunca toca `.m3u` ajenos ni recorre el árbol.
+- `generar_m3u(entradas, ruta_destino)` — escribe el `.m3u` en **UTF-8 explícito** (soporta espacios, acentos y Unicode). **Primero** limpia las playlists propias anteriores de `os.path.dirname(ruta_destino)` y **después** escribe la nueva (no borra la playlist recién lanzada). Cada entrada `{ruta, nombre, tiempo}` se serializa como `#EXTINF:-1,<título>` + `#EXTVLCOPT:start-time=<segundos>` + `<ruta absoluta>`.
+- `abrir_playlist_en_vlc(ruta_m3u, ruta_vlc)` — lanza **VLC una única vez** con la playlist completa (`subprocess.Popen([ruta_vlc, ruta_m3u])`), sin loop automático.
 
 ### `configuracion.py` — servicio de persistencia de configuración
 Módulo **de servicio** que separa de la interfaz la persistencia de la configuración local del usuario en un archivo JSON (`configuracion.json` en la raíz del proyecto, gitignored). Persiste la **última carpeta seleccionada**. No abre SQLite, no ejecuta FFprobe/FFmpeg y no toca la interfaz:
@@ -664,6 +676,10 @@ implementado** (decisión de producto: generación individual y secuencial).
 | Persistencia de marcadores | `escanear_videos.py` | Tabla `marcadores_video` (migración aditiva en `conectar_bd`); `listar_marcadores` / `guardar_marcador` / `eliminar_marcador` con validación previa y conexión propia por operación; coherencia con `videos.id` gestionada en la capa de servicio (sin cascade). |
 | Marcadores asíncronos | `tareas_videos.TareaListarMarcadores` / `TareaGuardarMarcador` / `TareaEliminarMarcador` | Cargar, crear y eliminar marcadores en segundo plano; conexión abierta/cerrada en el hilo de trabajo; ejecutados por el gestor dedicado `gestor_marcadores` de la interfaz. |
 | Reconciliación de marcadores en la interfaz | `visor_videos.VisorVideos` | La `Tarjeta` recibe `video_id` y no ejecuta SQLite; representación optimista en memoria, carga al expandir y cola serializada en `gestor_marcadores`; la carga se reconcilia como snapshot antiguo (conserva altas/bajas locales, IDs y deduplica por tolerancia temporal). |
+| Persistencia de marcadores de varios videos | `escanear_videos.listar_marcadores_de` | Lee los marcadores persistidos de varios `video_id` (tuplas `(id, video_id, tiempo)`), agrupados en el orden recibido y ordenados cronológicamente dentro de cada video; validación previa y conexión propia por operación. La interfaz no consulta SQLite directamente. |
+| Marcadores de varios videos asíncronos | `tareas_videos.TareaListarMarcadoresVarios` | Lectura en segundo plano de los marcadores de varios videos; ejecutada por el gestor dedicado `gestor_reproduccion` de la interfaz. |
+| Reproducción de marcadores en VLC | `visor_videos.VisorVideos._reproducir_marcadores_en_vlc` + `playlist_vlc` | Acción de menú contextual (habilitada con selección); recolecta los videos seleccionados en **orden visible del catálogo**, lee sus marcadores, aplica el diálogo para videos sin marcadores (Omitir / Desde el inicio / Cancelar), omite archivos inexistentes con aviso y abre VLC una única vez con la playlist generada. |
+| Ciclo de vida de playlists temporales | `playlist_vlc.limpiar_playlists_anteriores` | Antes de generar una nueva playlist elimina únicamente `visor_marcadores_*.m3u` del directorio temporal propio; bloqueos ignorados; sin borrar `.m3u` ajenos ni recorrer subdirectorios; no borra la playlist recién lanzada. |
 
 ## 5. Flujo de ejecución (apertura → tarjetas)
 
@@ -964,8 +980,9 @@ correcciones finales incluidas). El desarrollo continuó en el **ciclo Beta 4**
 marcadores visuales**, **B4.2 — Persistencia de marcadores temporales por
 video**, **B4.3.1 — Motor de caché temporal versionada y reanudable**,
 **B4.3.2 — Cobertura rápida asíncrona integrada con la UI**, **B4.3.2 — Etapa
-2: Densidad secundaria adaptativa** y **B4.3.3 — Ajustes de interacción y
-densidad manual** quedaron **completadas y aprobadas**, en bloques pequeños y
+2: Densidad secundaria adaptativa**, **B4.3.3 — Ajustes de interacción y
+densidad manual** y **B4.4 — Reproducción de marcadores en VLC** quedaron
+**completadas y aprobadas**, en bloques pequeños y
 acumulativos y **sin introducir cambios arquitectónicos** que todavía no
 existieran; cada etapa extiende la arquitectura únicamente en la medida que su
 propio alcance aprobado lo requiere (B4.2 incorporó la tabla `marcadores_video`
@@ -981,10 +998,16 @@ densidad adaptativa, individual y secuencial, sin batch; y **B4.3.3** agregó la
 de marcadores) y la **densidad manual** (`Auto | 15 | 30 | 60 | 120 | 200` por
 tarjeta/sesión con conjunto permitido explícito `tiempos_objetivo` y soporte de
 caché superset), aditivos y sin tocar SQLite ni configuración).
-**Próxima etapa: reproducción de marcadores en VLC** (seleccionar varios videos,
-abrir reproducción y recorrer Siguiente/Anterior por los marcadores del video
-actual, pasando al siguiente al terminar). **B4.3 queda funcionalmente muy
-avanzada**; **no se declara la Beta 4 completa todavía**.
+**B4.4** agregó la integración mínima de **reproducción de marcadores en VLC**, aditiva y sin
+cambios arquitectónicos: módulo de servicio `playlist_vlc.py` (localización de `vlc.exe`,
+generación del `.m3u` UTF-8 con `#EXTVLCOPT:start-time` y limpieza propia de playlists
+temporales anteriores), `listar_marcadores_de`/`TareaListarMarcadoresVarios` para leer
+marcadores de varios videos, y la acción de menú contextual "Reproducir marcadores en VLC" con
+diálogo Omitir/Desde el inicio/Cancelar y omisión de archivos inexistentes. Sin HTTP, sin
+libVLC, sin loop automático y sin tocar SQLite salvo lecturas de marcadores.
+**Reproducción de marcadores en VLC — completada** (Etapa 1: validación física de la
+estrategia playlist con VLC 3.0.23; Etapa 2: integración mínima). **B4.4 queda completada; no
+se declara la Beta 4 completa todavía.**
 
 **Observación arquitectónica (Etapa B3.1):** el instante que se muestra sobre
 cada preview se deriva de `(duración, índice)` con `calcular_tiempo_preview`,

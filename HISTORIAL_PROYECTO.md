@@ -5,6 +5,79 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 95. Integrar reproduccion de marcadores mediante playlists VLC (B4.4)
+
+- **Fecha:** 2026-08-09
+- **Objetivo:** Séptima etapa del ciclo **Beta 4** (rama `beta4`), con dos subetapas: **Etapa
+  1** — inspección y prototipo técnico de reproducción de marcadores en VLC; **Etapa 2** —
+  integración mínima "Reproducir marcadores en VLC". Permite seleccionar uno o varios videos en
+  el Visor y abrir una playlist temporal de VLC con una entrada por marcador persistido,
+  recorrible con los botones Siguiente/Anterior visibles de VLC.
+- **Estrategia (Etapa 1, aprobada):** se validó físicamente con **VLC 3.0.23**
+  (`C:\Program Files\VideoLAN\VLC\vlc.exe`) la estrategia **playlist pura**: una entrada por
+  marcador con `#EXTVLCOPT:start-time=<segundos>`; Siguiente/Anterior visibles de VLC recorren
+  los marcadores; marcadores consecutivos del mismo archivo resultan **fluidos** (sin negro ni
+  parpadeo perceptible); `--loop` correcto; play/pause, volumen, fullscreen y seek manual
+  intactos. Se descartaron HTTP/telnet y libVLC para esta integración.
+- **Integración mínima (Etapa 2):** acción **"Reproducir marcadores en VLC"** en el menú
+  contextual (habilitada con selección). El Visor recolecta los videos seleccionados en el
+  **orden visible actual del catálogo** (mismo patrón que `_copiar_rutas_seleccionados`; no usa
+  el `set` de selección como orden), obtiene sus marcadores persistidos (B4.2) en **orden
+  cronológico ascendente** mediante `listar_marcadores_de` + `TareaListarMarcadoresVarios`, y
+  genera una playlist temporal `.m3u` con una entrada por marcador (`#EXTVLCOPT:start-time`,
+  **precisión decimal**, p. ej. `12.437`) en el directorio temporal del sistema, con encoding
+  **UTF-8** (espacios/acentos/Unicode) y **limpieza propia previa** (`visor_marcadores_*.m3u`;
+  solo patrón propio, sin tocar archivos ajenos ni subdirectorios; una playlist bloqueada se
+  conserva y se continúa; no se borra la recién lanzada). Abre **VLC una única vez** con la
+  playlist completa, sin loop automático.
+- **Videos sin marcadores (decisión de producto):** se pregunta **en cada ocasión** con un único
+  diálogo: **Omitir videos sin marcadores** / **Reproducir desde el inicio (00:00)** /
+  **Cancelar** (no abre VLC). No se persiste la elección. Si todos carecen de marcadores y se
+  elige Omitir, no se abre VLC y se informa que no hay marcadores para reproducir.
+- **Archivos inexistentes:** se omiten de la playlist con un aviso informativo; no se borran
+  marcadores ni registros y no se modifica SQLite (la reasociación queda fuera de esta etapa).
+- **VLC ausente:** mensaje claro "VLC no está instalado o no pudo encontrarse."; sin instalar,
+  sin descargar, sin abrir navegador y sin búsquedas recursivas de discos.
+- **Resolución de VLC:** `%ProgramFiles%\VideoLAN\VLC\vlc.exe` → `%ProgramFiles(x86)%\...` →
+  `shutil.which("vlc")` (sin registro).
+- **Observación (múltiples instancias):** la configuración actual de VLC en la PC de desarrollo
+  abrió una instancia por ejecución; no impidió la reproducción ni la limpieza de playlists
+  anteriores y **no se corrige en esta etapa** (se evaluará solo si genera un problema de UX en
+  uso real).
+- **Validación física (PC de desarrollo, VLC 3.0.23, videos reales de `Videos de muestra`):**
+  primera reproducción (A: 1.5 / 17.83 / 30 s + B: 2 s): VLC abrió una sola vez, primer marcador
+  en ~1.5 s, Siguiente A→A→A→B, Anterior correcto, play/pause y fullscreen normales; segunda
+  reproducción (A + video sin marcadores, "Desde el inicio"): diálogo con las 3 opciones y
+  comportamiento correcto. Al final de `%TEMP%` solo quedó la última playlist propia; la
+  anterior y un residuo previo fueron eliminados por la limpieza.
+- **SQLite intacto:** no se modificaron esquema ni datos; solo se leen marcadores (nueva función
+  de consulta `listar_marcadores_de`); los `INSERT` de la prueba física se realizaron en bases
+  temporales fuera del repositorio.
+- **Pruebas:** `prueba_reproduccion_marcadores_b44.py` **24/24** (orden visible, orden
+  cronológico, generación M3U, tiempos decimales, mismo archivo múltiples entradas, mezcla de
+  videos, decisiones Omitir/Desde inicio/Cancelar, todos sin marcadores, playlist vacía, VLC no
+  encontrado, archivo inexistente, no modificación de marcadores, lanzamiento único, limpieza de
+  playlists propias, no borrar archivos ajenos, eliminación bloqueada, rutas con espacios y
+  rutas Unicode). Regresiones en verde en el cierre: `prueba_exploracion_b433.py` **22/22**,
+  `prueba_marcadores_b42.py` **17/17**, `prueba_recarga_catalogo.py` **20/20**,
+  `prueba_pagina_siguiente.py` **20/20**, `prueba_smoke.py` OK. `python -m py_compile` OK.
+  `git diff --check` OK.
+- **Próxima etapa:** **B4.4 quedó completada**; no se declara la Beta 4 completa todavía.
+  Siguientes líneas del ciclo (no iniciadas): selección A/B, loops, selección de fragmentos,
+  corte/unión y detección de archivos movidos con reasociación futura de marcadores huérfanos,
+  más las evoluciones de reproducción (iniciar desde el marcador, destino durante la
+  reproducción, UX de múltiples instancias de VLC). Pendiente separado: la demora perceptible al
+  cargar una carpeta de 121 videos y generar las miniaturas normales iniciales.
+- **Archivos modificados:** `escanear_videos.py`, `tareas_videos.py`, `visor_videos.py`,
+  `playlist_vlc.py` (nueva) y `prueba_reproduccion_marcadores_b44.py` (nueva), más los
+  documentos oficiales (`ESTADO_PROYECTO.md`, `ROADMAP.md`, `DOCUMENTO_TECNICO.md`,
+  `HISTORIAL_PROYECTO.md`). Sin cambios en cache, miniaturas, scrubber, escaneo, configuración ni
+  SQLite (solo lectura de marcadores).
+- **Commit:** `Integrar reproduccion de marcadores mediante playlists VLC` (cierre de B4.4 —
+  Etapa 2).
+
+---
+
 ## 94. Agregar densidad manual y priorizar la vista dinamica temporal (B4.3.3)
 
 - **Fecha:** 2026-08-09
