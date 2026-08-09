@@ -1,4 +1,5 @@
 import escanear_videos
+import exploracion_cache
 import operaciones
 import os
 import sys
@@ -79,6 +80,7 @@ from tareas_videos import (
     TareaGuardarMarcador,
     TareaGuardarVideos,
     TareaEliminarMarcador,
+    TareaExploracionDensa,
     TareaLecturaCatalogoPaginada,
     TareaListarMarcadores,
     TareaMiniaturas,
@@ -102,6 +104,7 @@ RETARDO_VISTA_AMPLIADA_MS = 400
 LIMITE_ORIGINAL_MINIATURA = 1280
 RETARDO_OCULTAR_VISTA_MS = 150
 ALTO_FRANJA_EXTRAS = 44
+FOTOGRAMAS_INICIALES = 15
 FACTOR_VISTA_AMPLIADA = 1.6
 FACTORES_VISTA_AMPLIADA = (1.2, 1.6, 2.0, 2.5, 3.0, 3.5)
 TEXTOS_FACTOR_VISTA_AMPLIADA = (
@@ -796,6 +799,15 @@ class Tarjeta(QFrame):
         if self._expandida:
             self._franja.setFixedHeight(alto + ALTO_FRANJA_EXTRAS)
             self._imagen_exploracion.setFixedSize(ancho, alto)
+            for entrada in self._previews_densos:
+                pixmap = entrada.get("pixmap")
+                if pixmap is not None and not pixmap.isNull():
+                    entrada["pixmap_escalado"] = pixmap.scaled(
+                        ancho,
+                        alto,
+                        Qt.KeepAspectRatio,
+                        Qt.SmoothTransformation,
+                    )
             self._refrescar_exploracion()
             self._renderizar_marcadores()
 
@@ -809,6 +821,7 @@ class Tarjeta(QFrame):
     def _construir_exploracion(self):
         self._expandida = False
         self._previews_exploracion = []
+        self._previews_densos = []
         self._marcadores = []
         self._marcadores_cargados = False
         self._marcadores_eliminados_carga = set()
@@ -859,6 +872,7 @@ class Tarjeta(QFrame):
         else:
             self._contenedor_exploracion.setVisible(False)
             self._previews_exploracion = []
+            self._previews_densos = []
             self._imagen_exploracion.setPixmap(QPixmap())
             self._imagen_exploracion.hide()
         self.expansion_cambiada.emit(self._nombre, valor)
@@ -964,13 +978,80 @@ class Tarjeta(QFrame):
             self._posicionar_preview(instante)
 
     def _pixmap_para_instante(self, instante):
-        disponibles = self._previews_exploracion
-        indice = preview_mas_cercana(
-            [d["instante"] for d in disponibles], instante
-        )
-        if indice is None:
+        if not self._previews_densos:
+            disponibles = self._previews_exploracion
+            indice = preview_mas_cercana(
+                [d["instante"] for d in disponibles], instante
+            )
+            if indice is None:
+                return None
+            return disponibles[indice]["pixmap_escalado"]
+        if not (
+            isinstance(instante, (int, float))
+            and not isinstance(instante, bool)
+        ):
             return None
-        return disponibles[indice]["pixmap_escalado"]
+        mejor = None
+        mejor_clave = None
+        for es_denso, grupo in (
+            (False, self._previews_exploracion),
+            (True, self._previews_densos),
+        ):
+            for entrada in grupo:
+                tiempo = entrada.get("instante")
+                if not (
+                    isinstance(tiempo, (int, float))
+                    and not isinstance(tiempo, bool)
+                ):
+                    continue
+                pixmap = entrada.get("pixmap_escalado")
+                if pixmap is None or pixmap.isNull():
+                    continue
+                clave = (abs(tiempo - instante), es_denso)
+                if mejor_clave is None or clave < mejor_clave:
+                    mejor_clave = clave
+                    mejor = pixmap
+        return mejor
+
+    def agregar_fotogramas_densos(self, densos):
+        """Incorpora fotogramas densos (instante en segundos + pixmap)."""
+        if not densos:
+            return False
+        ancho, alto = dimensiones_miniatura()
+        existentes = {
+            round(d["instante"], 6) for d in self._previews_densos
+        }
+        nuevos = False
+        for entrada in densos:
+            instante = entrada.get("instante")
+            if not (
+                isinstance(instante, (int, float))
+                and not isinstance(instante, bool)
+            ):
+                continue
+            clave = round(instante, 6)
+            if clave in existentes:
+                continue
+            pixmap = entrada.get("pixmap")
+            if pixmap is None or pixmap.isNull():
+                continue
+            self._previews_densos.append(
+                {
+                    "instante": float(instante),
+                    "pixmap": pixmap,
+                    "pixmap_escalado": pixmap.scaled(
+                        ancho,
+                        alto,
+                        Qt.KeepAspectRatio,
+                        Qt.SmoothTransformation,
+                    ),
+                }
+            )
+            existentes.add(clave)
+            nuevos = True
+        if nuevos and self._expandida:
+            self._refrescar_exploracion()
+        return nuevos
 
     def _mostrar_preview_para_instante(self, instante):
         pixmap = self._pixmap_para_instante(instante)
@@ -1424,6 +1505,21 @@ class VisorVideos(QMainWindow):
         self._cola_marcadores = []
         self._marcador_op_actual = None
 
+        self.gestor_exploracion = GestorTareas(self)
+        self.gestor_exploracion.tarea_resultado.connect(
+            self._al_resultado_exploracion
+        )
+        self.gestor_exploracion.tarea_error.connect(
+            self._al_error_exploracion
+        )
+        self.gestor_exploracion.tarea_finalizada.connect(
+            self._al_exploracion_finalizada
+        )
+        self._cola_exploracion = []
+        self._exploracion_op_actual = None
+        self._exploracion_objetivo = None
+        self.tarea_exploracion = None
+
         self._timer_previews = QTimer(self)
         self._timer_previews.setSingleShot(True)
         self._timer_previews.setInterval(300)
@@ -1770,10 +1866,151 @@ class VisorVideos(QMainWindow):
 
     def _al_expansion_tarjeta(self, nombre, expandida):
         if not expandida:
+            if self._exploracion_objetivo == nombre:
+                self._exploracion_objetivo = None
+                self._cancelar_exploracion_en_curso()
             return
         for candidato, tarjeta in self.tarjetas:
             if candidato != nombre:
                 tarjeta.colapsar()
+        self._exploracion_objetivo = nombre
+        self._encolar_exploracion(nombre)
+
+    def _encolar_exploracion(self, nombre):
+        if nombre != self._exploracion_objetivo:
+            return
+        if nombre in self._cola_exploracion:
+            return
+        self._cola_exploracion.append(nombre)
+        self._cancelar_exploracion_en_curso()
+        self._procesar_siguiente_exploracion()
+
+    def _cancelar_exploracion_en_curso(self):
+        tarea = self.tarea_exploracion
+        if tarea is not None:
+            tarea.cancelar()
+
+    def _procesar_siguiente_exploracion(self):
+        while True:
+            if self.gestor_exploracion.activo:
+                return
+            if not self._cola_exploracion:
+                return
+            nombre = self._cola_exploracion.pop(0)
+            if nombre != self._exploracion_objetivo:
+                continue
+            tarjeta = self._tarjeta_por_nombre(nombre)
+            if tarjeta is None or not tarjeta._expandida:
+                continue
+            video_id = getattr(tarjeta, "_video_id", None)
+            ruta_video = self._ruta_video_de(tarjeta)
+            if video_id is None or not ruta_video:
+                continue
+            tarea = TareaExploracionDensa(
+                video_id,
+                ruta_video,
+                duracion=tarjeta._duracion,
+                cantidad=FOTOGRAMAS_INICIALES,
+            )
+            tarea.resultado_parcial.connect(
+                self._al_resultado_parcial_exploracion
+            )
+            if not self.gestor_exploracion.iniciar(tarea):
+                self._cola_exploracion.insert(0, nombre)
+                return
+            self.tarea_exploracion = tarea
+            self._exploracion_op_actual = {
+                "nombre": nombre,
+                "video_id": video_id,
+            }
+            return
+
+    def _ruta_video_de(self, tarjeta):
+        carpeta = getattr(tarjeta, "_carpeta_video", None)
+        if not (
+            isinstance(carpeta, str) and carpeta and os.path.isdir(carpeta)
+        ):
+            return None
+        ruta = os.path.join(carpeta, tarjeta.nombre)
+        if not os.path.isfile(ruta):
+            return None
+        return ruta
+
+    def _al_resultado_exploracion(self, resultado):
+        op = self._exploracion_op_actual
+        if op is None:
+            return
+        if op.get("nombre") != self._exploracion_objetivo:
+            return
+        if resultado.get("cancelado"):
+            return
+        tarjeta = self._tarjeta_por_nombre(op.get("nombre"))
+        if tarjeta is None or not tarjeta._expandida:
+            return
+        self._aplicar_exploracion_densa(tarjeta, op, resultado)
+
+    def _al_resultado_parcial_exploracion(self, parcial):
+        op = self._exploracion_op_actual
+        if op is None:
+            return
+        if op.get("nombre") != self._exploracion_objetivo:
+            return
+        if parcial.get("video_id") != op.get("video_id"):
+            return
+        tarjeta = self._tarjeta_por_nombre(op.get("nombre"))
+        if tarjeta is None or not tarjeta._expandida:
+            return
+        fotogramas = parcial.get("fotogramas") or []
+        if not fotogramas:
+            return
+        self._aplicar_exploracion_densa(
+            tarjeta,
+            op,
+            {
+                "version": parcial.get("version"),
+                "fotogramas": [ms for ms, _ in fotogramas],
+                "imagenes": fotogramas,
+            },
+        )
+
+    def _al_error_exploracion(self, _mensaje):
+        pass
+
+    def _al_exploracion_finalizada(self):
+        self._exploracion_op_actual = None
+        self.tarea_exploracion = None
+        self._procesar_siguiente_exploracion()
+
+    def _aplicar_exploracion_densa(self, tarjeta, op, resultado):
+        version = resultado.get("version")
+        fotogramas = resultado.get("fotogramas") or []
+        if not version or not fotogramas:
+            return
+        video_id = op.get("video_id")
+        imagenes = {}
+        for item in resultado.get("imagenes") or []:
+            if isinstance(item, (tuple, list)) and len(item) == 2:
+                imagenes[item[0]] = item[1]
+        existentes = {
+            round(d["instante"], 6) for d in tarjeta._previews_densos
+        }
+        densos = []
+        for ms in fotogramas:
+            if round(ms / 1000.0, 6) in existentes:
+                continue
+            imagen = imagenes.get(ms)
+            if imagen is not None:
+                pixmap = QPixmap.fromImage(imagen)
+            else:
+                ruta = exploracion_cache.ruta_fotograma_version(
+                    video_id, ms, version
+                )
+                pixmap = QPixmap(ruta)
+            if pixmap.isNull():
+                continue
+            densos.append({"instante": ms / 1000.0, "pixmap": pixmap})
+        if densos:
+            tarjeta.agregar_fotogramas_densos(densos)
 
     def _encolar_marcador(self, op):
         self._cola_marcadores.append(op)

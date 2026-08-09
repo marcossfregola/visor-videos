@@ -1,5 +1,8 @@
 import os
 
+from PySide6.QtCore import Signal
+from PySide6.QtGui import QImage
+
 import escanear_videos as escanear_mod
 from escanear_videos import (
     CANTIDAD_PREVIEWS,
@@ -23,6 +26,15 @@ from escanear_videos import (
     preparar_registros_basicos,
     previews_existentes,
 )
+from exploracion_cache import (
+    duracion_valida,
+    duracion_video,
+    generar_fotogramas,
+    listar_fotogramas_version,
+    ruta_fotograma_version,
+    version_actual,
+)
+from exploracion_temporal import cantidad_fotogramas, tiempos_objetivo
 from rutas import ruta_carpeta_videos
 from tareas import TareaBase
 
@@ -362,3 +374,117 @@ class TareaEliminarMarcador(TareaBase):
 
     def _trabajo(self):
         return eliminar_marcador(self._marcador_id, self._ruta_db)
+
+
+class TareaExploracionDensa(TareaBase):
+    """Genera o completa la caché densa de exploración temporal (B4.3.2).
+
+    El trabajo corre en el hilo del gestor: `generar_fotogramas` invoca
+    FFmpeg una vez por fotograma faltante de la versión actual y la
+    cancelación es cooperativa (se revisa entre fotogramas).
+
+    Además de reportar progreso, emite `resultado_parcial` con los
+    fotogramas que ya están disponibles en disco (ms + QImage decodificada
+    en el hilo del worker). Así la GUI incorpora resultados antes de que
+    terminen los 15 objetivos y la lectura/decodificación JPEG queda en el
+    worker, no en el hilo de la GUI.
+    """
+
+    resultado_parcial = Signal(object)
+
+    def __init__(self, video_id, ruta_video, duracion=None, cantidad=None,
+                 parent=None):
+        super().__init__(parent)
+        self._video_id = video_id
+        self._ruta_video = ruta_video
+        self._duracion = duracion
+        self._cantidad = cantidad
+        self._cancelada = False
+        self._emitidos = set()
+
+    @property
+    def video_id(self):
+        return self._video_id
+
+    @property
+    def ruta_video(self):
+        return self._ruta_video
+
+    @property
+    def duracion(self):
+        return self._duracion
+
+    @property
+    def cantidad(self):
+        return self._cantidad
+
+    def cancelar(self):
+        self._cancelada = True
+
+    def _trabajo(self):
+        duracion = self._duracion
+        if not duracion_valida(duracion):
+            duracion = duracion_video(self._ruta_video)
+        cantidad = self._cantidad
+        if cantidad is None:
+            cantidad = cantidad_fotogramas(duracion)
+        objetivos = set(tiempos_objetivo(duracion, cantidad))
+        version = None
+        if duracion_valida(duracion):
+            version = version_actual(
+                self._video_id, self._ruta_video, duracion
+            )
+        emitidos = self._emitidos
+
+        def al_progreso(procesado, total):
+            self.reportar_progreso(procesado, total)
+            if self._cancelada or version is None or not objetivos:
+                return
+            presentes = listar_fotogramas_version(
+                self._video_id, version, duracion=duracion
+            )
+            nuevos = [
+                ms
+                for ms in presentes
+                if ms in objetivos and ms not in emitidos
+            ]
+            if not nuevos:
+                return
+            imagenes = []
+            for ms in nuevos:
+                ruta = ruta_fotograma_version(self._video_id, ms, version)
+                imagen = QImage(ruta)
+                if imagen.isNull():
+                    continue
+                imagenes.append((ms, imagen))
+                emitidos.add(ms)
+            if imagenes:
+                self.resultado_parcial.emit({
+                    "video_id": self._video_id,
+                    "version": version,
+                    "fotogramas": imagenes,
+                })
+
+        resultado = generar_fotogramas(
+            self._video_id,
+            self._ruta_video,
+            duracion=duracion,
+            cantidad=self._cantidad,
+            on_progreso=al_progreso,
+            cancelar=lambda: self._cancelada,
+        )
+        if isinstance(resultado, dict) and resultado.get("version") and not resultado.get("cancelado"):
+            imagenes = []
+            for ms in resultado.get("fotogramas") or []:
+                if ms in emitidos:
+                    continue
+                ruta = ruta_fotograma_version(
+                    self._video_id, ms, resultado["version"]
+                )
+                imagen = QImage(ruta)
+                if not imagen.isNull():
+                    imagenes.append((ms, imagen))
+            if imagenes:
+                resultado = dict(resultado)
+                resultado["imagenes"] = imagenes
+        return resultado

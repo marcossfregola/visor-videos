@@ -5,6 +5,68 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 92. Integrar cobertura temporal densa progresiva en la interfaz (B4.3.2)
+
+- **Fecha:** 2026-08-09
+- **Objetivo:** Cuarta etapa del ciclo **Beta 4** (rama `beta4`), segunda subetapa de
+  **B4.3 — Caché densa de exploración temporal**. Integrar el motor de B4.3.1 en la tarjeta:
+  cobertura densa **asíncrona**, **progresiva** y con **fallback a las previews normales**,
+  priorizando agilidad y fluidez en el scrubbing.
+- **Comportamiento final:**
+  - `tareas_videos.py` — **`TareaExploracionDensa`** (nueva): genera la cobertura inicial de
+    **`FOTOGRAMAS_INICIALES = 15`** provisionales con el motor `exploracion_cache.py`; captura
+    instantáneas inmutables de `video_id`/`ruta_video`/`duracion` en el constructor; emite
+    **resultados parciales progresivos** (`resultado_parcial = Signal(object)`) en cuanto hay
+    fotogramas y termina con la cola final `{"imagenes": [...]}` de **`QImage`** ya decodificadas
+    en el worker. Exposición de `FOTOGRAMAS_INICIALES` y **cancelación cooperativa**.
+  - `visor_videos.py` — **consumo en la tarjeta:** `_procesar_siguiente_exploracion` conecta la
+    señal de parciales; `_al_resultado_parcial_exploracion` los recibe; `_aplicar_exploracion_densa`
+    (compatible con `(ms, QImage)` y deduplicación) convierte la `QImage` en `QPixmap` **en la
+    GUI** y la aplica al fotograma temporal. **Fallback inmediato a las previews normales**
+    mientras no hay caché; `mouseMove` con selección **exclusivamente en RAM** (cero FFmpeg,
+    cero disco); imagen mostrada = la **más cercana** entre preview normal y densa (la preview
+    normal gana el empate); **cancelación cooperativa** al cambiar de video; **aislamiento
+    A→B** (cada tarjeta usa su caché); **colapso que libera las referencias densas de RAM**;
+    **reexpansión que reutiliza la caché** (sin regenerar); los **marcadores** conservan su
+    tiempo/id y mejoran visualmente al llegar fotogramas densos.
+- **Validación visual (manual, PC de desarrollo):** aprobada por Marcos (puntos A–G) —
+  respuesta inmediata, fotogramas correctos, sin tirones ni en blanco, mejora progresiva,
+  marcadores correctos, cambio A→B correcto, colapso correcto y reexpansión/reutilización
+  correctas. El **rendimiento en la notebook objetivo NO está medido** (próximo paso obligatorio).
+- **Medidas de referencia (PC de desarrollo):** `FOTOGRAMAS_INICIALES=15`; video ≈4.36 s;
+  primer denso ≈0.883 s; reexpansión 12.5 ms/20 ms/0 archivos; scrub 300 consultas ≈1.15 ms
+  (~4 µs/consulta); worker decode ≈2.5 ms/15; GUI `fromImage` + escala ≈3.5 ms/15; RAM del
+  lote ≈3.3 MiB. **Hardware objetivo:** i7-7500U 2.70 GHz, 16 GB RAM, NVIDIA 940MX 2 GB,
+  Intel HD 620 — pendiente de probar.
+- **Batch/híbrido:** **NO implementado** — B4.3.2 usa generación individual solo para los 15
+  fotogramas iniciales; la estrategia híbrida y los parámetros (cantidad inicial, `MAX` 40–200,
+  lote, concurrencia) se decidirán tras la prueba en la notebook (opciones A mantener / B
+  batch/híbrido / C ajustar densidad, sin anticipar cuál).
+- **SQLite intacto:** `videos`, `marcadores_video` y `biblioteca.db` no fueron modificados.
+- **Pruebas:** `prueba_exploracion_b432.py` **20/20** (P16–P20 progresividad: parciales en
+  vivo con la señal, guardas aislamiento A–B/colapso/sin-op, `QImage` directo + deduplicación,
+  `_trabajo` real con parciales + cola `QImage`, y cancelación con parcial aplicado).
+  Regresiones en verde en el cierre: `prueba_exploracion_cache_b431.py` **29/29**,
+  `prueba_exploracion_b41.py` **28/28**, `prueba_marcadores_b42.py` **17/17**,
+  `prueba_previews_progresivas.py` **16/16**, `prueba_tamano_miniaturas.py` **32/32**,
+  `prueba_recarga_catalogo.py` **20/20**, `prueba_pagina_siguiente.py` **20/20**,
+  `prueba_smoke.py` OK. `python -m py_compile` OK. `git diff --check` OK.
+- **Próxima etapa:** **validación de esta implementación exacta en el hardware objetivo
+  (notebook)**; tras esa medición se decidirá entre mantener solo esta cobertura (A), una
+  segunda fase batch/híbrida (B) o ajustar la densidad (C), **sin anticipar cuál** y **sin
+  asumir que el batch sea obligatorio**. Se conservan como funciones futuras: reproducción
+  desde el marcador; navegación entre marcadores durante la reproducción; A/B; loops;
+  selección de fragmentos; corte/unión; detección de archivos movidos; reasociación futura de
+  marcadores huérfanos.
+- **Archivos modificados:** `tareas_videos.py`, `visor_videos.py`,
+  `prueba_exploracion_b432.py` (nueva), y los documentos oficiales (`ESTADO_PROYECTO.md`,
+  `ROADMAP.md`, `DOCUMENTO_TECNICO.md`, `HISTORIAL_PROYECTO.md`). Sin cambios en
+  `exploracion_cache.py`, `exploracion_temporal.py`, `escanear_videos.py`, SQLite ni
+  configuración.
+- **Commit:** Aprobado y commiteado (cierre de B4.3.2).
+
+---
+
 ## 91. Implementar motor de cache temporal versionada y reanudable (B4.3.1)
 
 - **Fecha:** 2026-08-09

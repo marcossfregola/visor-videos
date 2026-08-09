@@ -11,10 +11,11 @@ arquitectónicas.
 > congelada sobre el código definitivo**, con su instalador generado y pendiente
 > únicamente de la **validación manual integral** y su publicación (la Beta 2
 > permanece como la última versión estable publicada). El desarrollo funcional
-> se reanudó en el **ciclo Beta 4** (rama `beta4`): las etapas **B4.1 —
+>    se reanudó en el **ciclo Beta 4** (rama `beta4`): las etapas **B4.1 —
 > Exploración temporal interactiva y marcadores visuales**, **B4.2 —
-> Persistencia de marcadores temporales por video** y **B4.3.1 — Motor de
-> caché temporal versionada y reanudable** quedaron **completadas y
+> Persistencia de marcadores temporales por video**, **B4.3.1 — Motor de
+> caché temporal versionada y reanudable** y **B4.3.2 — Cobertura rápida
+> asíncrona integrada con la UI** quedaron **completadas y
 > aprobadas** (ver la sección "Beta 4").
 
 ------------------------------------------------------------------------
@@ -539,19 +540,31 @@ desarrolla sobre la rama `beta4` (punto de partida: cierre de la Beta 3).
      automáticamente; `meta.json` solo se escribe al completar); **un FFmpeg por fotograma**
      (`-ss` + `-frames:v 1`) como **mecanismo actual de validación**, que **no será
      necesariamente el final** desde la UI. Sin UI, sin SQLite (`videos`, `marcadores_video`,
-     `biblioteca.db` intactos) y sin acoplamiento con `escanear_videos`. Suites: B4.3.1
-     **29/29** y regresiones B4.1 **28/28**, B4.2 **17/17**, previews **16/16**, smoke OK.
-   - **B4.3.2 — Integración de la caché temporal en la tarjeta.** **Próxima.** Integrar el
-     motor en la interfaz: tarea/gestor de generación, consumo del fotograma más cercano en la
-     superficie temporal, **fallback a las previews normales** cuando la caché no exista,
-     **actualización progresiva** (y marcadores con imagen más precisa), **liberación de RAM al
-     colapsar**, **cancelación al cambiar de tarjeta** y prueba en el **hardware objetivo**
-     (notebook 16 GB RAM, Intel Core i7-7500U @ 2.70 GHz, NVIDIA GeForce 940MX 2 GB, Intel HD
-     Graphics 620), priorizando **agilidad y fluidez**. La **estrategia híbrida** (pocos
-     fotogramas prioritarios distribuidos + luego uno/pocos lotes eficientes) está **registrada
-     pero NO implementada**; la **cantidad inicial y sus parámetros NO están decididos**: antes
-     de congelar MAX, cantidad inicial, tamaño de lote y concurrencia debe realizarse una
-     **prueba real en esa notebook**. **No implementar todavía.**
+   `biblioteca.db` intactos) y sin acoplamiento con `escanear_videos`. Suites: B4.3.1
+      **29/29** y regresiones B4.1 **28/28**, B4.2 **17/17**, previews **16/16**, smoke OK.
+    - **B4.3.2 — Cobertura rápida asíncrona integrada con la UI.** **Completada.** La tarjeta
+      consume el motor de B4.3.1 con una **tarea asíncrona dedicada** (`TareaExploracionDensa`)
+      que genera los **`FOTOGRAMAS_INICIALES = 15`** provisionales y emite **resultados
+      parciales progresivos** (`QImage` decodificada en el worker; conversión final a `QPixmap`
+      en la GUI). **Fallback a las previews normales** mientras no hay caché y **mejora
+      progresiva**; `mouseMove` con selección **exclusivamente en RAM**; imagen mostrada = la
+      **más cercana** entre preview normal y densa (la preview normal gana el empate);
+      **cancelación cooperativa** al cambiar de tarjeta/video; **aislamiento A→B** (cada tarjeta
+      usa su caché); **colapso que libera las referencias densas de RAM**; **reexpansión que
+      reutiliza la caché** (sin regenerar); los **marcadores** conservan su tiempo/id y mejoran
+      visualmente al llegar fotogramas densos. **Validación visual manual A–G aprobada por
+      Marcos** en el PC de desarrollo. El **batch/híbrido completo NO está implementado**: B4.3.2
+      usa generación individual solo para los 15 fotogramas iniciales. Suites: B4.3.2 **20/20**
+      y regresiones B4.3.1 **29/29**, B4.1 **28/28**, B4.2 **17/17**, previews **16/16**,
+      tamaño miniaturas **32/32**, recarga catálogo **20/20**, página siguiente **20/20**, smoke OK.
+      **Próximo paso:** validación de esta implementación exacta en el **hardware objetivo**
+      (notebook 16 GB RAM, Intel Core i7-7500U @ 2.70 GHz, NVIDIA GeForce 940MX 2 GB, Intel HD
+      Graphics 620), priorizando **agilidad y fluidez**. Esa medición decidirá entre **A**
+      mantener solo esta cobertura, **B** una **segunda fase batch/híbrida** (uno/pocos lotes
+      eficientes) o **C** ajustar la densidad (`FOTOGRAMAS_INICIALES`, `MAX`, tamaño de lote y
+      concurrencia) — **sin anticipar cuál**; **NO se asume que el batch sea obligatorio**. La
+      prueba en la notebook debe realizarse **antes de congelar** MAX, cantidad inicial, tamaño
+      de lote y concurrencia.
 4. **Reproducción / navegación mediante marcadores.** **Futura.** Los marcadores temporales
    son una **función permanente de navegación del producto** (no exclusivamente puntos de
    corte): representan un instante significativo al que el usuario quiera regresar, permitirán

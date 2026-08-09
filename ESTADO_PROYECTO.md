@@ -37,15 +37,69 @@ reducido a 16 hex; **no** es hash de contenido), **reanudación** de
 generaciones incompletas (p. ej. 8 de 20 reutiliza los 8 y genera 12),
 **JPEG atómicos** válidos individualmente, **invalidación por versión distinta**
 sin borrado automático y escritura temporal → `os.replace`. Es un motor puro
-(sin UI, sin SQLite): la integración real con la tarjeta será la **B4.3.2**.
-**Próxima etapa: B4.3.2 — Integración de la caché temporal en la tarjeta** (ver
-`ROADMAP.md`, sección "Beta 4").
+(sin UI, sin SQLite). La cuarta etapa, **B4.3.2 — Cobertura rápida asíncrona
+integrada con la UI**, quedó **aprobada e incorporada**: la tarjeta consume el
+motor con **`FOTOGRAMAS_INICIALES = 15` provisional**, con **fallback inmediato
+a las previews normales** mientras no hay caché, **generación asíncrona**,
+**resultados parciales progresivos** antes de completar los 15, **lectura y
+decodificación JPEG en el worker mediante `QImage`** (emitida por señal) con
+**conversión/aplicación final a `QPixmap` en la GUI**, `mouseMove`
+exclusivamente en RAM, selección temporal por la imagen más cercana entre
+preview normal y densa (la preview normal gana el empate), **cancelación
+cooperativa**, **aislamiento A→B**, **colapso que libera las referencias densas
+de RAM** y **reexpansión que reutiliza la caché**; los **marcadores** conservan
+su tiempo/id y pueden mejorar visualmente al llegar fotogramas densos. La
+validación visual manual (puntos A–G) en el PC de desarrollo fue **aprobada por
+Marcos**.
+**Próxima etapa: validación de esta implementación exacta en el hardware
+objetivo (notebook)**; después de esa medición se decidirá entre mantener solo
+esta cobertura, implementar una segunda fase batch/híbrida o ajustar la
+cantidad inicial/densidad. El **batch/híbrido completo NO está implementado**
+(ver `ROADMAP.md`, sección "Beta 4").
 
 ## Último commit aprobado
 
-**Mensaje:** Implementar motor de cache temporal versionada y reanudable
+**Mensaje:** Integrar cobertura temporal densa progresiva en la interfaz
 
-**Etapa:** B4.3.1 — Motor de caché temporal versionada y reanudable (rama `beta4`):
+**Etapa:** B4.3.2 — Cobertura rápida asíncrona integrada con la UI (rama `beta4`):
+- `tareas_videos.py` — **nuevo `TareaExploracionDensa`**: tarea asíncrona que genera la cobertura
+  densa de exploración temporal de un video. Duración/versión/objetivos capturados en el
+  constructor (instantáneas inmutables); `_trabajo()` genera los **`FOTOGRAMAS_INICIALES = 15`**
+  provisionales con el motor de B4.3.1, emite **resultados parciales progresivos**
+  (`resultado_parcial = Signal(object)`) en cuanto hay fotogramas, y termina con la cola
+  final `{"imagenes": [...]}` de **`QImage`** decodificadas en el worker. Exposición de
+  `FOTOGRAMAS_INICIALES` (para pruebas) y límite de cancelación cooperativa.
+- `visor_videos.py` — **consumo de la caché densa en la tarjeta**: `_procesar_siguiente_exploracion`
+  conecta la señal de parciales y `_al_resultado_parcial_exploracion` los recibe; `_aplicar_exploracion_densa`
+  (compatible con `(ms, QImage)` y con deduplicación) convierte la `QImage` del worker en `QPixmap`
+  **en la GUI** y la aplica al fotograma temporal. Comportamiento: **fallback inmediato a las previews
+  normales** mientras no hay caché; **generación asíncrona**; **mejora progresiva** de la cobertura;
+  `mouseMove` con selección **exclusivamente en RAM**; **selección temporal por la imagen más cercana**
+  entre preview normal y densa (la preview normal gana el empate); **cancelación cooperativa** al cambiar
+  de video; **aislamiento A→B** (cada tarjeta usa su caché, no la del vecino); **colapso que libera las
+  referencias densas de RAM** y **reexpansión que reutiliza la caché** (sin regenerar); los **marcadores**
+  conservan su tiempo/id y pueden mejorar visualmente al llegar fotogramas densos.
+- `prueba_exploracion_b432.py` — **nueva**: 20 pruebas (parciales en vivo con la señal, guardas
+  aislamiento A–B/colapso/sin-op, `QImage` directo + deduplicación, `_trabajo` real con parciales
+  + cola `QImage`, y cancelación con parcial aplicado).
+
+**Validación visual (manual, PC de desarrollo):** aprobada por Marcos — respuesta inmediata del
+scrub, imágenes correctas, sin tirones ni en blanco, mejora progresiva, marcadores correctos,
+cambio A→B correcto, colapso correcto y reexpansión/reutilización correctas. El rendimiento en la
+**notebook objetivo aún NO está medido** (ese es el próximo paso obligatorio).
+
+**Medidas de referencia (PC de desarrollo):** `FOTOGRAMAS_INICIALES=15`; video ≈4.36 s; primer
+denso ≈0.883 s; reexpansión 12.5 ms/20 ms/0 archivos; scrub 300 consultas ≈1.15 ms
+(~4 µs/consulta); worker decode ≈2.5 ms/15; GUI `fromImage` + escala ≈3.5 ms/15; RAM del lote
+≈3.3 MiB. **Hardware objetivo:** Intel i7-7500U 2.70 GHz, 16 GB RAM, NVIDIA 940MX 2 GB,
+Intel HD 620 — pendiente de probar en la notebook.
+
+**Pruebas superadas:** `prueba_exploracion_b432.py` **20/20**. Regresiones en verde (ejecutadas
+en el cierre): `prueba_exploracion_cache_b431.py` **29/29**, `prueba_exploracion_b41.py` **28/28**,
+`prueba_marcadores_b42.py` **17/17**, `prueba_previews_progresivas.py` **16/16**,
+`prueba_tamano_miniaturas.py` **32/32**, `prueba_recarga_catalogo.py` **20/20**,
+`prueba_pagina_siguiente.py` **20/20**, `prueba_smoke.py` OK. `python -m py_compile` OK.
+`git diff --check` OK.
 - `exploracion_cache.py` — **nuevo**: motor de caché densa de exploración en disco, **sin Qt,
   sin SQLite y sin acoplamiento con `escanear_videos`**. Estructura
   `miniaturas/exploracion/<video_id>/<version_fingerprint>/` con `meta.json` + `f{ms:010d}.jpg`;
@@ -355,9 +409,25 @@ OK. `git diff --check` OK.
   **mecanismo actual de validación** (no necesariamente el final desde la UI).
   `exploracion_temporal.py` incorpora la **densidad** (`cantidad_fotogramas` =
   `clamp(duración / 2 s, 40, 200)`) y el **orden progresivo** (`tiempos_objetivo` por bisección
-  de huecos) con `fotograma_mas_cercano` por `bisect`. Sin UI (la integración es **B4.3.2**),
+de huecos) con `fotograma_mas_cercano` por `bisect`. Sin UI (la integración es **B4.3.2**),
   sin SQLite (`videos`, `marcadores_video` y `biblioteca.db` intactos) y sin acoplamiento con
   `escanear_videos`. Costo de versión ≈ 13 µs.
+- **B4.3.2 — Cobertura rápida asíncrona integrada con la UI.** Cuarta etapa del ciclo
+  Beta 4 (rama `beta4`), segunda subetapa de **B4.3 — Caché densa de exploración temporal**.
+  La tarjeta consume el motor de B4.3.1 con una **tarea asíncrona dedicada**
+  (`TareaExploracionDensa` en `tareas_videos.py`) que genera los **`FOTOGRAMAS_INICIALES = 15`**
+  provisionales y emite **resultados parciales progresivos** (`QImage` decodificada en el
+  worker; la conversión final a `QPixmap` ocurre en la GUI). Mientras no hay caché la superficie
+  temporal conserva el **fallback a las previews normales** y la mejora es **progresiva**.
+  `mouseMove` selecciona **exclusivamente en RAM** (cero FFmpeg, cero disco); la imagen mostrada
+  es la **más cercana** entre la preview normal y la densa (la preview normal gana el empate).
+  **Cancelación cooperativa** al cambiar de video, **aislamiento A→B** (cada tarjeta usa su
+  caché), **colapso que libera las referencias densas de RAM** y **reexpansión que reutiliza la
+  caché** (sin regenerar). Los **marcadores** conservan su tiempo/id y pueden mejorar
+  visualmente al llegar fotogramas densos. **Validación visual manual A–G aprobada por Marcos**
+  en el PC de desarrollo; el **rendimiento en el hardware objetivo (notebook) NO está medido**
+  aún. El **batch/híbrido completo NO está implementado**: B4.3.2 usa generación individual
+  solo para los 15 fotogramas iniciales.
 
 ## Pendientes prioritarios
 
@@ -414,21 +484,18 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
 
 ## Próxima etapa
 
-**B4.3.2 — Integración de la caché temporal en la tarjeta.** Segunda subetapa de
-**B4.3 — Caché densa de exploración temporal** (el motor de disco quedó implementado en la
-**B4.3.1**). Integrar el motor en la interfaz: tarea/gestor de generación, consumo del
-fotograma más cercano en la superficie temporal, **fallback a las previews normales** cuando
-la caché no exista y **actualización progresiva**. La **estrategia híbrida** (pocos fotogramas
-prioritarios distribuidos y luego uno/pocos lotes eficientes) está **registrada pero NO
-implementada**; la **cantidad inicial y sus parámetros NO están decididos**. Antes de congelar
-MAX, cantidad inicial, tamaño de lote y concurrencia debe realizarse una **prueba real en el
-hardware objetivo** (notebook 16 GB RAM, Intel Core i7-7500U @ 2.70 GHz, NVIDIA GeForce 940MX
-2 GB, Intel HD Graphics 620): la exploración debe priorizar **agilidad y fluidez**. Se
-conservan como funciones futuras: la **reproducción desde el marcador** y la **navegación
-entre marcadores durante la reproducción**; la **selección A/B**, los **loops**, la
-**selección de fragmentos** y el **corte/unión**; y la **detección de archivos movidos** con
-la **reasociación futura de marcadores huérfanos**. Ver la secuencia en `ROADMAP.md`, sección
-"Beta 4".
+**Validación en el hardware objetivo (notebook) de la cobertura densa de B4.3.2.**
+La implementación de B4.3.2 quedó **aprobada** e **integrada en la interfaz**; el próximo paso
+obligatorio es **probar esta implementación exacta en la notebook objetivo** (16 GB RAM,
+Intel Core i7-7500U @ 2.70 GHz, NVIDIA GeForce 940MX 2 GB, Intel HD Graphics 620). Esa
+medición decidirá: mantener solo esta cobertura (opción A), implementar una **segunda fase
+batch/híbrida** con uno/pocos lotes eficientes (opción B) o **ajustar la densidad** —
+`FOTOGRAMAS_INICIALES`, `MAX`, tamaño de lote y concurrencia (opción C) — **sin anticipar
+cuál**; NO se asume que el batch sea obligatorio. Se conservan como funciones futuras: la
+**reproducción desde el marcador** y la **navegación entre marcadores durante la
+reproducción**; la **selección A/B**, los **loops**, la **selección de fragmentos** y el
+**corte/unión**; y la **detección de archivos movidos** con la **reasociación futura de
+marcadores huérfanos**. Ver la secuencia en `ROADMAP.md`, sección "Beta 4".
 
 ## Documentos del proyecto
 
