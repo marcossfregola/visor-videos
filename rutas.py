@@ -23,6 +23,10 @@ def ruta_carpeta_miniaturas():
     return os.path.join(ruta_raiz(), "miniaturas")
 
 
+def ruta_carpeta_exploracion():
+    return os.path.join(ruta_raiz(), "miniaturas", "exploracion")
+
+
 def ruta_carpeta_videos():
     return os.path.join(ruta_raiz(), "videos_prueba")
 

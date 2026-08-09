@@ -12,8 +12,9 @@ arquitectónicas.
 > únicamente de la **validación manual integral** y su publicación (la Beta 2
 > permanece como la última versión estable publicada). El desarrollo funcional
 > se reanudó en el **ciclo Beta 4** (rama `beta4`): las etapas **B4.1 —
-> Exploración temporal interactiva y marcadores visuales** y **B4.2 —
-> Persistencia de marcadores temporales por video** quedaron **completadas y
+> Exploración temporal interactiva y marcadores visuales**, **B4.2 —
+> Persistencia de marcadores temporales por video** y **B4.3.1 — Motor de
+> caché temporal versionada y reanudable** quedaron **completadas y
 > aprobadas** (ver la sección "Beta 4").
 
 ------------------------------------------------------------------------
@@ -524,10 +525,33 @@ desarrolla sobre la rama `beta4` (punto de partida: cierre de la Beta 3).
    por nombre/ruta o de movidos/renombrados es futura). La carga desde SQLite se trata como
    snapshot potencialmente antiguo y se reconcilia contra el estado local optimista, sin
    perder altas/bajas pendientes.
-3. **B4.3 — Caché densa de exploración temporal.** **Próxima.** Mejorar la resolución visual
-   del scrubbing reemplazando la dependencia de las pocas previews normales por una **caché
-   específica de fotogramas temporales** (fotogramas de exploración densa). **No implementar
-   todavía.**
+3. **B4.3 — Caché densa de exploración temporal.** Mejorar la resolución visual del scrubbing
+   reemplazando la dependencia de las pocas previews normales por una **caché específica de
+   fotogramas temporales** (fotogramas de exploración densa). Se divide en dos subetapas:
+   - **B4.3.1 — Motor de caché temporal versionada y reanudable.** **Completada.** Motor de
+     disco en `exploracion_cache.py` (nuevo): estructura
+     `miniaturas/exploracion/<video_id>/<version_fingerprint>/` (`meta.json` + `f{ms:010d}.jpg`);
+     **versiones aisladas** por *fingerprint* de metadatos baratos (ruta normalizada + tamaño +
+     `mtime_ns` + duración; SHA-256 reducido a 16 hex; **no** es hash de contenido);
+     **reanudación** de generaciones incompletas (escritura atómica temporal → `os.replace`;
+     un JPEG presente está completo; p. ej. 8/20 reutiliza 8 y genera 12); **invalidación no
+     destructiva** (un cambio del fingerprint crea una versión distinta; nada se borra
+     automáticamente; `meta.json` solo se escribe al completar); **un FFmpeg por fotograma**
+     (`-ss` + `-frames:v 1`) como **mecanismo actual de validación**, que **no será
+     necesariamente el final** desde la UI. Sin UI, sin SQLite (`videos`, `marcadores_video`,
+     `biblioteca.db` intactos) y sin acoplamiento con `escanear_videos`. Suites: B4.3.1
+     **29/29** y regresiones B4.1 **28/28**, B4.2 **17/17**, previews **16/16**, smoke OK.
+   - **B4.3.2 — Integración de la caché temporal en la tarjeta.** **Próxima.** Integrar el
+     motor en la interfaz: tarea/gestor de generación, consumo del fotograma más cercano en la
+     superficie temporal, **fallback a las previews normales** cuando la caché no exista,
+     **actualización progresiva** (y marcadores con imagen más precisa), **liberación de RAM al
+     colapsar**, **cancelación al cambiar de tarjeta** y prueba en el **hardware objetivo**
+     (notebook 16 GB RAM, Intel Core i7-7500U @ 2.70 GHz, NVIDIA GeForce 940MX 2 GB, Intel HD
+     Graphics 620), priorizando **agilidad y fluidez**. La **estrategia híbrida** (pocos
+     fotogramas prioritarios distribuidos + luego uno/pocos lotes eficientes) está **registrada
+     pero NO implementada**; la **cantidad inicial y sus parámetros NO están decididos**: antes
+     de congelar MAX, cantidad inicial, tamaño de lote y concurrencia debe realizarse una
+     **prueba real en esa notebook**. **No implementar todavía.**
 4. **Reproducción / navegación mediante marcadores.** **Futura.** Los marcadores temporales
    son una **función permanente de navegación del producto** (no exclusivamente puntos de
    corte): representan un instante significativo al que el usuario quiera regresar, permitirán

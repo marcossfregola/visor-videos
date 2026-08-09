@@ -27,45 +27,61 @@ incorporada**: los marcadores creados por el usuario se almacenan
 `videos.id`), reaparecen entre sesiones, pueden eliminarse permanentemente y
 recuperan su representación visual usando las previews disponibles. El
 scrubbing **no ejecuta FFmpeg ni accede a disco por movimiento**.
-**Próxima etapa: B4.3 — Caché densa de exploración temporal** (ver
+La tercera etapa, **B4.3.1 — Motor de caché temporal versionada y
+reanudable**, quedó **aprobada e incorporada**: es el **motor de disco** de la
+caché densa de exploración temporal, con estructura
+`miniaturas/exploracion/<video_id>/<version_fingerprint>/` (`meta.json` +
+`fXXXXXXXXXX.jpg`), **versiones aisladas** derivadas de un *fingerprint* de
+metadatos baratos (ruta normalizada + tamaño + `mtime_ns` + duración, SHA-256
+reducido a 16 hex; **no** es hash de contenido), **reanudación** de
+generaciones incompletas (p. ej. 8 de 20 reutiliza los 8 y genera 12),
+**JPEG atómicos** válidos individualmente, **invalidación por versión distinta**
+sin borrado automático y escritura temporal → `os.replace`. Es un motor puro
+(sin UI, sin SQLite): la integración real con la tarjeta será la **B4.3.2**.
+**Próxima etapa: B4.3.2 — Integración de la caché temporal en la tarjeta** (ver
 `ROADMAP.md`, sección "Beta 4").
 
 ## Último commit aprobado
 
-**Mensaje:** Persistir marcadores temporales asociados a videos
+**Mensaje:** Implementar motor de cache temporal versionada y reanudable
 
-**Etapa:** B4.2 — Persistencia de marcadores temporales por video (rama `beta4`):
-- `escanear_videos.py` — **migración aditiva e idempotente** de la tabla `marcadores_video`
-  (`id INTEGER PRIMARY KEY AUTOINCREMENT`, `video_id INTEGER NOT NULL`, `tiempo REAL NOT NULL`)
-  con el índice `idx_marcadores_video_video_id_tiempo`, invocada desde `conectar_bd`
-  (`_asegurar_tabla_marcadores`); nuevas funciones `listar_marcadores(video_id)`,
-  `guardar_marcador(video_id, tiempo)` y `eliminar_marcador(marcador_id)` con validación
-  previa de contrato y conexión propia por operación (patrón de `listar_videos`/
-  `guardar_videos`). `listar_videos` y `listar_videos_paginado` exponen ahora **9 campos**
-  agregando `id` como última columna.
-- `tareas_videos.py` — **nuevas tareas asíncronas**: `TareaListarMarcadores`,
-  `TareaGuardarMarcador` y `TareaEliminarMarcador`.
-- `visor_videos.py` — `Tarjeta` recibe `video_id` del registro del catálogo y **no ejecuta
-  SQLite directamente**: mantiene la representación optimista en memoria, carga los marcadores
-  al expandir (señal `marcadores_solicitados`), persiste altas/bajas mediante un **gestor
-  dedicado** (`gestor_marcadores`, con cola serializada) y usa `marcador_id` como identidad
-  técnica persistente. La carga desde SQLite se trata como **snapshot potencialmente antiguo**
-  y se **reconcilia** conservando altas/bajas locales pendientes, IDs persistentes existentes
-  y deduplicando por la misma tolerancia temporal de la interacción (carreras cubiertas:
-  crear+borrar antes de terminar el INSERT, cargar+crear, carga+marcador equivalente,
-  carga+baja local y recuperación tras DELETE fallido).
-- `prueba_lectura.py` y `prueba_lectura_paginada.py` — aserciones actualizadas al contrato de
-  **9 campos** (con `id`).
-- `prueba_marcadores_b42.py` — **nueva**: 17 pruebas de migración, persistencia, contrato de
-  lectura, tareas asíncronas y reconciliación de la cola de marcadores.
+**Etapa:** B4.3.1 — Motor de caché temporal versionada y reanudable (rama `beta4`):
+- `exploracion_cache.py` — **nuevo**: motor de caché densa de exploración en disco, **sin Qt,
+  sin SQLite y sin acoplamiento con `escanear_videos`**. Estructura
+  `miniaturas/exploracion/<video_id>/<version_fingerprint>/` con `meta.json` + `f{ms:010d}.jpg`;
+  el `video_id` identifica la carpeta y no se repite en el nombre del JPG.
+- **Versionado físico por fingerprint**: `fingerprint_actual` (ruta normalizada + tamaño +
+  `mtime_ns` + duración) → `version_id_de_fingerprint` = **SHA-256 reducido a 16 hex**. **NO**
+  es hash del contenido; **limitación aceptada**: dos archivos con la misma ruta, tamaño,
+  mtime y duración no son distinguibles. `version_actual` cuesta ≈ **13 µs** (un `os.stat` +
+  SHA-256); impacto CPU/RAM despreciable.
+- **API para consumidores** (sin gestionar versiones): `generar_fotogramas`, `listar_fotogramas`,
+  `faltantes`, `cache_vigente`, `fotograma_mas_cercano_en_cache`, `ruta_carpeta_actual`,
+  `version_actual`.
+- **Reanudación**: un `f*.jpg` presente en la versión se reutiliza aunque la versión esté
+  incompleta (la escritura es atómica, temporal → `os.replace`; un JPEG presente está completo);
+  p. ej. una generación detenida en 8/20 reutiliza los 8 y genera solo 12. El `meta.json` de la
+  versión **solo** se escribe si la generación termina sin cancelarse y **completa**
+  (`faltantes == 0`); la completitud se deriva de `objetivos - existentes`. `.tmp`/preparados/
+  fallidos quedan fuera del índice y de la lista.
+- **Invalidación no destructiva**: cualquier cambio en el fingerprint produce una **versión
+  distinta**; las versiones antiguas quedan en disco (no se borra nada automáticamente; la
+  limpieza queda para una etapa futura). Una versión nunca usa ni lista JPEGs de otra.
+- `exploracion_temporal.py` — **densidad y orden**: `cantidad_fotogramas(duracion)` =
+  `clamp(round(duración / 2 s), 40, 200)` y `tiempos_objetivo(duracion, cantidad)` = instantes
+  (ms) en **orden progresivo de cobertura** por bisección de huecos (50 %, 25/75 %, octavos…),
+  pensado para la estrategia híbrida de B4.3.2; `fotograma_mas_cercano(ms_existentes, instante)`
+  por `bisect` (empate → el anterior). API de B4.1 intacta.
+- `rutas.py` — `ruta_carpeta_exploracion()` = `miniaturas/exploracion`.
+- `prueba_exploracion_cache_b431.py` — **nueva**: 29 pruebas (densidad, orden progresivo,
+  nearest por bisect, estructura versionada, fingerprint sin hash, invalidación no destructiva,
+  reanudación 8/20, fallos parciales, aislamiento A/B/C, atomicidad, nearest solo de la versión
+  actual, y aislamiento de la etapa: sin UI, sin SQLite, sin tocar la caché real).
 
-**Pruebas superadas:** `prueba_marcadores_b42.py` **17/17**. Regresiones en verde (ejecutadas
-en el cierre): `prueba_exploracion_b41.py` **28/28**, `prueba_lectura.py` **15/15**,
-`prueba_lectura_paginada.py` **32/32**. `python -m py_compile` OK. `git diff --check` OK.
-Validación manual de Marcos: **satisfactoria** en la aplicación real de desarrollo con videos
-de prueba (crear marcador → cerrar la aplicación → volver a abrir → el marcador reaparece;
-eliminar marcador → cerrar/reabrir → el eliminado no reaparece). Sin afirmar otra computadora
-ni instalador.
+**Pruebas superadas:** `prueba_exploracion_cache_b431.py` **29/29**. Regresiones en verde
+(ejecutadas en el cierre): `prueba_exploracion_b41.py` **28/28**, `prueba_marcadores_b42.py**
+**17/17**, `prueba_previews_progresivas.py` **16/16**, `prueba_smoke.py` OK. `python -m py_compile`
+OK. `git diff --check` OK.
 
 ## Hitos completados
 
@@ -324,8 +340,24 @@ ni instalador.
   persistente. La carga desde SQLite se trata como **snapshot potencialmente antiguo** y se
   **reconcilia** conservando altas/bajas locales pendientes, IDs persistentes existentes y
   deduplicando por la misma tolerancia temporal de la interacción (carreras cubiertas:
-  crear+borrar antes de terminar el INSERT, cargar+crear, carga+marcador equivalente,
+  crear+borrar antes de terminar el INSERT,   cargar+crear, carga+marcador equivalente,
   carga+baja local y recuperación tras DELETE fallido).
+- **B4.3.1 — Motor de caché temporal versionada y reanudable.** Tercera etapa del ciclo
+  Beta 4 (rama `beta4`), primera subetapa de **B4.3 — Caché densa de exploración temporal**.
+  Implementa el **motor de disco** de la caché densa de exploración en `exploracion_cache.py`
+  (nuevo): estructura `miniaturas/exploracion/<video_id>/<version_fingerprint>/` (`meta.json` +
+  `f{ms:010d}.jpg`), **versiones aisladas** calculadas por *fingerprint* de metadatos baratos
+  (ruta normalizada + tamaño + `mtime_ns` + duración; SHA-256 reducido a 16 hex, **no** es hash
+  de contenido), **reanudación** de generaciones incompletas (un JPEG presente está completo:
+  escritura atómica temporal → `os.replace`), **invalidación no destructiva** (el cambio de
+  fingerprint crea una versión distinta; nada se borra automáticamente), `meta.json` coherente
+  con la versión (solo se escribe al completar) y una invocación de FFmpeg por fotograma como
+  **mecanismo actual de validación** (no necesariamente el final desde la UI).
+  `exploracion_temporal.py` incorpora la **densidad** (`cantidad_fotogramas` =
+  `clamp(duración / 2 s, 40, 200)`) y el **orden progresivo** (`tiempos_objetivo` por bisección
+  de huecos) con `fotograma_mas_cercano` por `bisect`. Sin UI (la integración es **B4.3.2**),
+  sin SQLite (`videos`, `marcadores_video` y `biblioteca.db` intactos) y sin acoplamiento con
+  `escanear_videos`. Costo de versión ≈ 13 µs.
 
 ## Pendientes prioritarios
 
@@ -382,14 +414,21 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
 
 ## Próxima etapa
 
-**B4.3 — Caché densa de exploración temporal.** Mejorar la resolución visual del scrubbing
-reemplazando la dependencia de las pocas previews normales por una **caché específica de
-fotogramas temporales** (fotogramas de exploración densa). B4.3 **no debe implementarse
-todavía**. Se conservan como funciones futuras: la **reproducción desde el marcador** y la
-**navegación entre marcadores durante la reproducción**; la **selección A/B**, los **loops**,
-la **selección de fragmentos** y el **corte/unión**; y la **detección de archivos movidos**
-con la **reasociación futura de marcadores huérfanos**. Ver la secuencia en `ROADMAP.md`,
-sección "Beta 4".
+**B4.3.2 — Integración de la caché temporal en la tarjeta.** Segunda subetapa de
+**B4.3 — Caché densa de exploración temporal** (el motor de disco quedó implementado en la
+**B4.3.1**). Integrar el motor en la interfaz: tarea/gestor de generación, consumo del
+fotograma más cercano en la superficie temporal, **fallback a las previews normales** cuando
+la caché no exista y **actualización progresiva**. La **estrategia híbrida** (pocos fotogramas
+prioritarios distribuidos y luego uno/pocos lotes eficientes) está **registrada pero NO
+implementada**; la **cantidad inicial y sus parámetros NO están decididos**. Antes de congelar
+MAX, cantidad inicial, tamaño de lote y concurrencia debe realizarse una **prueba real en el
+hardware objetivo** (notebook 16 GB RAM, Intel Core i7-7500U @ 2.70 GHz, NVIDIA GeForce 940MX
+2 GB, Intel HD Graphics 620): la exploración debe priorizar **agilidad y fluidez**. Se
+conservan como funciones futuras: la **reproducción desde el marcador** y la **navegación
+entre marcadores durante la reproducción**; la **selección A/B**, los **loops**, la
+**selección de fragmentos** y el **corte/unión**; y la **detección de archivos movidos** con
+la **reasociación futura de marcadores huérfanos**. Ver la secuencia en `ROADMAP.md`, sección
+"Beta 4".
 
 ## Documentos del proyecto
 

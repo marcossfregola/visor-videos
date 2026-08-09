@@ -5,6 +5,77 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 91. Implementar motor de cache temporal versionada y reanudable (B4.3.1)
+
+- **Fecha:** 2026-08-09
+- **Objetivo:** Tercera etapa del ciclo **Beta 4** (rama `beta4`), primera subetapa de
+  **B4.3 — Caché densa de exploración temporal**. Implementar el **motor de disco** de la caché
+  densa de exploración (fotogramas temporales de scrubbing) con **versiones aisladas**,
+  **reanudación** de generaciones incompletas y **escritura atómica**, dejando la integración
+  con la tarjeta para la **B4.3.2**.
+- **Comportamiento final:**
+  - `exploracion_cache.py` (nuevo) — motor puro (sin Qt, sin SQLite, sin acoplamiento con
+    `escanear_videos`) con estructura `miniaturas/exploracion/<video_id>/<version_fingerprint>/`
+    (`meta.json` + `f{ms:010d}.jpg`, altura 120 px).
+  - **Versionado físico por fingerprint:** `fingerprint_actual` (ruta normalizada + tamaño +
+    `mtime_ns` + duración) → `version_id_de_fingerprint` = **SHA-256 reducido a 16 hex**. **NO**
+    es hash de contenido; **limitación aceptada**: dos archivos con la misma ruta, tamaño,
+    mtime y duración no son distinguibles (no se intenta resolver). Costo `version_actual` ≈
+    **13 µs**/llamada (medido con 20 000 llamadas); impacto CPU/RAM despreciable.
+  - **Reanudación:** un `f*.jpg` presente en la versión se reutiliza aunque la versión esté
+    incompleta; p. ej. una generación detenida en **8/20 reutiliza los 8 y genera 12**. Cada
+    JPEG se escribe **atómicamente** (temporal → `os.replace`), de modo que un JPEG presente
+    está completo. `meta.json` solo se escribe al terminar sin cancelarse y **completa**
+    (`faltantes == 0`); `.tmp`/preparados/fallidos quedan fuera del índice.
+  - **Invalidación no destructiva:** cualquier cambio del fingerprint crea una **versión
+    distinta**; nada se borra automáticamente (las versiones antiguas quedan para una limpieza
+    futura, fuera de alcance); una versión nunca usa ni lista JPEGs de otra.
+  - **Generación:** `generar_fotogramas(...)` consulta la duración con ffprobe si no se pasa,
+    usa la densidad y la cobertura progresiva, reutiliza lo presente y emite **un FFmpeg por
+    fotograma** (`-ss` + `-frames:v 1` + `scale=-2:120`, timeout 30 s, sin ventana de consola)
+    como **mecanismo actual de validación** que **no será necesariamente el final** desde la UI.
+  - `exploracion_temporal.py` — **densidad y orden de la caché densa:** `cantidad_fotogramas`
+    = `clamp(round(duración / 2 s), 40, 200)`; `tiempos_objetivo` = instantes (ms) en **orden
+    progresivo de cobertura** por bisección de huecos (50 %, 25/75 %, octavos…);
+    `fotograma_mas_cercano` por `bisect` (empate → el anterior). API de B4.1 intacta.
+  - `rutas.py` — `ruta_carpeta_exploracion()` = `miniaturas/exploracion`.
+- **Decisiones registradas (no implementadas):** la **estrategia híbrida** de B4.3.2 (pocos
+  fotogramas prioritarios distribuidos + luego uno/pocos lotes eficientes) quedó **registrada
+  pero NO implementada**; la **cantidad inicial y sus parámetros NO están decididos**. El
+  **hardware objetivo** es la notebook de 16 GB RAM, Intel Core i7-7500U @ 2.70 GHz, NVIDIA
+  GeForce 940MX 2 GB, Intel HD Graphics 620; antes de congelar MAX / cantidad inicial / tamaño
+  de lote / concurrencia se requiere una **prueba real en esa notebook**, priorizando
+  **agilidad y fluidez** en la exploración.
+- **Benchmarks (B4.3.1):** fuente sintética `testsrc2` 640×360 @ 24 fps, 300 s. FFmpeg por
+  fotograma: 20 → **1.20 s**, 40 → **2.38 s**, 100 → **6.02 s**, 200 → **12.04 s**; primera
+  imagen individual ≈ **0.06 s**; cobertura de 15 puntos ≈ **0.88 s**. Modo lote (solo
+  medición de referencia, no implementado): 40 → **0.70 s**, 100 → **0.72 s**; primera imagen
+  del lote ≈ **0.054 s**. Medido en el PC de desarrollo; **no garantiza rendimiento** en el
+  hardware objetivo. Prueba de referencia P16 (FFmpeg real, video real de 5 s): 20 JPEG en
+  ~0.97–0.99 s sin tocar la caché real.
+- **SQLite intacto:** `videos`, `marcadores_video` y `biblioteca.db` no fueron modificados.
+- **Pruebas:** `prueba_exploracion_cache_b431.py` **29/29** (densidad, orden progresivo,
+  nearest por bisect, estructura versionada, fingerprint sin hash, invalidación no destructiva,
+  reanudación 8/20, fallos parciales, aislamiento A/B/C, atomicidad, nearest solo de la versión
+  actual y aislamiento de la etapa). Regresiones en verde en el cierre:
+  `prueba_exploracion_b41.py` **28/28**, `prueba_marcadores_b42.py` **17/17**,
+  `prueba_previews_progresivas.py` **16/16**, `prueba_smoke.py` OK. `python -m py_compile` OK.
+  `git diff --check` OK.
+- **Próxima etapa:** **B4.3.2 — Integración de la caché temporal en la tarjeta** (tarea/gestor
+  de generación, consumo del fotograma más cercano en la superficie temporal, fallback a las
+  previews normales, actualización progresiva, marcadores con imagen más precisa, liberación de
+  RAM al colapsar, cancelación al cambiar de tarjeta y prueba en la notebook objetivo). Se
+  conservan como funciones futuras: reproducción desde el marcador; navegación entre marcadores
+  durante la reproducción; A/B; loops; selección de fragmentos; corte/unión; detección de
+  archivos movidos; reasociación futura de marcadores huérfanos.
+- **Archivos modificados:** `exploracion_temporal.py`, `rutas.py`, `exploracion_cache.py`
+  (nuevo), `prueba_exploracion_cache_b431.py` (nueva), y los documentos oficiales
+  (`ESTADO_PROYECTO.md`, `ROADMAP.md`, `DOCUMENTO_TECNICO.md`, `HISTORIAL_PROYECTO.md`). Sin
+  cambios de UI, `escanear_videos.py`, `tareas*.py`, SQLite ni configuración.
+- **Commit:** Aprobado y commiteado (cierre de B4.3.1).
+
+---
+
 ## 90. Persistir marcadores temporales asociados a videos (B4.2)
 
 - **Fecha:** 2026-08-09

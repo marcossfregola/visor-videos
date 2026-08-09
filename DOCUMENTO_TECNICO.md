@@ -16,7 +16,7 @@ prueba/
 ├── EMPACADO.md            Procedimiento oficial de empaquetado (PyInstaller + Inno Setup, reproducible)
 ├── prueba_agente.py       Artifacto de prueba (ajeno al visor)
 ├── escanear_videos.py     CLI / backend: escaneo + SQLite + FFprobe
-├── rutas.py               Resolución centralizada de rutas del proyecto (independiente del CWD)
+├── rutas.py               Resolución centralizada de rutas del proyecto (independiente del CWD); incluye `ruta_carpeta_exploracion()` (`miniaturas/exploracion`, B4.3.1)
 ├── tareas.py              Infraestructura reutilizable de trabajos en segundo plano (QThread)
 ├── tareas_videos.py       Tareas de video asíncronas (TareaFFprobe, TareaEscaneo, TareaTamanosArchivos, TareaLecturaCatalogo, TareaLecturaCatalogoPaginada, TareaGuardarVideo, TareaGuardarVideos, TareaMiniaturas, TareaPreviewsProgresivas, TareaSincronizacionCatalogo, y desde B4.2 TareaListarMarcadores, TareaGuardarMarcador, TareaEliminarMarcador)
 ├── prueba_tareas.py       Pruebas automatizadas de la infraestructura de trabajos
@@ -62,8 +62,10 @@ prueba/
 ├── prueba_subcarpetas_arbol.py  Pruebas de verificación de la paridad árbol/botón/diálogo respecto de "Incluir subcarpetas" (Etapa 2.7)
 ├── prueba_escaneo_automatico.py  Pruebas automatizadas de la preferencia independiente de "Escaneo automático" y sus cuatro combinaciones con "Incluir subcarpetas" (Etapa 2.8)
 ├── prueba_indicador_escaneado.py  Pruebas automatizadas de los indicadores visuales de carpetas escaneadas (Etapa 2.9)
+├── exploracion_cache.py    Motor de caché temporal versionada y reanudable en disco (B4.3.1): estructura `miniaturas/exploracion/<video_id>/<version_fingerprint>/` (`meta.json` + `f{ms:010d}.jpg`), fingerprint sin hash, reanudación y escritura atómica; sin UI ni SQLite
 ├── visor_videos.py        Interfaz gráfica (PySide6): panel izquierdo con árbol de navegación (`ArbolNavegacion`) + carga asíncrona de la primera página + carga manual de una página adicional ("Cargar más") + selección de carpeta + persistencia de la última carpeta seleccionada (servicio `configuracion`) + escaneo asíncrono de la carpeta elegida + encadenamiento escaneo → tamaños → FFprobe → miniaturas → registros con tamaño/metadatos → guardado → sincronización completa del catálogo → recarga asíncrona del catálogo (reemplazo de tarjetas) + generación progresiva de previews con gestor propio + apertura del video por doble clic (señal `Tarjeta.doble_clic` → `_abrir_video` → servicio `apertura_videos`) + **persistencia de marcadores temporales con gestor dedicado `gestor_marcadores` (B4.2)** (la `Tarjeta` recibe `video_id`, carga marcadores al expandir y persiste altas/bajas sin SQLite directo, con reconciliación de la carga como snapshot antiguo); `main()` es el **punto de entrada de producción** (solo UI, sin pruebas)
 ├── prueba_smoke.py        Arnés de smoke tests (ejecución explícita con `python prueba_smoke.py`): verifica el pipeline completo (paginación, escaneo + carpeta + sincronización, previews, doble clic y persistencia) con una base SQLite temporal; no se ejecuta al iniciar la aplicación
+├── prueba_exploracion_cache_b431.py  Pruebas automatizadas del motor de caché temporal (B4.3.1, 29)
 ├── DOCUMENTO_TECNICO.md   Este documento
 ├── miniaturas/            Imágenes de miniatura (JPG, generadas automáticamente)
 │   └── <prefijo>_<NN>.jpg  Convención de nombres; caché ignorada, contenido variable
@@ -82,6 +84,7 @@ prueba/
 | Carpeta | Propósito |
 | --- | --- |
 | `miniaturas/` | Almacena las miniaturas generadas de cada video. El visor lee de aquí para mostrar la tarjeta. El backend **genera** las miniaturas durante el escaneo y las **preserva**: nunca las sobrescribe ni las elimina automáticamente. |
+| `miniaturas/exploracion/` | Caché densa de exploración temporal (B4.3.1): por video y por versión de fingerprint (`<video_id>/<version_fingerprint>/`), con `meta.json` + `f*.jpg`. Ignorada por Git, regenerable y **nunca borrada automáticamente** (las versiones antiguas quedan en disco hasta una limpieza futura, fuera de alcance). |
 | `videos_prueba/` | Dataset de prueba con el que `escanear_videos.py` sincroniza el catálogo. Contiene archivos vacíos (sin metadatos) y un video real. |
 | `__pycache__/` | Caché de bytecode de Python. Generado automáticamente, debe ignorarse en VCS. |
 
@@ -327,9 +330,10 @@ Capa de **tareas asíncronas**: no define lógica de catálogo ni de datos. Re-e
   `marcador_id` y `ruta_db`. La interfaz la ejecuta con un **gestor dedicado**
   (`gestor_marcadores`, cuarto gestor), no con el gestor principal ni el de previews.
 
-### `exploracion_temporal.py` — lógica pura de exploración temporal (B4.1)
+### `exploracion_temporal.py` — lógica pura de exploración temporal (B4.1 y B4.3.1)
 Módulo **puro** (sin Qt, sin FFmpeg, sin SQLite, sin archivos ni caché persistente) que
-concentra el mapeo espacial/temporal y la selección de la preview existente más cercana:
+concentra el mapeo espacial/temporal, la selección de la preview existente más cercana y la
+**densidad/orden de la caché densa de exploración** (B4.3.1):
 
 - `ancho_valido(ancho)` / `duracion_valida(duracion)` — validación de ancho (px) y duración (s)
   como números positivos no `bool`.
@@ -346,6 +350,19 @@ concentra el mapeo espacial/temporal y la selección de la preview existente má
   tiempo asociado a cada preview.
 - `agregar_marcador_ordenado(instante, marcadores, tolerancia)` — inserta el instante real
   conservando el orden temporal y evitando duplicados absurdamente cercanos.
+- `cantidad_fotogramas(duracion)` — **densidad de la caché densa** (B4.3.1):
+  `clamp(round(duración / PASO_SEGUNDOS), MINIMO_FOTOGRAMAS, MAXIMO_FOTOGRAMAS)` con
+  `PASO_SEGUNDOS = 2.0`, piso 40 y techo 200 (aprobados provisionalmente en el diseño de B4.3);
+  duración inválida → 0 (sin caché posible).
+- `tiempos_objetivo(duracion, cantidad)` — instantes objetivo en **milisegundos enteros** en
+  **orden progresivo de cobertura** (B4.3.1): la cobertura crece por **bisección de huecos**
+  (primero el punto medio 50 %, luego los cuartos 25/75 %, luego los octavos 12.5/37.5/62.5/
+  87.5 %, y así), de izquierda a derecha en cada nivel. Es el orden de generación recomendado:
+  pocos fotogramas bien repartidos al inicio y densidad creciente después (base de la estrategia
+  híbrida de B4.3.2). Descarta duplicados por redondeo.
+- `fotograma_mas_cercano(ms_existentes, instante)` — milisegundo del fotograma existente más
+  cercano al instante pedido (segundos → ms) por **`bisect`**; en empate de distancia elige el
+  fotograma anterior (menor instante).
 
 ### `scrubber.py` — superficie temporal y miniatura de marcador (B4.1)
 Módulo **de interfaz** con dos clases:
@@ -444,6 +461,56 @@ Esto es deliberado para **evitar la pérdida automática de datos creados por el
     DELETE compensatorio.
   - **Recuperación tras DELETE fallido**: se vuelve a consultar (`"cargar"`) y no se destruyen
     altas locales pendientes.
+
+### `exploracion_cache.py` — motor de caché temporal versionada y reanudable (B4.3.1)
+Módulo **puro** (sin Qt, sin SQLite y sin acoplamiento con `escanear_videos`) que materializa
+en disco la caché densa de exploración temporal:
+
+- **Estructura:** `miniaturas/exploracion/<video_id>/<version_fingerprint>/` con `meta.json` +
+  `f{ms:010d}.jpg` (altura 120 px, JPEG). El `video_id` identifica la carpeta contenedora y no
+  se repite en el nombre del JPG. `video_id_desde_ruta` deriva un id del nombre base saneado
+  (limitación documentada: dos rutas con el mismo nombre base colisionan; la integración real
+  B4.3.2 deberá pasar el `video_id` de la base de datos).
+- **Fingerprint de metadatos baratos:** ruta normalizada (`normcase` + `normpath` + `abspath`) +
+  tamaño + `mtime_ns` + duración → `version_id_de_fingerprint` = **SHA-256 reducido a 16 hex**.
+  **NO** es un hash del contenido del video; **limitación aceptada**: dos archivos con la misma
+  ruta, tamaño, mtime y duración no son distinguibles sin hash de contenido (no se intenta
+  resolver en B4.3.1). Costo de `version_actual` ≈ **13 µs** (un `os.stat` + SHA-256); impacto
+  CPU/RAM despreciable.
+- **Identidad y completitud separadas:** la carpeta de versión identifica a qué fingerprint
+  pertenecen sus JPEGs; la completitud se deriva de `objetivos - existentes`. Una versión
+  parcial sigue siendo reconocible y **reanudable** sin repetir FFmpeg para los JPEGs ya
+  terminados (cada JPEG se escribe **atómicamente**: temporal → `os.replace`; un `f*.jpg`
+  presente está completo). `meta.json` solo se escribe cuando la generación termina sin
+  cancelarse y **completa** (`faltantes == 0`).
+- **Invalidación no destructiva:** cualquier cambio en el fingerprint produce una **versión
+  distinta**; las versiones antiguas quedan en disco (no se borra nada automáticamente; la
+  limpieza queda para una etapa futura, fuera de alcance). Una versión nunca utiliza ni lista
+  JPEGs de otra. `.tmp` y archivos de preparación/fallidos quedan fuera del índice y de la
+  lista (`listar_fotogramas_version` filtra por el conjunto objetivo de la duración).
+- **Generación:** `generar_fotogramas(video_id, ruta_video, duracion=None, cantidad=None, ...)`
+  consulta la duración con ffprobe si no se pasa (timeout 30 s), usa la densidad
+  `cantidad_fotogramas` y la cobertura `tiempos_objetivo`, reutiliza los JPEGs ya presentes y
+  emite una **invocación de FFmpeg por fotograma** (`-ss` + `-frames:v 1` + reducción de
+  resolución durante la extracción, timeout 30 s, sin ventana de consola) como **mecanismo
+  actual de validación**, que **no será necesariamente el final** desde la UI (la estrategia
+  híbrida de B4.3.2 quedó registrada pero no implementada). Callbacks opcionales
+  `on_progreso(indice, total)` y cancelación cooperativa `cancelar()`. Devuelve un resumen con
+  `generados`, `reutilizados`, `errores`, `cancelado`, `faltantes`, `version` y `fotogramas`.
+- **API para consumidores** (sin gestionar versiones): `listar_fotogramas`, `faltantes`,
+  `cache_vigente`, `fotograma_mas_cercano_en_cache`, `ruta_carpeta_actual`, `version_actual`.
+  `fotograma_mas_cercano_en_cache` consulta **solo la versión vigente**, nunca fotogramas de
+  otras versiones ni sobrantes ajenos al conjunto objetivo.
+
+**Benchmarks (B4.3.1, PC de desarrollo — no garantizan rendimiento en el hardware objetivo):**
+fuente sintética `testsrc2` 640×360 @ 24 fps, 300 s (~28 MB). FFmpeg por fotograma:
+20 → **1.20 s**, 40 → **2.38 s**, 100 → **6.02 s**, 200 → **12.04 s**; primera imagen
+individual ≈ **0.06 s**; cobertura de 15 puntos ≈ **0.88 s**. Modo lote (solo **medición de
+referencia**, no implementado en B4.3.1): 40 → **0.70 s**, 100 → **0.72 s**; primera imagen
+del lote ≈ **0.054 s**. El **hardware objetivo** (notebook 16 GB RAM, Intel Core i7-7500U @
+2.70 GHz, NVIDIA GeForce 940MX 2 GB, Intel HD Graphics 620) debe priorizar **agilidad y
+fluidez**; antes de congelar MAX / cantidad inicial / lote / concurrencia se requiere una
+**prueba real en esa notebook**.
 
 ### Módulos ajenos al visor (preservados, no forman parte de la arquitectura)
 - `main.py` — prueba que escribe el resultado en `datos.txt`.
@@ -766,6 +833,7 @@ Durante un escaneo se genera **como máximo una miniatura nueva por video**, y �
 | 13 | Baja | **Restauración de rutas con nombres cortos 8.3 de Windows** (p. ej. `MARCOS~1`): el árbol carga los nombres largos (p. ej. `Marcos`), por lo que `revelar_ruta` no empareja un camino persistido con segmentos 8.3 y cae en el comportamiento tolerante (aplicación inicia sin carpeta seleccionada, sin inconsistencias). No afecta el uso normal ni el alcance de la Etapa 2.5; **deuda técnica** para una futura etapa de robustez del Centro de Navegación. |
 | 14 | Baja | **Estado de "escaneada" por sesión** (Etapa 2.9): el indicador de carpetas escaneadas vive en memoria (`carpetas_escaneadas` del visor) y se pierde al reiniciar; no se persiste ni se deriva del catálogo (requeriría cambios de esquema o en módulos restringidos). La API (`EstadoNodo` + `_icono_para`) ya está preparada; documentada como **deuda técnica** para una etapa específica de persistencia del estado. |
 | 15 | Informativa | **Marcadores huérfanos por diseño** (B4.2): si el registro del video desaparece (eliminación del catálogo, archivo fuera de disco, etc.) los marcadores de `marcadores_video` **no** se eliminan automáticamente (sin `ON DELETE CASCADE`); pueden quedar huérfanos, y no existe aún reasociación de movidos/renombrados ni por nombre/ruta. Deliberado para evitar pérdida automática de datos del usuario; la **reasociación futura** de marcadores huérfanos está prevista (ver `ROADMAP.md`, sección "Beta 4"). |
+| 16 | Informativa | **Fingerprint sin hash de contenido** (B4.3.1): la versión de la caché densa de exploración se deriva de ruta + tamaño + `mtime_ns` + duración (SHA-256 reducido a 16 hex); dos archivos con exactamente esos mismos metadatos no son distinguibles y compartirían caché aunque el contenido difiera. **Limitación aceptada** para B4.3.1; no se intenta resolver (un hash de contenido encarecería el cálculo por video). |
 
 ## 9. Dirección arquitectónica futura
 
@@ -786,15 +854,19 @@ y congelada sobre el código definitivo** (bloques A–E del Bloque de trabajo 3
 más el Bloque de trabajo 4 — catálogo por selección de carpetas — y las
 correcciones finales incluidas). El desarrollo continuó en el **ciclo Beta 4**
 (rama `beta4`): las etapas **B4.1 — Exploración temporal interactiva y
-marcadores visuales** y **B4.2 — Persistencia de marcadores temporales por
-video** quedaron **completadas y aprobadas**, en bloques pequeños y
-acumulativos y **sin introducir cambios arquitectónicos** que todavía no
-existieran; cada etapa extiende la arquitectura únicamente en la medida que su
-propio alcance aprobado lo requiere (B4.2 incorporó la tabla `marcadores_video`
-y un gestor dedicado `gestor_marcadores` en la interfaz, ambos aditivos).
-**Próxima etapa: B4.3 — Caché densa de exploración temporal** (reemplazar la
-resolución visual limitada de las pocas previews normales por una caché
-específica de fotogramas temporales de scrubbing).
+marcadores visuales**, **B4.2 — Persistencia de marcadores temporales por
+video** y **B4.3.1 — Motor de caché temporal versionada y reanudable**
+quedaron **completadas y aprobadas**, en bloques pequeños y acumulativos y
+**sin introducir cambios arquitectónicos** que todavía no existieran; cada
+etapa extiende la arquitectura únicamente en la medida que su propio alcance
+aprobado lo requiere (B4.2 incorporó la tabla `marcadores_video` y un gestor
+dedicado `gestor_marcadores` en la interfaz, ambos aditivos; B4.3.1 incorporó
+`exploracion_cache.py` y `ruta_carpeta_exploracion()` en `rutas.py`, también
+aditivos, **sin tocar SQLite** — `videos`, `marcadores_video` y
+`biblioteca.db` intactos).
+**Próxima etapa: B4.3.2 — Integración de la caché temporal en la tarjeta**
+(consumir el motor de B4.3.1 desde la superficie temporal, con fallback a las
+previews normales y actualización progresiva).
 
 **Observación arquitectónica (Etapa B3.1):** el instante que se muestra sobre
 cada preview se deriva de `(duración, índice)` con `calcular_tiempo_preview`,
