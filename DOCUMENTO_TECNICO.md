@@ -1053,6 +1053,13 @@ de terminar las previews.** Pendientes separados: RAM/retención de pixmaps, `_c
 en colapsadas, reconciliación de reemplazo y `os.listdir` de `miniatura_principal`. **B4.6 quedó
 completada en sus Etapas 1-2; no se declara la Beta 4 completa todavía.**
 
+**Cierre de Beta 4 (2026-08-10):** la **Beta 4 quedó CERRADA y aprobada**, build final
+`Beta 4 — B4.12` (commit técnico `198cdf533986b88c6e25dc0087722cf2b86e5f99`, instalador
+`VisorVideos_Beta4_Setup.exe`, SHA-256 `730B4DAB1CD2F1F5CFDD184D2DC6FE80CF0481B8754080F0FF10CF991F89431F`),
+validada en la notebook (B4.11: validación manual amplia; B4.12: validación final corta) y con la
+suite integral posterior a las correcciones en **87 suites / 1570/1570 OK / 0 FAIL funcional**.
+**Próxima fase: pendiente de planificación.**
+
 **Observación arquitectónica (Etapa B3.1):** el instante que se muestra sobre
 cada preview se deriva de `(duración, índice)` con `calcular_tiempo_preview`,
 como se acordó para la Beta 3. Para la futura mejora "Apertura del video desde

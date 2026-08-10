@@ -5,13 +5,19 @@
 Proyecto de escritorio profesional para Windows orientado a explorar
 grandes colecciones de videos mediante miniaturas representativas.
 
-**Fase actual:** la **Beta 3 está terminada y congelada sobre el código
-definitivo**, con su instalador oficial generado (`VisorVideos_Beta3_Setup.exe`,
-`Distribucion\Beta3\`) y pendiente únicamente de la validación manual integral
-sobre una instalación limpia y su publicación (la Beta 2 permanece como la
-última versión estable publicada). Sobre esa base congelada se inició el
-**ciclo de desarrollo Beta 4** en la **rama `beta4`** (punto de partida: cierre
-de la Beta 3, commit `4408d542`). La primera etapa, **B4.1 — Exploración
+**Fase actual:** la **Beta 4 está CERRADA y aprobada** (cierre formal
+2026-08-10): build final **`Beta 4 — B4.12`** (commit técnico
+`198cdf533986b88c6e25dc0087722cf2b86e5f99`; instalador
+`VisorVideos_Beta4_Setup.exe`, SHA-256
+`730B4DAB1CD2F1F5CFDD184D2DC6FE80CF0481B8754080F0FF10CF991F89431F`), validada en la
+notebook objetivo (B4.11: validación manual amplia; B4.12: validación final
+corta) y con la suite integral posterior a las correcciones en **87 suites /
+1570/1570 pruebas funcionales OK / 0 FAIL funcional**. La **Beta 3** quedó
+finalizada y congelada en su momento con su instalador
+(`VisorVideos_Beta3_Setup.exe`); la **Beta 2** permanece como la última versión
+estable publicada. El ciclo Beta 4 se desarrolló sobre la **rama `beta4`**
+(punto de partida: cierre de la Beta 3, commit `4408d542`). **Próxima fase:
+pendiente de planificación.** La primera etapa, **B4.1 — Exploración
 temporal interactiva y marcadores visuales**, quedó **aprobada e incorporada**:
 cada tarjeta puede expandirse en una **superficie temporal** que representa la
 duración completa del video (0–100 %), con marcador móvil que acompaña al
@@ -174,9 +180,9 @@ contract-tests quedaron reconciliados con el contrato actual (previews progresiv
 vigente con `mtime_ns`, tareas legítimas de marcadores); (3) la suite integral quedó en **87 suites
 / 1570 pruebas, 0 FAIL** en la corrida final, con la única flakiness residual conocida de teardown
 de `prueba_exploracion_densidad_b432.py` (ocasional `0xC0000409`; 12/12 funcionales; no bloqueante).
-**Transición de builds:** `B4.11` = build ampliamente validada en la notebook; `B4.12` = candidata
-final posterior a las correcciones de arquitectura/tests. **La Beta 4 todavía NO se declara cerrada
-hasta validar B4.12.**
+**Transición de builds:** `B4.11` = build ampliamente validada en la notebook; `B4.12` = build final
+validada en la notebook (validación final corta). **La Beta 4 quedó CERRADA y aprobada (ver
+"Próxima fase").**
 
 ## Último commit aprobado
 
@@ -201,9 +207,8 @@ hasta validar B4.12.**
 residual conocida (documentada, no bloqueante): teardown ocasional de
 `prueba_exploracion_densidad_b432.py` (`0xC0000409`; 12/12 comprobaciones funcionales).
 
-**Transición:** `B4.11` = build ampliamente validada en la notebook; `B4.12` = candidata final
-posterior a las correcciones de arquitectura/tests. **La Beta 4 NO se declara cerrada hasta validar
-B4.12.**
+**Transición:** `B4.11` = build ampliamente validada en la notebook; `B4.12` = build final validada en
+la notebook. **La Beta 4 quedó CERRADA y aprobada (ver "Próxima fase").**
 
 **Pruebas superadas:** `prueba_version_build.py` **3/3**, `prueba_doble_clic.py` **14/14**, las 7
 suites B4.6 reconciliadas (vista_ampliada **24/24**, vista_ampliada_desactivada **20/20**,
@@ -865,22 +870,24 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
   excluyendo las tareas legítimas de marcadores (`TareaEliminarMarcador`, B4.2);
   suite 16/16.
 
-## Próxima etapa
+## Próxima fase
 
-**B4.6 quedó completada en sus Etapas 1-2** (diagnóstico de la carga visual; carga diferida de
-previews cacheadas) y **no se declara la Beta 4 completa todavía**. Próximo candidato técnico
-registrado, **sin implementar**: **reducir el consumo de RAM asociado a previews cargadas**
-(~+690 MB por la retención de pixmaps originales); antes de cambiar esa política debe
-inspeccionarse por qué se conservan los originales y qué funciones dependen de ellos (cambio de
-tamaño, calidad de reescalado, exploración/marcadores). Otros pendientes visuales separados sin
-implementar: `_construir_exploracion` crea widgets en tarjetas colapsadas; `_reemplazar_tarjetas`
-reconstruye tarjetas idénticas; `miniatura_principal` hace un `os.listdir` por tarjeta.
-Pendiente técnico registrado sin corregir: las **previews normales existentes se consideran
-reutilizables por existencia del archivo** (sin validación equivalente por cambio del video).
-Siguientes líneas del ciclo (no iniciadas): la **selección A/B**, los **loops**, la **selección
-de fragmentos** y el **corte/unión**; la **detección de archivos movidos** con la **reasociación
-futura de marcadores huérfanos**; y las evoluciones de reproducción indicadas en `ROADMAP.md`.
-El **batch NO está implementado**.
+**La Beta 4 quedó CERRADA y aprobada** (cierre formal 2026-08-10). **Próxima fase: pendiente de
+planificación** (no se inicia automáticamente una Beta 5).
+
+Los pendientes técnicos conocidos quedan registrados como **deuda no bloqueante** de Beta 4 (no
+como pendientes de la fase): **RAM/retención de pixmaps originales** (~+690 MB por previews
+cargadas); `_construir_exploracion` crea widgets en tarjetas colapsadas; `_reemplazar_tarjetas`
+reconstruye tarjetas idénticas; `miniatura_principal` hace un `os.listdir` por tarjeta; previews
+normales reutilizables por existencia del archivo (sin validación por cambio del video);
+flakiness intermitente de teardown de `prueba_exploracion_densidad_b432.py`; flakiness ambiental
+del portapapeles bajo tooling; **riesgo obligatorio para una futura distribución pública**: el
+desinstalador actual (`[UninstallDelete]`) puede eliminar datos de usuario (`biblioteca.db`,
+`configuracion.json`, `miniaturas/`, marcadores y cachés) — no bloquea el cierre técnico de Beta 4,
+pero debe resolverse antes de una release destinada a conservar datos reales. Líneas futuras no
+iniciadas (fuera de Beta 4): **selección A/B**, **loops**, **selección de fragmentos**,
+**corte/unión**, **detección de archivos movidos/renombrados** con **reasociación de marcadores
+huérfanos**, evoluciones de reproducción indicadas en `ROADMAP.md` y **batch**.
 
 ## Documentos del proyecto
 

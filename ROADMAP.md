@@ -26,6 +26,12 @@ arquitectónicas.
 > formal): **identificación visible de versión/build** en la status bar de la
 > ventana principal (`Beta 4 — B4.12`), para identificar rápidamente la build
 > en ejecución en cualquier PC (p. ej. la notebook de validación).
+> **Beta 4 CERRADA y aprobada (2026-08-10).** Build final **`Beta 4 — B4.12`** (commit técnico
+> `198cdf533986b88c6e25dc0087722cf2b86e5f99`; instalador `VisorVideos_Beta4_Setup.exe`, SHA-256
+> `730B4DAB1CD2F1F5CFDD184D2DC6FE80CF0481B8754080F0FF10CF991F89431F`), validada en la notebook
+> objetivo (B4.11: validación manual amplia; B4.12: validación final corta). Suite integral
+> posterior a las correcciones: **87 suites / 1570/1570 OK / 0 FAIL funcional**. **Próxima fase:
+> pendiente de planificación.**
 
 ------------------------------------------------------------------------
 

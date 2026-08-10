@@ -5,6 +5,38 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 101. Cierre formal de Beta 4
+
+- **Fecha:** 2026-08-10
+- **Decisión:** la **Beta 4 queda CERRADA y aprobada**. El cierre es **documental** (sin cambios de
+  código): la build final **`Beta 4 — B4.12`** superó la validación en la notebook objetivo.
+- **Build final:** `Beta 4 — B4.12`.
+- **Commit técnico validado:** `198cdf533986b88c6e25dc0087722cf2b86e5f99`
+  ("Cerrar regresiones y contratos de prueba de Beta 4").
+- **Instalador validado:** `Distribucion\Beta4\VisorVideos_Beta4_Setup.exe` — SHA-256
+  `730B4DAB1CD2F1F5CFDD184D2DC6FE80CF0481B8754080F0FF10CF991F89431F`.
+- **Validación en notebook:** B4.11 pasó la **validación manual amplia**; B4.12 pasó la
+  **validación final corta** (status bar `Beta 4 — B4.12`, carpeta grande, tarjetas y previews,
+  selector `Densidad: Auto | 15 | 30 | 60 | 120 | 200`, marcadores y reproducción en VLC).
+- **Suite integral** posterior a las correcciones: **87 suites / 1570/1570 pruebas funcionales OK /
+  0 FAIL funcional**; `py_compile` 103/103; `git diff --check` limpio.
+- **Líneas funcionales cerradas:** exploración temporal interactiva; marcadores visuales y
+  persistentes; caché temporal densa/progresiva; densidad automática y manual; reproducción de
+  marcadores en VLC; optimizaciones FFprobe/metadata; carga visual progresiva; identificación
+  visible de build; preservación de marcadores al mover un video manteniendo el nombre (validada en
+  notebook).
+- **Deuda no bloqueante (registrada, no pendiente de Beta 4):** RAM de previews; construcción
+  anticipada de widgets de exploración en tarjetas colapsadas; `_reemplazar_tarjetas`; listados
+  repetidos de miniaturas; flakiness intermitente del teardown de `prueba_exploracion_densidad_b432.py`;
+  flakiness ambiental del portapapeles bajo tooling; funciones futuras A/B, loops, fragmentos y
+  edición; detección avanzada de archivos renombrados/reasociación.
+- **Riesgo obligatorio para una etapa posterior:** el desinstalador actual (`[UninstallDelete]`)
+  puede eliminar datos de usuario (`biblioteca.db`, `configuracion.json`, `miniaturas/`, marcadores
+  y cachés). **No impide el cierre técnico de Beta 4; debe resolverse antes de una distribución
+  pública segura o una release destinada a conservar datos reales.** No se modifica el instalador en
+  esta etapa.
+- **Próxima fase:** pendiente de planificación (no se inicia automáticamente una Beta 5).
+
 ## 100. Cerrar regresiones y contratos de prueba de Beta 4 (B4.12)
 
 - **Fecha:** 2026-08-10
