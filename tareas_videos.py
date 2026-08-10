@@ -7,6 +7,7 @@ import escanear_videos as escanear_mod
 from escanear_videos import (
     CANTIDAD_PREVIEWS,
     _es_archivo_preview,
+    _metadata_reutilizable,
     asegurar_miniaturas,
     combinar_registros_con_ffprobe,
     combinar_registros_con_miniaturas,
@@ -20,6 +21,7 @@ from escanear_videos import (
     guardar_videos,
     listar_marcadores,
     listar_marcadores_de,
+    listar_registros_por_nombres,
     listar_videos,
     listar_videos_paginado,
     obtener_datos_ffprobe,
@@ -48,23 +50,82 @@ def rutas_videos():
 
 
 class TareaFFprobe(TareaBase):
-    def __init__(self, rutas, parent=None):
+    def __init__(
+        self,
+        rutas,
+        nombres=None,
+        stats=None,
+        ruta_db=None,
+        parent=None,
+    ):
         super().__init__(parent)
         if rutas is None:
             rutas = []
         if isinstance(rutas, str):
             rutas = [rutas]
         self._rutas = list(rutas)
+        self._nombres = list(nombres) if nombres is not None else None
+        self._stats = stats
+        self._ruta_db = ruta_db
 
     @property
     def rutas(self):
         return list(self._rutas)
 
+    @property
+    def nombres(self):
+        return list(self._nombres) if self._nombres is not None else None
+
+    @property
+    def stats(self):
+        return self._stats
+
+    @property
+    def ruta_db(self):
+        return self._ruta_db
+
     def _trabajo(self):
         resultados = []
         total = len(self._rutas)
+        registros = None
+        stats_por_ruta = {}
+        if (
+            self._nombres is not None
+            and self._stats is not None
+            and self._ruta_db is not None
+        ):
+            registros = listar_registros_por_nombres(
+                self._nombres, self._ruta_db
+            )
+            for item in (self._stats.get("resultados") or []):
+                if isinstance(item, dict) and isinstance(item.get("ruta"), str):
+                    stats_por_ruta[item["ruta"]] = item
         for indice, ruta in enumerate(self._rutas):
-            resultados.append(self._procesar_uno(ruta))
+            nombre = None
+            if self._nombres is not None and indice < len(self._nombres):
+                nombre = self._nombres[indice]
+            reutilizado = False
+            if registros is not None and nombre is not None:
+                registro = registros.get(nombre)
+                stat = stats_por_ruta.get(ruta)
+                if _metadata_reutilizable(registro, ruta, stat):
+                    resultados.append(
+                        {
+                            "ruta": ruta,
+                            "datos": {
+                                "duracion_segundos": registro[
+                                    "duracion_segundos"
+                                ],
+                                "ancho": registro["ancho"],
+                                "alto": registro["alto"],
+                                "codec_video": registro["codec_video"],
+                            },
+                            "error": None,
+                        }
+                    )
+                    reutilizado = True
+            if not reutilizado:
+                resultados.append(self._procesar_uno(ruta))
             self.reportar_progreso(indice + 1, total)
         return {
             "rutas": list(self._rutas),

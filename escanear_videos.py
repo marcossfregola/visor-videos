@@ -30,6 +30,7 @@ COLUMNAS_EXTRA = [
     ("codec_video", "TEXT"),
     ("cantidad_miniaturas", "INTEGER"),
     ("tamano_bytes", "INTEGER"),
+    ("mtime_ns", "INTEGER"),
 ]
 
 _ESCANEO_RECURSIVO = False
@@ -86,6 +87,55 @@ def _normalizar_ruta(ruta):
     if ruta is None:
         return None
     return os.path.normcase(os.path.normpath(ruta))
+
+
+def _normalizar_ruta_absoluta(ruta):
+    """Normalización estable para comparar rutas (B4.5 Etapa 3)."""
+    if ruta is None:
+        return None
+    return os.path.normcase(
+        os.path.normpath(os.path.abspath(ruta))
+    )
+
+
+def _metadata_ffprobe_utilizable(datos):
+    """Indica si la metadata persistida sirve para reutilizarse sin FFprobe."""
+    if not isinstance(datos, dict):
+        return False
+    if not _duracion_utilizable(datos.get("duracion_segundos")):
+        return False
+    ancho = datos.get("ancho")
+    alto = datos.get("alto")
+    if not (isinstance(ancho, int) and not isinstance(ancho, bool) and ancho > 0):
+        return False
+    if not (isinstance(alto, int) and not isinstance(alto, bool) and alto > 0):
+        return False
+    codec = datos.get("codec_video")
+    return isinstance(codec, str) and bool(codec.strip())
+
+
+def _metadata_reutilizable(registro, ruta_actual, stat):
+    """Criterio exacto de reutilización de metadata sin FFprobe (B4.5 Etapa 3).
+
+    Reutiliza solo si: existe registro, `mtime_ns` no es NULL, la ruta
+    normalizada coincide, el tamaño coincide, el `mtime_ns` coincide y la
+    metadata almacenada es utilizable.
+    """
+    if not isinstance(registro, dict):
+        return False
+    if registro.get("mtime_ns") is None:
+        return False
+    if _normalizar_ruta_absoluta(registro.get("ruta")) != _normalizar_ruta_absoluta(
+        ruta_actual
+    ):
+        return False
+    if not isinstance(stat, dict):
+        return False
+    if stat.get("tamano_bytes") != registro.get("tamano_bytes"):
+        return False
+    if stat.get("mtime_ns") != registro.get("mtime_ns"):
+        return False
+    return _metadata_ffprobe_utilizable(registro)
 
 
 def combinar_registros_con_ffprobe(videos, carpeta, resultado_ffprobe):
@@ -151,7 +201,17 @@ def obtener_tamanos_archivos(videos, carpeta, on_progreso=None):
     resultados = []
     total = len(rutas)
     for indice, ruta in enumerate(rutas):
-        resultados.append({"ruta": ruta, "tamano_bytes": _tamano_archivo(ruta)})
+        tamano = None
+        mtime_ns = None
+        try:
+            st = os.stat(ruta)
+            tamano = st.st_size
+            mtime_ns = st.st_mtime_ns
+        except OSError:
+            pass
+        resultados.append(
+            {"ruta": ruta, "tamano_bytes": tamano, "mtime_ns": mtime_ns}
+        )
         if on_progreso is not None:
             on_progreso(indice + 1, total)
     return {
@@ -178,12 +238,26 @@ def combinar_registros_con_tamanos(registros, resultado_tamanos):
         if ruta is None:
             continue
         tamano = item.get("tamano_bytes")
-        por_ruta[ruta] = tamano if isinstance(tamano, int) else None
+        mtime = item.get("mtime_ns")
+        por_ruta[ruta] = {
+            "tamano_bytes": tamano if isinstance(tamano, int) else None,
+            "mtime_ns": mtime if isinstance(mtime, int) else None,
+        }
     for registro in lista:
-        registro["tamano_bytes"] = por_ruta.get(
-            _normalizar_ruta(registro.get("ruta"))
+        datos = por_ruta.get(_normalizar_ruta(registro.get("ruta")))
+        registro["tamano_bytes"] = (
+            datos["tamano_bytes"] if datos else None
         )
+        registro["mtime_ns"] = datos["mtime_ns"] if datos else None
     return lista
+
+
+def _asegurar_columnas_videos(conn):
+    """Migración aditiva e idempotente de las columnas extra de `videos`."""
+    existentes = {fila[1] for fila in conn.execute("PRAGMA table_info(videos)")}
+    for nombre_col, tipo in COLUMNAS_EXTRA:
+        if nombre_col not in existentes:
+            conn.execute(f"ALTER TABLE videos ADD COLUMN {nombre_col} {tipo}")
 
 
 def conectar_bd(ruta_db=None):
@@ -199,10 +273,7 @@ def conectar_bd(ruta_db=None):
             fecha_importacion TEXT NOT NULL
         )
     """)
-    existentes = {fila[1] for fila in conn.execute("PRAGMA table_info(videos)")}
-    for nombre_col, tipo in COLUMNAS_EXTRA:
-        if nombre_col not in existentes:
-            conn.execute(f"ALTER TABLE videos ADD COLUMN {nombre_col} {tipo}")
+    _asegurar_columnas_videos(conn)
     _asegurar_tabla_marcadores(conn)
     return conn
 
@@ -596,6 +667,54 @@ def listar_videos(ruta_db=None):
         conn.close()
 
 
+def listar_registros_por_nombres(nombres, ruta_db=None):
+    """Registros existentes del catálogo localizados por nombre, en una consulta (B4.5 Etapa 3).
+
+    Devuelve un dict `{nombre: {id, nombre, ruta, duracion_segundos, ancho,
+    alto, codec_video, tamano_bytes, mtime_ns}}`. La búsqueda es por `nombre`
+    (identidad existente del esquema `UNIQUE(nombre)`); la validez posterior se
+    decide comparando la ruta normalizada. `nombres` vacío devuelve `{}`.
+    """
+    if isinstance(nombres, (str, bytes, bytearray)):
+        raise TypeError("nombres debe ser una colección, no texto")
+    try:
+        lista = list(nombres)
+    except TypeError:
+        raise TypeError("nombres debe ser una colección iterable") from None
+    if not lista:
+        return {}
+    if ruta_db is None:
+        ruta_db = ruta_biblioteca()
+    if not os.path.isfile(ruta_db):
+        raise FileNotFoundError(f"Base de datos no encontrada: {ruta_db}")
+    conn = conectar_bd(ruta_db)
+    try:
+        registros_por_nombre = {}
+        filas = conn.execute(
+            """
+            SELECT id, nombre, ruta, duracion_segundos, ancho, alto, codec_video, tamano_bytes, mtime_ns
+            FROM videos
+            WHERE nombre IN ({})
+            """.format(",".join("?" * len(lista))),
+            lista,
+        ).fetchall()
+        for fila in filas:
+            registros_por_nombre[fila[1]] = {
+                "id": fila[0],
+                "nombre": fila[1],
+                "ruta": fila[2],
+                "duracion_segundos": fila[3],
+                "ancho": fila[4],
+                "alto": fila[5],
+                "codec_video": fila[6],
+                "tamano_bytes": fila[7],
+                "mtime_ns": fila[8],
+            }
+        return registros_por_nombre
+    finally:
+        conn.close()
+
+
 def _es_subcarpeta(padre, ruta):
     if not isinstance(ruta, str) or not ruta:
         return False
@@ -813,8 +932,8 @@ def _validar_registro_video(datos):
 def _upsert_video(conn, datos):
     conn.execute(
         """
-        INSERT INTO videos (nombre, ruta, extension, fecha_importacion, duracion_segundos, ancho, alto, codec_video, cantidad_miniaturas, tamano_bytes)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO videos (nombre, ruta, extension, fecha_importacion, duracion_segundos, ancho, alto, codec_video, cantidad_miniaturas, tamano_bytes, mtime_ns)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(nombre) DO UPDATE SET
             ruta = excluded.ruta,
             extension = excluded.extension,
@@ -824,7 +943,8 @@ def _upsert_video(conn, datos):
             alto = excluded.alto,
             codec_video = excluded.codec_video,
             cantidad_miniaturas = excluded.cantidad_miniaturas,
-            tamano_bytes = excluded.tamano_bytes
+            tamano_bytes = excluded.tamano_bytes,
+            mtime_ns = excluded.mtime_ns
         """,
         (
             datos["nombre"],
@@ -837,6 +957,7 @@ def _upsert_video(conn, datos):
             datos.get("codec_video"),
             datos.get("cantidad_miniaturas"),
             datos.get("tamano_bytes"),
+            datos.get("mtime_ns"),
         ),
     )
 
@@ -849,6 +970,8 @@ def guardar_video(datos, ruta_db=None):
         raise FileNotFoundError(f"Base de datos no encontrada: {ruta_db}")
     conn = sqlite3.connect(ruta_db)
     try:
+        conn.execute("BEGIN")
+        _asegurar_columnas_videos(conn)
         _upsert_video(conn, datos)
         conn.commit()
     except Exception:
@@ -877,6 +1000,8 @@ def guardar_videos(datos_videos, ruta_db=None, on_progreso=None):
     conn = sqlite3.connect(ruta_db)
     total = len(registros)
     try:
+        conn.execute("BEGIN")
+        _asegurar_columnas_videos(conn)
         for indice, datos in enumerate(registros):
             _upsert_video(conn, datos)
             if on_progreso is not None:

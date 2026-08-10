@@ -18,8 +18,9 @@ arquitectónicas.
 > asíncrona integrada con la UI**, **B4.3.2 — Etapa 2: Densidad secundaria
 > adaptativa**, **B4.3.3 — Ajustes de interacción y densidad manual**,
 > **B4.4 — Reproducción de marcadores en VLC** y **B4.5 — Rendimiento de
-> carga inicial (diagnóstico y eliminación de FFprobe redundante)** quedaron
-> **completadas y aprobadas** (ver la sección "Beta 4").
+> carga inicial (diagnóstico, eliminación de FFprobe redundante y
+> reutilización de metadata en reescaneos)** quedaron **completadas y
+> aprobadas** (ver la sección "Beta 4").
 
 ------------------------------------------------------------------------
 
@@ -629,7 +630,7 @@ desarrolla sobre la rama `beta4` (punto de partida: cierre de la Beta 3).
      durante la reproducción** y evaluar la UX de **múltiples instancias de VLC**. Suites:
       `prueba_reproduccion_marcadores_b44.py` **24/24** y regresiones verdes.
 5. **B4.5 — Rendimiento de carga inicial.** **Completada (Etapa 1: diagnóstico; Etapa 2:
-   eliminación de FFprobe redundante).** La demora perceptible de Marcos con carpetas de ~121
+   eliminación de FFprobe redundante; Etapa 3: reutilización de metadata).** La demora perceptible de Marcos con carpetas de ~121
    videos (carga inicial, procesamiento y miniaturas normales) se investigó **sin tocar la
    exploración temporal B4.3**.
    - **Etapa 1 — Diagnóstico del cuello de botella.** **Completada.** Con un dataset temporal de
@@ -654,9 +655,26 @@ desarrolla sobre la rama `beta4` (punto de partida: cierre de la Beta 3).
      como medición de la PC de desarrollo (no extrapolable a la notebook). Sin cambios de
      cantidad, posiciones, calidad, progresividad, lotes, caché, paralelismo ni FFmpeg. Suites:
      `prueba_optimizacion_ffprobe_b452.py` **14/14** y regresiones verdes.
-   - **Próxima etapa registrada (no iniciada): B4.5 — Etapa 3 — evitar el FFprobe de metadata en
-     reescaneos de videos sin cambios** (el reescaneo caliente ≈4.9 s con ~93 % en FFprobe). No
-     se diseñó ni implementó todavía el criterio de reutilización.
+    - **Próxima etapa registrada (no iniciada): B4.5 — Etapa 3 — evitar el FFprobe de metadata en
+      reescaneos de videos sin cambios** (el reescaneo caliente ≈4.9 s con ~93 % en FFprobe). No
+      se diseñó ni implementó todavía el criterio de reutilización.
+    - **Etapa 3 — Reutilizar metadata en reescaneos de videos sin cambios.** **Completada.**
+      Criterio barato **`ruta normalizada + tamano_bytes + mtime_ns`** (sin hash de contenido):
+      se reutilizan `duracion_segundos`/`ancho`/`alto`/`codec_video` con **0 FFprobe** solo si
+      existe registro previo por nombre, `mtime_ns` no es NULL, la ruta normalizada coincide, el
+      tamaño coincide, el `mtime_ns` coincide y la metadata persistida es válida. Fuerzan FFprobe:
+      archivo nuevo, registro sin `mtime_ns`, ruta/tamaño/`mtime_ns` cambiados o metadata inválida.
+      Migración aditiva e idempotente `videos.mtime_ns INTEGER NULL`; bases antiguas hacen FFprobe
+      en la primera pasada y se rellenan. `obtener_tamanos_archivos` obtiene tamaño+`mtime_ns` con
+      **un `os.stat` por archivo**; `listar_registros_por_nombres` hace la consulta por lote
+      (una SELECT, sin consultas por video); `TareaFFprobe` clasifica y solo probea lo necesario;
+      `guardar_videos` persiste `mtime_ns`. Reescaneo caliente de 121 videos: **121 FFprobe → 0**,
+      backend **~4.9 s → ~0.1–0.5 s** (referencia de PC de desarrollo). Verificación empírica con
+      10 archivos físicos independientes (10 inodos): **10 → 0 → 1 → 0**. `video_id` y marcadores
+      intactos; cambio de ruta fuerza FFprobe conservando la identidad por nombre/upsert. Riesgo
+      residual aceptado (mismo ruta+tamaño+mtime_ns con contenido distinto); sin hash. Suites:
+      `prueba_reutilizacion_metadata_b453.py` **20/20** y regresiones verdes. **B4.5 queda
+      completada en sus Etapas 1-3; no se declara la Beta 4 completa todavía.**
 6. **Selección A/B, loops, fragmentos y edición.** **Posterior**, sin adelantar implementación.
    Los mismos puntos podrán participar en **selección A/B**, **loops**, **selección de
    fragmentos** o **corte/unión** como otra función, conservando su significado de navegación.

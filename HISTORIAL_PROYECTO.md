@@ -5,6 +5,76 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 97. Reutilizar metadata de videos sin cambios en reescaneos (B4.5 — Etapa 3)
+
+- **Fecha:** 2026-08-09
+- **Objetivo:** Novena etapa del ciclo **Beta 4** (rama `beta4`), **B4.5 — Etapa 3:
+  reutilización de metadata en reescaneos de videos sin cambios**. En un reescaneo se ejecuta
+  FFprobe únicamente para videos nuevos, modificados, registros sin `mtime_ns` o con metadata
+  inválida; un video sin cambios reutiliza `duracion_segundos`/`ancho`/`alto`/`codec_video` con
+  **0 FFprobe**.
+- **Criterio de reutilización (aprobado en la Fase 1):** barato, **`ruta normalizada +
+  tamano_bytes + mtime_ns`** (sin hash de contenido). Se reutiliza solo si: existe registro previo
+  por nombre; `mtime_ns` previo no es NULL; la ruta normalizada coincide; el tamaño coincide; el
+  `mtime_ns` coincide; y la metadata persistida es válida (`_metadata_ffprobe_utilizable`:
+  duración finita > 0, ancho/alto enteros > 0, codec texto no vacío). Fuerzan FFprobe: archivo
+  nuevo, registro sin `mtime_ns`, ruta/tamaño/`mtime_ns` cambiados o metadata inválida.
+- **Migración SQLite:** columna **`videos.mtime_ns INTEGER NULL`** aditiva e idempotente
+  (helper `_asegurar_columnas_videos` extraído de `conectar_bd`, reutilizado por `conectar_bd`,
+  `guardar_video` y `guardar_videos`; `BEGIN` explícito en el guardado para que el `ALTER` sea
+  transaccional). Sin reconstrucción de tabla; registros antiguos quedan NULL; no cambia
+  `videos.id`; no toca `marcadores_video`. Bases existentes: primera pasada FFprobe normal y
+  rellena `mtime_ns`; pasadas posteriores reutilizan.
+- **Implementación:** `obtener_tamanos_archivos` obtiene tamaño+`mtime_ns` con **un `os.stat` por
+  archivo**; `combinar_registros_con_tamanos` propaga `mtime_ns`; `_upsert_video` lo persiste;
+  `listar_registros_por_nombres` consulta por lote por `nombre` (una SELECT, sin consultas por
+  video); `TareaFFprobe(rutas, nombres=None, stats=None, ruta_db=None)` clasifica y solo probea lo
+  necesario, devolviendo metadata completa con el mismo formato (indistinguible por origen);
+  `_iniciar_ffprobe` pasa nombres/stats/ruta_db sin tocar SQLite en la UI.
+- **Rendimiento (referencia de PC de desarrollo):** reescaneo caliente de 121 videos **121 FFprobe
+  → 0**, backend **~4.9 s → ~0.1–0.5 s** (no extrapolable a la notebook; la UI de tarjetas no se
+  optimizó). Verificación empírica decisiva con **10 copias físicas independientes** (10 inodos,
+  sin hardlinks/symlinks): **10 → 0 → 1 → 0** (tercera pasada: se modifica únicamente `mtime_ns`
+  de un archivo → 1 FFprobe, 9 metadata reutilizadas y 1 reprocesada; cuarta pasada sin cambios →
+  0). Aclaración técnica: en el benchmark con hardlinks, modificar un "único" archivo dio 6
+  FFprobe porque seis entradas compartían inode; no era regresión (la verificación con copias
+  independientes confirmó el comportamiento real).
+- **Identidad y marcadores:** `video_id` se conserva; marcadores intactos; un cambio de ruta
+  fuerza FFprobe pero mantiene la política de identidad por nombre/upsert (sin reasociación
+  avanzada).
+- **Riesgo residual aceptado:** si un archivo distinto reemplaza al original conservando
+  ruta+tamaño+`mtime_ns`, la metadata puede reutilizarse; **sin hash de contenido**.
+- **Pruebas:** `prueba_reutilizacion_metadata_b453.py` **20/20** (migración antigua e idempotente;
+  NULL → FFprobe; idéntico → 0 FFprobe; tamaño/mtime/ambos/ruta/nuevo/metadata inválida →
+  FFprobe; metadata reutilizada exacta; persistir `mtime_ns`; video_id y marcadores preservados;
+  lote mixto 10 → 3 FFprobe; lote 121 → 0 FFprobe; consulta por lote = 1 SELECT; un stat por
+  archivo; normalización de ruta). Regresiones en verde en el cierre:
+  `prueba_optimizacion_ffprobe_b452.py` **14/14**, `prueba_escaneo_guardado.py` **24/24**,
+  `prueba_guardar_videos.py` **34/34**, `prueba_guardar.py` **19/19**, `prueba_recarga_catalogo.py`
+  **20/20**, `prueba_escaneo_interfaz.py` **36/36**, `prueba_plan_sincronizacion.py` **12/12**,
+  `prueba_sincronizacion_asincrona.py` **27/27**, `prueba_previews_progresivas.py` **16/16**,
+  `prueba_tamano_archivo.py` **15/15**, `prueba_detectar.py` **15/15**, `prueba_lectura.py`
+  **15/15**, `prueba_lectura_paginada.py` **32/32**, `prueba_interfaz_asincrona.py` **29/29**,
+  `prueba_seleccion_carpeta.py` **26/26**, `prueba_reproduccion_marcadores_b44.py` **24/24**,
+  `prueba_marcadores_b42.py` **17/17**, `prueba_smoke.py` OK. `python -m py_compile` OK.
+  `git diff --check` OK.
+- **Fallos preexistentes sin cambios (baseline):** `prueba_eliminar_candidatos.py` **T02** y
+  `prueba_aplicar_incorporaciones.py` **T15**; no corregidos ni adjudicados a esta etapa.
+- **Próxima etapa:** **B4.5 queda completada en sus Etapas 1-3**; no se declara la Beta 4 completa
+  todavía. Pendiente técnico sin corregir: las previews normales se consideran reutilizables por
+  existencia del archivo. Siguientes líneas del ciclo (no iniciadas): selección A/B, loops,
+  fragmentos, corte/unión, detección de archivos movidos con reasociación futura de marcadores
+  huérfanos y las evoluciones de reproducción indicadas en `ROADMAP.md`.
+- **Archivos modificados:** producción `escanear_videos.py`, `tareas_videos.py`, `visor_videos.py`;
+  pruebas `prueba_reutilizacion_metadata_b453.py` (nueva) y adaptadas al esquema nuevo
+  `prueba_guardar.py`, `prueba_guardar_videos.py`, `prueba_aplicar_incorporaciones.py`,
+  `prueba_sincronizacion_asincrona.py`; más los documentos oficiales (`ESTADO_PROYECTO.md`,
+  `ROADMAP.md`, `DOCUMENTO_TECNICO.md`, `HISTORIAL_PROYECTO.md`). Sin cambios en exploración B4.3,
+  VLC, scrubber ni configuración.
+- **Commit:** `Reutilizar metadata de videos sin cambios en reescaneos` (cierre de B4.5 — Etapa 3).
+
+---
+
 ## 96. Eliminar FFprobe redundante al generar miniaturas y previews (B4.5 — Etapas 1-2)
 
 - **Fecha:** 2026-08-09

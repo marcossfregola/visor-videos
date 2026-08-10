@@ -103,7 +103,8 @@ generar las miniaturas normales iniciales (no corresponde a B4.4; sin optimizar 
 **batch NO está implementado** (ver `ROADMAP.md`, sección "Beta 4").
 
 La octava etapa, **B4.5 — Rendimiento de carga inicial**, quedó **aprobada e incorporada**
-(Etapa 1: diagnóstico del cuello de botella; Etapa 2: eliminación de FFprobe redundante). El
+(Etapa 1: diagnóstico del cuello de botella; Etapa 2: eliminación de FFprobe redundante; Etapa 3:
+reutilización de metadata en reescaneos). El
 diagnóstico (dataset temporal de 121 videos funcionales, base y caché temporales) midió el
 pipeline normal de catálogo/miniaturas en la PC de desarrollo: escaneo, tamaños, SQLite y
 lectura despreciables; **FFprobe de metadata ~4.5 s (121 procesos, secuenciales)**; **miniaturas
@@ -119,14 +120,71 @@ anterior); `asegurar_miniaturas`/`generar_previews_faltantes` y sus tareas
 internos → 0**, mismos 484 FFmpeg; total backend **~55.6 s → ~37.1 s** (miniaturas 12.3→7.9 s,
 previews 38.6→24.8 s) como medición de la PC de desarrollo (no extrapolable a la notebook). Sin
 cambios de cantidad, posiciones, calidad, progresividad, lotes, caché, paralelismo ni FFmpeg.
-**Pendiente técnico registrado, sin corregir**: las previews existentes se consideran
-reutilizables por existencia del archivo (sin validación por cambio del video). **Próxima etapa
-registrada (no iniciada): B4.5 — Etapa 3 — evitar el FFprobe de metadata en reescaneos de
-videos sin cambios** (reescaneo caliente ≈4.9 s con ~93 % en FFprobe).
+La **Etapa 3** reutiliza metadata en reescaneos sin cambios con el criterio barato
+**`ruta normalizada + tamano_bytes + mtime_ns`** (sin hash de contenido): 0 FFprobe solo si hay
+registro previo, `mtime_ns` no NULL, ruta/tamaño/`mtime_ns` coinciden y la metadata es válida;
+fuerzan FFprobe archivo nuevo, registro sin `mtime_ns`, ruta/tamaño/`mtime_ns` cambiados o
+metadata inválida. Migración aditiva e idempotente `videos.mtime_ns INTEGER NULL`; bases antiguas
+hacen FFprobe en la primera pasada y se rellenan. `obtener_tamanos_archivos` obtiene
+tamaño+`mtime_ns` con un `os.stat` por archivo; `listar_registros_por_nombres` consulta por lote
+(una SELECT); `TareaFFprobe` clasifica y solo probea lo necesario; `guardar_videos` persiste
+`mtime_ns`. Reescaneo caliente de 121 videos: **121 FFprobe → 0**, backend **~4.9 s → ~0.1–0.5 s**
+(referencia de PC de desarrollo). Verificación empírica con 10 archivos físicos independientes
+(10 inodos): **10 → 0 → 1 → 0**. `video_id` y marcadores intactos; un cambio de ruta fuerza
+FFprobe conservando la identidad por nombre/upsert. **Riesgo residual aceptado**: si un archivo
+distinto reemplaza al original conservando ruta+tamaño+`mtime_ns`, la metadata puede reutilizarse
+(sin hash). **Pendiente técnico registrado, sin corregir**: las previews existentes se consideran
+reutilizables por existencia del archivo (sin validación por cambio del video). **B4.5 queda
+completada en sus Etapas 1-3; no se declara la Beta 4 completa todavía.**
 
 ## Último commit aprobado
 
-**Mensaje:** Eliminar FFprobe redundante al generar miniaturas y previews
+**Mensaje:** Reutilizar metadata de videos sin cambios en reescaneos
+
+**Etapa:** B4.5 — Rendimiento de carga inicial, Etapa 3 (rama `beta4`):
+- `escanear_videos.py` — migración aditiva e idempotente **`videos.mtime_ns INTEGER NULL`**
+  (`COLUMNAS_EXTRA` + helper `_asegurar_columnas_videos` reutilizado por `conectar_bd`,
+  `guardar_video` y `guardar_videos`; `BEGIN` explícito en el guardado para que el `ALTER` sea
+  transaccional); `obtener_tamanos_archivos` obtiene tamaño+`mtime_ns` con **un `os.stat` por
+  archivo**; `combinar_registros_con_tamanos` propaga `mtime_ns`; `_upsert_video` lo persiste;
+  helpers de clasificación `_normalizar_ruta_absoluta`, `_metadata_ffprobe_utilizable` y
+  `_metadata_reutilizable` (criterio ruta+tamaño+`mtime_ns`); `listar_registros_por_nombres`
+  (consulta por lote por `nombre`, una SELECT).
+- `tareas_videos.py` — `TareaFFprobe(rutas, nombres=None, stats=None, ruta_db=None)`: consulta los
+  registros previos por lote, clasifica y ejecuta FFprobe **solo** para los videos
+  nuevos/cambiados/sin fingerprint/metadata inválida; el resultado devuelve metadata completa
+  para todos (reutilizada o nueva) con el mismo formato.
+- `visor_videos.py` — `_iniciar_ffprobe` pasa `nombres`, `stats` (`resultado_tamanos`) y `ruta_db`
+  a `TareaFFprobe` (sin SQLite en la UI).
+- `prueba_reutilizacion_metadata_b453.py` — **nueva**: 20 pruebas (migración antigua e
+  idempotente; NULL → FFprobe; idéntico → 0 FFprobe; tamaño/mtime/ambos/ruta/nuevo/metadata
+  inválida → FFprobe; metadata reutilizada exacta; persistir `mtime_ns`; video_id y marcadores
+  preservados; lote mixto 10 → 3 FFprobe; lote 121 → 0 FFprobe; consulta por lote = 1 SELECT;
+  un stat por archivo; normalización de ruta).
+- Suites adaptadas al esquema nuevo (`mtime_ns`): `prueba_guardar.py`, `prueba_guardar_videos.py`
+  (SELECT con columnas explícitas), `prueba_aplicar_incorporaciones.py`,
+  `prueba_sincronizacion_asincrona.py` (`_crear_bd` con `mtime_ns`).
+
+**Medición (PC de desarrollo, dataset temporal de 121 videos, caché caliente):** reescaneo con
+**121 FFprobe → 0**; backend **~4.9 s → ~0.1–0.5 s** (referencia, no garantía universal).
+Verificación empírica con 10 copias físicas independientes (10 inodos, sin hardlinks):
+**10 → 0 → 1 → 0** (tercera pasada: 1 FFprobe, 9 metadata reutilizadas y 1 reprocesada;
+cuarta pasada: 0). La UI de tarjetas no se optimizó en esta etapa.
+
+**Pruebas superadas:** `prueba_reutilizacion_metadata_b453.py` **20/20**. Regresiones en verde
+(ejecutadas en el cierre): `prueba_optimizacion_ffprobe_b452.py` **14/14**,
+`prueba_escaneo_guardado.py` **24/24**, `prueba_guardar_videos.py` **34/34**, `prueba_guardar.py`
+**19/19**, `prueba_recarga_catalogo.py` **20/20**, `prueba_escaneo_interfaz.py` **36/36**,
+`prueba_plan_sincronizacion.py` **12/12**, `prueba_sincronizacion_asincrona.py` **27/27**,
+`prueba_previews_progresivas.py` **16/16**, `prueba_tamano_archivo.py` **15/15**,
+`prueba_detectar.py` **15/15**, `prueba_lectura.py` **15/15**, `prueba_lectura_paginada.py`
+**32/32**, `prueba_interfaz_asincrona.py` **29/29**, `prueba_seleccion_carpeta.py` **26/26**,
+`prueba_reproduccion_marcadores_b44.py` **24/24**, `prueba_marcadores_b42.py` **17/17**,
+`prueba_smoke.py` OK. `python -m py_compile` OK. `git diff --check` OK.
+
+---
+
+**Commit anterior — Mensaje:** Eliminar FFprobe redundante al generar miniaturas y previews
 
 **Etapa:** B4.5 — Rendimiento de carga inicial, Etapa 2 (rama `beta4`):
 - `escanear_videos.py` — `_duracion_utilizable` (número real finito > 0; rechaza `None`, bool, no
@@ -673,11 +731,9 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
 
 ## Próxima etapa
 
-**B4.5 — Etapa 2 quedó completada** (eliminación de FFprobe redundante en miniaturas/previews) y
-**no se declara la Beta 4 completa todavía**. **Próxima etapa registrada, no iniciada: B4.5 —
-Etapa 3 — evitar el FFprobe de metadata en reescaneos de videos sin cambios** (el reescaneo
-caliente de 121 videos ≈4.9 s con ~93 % en FFprobe de metadata; no se diseñó ni implementó el
-criterio de reutilización). Pendiente técnico registrado sin corregir: las **previews normales
+**B4.5 quedó completada en sus Etapas 1-3** (diagnóstico; eliminación de FFprobe redundante en
+miniaturas/previews; reutilización de metadata en reescaneos sin cambios) y **no se declara la
+Beta 4 completa todavía**. Pendiente técnico registrado sin corregir: las **previews normales
 existentes se consideran reutilizables por existencia del archivo** (sin validación equivalente
 por cambio del video). Siguientes líneas del ciclo (no iniciadas): la **selección A/B**, los
 **loops**, la **selección de fragmentos** y el **corte/unión**; la **detección de archivos

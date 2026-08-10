@@ -163,7 +163,8 @@ def _crear_bd(filas):
                 alto INTEGER,
                 codec_video TEXT,
                 cantidad_miniaturas INTEGER,
-                tamano_bytes INTEGER
+                tamano_bytes INTEGER,
+                mtime_ns INTEGER
             )
             """
         )

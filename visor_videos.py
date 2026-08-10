@@ -2797,7 +2797,12 @@ class VisorVideos(QMainWindow):
             return
         carpeta = self.tarea_escaneo.carpeta
         rutas = [os.path.join(carpeta, nombre) for nombre in self.videos_detectados]
-        tarea = TareaFFprobe(rutas)
+        tarea = TareaFFprobe(
+            rutas,
+            nombres=self.videos_detectados,
+            stats=self.resultado_tamanos,
+            ruta_db=self._ruta_db,
+        )
         if not self.gestor.iniciar(tarea):
             self._limpiar_cadena()
             self._actualizar_botones_carpeta()

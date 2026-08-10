@@ -76,7 +76,7 @@ def _datos(nombre, ruta="C:\\v\\a.mp4", extension=".mp4", fecha="2026-08-02T00:0
 def _dump(ruta_db):
     conn = sqlite3.connect(ruta_db)
     try:
-        return conn.execute("SELECT * FROM videos ORDER BY nombre").fetchall()
+        return conn.execute("SELECT id, nombre, ruta, extension, fecha_importacion, duracion_segundos, ancho, alto, codec_video, cantidad_miniaturas, tamano_bytes FROM videos ORDER BY nombre").fetchall()
     finally:
         conn.close()
 
