@@ -299,6 +299,16 @@ def main():
                     )
                     con_tarjeta = dict(ventana.tarjetas)["con.mp4"]
                     sin_tarjeta = dict(ventana.tarjetas)["sin.mp4"]
+
+                    # Desde B4.6 las previews se aplican de forma progresiva/diferida.
+                    def _con_previews_aplicadas():
+                        return all(
+                            e._pixmap_original is not None
+                            for e in con_tarjeta._etiquetas_previews
+                        )
+
+                    esperar(_con_previews_aplicadas)
+
                     tiempos_con = [
                         e._tiempo for e in con_tarjeta._etiquetas_previews
                     ]

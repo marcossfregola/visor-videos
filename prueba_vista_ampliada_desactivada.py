@@ -112,6 +112,16 @@ def _ventana_con(ms):
             return predicado()
 
         esperar(lambda: ventana._carga_completada and ventana.gestor.hilo is None)
+
+        def _previews_aplicadas():
+            return any(
+                tarjeta._etiquetas_previews
+                and tarjeta._etiquetas_previews[0]._pixmap_original is not None
+                for _, tarjeta in ventana.tarjetas
+            )
+
+        # Desde B4.6 las previews se aplican de forma progresiva/diferida.
+        esperar(_previews_aplicadas)
         ventana.carpeta_seleccionada = videos.name
         yield ventana, ruta_config
     finally:

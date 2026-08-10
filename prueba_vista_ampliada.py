@@ -164,6 +164,26 @@ def _esperar(predicado, intentos=300):
     return predicado()
 
 
+def _esperar_preview(ventana, nombre, indice=0):
+    """Espera de forma determinista a que la preview este aplicada.
+
+    Desde B4.6 las previews se cargan de forma progresiva/diferida, por lo
+    que una tarjeta puede no tener todavia el pixmap original justo despues
+    de cargar el catalogo.
+    """
+
+    def _aplicada():
+        tarjeta = dict(ventana.tarjetas).get(nombre)
+        if tarjeta is None:
+            return False
+        etiquetas = tarjeta._etiquetas_previews
+        if indice >= len(etiquetas):
+            return False
+        return etiquetas[indice]._pixmap_original is not None
+
+    return _esperar(_aplicada)
+
+
 def main():
     app = QApplication(sys.argv)
 
@@ -221,6 +241,7 @@ def main():
                 lambda: ventana._carga_completada
                 and ventana.gestor.hilo is None
             )
+            _esperar_preview(ventana, "clip.mp4")
             tarjeta = dict(ventana.tarjetas)["clip.mp4"]
             etiqueta = tarjeta._etiquetas_previews[0]
             verifica(
@@ -298,6 +319,7 @@ def main():
                 lambda: ventana._carga_completada
                 and ventana.gestor.hilo is None
             )
+            _esperar_preview(ventana, "clip.mp4")
             etiqueta = dict(ventana.tarjetas)["clip.mp4"]._etiquetas_previews[0]
             _evento(etiqueta, QEvent.Enter)
             ventana._timer_vista_mostrar.timeout.emit()
@@ -340,6 +362,7 @@ def main():
                 lambda: ventana._carga_completada
                 and ventana.gestor.hilo is None
             )
+            _esperar_preview(ventana, "clip.mp4")
             etiqueta = dict(ventana.tarjetas)["clip.mp4"]._etiquetas_previews[0]
             _evento(etiqueta, QEvent.Enter)
             ventana._timer_vista_mostrar.timeout.emit()
@@ -387,6 +410,7 @@ def main():
                 len(ventana.tarjetas) == 2,
                 "integración: 2 tarjetas cargadas",
             )
+            _esperar_preview(ventana, "a.mp4")
             tarjeta = dict(ventana.tarjetas)["a.mp4"]
             etiqueta = tarjeta._etiquetas_previews[0]
             _evento(etiqueta, QEvent.Enter)

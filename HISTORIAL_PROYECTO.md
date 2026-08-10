@@ -5,6 +5,44 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 100. Cerrar regresiones y contratos de prueba de Beta 4 (B4.12)
+
+- **Fecha:** 2026-08-10
+- **Objetivo:** corrección técnica previa al cierre de la **Beta 4** (rama `beta4`), a partir de la
+  auditoría integral: restaurar la separación arquitectónica en la UI y reconciliar los tests con
+  los contratos actuales, para conseguir un HEAD de Beta 4 con la suite integral limpia.
+- **Corrección de arquitectura (filesystem fuera de la UI):**
+  - `rutas.py` — nuevo `ruta_video_existente(carpeta, nombre)`: resuelve y valida la existencia de
+    la ruta de video fuera de la UI.
+  - `visor_videos.py` — `_ruta_video_de` delega en `ruta_video_existente`; **deja de usar
+    `os.path.isfile`** (regla "la UI no accede a SQLite/FFmpeg/FFprobe/filesystem" restaurada;
+    verificado por `prueba_doble_clic.py` T14 sin relajar la regla).
+- **Reconciliación de contract-tests:**
+  - 7 suites de "vista ampliada/previews/miniaturas" adaptadas al contrato **progresivo/diferido de
+    B4.6** (espera determinista de "previews aplicadas"; sin sleeps arbitrarios, sin skips):
+    `prueba_vista_ampliada` 24/24, `prueba_vista_ampliada_desactivada` 20/20,
+    `prueba_preferencias_miniaturas` 31/31, `prueba_pulido_bloque_a` 29/29,
+    `prueba_tamano_muy_grande` 27/27, `prueba_tiempo_previews` 35/35, `prueba_tamano_vista_ampliada`
+    38/38.
+  - `prueba_filas_horizontales.py` T15 — la regla pasó a inspeccionar **uso real** (literales en
+    llamadas) y no docstrings/comentarios; suite 16/16.
+  - `prueba_eliminar_candidatos.py` T02 — regla AST precisa excluyendo las tareas legítimas de
+    marcadores (`TareaEliminarMarcador`, B4.2); suite 16/16.
+  - `prueba_persistencia_carpeta.py` T11/T16 — contrato actualizado a "sin carpeta guardada" (el
+    archivo puede crearse por el default de `escaneo_automatico`); suite 20/20.
+  - `prueba_aplicar_incorporaciones.py` T15 — comparación de filas preexistentes robusta al esquema
+    vigente (por nombre de columna, con `mtime_ns` y `tamano_bytes`); suite 15/15.
+- **Identidad de build:** `configuracion.py` — `BUILD_IDENTIFICADOR = "B4.12"` (la etapa modifica
+  código de producción, por lo que no conserva B4.11); texto visible `Beta 4 — B4.12`;
+  `prueba_version_build.py` adaptada (3/3).
+- **Suite integral:** 87 suites, **1570/1570** pruebas, **0 FAIL** en la corrida final. Flakiness
+  residual conocida (documentada, no bloqueante): teardown ocasional de
+  `prueba_exploracion_densidad_b432.py` (`0xC0000409` en la salida del proceso; las 12/12
+  comprobaciones funcionales pasan siempre).
+- **Transición de builds:** `B4.11` = build ampliamente validada en la notebook; `B4.12` = candidata
+  final posterior a las correcciones de arquitectura/tests. **La Beta 4 todavía NO se declara
+  cerrada hasta validar B4.12.**
+
 ## 99. Identificación visible de versión/build (B4.11)
 
 - **Fecha:** 2026-08-10

@@ -65,7 +65,7 @@ from escanear_videos import (
     configurar_cantidad_previews,
     configurar_escaneo_recursivo,
 )
-from rutas import ruta_carpeta_miniaturas, ruta_configuracion
+from rutas import ruta_carpeta_miniaturas, ruta_configuracion, ruta_video_existente
 from exploracion_temporal import (
     agregar_marcador_ordenado,
     preview_mas_cercana,
@@ -2054,15 +2054,9 @@ class VisorVideos(QMainWindow):
             return
 
     def _ruta_video_de(self, tarjeta):
-        carpeta = getattr(tarjeta, "_carpeta_video", None)
-        if not (
-            isinstance(carpeta, str) and carpeta and os.path.isdir(carpeta)
-        ):
-            return None
-        ruta = os.path.join(carpeta, tarjeta.nombre)
-        if not os.path.isfile(ruta):
-            return None
-        return ruta
+        return ruta_video_existente(
+            getattr(tarjeta, "_carpeta_video", None), tarjeta.nombre
+        )
 
     def _al_resultado_exploracion(self, resultado):
         op = self._exploracion_op_actual

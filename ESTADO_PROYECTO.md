@@ -162,16 +162,60 @@ reconciliación de `_reemplazar_tarjetas` y `miniatura_principal` con `os.listdi
 completada en sus Etapas 1-2; no se declara la Beta 4 completa todavía.**
 La mejora de diagnóstico **identificación visible de versión/build** quedó **aprobada e
 incorporada**: la ventana principal muestra en la **status bar** inferior un texto discreto con la
-versión/build en ejecución (`Beta 4 — B4.11`), definida por constantes centrales en
+versión/build en ejecución (`Beta 4 — B4.12`), definida por constantes centrales en
 `configuracion.py` (`VERSION_PRODUCTO`, `BUILD_IDENTIFICADOR`, `TEXTO_VERSION_BUILD`). La
 identificación visible es **independiente del SHA Git** (el identificador se incrementa manualmente
 por autorización; sin automatización) y para cada build de validación se registra la asociación
-**identificador visible → SHA Git exacto → SHA-256 del instalador**. **`B4.11` es la build usada
-para continuar la validación manual en la notebook; no es el cierre definitivo de la Beta 4.**
+**identificador visible → SHA Git exacto → SHA-256 del instalador**.
+La corrección técnica previa al cierre quedó **aprobada e incorporada**: (1) la resolución de
+existencia de la ruta de video se movió de la UI (`visor_videos.py`) a `rutas.py`
+(`ruta_video_existente`), restaurando la regla "la UI no accede al filesystem"; (2) los
+contract-tests quedaron reconciliados con el contrato actual (previews progresivas de B4.6, esquema
+vigente con `mtime_ns`, tareas legítimas de marcadores); (3) la suite integral quedó en **87 suites
+/ 1570 pruebas, 0 FAIL** en la corrida final, con la única flakiness residual conocida de teardown
+de `prueba_exploracion_densidad_b432.py` (ocasional `0xC0000409`; 12/12 funcionales; no bloqueante).
+**Transición de builds:** `B4.11` = build ampliamente validada en la notebook; `B4.12` = candidata
+final posterior a las correcciones de arquitectura/tests. **La Beta 4 todavía NO se declara cerrada
+hasta validar B4.12.**
 
 ## Último commit aprobado
 
-**Mensaje:** Mostrar identificador de version y build en la interfaz
+**Mensaje:** Cerrar regresiones y contratos de prueba de Beta 4
+
+**Corrección previa al cierre** (rama `beta4`):
+- `rutas.py` — nuevo `ruta_video_existente(carpeta, nombre)`: resuelve y valida la existencia de la
+  ruta de video fuera de la UI.
+- `visor_videos.py` — `_ruta_video_de` delega en `ruta_video_existente`; **ya no usa
+  `os.path.isfile`** (regla arquitectónica "la UI no accede al filesystem" restaurada; verificado por
+  `prueba_doble_clic.py` T14 sin modificar el test).
+- `configuracion.py` — `BUILD_IDENTIFICADOR = "B4.12"` (la etapa modifica código de producción, por
+  lo que no conserva el identificador B4.11); texto visible `Beta 4 — B4.12`.
+- Contract-tests reconciliados con el contrato actual: 7 suites de vista ampliada/previews adaptadas
+  al contrato progresivo de B4.6; `prueba_filas_horizontales.py` T15 (uso real vs docstrings);
+  `prueba_eliminar_candidatos.py` T02 (regla AST precisa ante `TareaEliminarMarcador` legítimo);
+  `prueba_persistencia_carpeta.py` T11/T16 (config creada en el arranque por `escaneo_automatico`);
+  `prueba_aplicar_incorporaciones.py` T15 (esquema vigente con `mtime_ns` y `tamano_bytes`).
+- `prueba_version_build.py` — adaptada a `Beta 4 — B4.12` (3 pruebas).
+
+**Suite integral:** 87 suites, **1570/1570** pruebas, **0 FAIL** en la corrida final. Flakiness
+residual conocida (documentada, no bloqueante): teardown ocasional de
+`prueba_exploracion_densidad_b432.py` (`0xC0000409`; 12/12 comprobaciones funcionales).
+
+**Transición:** `B4.11` = build ampliamente validada en la notebook; `B4.12` = candidata final
+posterior a las correcciones de arquitectura/tests. **La Beta 4 NO se declara cerrada hasta validar
+B4.12.**
+
+**Pruebas superadas:** `prueba_version_build.py` **3/3**, `prueba_doble_clic.py` **14/14**, las 7
+suites B4.6 reconciliadas (vista_ampliada **24/24**, vista_ampliada_desactivada **20/20**,
+preferencias_miniaturas **31/31**, pulido_bloque_a **29/29**, tamano_muy_grande **27/27**,
+tiempo_previews **35/35**, tamano_vista_ampliada **38/38**), filas_horizontales **16/16**,
+persistencia_carpeta **20/20**, eliminar_candidatos **16/16**, aplicar_incorporaciones **15/15**,
+regresiones B4.1–B4.6 verdes y `prueba_smoke.py` OK. `python -m py_compile` OK. `git diff --check`
+OK.
+
+---
+
+**Commit anterior — Mensaje:** Mostrar identificador de version y build en la interfaz
 
 **Mejora:** Identificación visible de versión/build (`Beta 4 — B4.11`, rama `beta4`):
 - `configuracion.py` — constantes centrales `VERSION_PRODUCTO = "Beta 4"`,
@@ -795,8 +839,9 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
   filas preexistentes con `tamano_bytes = NULL`; la base real actual tiene
   `tamano_bytes` poblado. No atribuible a etapas recientes (verificado en la
   Etapa 2.6); la suite no modifica ese subsistema y el resto del pipeline
-  funciona correctamente. Revisar el contrato de T15 o aislarlo de la base
-  real en una etapa futura.
+  funciona correctamente. **Resuelta en la corrección previa al cierre de
+  B4.12**: la comparación de filas preexistentes se hizo robusta al esquema
+  por nombre de columna (vigente con `mtime_ns` y `tamano_bytes`); suite 15/15.
 - **Estado de "escaneada" por sesión** (Etapa 2.9): el indicador de carpetas
   escaneadas vive en memoria (`carpetas_escaneadas` del visor) y se pierde al
   reiniciar; no se persiste ni se deriva del catálogo (requeriría cambios de
@@ -808,16 +853,17 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
   en la Etapa B3.3, verificada también en HEAD limpio): los tests asumen que al
   iniciar la aplicación sin preferencias no se crea `configuracion.json`, pero la
   restauración de `escaneo_automatico` (default `True`, Etapa 2.8) escribe el
-  archivo en el arranque. No atribuible a B3.3 ni a etapas recientes; corregir en
-  una futura etapa específica (p. ej. alinear la restauración con `blockSignals` o
-  actualizar el contrato de los tests).
+  archivo en el arranque. **Resuelta en la corrección previa al cierre de B4.12**:
+  el contrato del test pasó a "sin carpeta guardada" (el archivo puede existir por
+  el default, pero no debe contener `CLAVE_CARPETA`); suite 20/20.
 - **`prueba_eliminar_candidatos.py` T02** — falla **preexistente** (verificada en el
   HEAD base limpio `507ec81` durante el cierre de B4.5): es una verificación AST de
   estructura (`eliminar_candidatos` definida solo en `escanear_videos`, sin estar
   definida ni importada en `tareas_videos`/`visor_videos`, y sin identificadores
-  prohibidos) cuyo contrato no coincide con el estado actual del código; el resto de
-  la suite (15/16) pasa y el subsistema funciona correctamente. No atribuible a B4.5;
-  revisar el contrato de T02 en una etapa futura.
+  prohibidos) cuyo contrato no coincide con el estado actual del código. **Resuelta
+  en la corrección previa al cierre de B4.12**: la regla AST quedó precisa
+  excluyendo las tareas legítimas de marcadores (`TareaEliminarMarcador`, B4.2);
+  suite 16/16.
 
 ## Próxima etapa
 
