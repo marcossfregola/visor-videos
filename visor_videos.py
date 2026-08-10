@@ -41,6 +41,7 @@ from configuracion import (
     MODO_ALCANCE_SELECCION,
     MODO_ALCANCE_SOLO,
     MODO_ALCANCE_SUBCARPETAS,
+    TEXTO_VERSION_BUILD,
     guardar_cantidad_previews,
     guardar_modo_alcance,
     guardar_preferencia_escaneo_automatico,
@@ -1571,6 +1572,11 @@ class VisorVideos(QMainWindow):
         splitter.setSizes([220, 680])
         splitter.setCollapsible(0, False)
         self.setCentralWidget(splitter)
+
+        self.etiqueta_version = QLabel(TEXTO_VERSION_BUILD)
+        self.etiqueta_version.setObjectName("etiqueta_version")
+        self.etiqueta_version.setStyleSheet("color: #7a7a7a;")
+        self.statusBar().addPermanentWidget(self.etiqueta_version)
 
         self.gestor = GestorTareas(self)
         self.gestor.tarea_resultado.connect(self._al_resultado)

@@ -160,10 +160,38 @@ antes de terminar de cargar las previews.** Pendientes separados, sin implementa
 pixmaps originales/RAM (~+690 MB), `_construir_exploracion` en tarjetas colapsadas,
 reconciliación de `_reemplazar_tarjetas` y `miniatura_principal` con `os.listdir`. **B4.6
 completada en sus Etapas 1-2; no se declara la Beta 4 completa todavía.**
+La mejora de diagnóstico **identificación visible de versión/build** quedó **aprobada e
+incorporada**: la ventana principal muestra en la **status bar** inferior un texto discreto con la
+versión/build en ejecución (`Beta 4 — B4.11`), definida por constantes centrales en
+`configuracion.py` (`VERSION_PRODUCTO`, `BUILD_IDENTIFICADOR`, `TEXTO_VERSION_BUILD`). La
+identificación visible es **independiente del SHA Git** (el identificador se incrementa manualmente
+por autorización; sin automatización) y para cada build de validación se registra la asociación
+**identificador visible → SHA Git exacto → SHA-256 del instalador**. **`B4.11` es la build usada
+para continuar la validación manual en la notebook; no es el cierre definitivo de la Beta 4.**
 
 ## Último commit aprobado
 
-**Mensaje:** Diferir la carga de previews para acelerar la interfaz
+**Mensaje:** Mostrar identificador de version y build en la interfaz
+
+**Mejora:** Identificación visible de versión/build (`Beta 4 — B4.11`, rama `beta4`):
+- `configuracion.py` — constantes centrales `VERSION_PRODUCTO = "Beta 4"`,
+  `BUILD_IDENTIFICADOR = "B4.11"` y `TEXTO_VERSION_BUILD = "Beta 4 — B4.11"` (fuente única de
+  verdad; independientes del SHA Git; embebidas en la build congelada, sin Git en runtime).
+- `visor_videos.py` — `QLabel` discreto con `TEXTO_VERSION_BUILD` en la **status bar** inferior de
+  la ventana principal; sin tocar el layout principal ni otra funcionalidad.
+- `prueba_version_build.py` — **nueva**: 3 pruebas (constantes; texto exacto `Beta 4 — B4.11`;
+  etiqueta visible en la status bar).
+
+**Build de validación:** `B4.11` es la build usada para continuar la validación manual en la
+notebook. **No es el cierre definitivo de la Beta 4.**
+
+**Pruebas superadas:** `prueba_version_build.py` **3/3**, `prueba_exploracion_b433.py` **22/22**,
+`prueba_carga_visual_b462.py` **9/9**, `prueba_smoke.py` OK. `python -m py_compile` OK.
+`git diff --check` OK.
+
+---
+
+**Commit anterior — Mensaje:** Diferir la carga de previews para acelerar la interfaz
 
 **Etapa:** B4.6 — Rendimiento de carga visual, Etapa 2 (rama `beta4`):
 - `visor_videos.py` — `_crear_tarjetas`/`_agregar_tarjetas`/`_reemplazar_tarjetas` ya **no** cargan

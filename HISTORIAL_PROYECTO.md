@@ -5,6 +5,36 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 99. Identificación visible de versión/build (B4.11)
+
+- **Fecha:** 2026-08-10
+- **Objetivo:** pequeña mejora de diagnóstico sobre la **Beta 4** (rama `beta4`): mostrar en la ventana
+  principal una identificación visible y discreta de la versión/build en ejecución, para poder
+  verificar rápidamente qué build está instalada en cualquier PC (p. ej. la notebook de validación).
+  Surge de un incidente real: la notebook estaba ejecutando una build antigua de Beta 4 sin el
+  selector de densidad (B4.3.3), y no había forma visual de identificar la build en ejecución.
+- **Decisión de versionado:** la identificación visible de las builds distribuidas es **independiente
+  del SHA Git**. Para cada build de validación se mantiene la asociación **identificador visible →
+  SHA Git exacto → SHA-256 del instalador**. Para esta: `B4.11`. El identificador se incrementa
+  **manualmente** cuando ChatGPT autoriza una nueva build distribuible; **sin automatización** (ni
+  generadores de versiones, ni hooks Git, ni lectura de `.git`, ni CI). No usar el SHA Git como
+  identificador visible embebido (el SHA del propio commit no puede conocerse dentro de él).
+- **Cambios:**
+  - `configuracion.py` — constantes centrales `VERSION_PRODUCTO = "Beta 4"`,
+    `BUILD_IDENTIFICADOR = "B4.11"` y `TEXTO_VERSION_BUILD = "Beta 4 — B4.11"` (fuente única de
+    verdad; embebidas en la build congelada por PyInstaller, sin Git en runtime).
+  - `visor_videos.py` — `QLabel` discreto con `TEXTO_VERSION_BUILD` en la **status bar** inferior de
+    la ventana principal (`VisorVideos`); sin tocar el layout principal ni otra funcionalidad.
+  - `prueba_version_build.py` — **nueva**: 3 pruebas (constantes de versión/build; texto exacto
+    `Beta 4 — B4.11`; etiqueta visible en la status bar).
+- **Verificación:** en desarrollo la etiqueta se muestra en la status bar con el texto
+  `Beta 4 — B4.11`; en la **build congelada** (PyInstaller) las constantes `Beta 4` y `B4.11`
+  quedan embebidas. **`B4.11` es la build usada para continuar la validación manual en la
+  notebook; no es el cierre definitivo de la Beta 4.**
+- **Pruebas:** `prueba_version_build.py` **3/3**, `prueba_exploracion_b433.py` **22/22**,
+  `prueba_carga_visual_b462.py` **9/9**, `prueba_smoke.py` OK. `python -m py_compile` OK.
+  `git diff --check` OK.
+
 ## 98. Diferir la carga de previews para acelerar la interfaz (B4.6 — Etapas 1-2)
 
 - **Fecha:** 2026-08-09

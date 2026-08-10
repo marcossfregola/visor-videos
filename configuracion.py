@@ -25,6 +25,10 @@ MODOS_ALCANCE_VALIDOS = (
 )
 VARIABLE_ENTORNO = "VISOR_CONFIG"
 
+VERSION_PRODUCTO = "Beta 4"
+BUILD_IDENTIFICADOR = "B4.11"
+TEXTO_VERSION_BUILD = f"{VERSION_PRODUCTO} — {BUILD_IDENTIFICADOR}"
+
 
 def _resolver_ruta_config(ruta_config):
     if ruta_config is not None:

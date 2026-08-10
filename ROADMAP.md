@@ -22,6 +22,10 @@ arquitectónicas.
 > reutilización de metadata en reescaneos)** y **B4.6 — Rendimiento de
 > carga visual (diagnóstico y carga diferida de previews)** quedaron
 > **completadas y aprobadas** (ver la sección "Beta 4").
+> Adicionalmente se incorporó una mejora de diagnóstico (no una etapa
+> formal): **identificación visible de versión/build** en la status bar de la
+> ventana principal (`Beta 4 — B4.11`), para identificar rápidamente la build
+> en ejecución en cualquier PC (p. ej. la notebook de validación).
 
 ------------------------------------------------------------------------
 
