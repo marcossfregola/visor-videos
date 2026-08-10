@@ -136,10 +136,72 @@ distinto reemplaza al original conservando ruta+tamaño+`mtime_ns`, la metadata 
 (sin hash). **Pendiente técnico registrado, sin corregir**: las previews existentes se consideran
 reutilizables por existencia del archivo (sin validación por cambio del video). **B4.5 queda
 completada en sus Etapas 1-3; no se declara la Beta 4 completa todavía.**
+La novena etapa, **B4.6 — Rendimiento de carga visual**, quedó **aprobada e incorporada**
+(Etapa 1: diagnóstico de construcción/población de tarjetas; Etapa 2: carga diferida de previews
+cacheadas). El diagnóstico con 100 tarjetas/300 previews cacheadas descompuso el costo de la
+carga visual: construcción de widgets ~0.42 s (dominada por `_construir_exploracion`);
+`miniatura_principal` ~0.05 s (un `os.listdir` por tarjeta); **`_crear_tarjetas` cargaba y
+escalaba las 300 previews de golpe (0.74 s caliente / ~3.5 s frío)**; bloqueo síncrono total
+1.4–4.4 s; `_reemplazar_tarjetas` re-decodificaba las mismas previews; RAM ~+690 MB por retención
+de pixmaps originales. La Etapa 2 difiere la carga de previews cacheadas: `_crear_tarjetas`/
+`_agregar_tarjetas`/`_reemplazar_tarjetas` ya **no** las cargan de golpe; las tarjetas parten con
+textos + miniatura principal + placeholders y las previews (existentes o faltantes) se incorporan
+**progresivamente** por la tubería existente (`_programar_previews` → `_encolar_previews` →
+`TareaPreviewsProgresivas` → `generar_previews_faltantes` → `_aplicar_previews`). Con caché
+completa **0 FFmpeg**; con faltantes la generación normal. `Tarjeta._previews_completas`
+(estado interno, no persistido) decide si una tarjeta entra a la cola; protección de resultados
+tardíos en `_aplicar_previews` (cambio A→B sin imágenes cruzadas ni crash); ajuste de integración
+en `_reconstruir_previews_exploracion` (fallback a las previews de disco si las etiquetas aún no
+las tienen; sin modificar el motor B4.3, scrub, densidad ni marcadores). Medición (PC de
+desarrollo): `_crear_tarjetas(100)` **0.69–0.85 s** (antes 1.4–4.4 s); tarjetas visibles ~0.72 s;
+primera preview ~1.0 s; **300 previews completas ~2.1 s**; máximo bloqueo continuo **~0.7 s**;
+lotes ~20–30 ms; reemplazo ~0.73 s sin recargar previews de golpe. **La interfaz queda utilizable
+antes de terminar de cargar las previews.** Pendientes separados, sin implementar: retención de
+pixmaps originales/RAM (~+690 MB), `_construir_exploracion` en tarjetas colapsadas,
+reconciliación de `_reemplazar_tarjetas` y `miniatura_principal` con `os.listdir`. **B4.6
+completada en sus Etapas 1-2; no se declara la Beta 4 completa todavía.**
 
 ## Último commit aprobado
 
-**Mensaje:** Reutilizar metadata de videos sin cambios en reescaneos
+**Mensaje:** Diferir la carga de previews para acelerar la interfaz
+
+**Etapa:** B4.6 — Rendimiento de carga visual, Etapa 2 (rama `beta4`):
+- `visor_videos.py` — `_crear_tarjetas`/`_agregar_tarjetas`/`_reemplazar_tarjetas` ya **no** cargan
+  previews cacheadas (las tarjetas parten con textos + miniatura + placeholders); `_encolar_previews`
+  encola las tarjetas no completas usando `Tarjeta._previews_completas` (estado interno, no
+  persistido); `_siguiente_lote_previews` sin filtro `os.path.isdir` (reutilizar cacheadas usa solo
+  la caché de miniaturas); `_aplicar_previews` valida la carpeta del video del resultado contra la
+  tarjeta actual (ignora resultados tardíos de otra carpeta); `Tarjeta.actualizar_previews` marca
+  `_previews_completas` y, si la tarjeta está expandida, llama `_renderizar_marcadores()`;
+  `_reconstruir_previews_exploracion` con fallback a las previews cacheadas en disco (integración
+  necesaria del diferido; no toca B4.3/scrub/densidad/marcadores).
+- `prueba_carga_visual_b462.py` — **nueva**: 9 pruebas (no aplicación eager; placeholders;
+  recuperación cacheada progresiva con 0 FFmpeg; generación de faltantes; lotes conservados;
+  cambio A→B ignora resultados tardíos; reemplazo sin carga de golpe; cargar más con
+  correspondencia; filtro sin romper aplicación).
+- Suites adaptadas al comportamiento progresivo: `prueba_tamano_miniaturas.py`,
+  `prueba_marcadores_b42.py`, `prueba_exploracion_b41.py` (esperan a que las previews se apliquen
+  antes de interactuar con la tarjeta/exploración).
+
+**Medición (PC de desarrollo, 100 tarjetas / 300 previews cacheadas):** `_crear_tarjetas(100)`
+**0.69–0.85 s** (antes 1.4–4.4 s); tarjetas visibles ~0.72 s; primera preview ~1.0 s; **300
+previews completas ~2.1 s**; máximo bloqueo continuo **~0.7 s**; lotes ~20–30 ms; reemplazo
+~0.73 s. La interfaz queda utilizable antes de terminar las previews.
+
+**Pruebas superadas:** `prueba_carga_visual_b462.py` **9/9**. Regresiones en verde (ejecutadas en
+el cierre): `prueba_previews_progresivas.py` **16/16**, `prueba_previews_automaticas.py` **22/22**,
+`prueba_previews_multicarpeta.py` **5/5**, `prueba_recarga_catalogo.py` **20/20**,
+`prueba_pagina_siguiente.py` **20/20**, `prueba_tamano_miniaturas.py` **32/32**,
+`prueba_interfaz_asincrona.py` **29/29**, `prueba_escaneo_interfaz.py` **36/36**,
+`prueba_marcadores_b42.py` **17/17**, `prueba_exploracion_b41.py` **28/28**,
+`prueba_exploracion_b432.py` **20/20**, `prueba_exploracion_b433.py` **22/22**,
+`prueba_reutilizacion_metadata_b453.py` **20/20**, `prueba_optimizacion_ffprobe_b452.py` **14/14**,
+`prueba_reproduccion_marcadores_b44.py` **24/24**, `prueba_smoke.py` OK. `python -m py_compile`
+OK. `git diff --check` OK.
+
+---
+
+**Commit anterior — Mensaje:** Reutilizar metadata de videos sin cambios en reescaneos
 
 **Etapa:** B4.5 — Rendimiento de carga inicial, Etapa 3 (rama `beta4`):
 - `escanear_videos.py` — migración aditiva e idempotente **`videos.mtime_ns INTEGER NULL`**
@@ -731,14 +793,20 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
 
 ## Próxima etapa
 
-**B4.5 quedó completada en sus Etapas 1-3** (diagnóstico; eliminación de FFprobe redundante en
-miniaturas/previews; reutilización de metadata en reescaneos sin cambios) y **no se declara la
-Beta 4 completa todavía**. Pendiente técnico registrado sin corregir: las **previews normales
-existentes se consideran reutilizables por existencia del archivo** (sin validación equivalente
-por cambio del video). Siguientes líneas del ciclo (no iniciadas): la **selección A/B**, los
-**loops**, la **selección de fragmentos** y el **corte/unión**; la **detección de archivos
-movidos** con la **reasociación futura de marcadores huérfanos**; y las evoluciones de
-reproducción indicadas en `ROADMAP.md`. El **batch NO está implementado**.
+**B4.6 quedó completada en sus Etapas 1-2** (diagnóstico de la carga visual; carga diferida de
+previews cacheadas) y **no se declara la Beta 4 completa todavía**. Próximo candidato técnico
+registrado, **sin implementar**: **reducir el consumo de RAM asociado a previews cargadas**
+(~+690 MB por la retención de pixmaps originales); antes de cambiar esa política debe
+inspeccionarse por qué se conservan los originales y qué funciones dependen de ellos (cambio de
+tamaño, calidad de reescalado, exploración/marcadores). Otros pendientes visuales separados sin
+implementar: `_construir_exploracion` crea widgets en tarjetas colapsadas; `_reemplazar_tarjetas`
+reconstruye tarjetas idénticas; `miniatura_principal` hace un `os.listdir` por tarjeta.
+Pendiente técnico registrado sin corregir: las **previews normales existentes se consideran
+reutilizables por existencia del archivo** (sin validación equivalente por cambio del video).
+Siguientes líneas del ciclo (no iniciadas): la **selección A/B**, los **loops**, la **selección
+de fragmentos** y el **corte/unión**; la **detección de archivos movidos** con la **reasociación
+futura de marcadores huérfanos**; y las evoluciones de reproducción indicadas en `ROADMAP.md`.
+El **batch NO está implementado**.
 
 ## Documentos del proyecto
 

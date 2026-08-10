@@ -345,6 +345,13 @@ def _ventana_con_previews(nombres, duraciones, carpeta_min, cantidad=3):
     ventana.show()
     _esperar(lambda v=ventana: v._carga_completada and v.gestor.hilo is None)
     _esperar(lambda: ventana.contenedor.findChildren(Tarjeta))
+    _esperar(
+        lambda v=ventana: all(
+            getattr(t, "_previews_completas", False)
+            or len(escanear_mod.previews_existentes(nombre)) == 0
+            for nombre, t in v.tarjetas
+        )
+    )
     return temp, ventana
 
 

@@ -292,6 +292,12 @@ def main():
                         lambda: ventana._carga_completada
                         and ventana.gestor.hilo is None
                     )
+                    esperar(
+                        lambda: all(
+                            getattr(t, "_previews_completas", False)
+                            for _, t in ventana.tarjetas
+                        )
+                    )
                     verifica(
                         len(ventana.tarjetas) == 2,
                         "integración: 2 tarjetas cargadas",

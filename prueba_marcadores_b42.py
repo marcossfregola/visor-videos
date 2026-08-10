@@ -9,7 +9,7 @@ import threading
 import time
 
 from PySide6.QtCore import QEvent, QPointF, Qt, QThread
-from PySide6.QtGui import QColor, QImage, QMouseEvent
+from PySide6.QtGui import QColor, QImage, QMouseEvent, QPointingDevice
 from PySide6.QtWidgets import QApplication
 
 import escanear_videos as escanear_mod
@@ -144,6 +144,17 @@ def _abrir_ventana(ruta_db):
     _esperar(
         lambda v=ventana: v._carga_completada and v.gestor.hilo is None
     )
+    _esperar(
+        lambda v=ventana: all(
+            getattr(t, "_previews_completas", False)
+            or len(escanear_mod.previews_existentes(nombre)) == 0
+            or not (
+                isinstance(getattr(t, "_carpeta_video", None), str)
+                and os.path.isdir(t._carpeta_video)
+            )
+            for nombre, t in v.tarjetas
+        )
+    )
     return ventana
 
 
@@ -154,6 +165,7 @@ def _mouse_press(widget, x):
         Qt.LeftButton,
         Qt.LeftButton,
         Qt.NoModifier,
+        QPointingDevice.primaryPointingDevice(),
     )
     QApplication.sendEvent(widget, evento)
 
@@ -165,6 +177,7 @@ def _clic_derecho(widget, x=5):
         Qt.RightButton,
         Qt.RightButton,
         Qt.NoModifier,
+        QPointingDevice.primaryPointingDevice(),
     )
     QApplication.sendEvent(widget, evento)
 

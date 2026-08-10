@@ -17,10 +17,11 @@ arquitectónicas.
 > caché temporal versionada y reanudable**, **B4.3.2 — Cobertura rápida
 > asíncrona integrada con la UI**, **B4.3.2 — Etapa 2: Densidad secundaria
 > adaptativa**, **B4.3.3 — Ajustes de interacción y densidad manual**,
-> **B4.4 — Reproducción de marcadores en VLC** y **B4.5 — Rendimiento de
+> **B4.4 — Reproducción de marcadores en VLC**, **B4.5 — Rendimiento de
 > carga inicial (diagnóstico, eliminación de FFprobe redundante y
-> reutilización de metadata en reescaneos)** quedaron **completadas y
-> aprobadas** (ver la sección "Beta 4").
+> reutilización de metadata en reescaneos)** y **B4.6 — Rendimiento de
+> carga visual (diagnóstico y carga diferida de previews)** quedaron
+> **completadas y aprobadas** (ver la sección "Beta 4").
 
 ------------------------------------------------------------------------
 
@@ -675,10 +676,40 @@ desarrolla sobre la rama `beta4` (punto de partida: cierre de la Beta 3).
       residual aceptado (mismo ruta+tamaño+mtime_ns con contenido distinto); sin hash. Suites:
       `prueba_reutilizacion_metadata_b453.py` **20/20** y regresiones verdes. **B4.5 queda
       completada en sus Etapas 1-3; no se declara la Beta 4 completa todavía.**
-6. **Selección A/B, loops, fragmentos y edición.** **Posterior**, sin adelantar implementación.
+6. **B4.6 — Rendimiento de carga visual.** **Completada (Etapa 1: diagnóstico; Etapa 2: carga
+   diferida de previews cacheadas).** El objetivo es que la interfaz quede utilizable antes de
+   terminar de cargar las previews.
+   - **Etapa 1 — Diagnóstico de construcción/población de tarjetas.** **Completada.** Con 100
+     tarjetas/300 previews cacheadas se descompuso el costo de la carga visual: construcción de
+     widgets ~0.42 s (dominada por `_construir_exploracion`); `miniatura_principal` ~0.05 s (un
+     `os.listdir` por tarjeta, O(n×m)); **`_crear_tarjetas` cargaba y escalaba las 300 previews de
+     golpe (0.74 s caliente / ~3.5 s frío)**; bloqueo síncrono total 1.4–4.4 s; `_reemplazar_tarjetas`
+     re-decodificaba las mismas previews; RAM ~+690 MB por la retención de pixmaps originales. Sin
+     cambios de producción.
+   - **Etapa 2 — Carga diferida de previews cacheadas.** **Completada.** `_crear_tarjetas`/
+     `_agregar_tarjetas`/`_reemplazar_tarjetas` ya **no** cargan previews cacheadas: las tarjetas
+     parten con textos + miniatura principal + placeholders; las previews (existentes o faltantes)
+     se incorporan **progresivamente** mediante la tubería existente `_programar_previews` →
+     `_timer_previews` → `_encolar_previews` → `TareaPreviewsProgresivas` →
+     `generar_previews_faltantes` → `_aplicar_previews` → `actualizar_previews`. Con caché completa:
+     **0 FFmpeg**; con faltantes: generación FFmpeg normal conservada. `Tarjeta._previews_completas`
+     (estado interno, no persistido) decide si una tarjeta entra a la cola. Protección de resultados
+     tardíos en `_aplicar_previews` (carpeta del video del resultado vs tarjeta actual; cambio A→B
+     sin imágenes cruzadas ni crash). Ajuste de integración: `_reconstruir_previews_exploracion`
+     cae a las previews cacheadas en disco si las etiquetas aún no las tienen (consecuencia
+     necesaria del diferido; no modifica el motor B4.3 ni scrub ni densidad ni marcadores). Medición
+     (100 tarjetas/300 previews, PC de desarrollo): `_crear_tarjetas(100)` **0.69–0.85 s** (antes
+     1.4–4.4 s); tarjetas visibles ~0.72 s; primera preview ~1.0 s; **300 previews completas ~2.1 s**;
+     máximo bloqueo continuo **~0.7 s**; lotes ~20–30 ms; reemplazo ~0.73 s sin recargar previews de
+     golpe. **La interfaz es utilizable antes de terminar de cargar las previews.** Pendientes
+     separados, sin implementar: retención de pixmaps originales/RAM (~+690 MB), `_construir_exploracion`
+     en tarjetas colapsadas, reconciliación de `_reemplazar_tarjetas` y `miniatura_principal` con
+     `os.listdir`. Suites: `prueba_carga_visual_b462.py` **9/9** y regresiones verdes. **B4.6
+     completada en sus Etapas 1-2; no se declara la Beta 4 completa todavía.**
+7. **Selección A/B, loops, fragmentos y edición.** **Posterior**, sin adelantar implementación.
    Los mismos puntos podrán participar en **selección A/B**, **loops**, **selección de
    fragmentos** o **corte/unión** como otra función, conservando su significado de navegación.
-7. **Detección de archivos movidos / reasociación de marcadores huérfanos.** **Futura.**
+8. **Detección de archivos movidos / reasociación de marcadores huérfanos.** **Futura.**
    Detectar archivos movidos o renombrados y reasociar los marcadores que queden huérfanos
    (hoy los marcadores no se eliminan automáticamente si el registro del video desaparece, y
    no se intenta reasociar por nombre o ruta).

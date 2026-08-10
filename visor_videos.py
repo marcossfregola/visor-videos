@@ -658,6 +658,7 @@ class Tarjeta(QFrame):
         self._imagen_miniatura = None
         self._miniatura_original = None
         self._recuadro_sin_miniatura = None
+        self._previews_completas = False
 
         contenedor_imagenes = QHBoxLayout()
         contenedor_imagenes.setContentsMargins(0, 0, 0, 0)
@@ -778,6 +779,16 @@ class Tarjeta(QFrame):
                 actualizado = True
         if actualizado and self._expandida:
             self._refrescar_exploracion()
+            self._renderizar_marcadores()
+        if self._etiquetas_previews:
+            cantidad = escanear_videos.CANTIDAD_PREVIEWS
+            self._previews_completas = (
+                len(self._etiquetas_previews) >= cantidad
+                and all(
+                    not etiqueta.pixmap().isNull()
+                    for etiqueta in self._etiquetas_previews[:cantidad]
+                )
+            )
         return actualizado
 
     def _asegurar_slots_previews(self, cantidad):
@@ -1002,6 +1013,27 @@ class Tarjeta(QFrame):
                     ),
                 }
             )
+        if not disponibles:
+            for indice, ruta in enumerate(previews_de(self._nombre)):
+                pixmap = QPixmap(ruta)
+                if pixmap.isNull():
+                    continue
+                instante = None
+                if _duracion_valida(duracion):
+                    instante = calcular_tiempo_preview(duracion, indice + 1)
+                original = _pixmap_acotado(pixmap)
+                disponibles.append(
+                    {
+                        "instante": instante,
+                        "pixmap": original,
+                        "pixmap_escalado": original.scaled(
+                            ancho,
+                            alto,
+                            Qt.KeepAspectRatio,
+                            Qt.SmoothTransformation,
+                        ),
+                    }
+                )
         self._previews_exploracion = disponibles
 
     def _actualizar_tiempo_exploracion(self, instante):
@@ -3059,21 +3091,17 @@ class VisorVideos(QMainWindow):
         self._al_previews_finalizada()
 
     def _encolar_previews(self, nombres):
-        con_previews = set()
-        carpetas = {}
-        for nombre, tarjeta in self.tarjetas:
-            existentes = previews_de(nombre) or []
-            if len(existentes) >= escanear_videos.CANTIDAD_PREVIEWS:
-                con_previews.add(nombre)
-            carpeta = getattr(tarjeta, "_carpeta_video", None)
-            if isinstance(carpeta, str) and carpeta:
-                carpetas[nombre] = carpeta
         pendientes = {item[0] for item in self._cola_previews}
         for nombre in nombres:
-            if nombre in con_previews or nombre in pendientes:
+            if nombre in pendientes:
                 continue
-            carpeta = carpetas.get(nombre)
-            if carpeta is None:
+            tarjeta = self._tarjeta_por_nombre(nombre)
+            if tarjeta is None:
+                continue
+            if getattr(tarjeta, "_previews_completas", False):
+                continue
+            carpeta = getattr(tarjeta, "_carpeta_video", None)
+            if not (isinstance(carpeta, str) and carpeta):
                 continue
             self._cola_previews.append((nombre, carpeta))
 
@@ -3090,7 +3118,7 @@ class VisorVideos(QMainWindow):
         restantes = []
         for item in self._cola_previews:
             nombre, carpeta = item
-            if not (isinstance(carpeta, str) and carpeta and os.path.isdir(carpeta)):
+            if not (isinstance(carpeta, str) and carpeta):
                 continue
             if carpeta_lote is None:
                 carpeta_lote = carpeta
@@ -3129,14 +3157,33 @@ class VisorVideos(QMainWindow):
         for item in resultado.get("resultados", []):
             nombre = item.get("nombre")
             rutas = item.get("previews")
-            if rutas:
-                self.actualizar_previews(nombre, rutas)
+            ruta_video = item.get("ruta")
+            if not rutas:
+                continue
+            tarjeta = self._tarjeta_por_nombre(nombre)
+            if tarjeta is None:
+                continue
+            carpeta_esperada = getattr(tarjeta, "_carpeta_video", None)
+            if (
+                isinstance(carpeta_esperada, str)
+                and carpeta_esperada
+                and isinstance(ruta_video, str)
+                and ruta_video
+                and escanear_videos._normalizar_ruta_absoluta(
+                    os.path.dirname(ruta_video)
+                )
+                != escanear_videos._normalizar_ruta_absoluta(
+                    carpeta_esperada
+                )
+            ):
+                continue
+            tarjeta.actualizar_previews(rutas)
 
     def actualizar_previews(self, nombre, rutas):
-        for candidato, tarjeta in self.tarjetas:
-            if candidato == nombre:
-                return tarjeta.actualizar_previews(rutas)
-        return False
+        tarjeta = self._tarjeta_por_nombre(nombre)
+        if tarjeta is None:
+            return False
+        return tarjeta.actualizar_previews(rutas)
 
     def _agregar_tarjetas(self, filas):
         inicio = len(self.tarjetas)
@@ -3165,9 +3212,6 @@ class VisorVideos(QMainWindow):
             self.tarjetas.append((fila[0], tarjeta))
             self.visibles.append(fila[0])
             self.cuadricula.addWidget(tarjeta, posicion, 0)
-            rutas_existentes = previews_de(fila[0])
-            if rutas_existentes:
-                tarjeta.actualizar_previews(rutas_existentes)
         self.filtrar(self.busqueda.text())
 
     def _al_resultado_guardado(self, resultado):
@@ -3240,9 +3284,6 @@ class VisorVideos(QMainWindow):
             self.tarjetas.append((fila[0], tarjeta))
             self.visibles.append(fila[0])
             self.cuadricula.addWidget(tarjeta, indice, 0)
-            rutas_existentes = previews_de(fila[0])
-            if rutas_existentes:
-                tarjeta.actualizar_previews(rutas_existentes)
         self.filtrar(self.busqueda.text())
 
     def _abrir_video(self, nombre):
