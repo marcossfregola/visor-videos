@@ -275,6 +275,7 @@ def conectar_bd(ruta_db=None):
     """)
     _asegurar_columnas_videos(conn)
     _asegurar_tabla_marcadores(conn)
+    _asegurar_tabla_segmentos(conn)
     return conn
 
 
@@ -296,6 +297,28 @@ def _asegurar_tabla_marcadores(conn):
     conn.execute("""
         CREATE INDEX IF NOT EXISTS idx_marcadores_video_video_id_tiempo
         ON marcadores_video(video_id, tiempo)
+    """)
+
+def _asegurar_tabla_segmentos(conn):
+    """Migración aditiva e idempotente de la tabla de segmentos (B5.1).
+
+    Crea `segmentos_video` (y su índice) si no existen. No activa
+    `PRAGMA foreign_keys` ni usa `ON DELETE CASCADE`: los segmentos son
+    datos del usuario y su coherencia con `videos.id` se gestiona en la
+    capa de servicio, no por borrado automático (misma política de
+    orfandad tolerada que los marcadores).
+    """
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS segmentos_video (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            video_id INTEGER NOT NULL,
+            inicio REAL NOT NULL,
+            fin REAL NOT NULL
+        )
+    """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_segmentos_video_video_id_inicio
+        ON segmentos_video(video_id, inicio)
     """)
 
 def obtener_datos_ffprobe(ruta):
@@ -1133,6 +1156,156 @@ def eliminar_marcador(marcador_id, ruta_db=None):
         cursor = conn.execute(
             "DELETE FROM marcadores_video WHERE id = ?",
             (marcador_id,),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def _conectar_repositorio_segmentos(ruta_db):
+    if ruta_db is None:
+        ruta_db = ruta_biblioteca()
+    if not os.path.isfile(ruta_db):
+        raise FileNotFoundError(f"Base de datos no encontrada: {ruta_db}")
+    conn = sqlite3.connect(ruta_db)
+    _asegurar_tabla_segmentos(conn)
+    return conn
+
+
+def _validar_inicio_segmento(inicio):
+    if isinstance(inicio, bool) or not isinstance(inicio, (int, float)):
+        raise TypeError("inicio debe ser numérico")
+    if not math.isfinite(inicio):
+        raise ValueError("inicio debe ser un número finito")
+    if inicio < 0:
+        raise ValueError("inicio no puede ser negativo")
+
+
+def _validar_fin_segmento(inicio, fin):
+    if isinstance(fin, bool) or not isinstance(fin, (int, float)):
+        raise TypeError("fin debe ser numérico")
+    if not math.isfinite(fin):
+        raise ValueError("fin debe ser un número finito")
+    if not (fin > inicio):
+        raise ValueError("fin debe ser mayor que inicio")
+
+
+def _validar_segmento_id(segmento_id):
+    if isinstance(segmento_id, bool) or not isinstance(segmento_id, int):
+        raise TypeError("segmento_id debe ser un entero")
+    if segmento_id <= 0:
+        raise ValueError("segmento_id debe ser un entero positivo")
+
+
+def listar_segmentos(video_id, ruta_db=None):
+    """Segmentos persistidos de un video, ordenados por inicio, fin e id.
+
+    Devuelve una lista de tuplas `(id, inicio, fin)`. El `video_id` no se
+    incluye porque es redundante en una consulta por video (a diferencia de
+    `listar_segmentos_de`, donde sí se devuelve para identificar la
+    agrupación).
+    """
+    _validar_video_id(video_id)
+    conn = _conectar_repositorio_segmentos(ruta_db)
+    try:
+        return conn.execute(
+            """
+            SELECT id, inicio, fin
+            FROM segmentos_video
+            WHERE video_id = ?
+            ORDER BY inicio, fin, id
+            """,
+            (video_id,),
+        ).fetchall()
+    finally:
+        conn.close()
+
+
+def listar_segmentos_de(video_ids, ruta_db=None):
+    """Segmentos persistidos de varios videos (preparado para B5.8).
+
+    Devuelve una lista de tuplas `(id, video_id, inicio, fin)` agrupada por
+    `video_id` en el orden recibido (deduplicado) y, dentro de cada video,
+    ordenada por inicio, fin e id ascendente. Usa **una sola consulta SQL**
+    (`WHERE video_id IN (...)`), sin consultas por video.
+    """
+    if isinstance(video_ids, (str, bytes, bytearray)):
+        raise TypeError("video_ids debe ser una colección de enteros")
+    try:
+        lista = list(video_ids)
+    except TypeError:
+        raise TypeError("video_ids debe ser una colección de enteros")
+    for video_id in lista:
+        _validar_video_id(video_id)
+    if not lista:
+        return []
+    ids_unicos = list(dict.fromkeys(lista))
+    conn = _conectar_repositorio_segmentos(ruta_db)
+    try:
+        por_video = {}
+        for seg_id, video_de_fila, inicio, fin in conn.execute(
+            f"""
+            SELECT id, video_id, inicio, fin
+            FROM segmentos_video
+            WHERE video_id IN ({",".join("?" for _ in ids_unicos)})
+            ORDER BY video_id, inicio, fin, id
+            """,
+            ids_unicos,
+        ).fetchall():
+            por_video.setdefault(video_de_fila, []).append(
+                (seg_id, inicio, fin)
+            )
+        resultado = []
+        for video_id in ids_unicos:
+            resultado.extend(
+                (seg_id, video_id, inicio, fin)
+                for seg_id, inicio, fin in por_video.get(video_id, [])
+            )
+        return resultado
+    finally:
+        conn.close()
+
+
+def guardar_segmento(video_id, inicio, fin, ruta_db=None):
+    """Persiste un segmento y devuelve `(id, inicio, fin)` persistidos.
+
+    No deduplica: dos segmentos idénticos pueden existir (no hay regla que
+    lo prohíba).
+    """
+    _validar_video_id(video_id)
+    _validar_inicio_segmento(inicio)
+    _validar_fin_segmento(inicio, fin)
+    conn = _conectar_repositorio_segmentos(ruta_db)
+    try:
+        cursor = conn.execute(
+            "INSERT INTO segmentos_video (video_id, inicio, fin) "
+            "VALUES (?, ?, ?)",
+            (video_id, inicio, fin),
+        )
+        conn.commit()
+        return (cursor.lastrowid, float(inicio), float(fin))
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def eliminar_segmento(segmento_id, ruta_db=None):
+    """Elimina un segmento por su `id` de la base.
+
+    Devuelve `True` si se eliminó una fila; `False` si no existía.
+    """
+    _validar_segmento_id(segmento_id)
+    conn = _conectar_repositorio_segmentos(ruta_db)
+    try:
+        cursor = conn.execute(
+            "DELETE FROM segmentos_video WHERE id = ?",
+            (segmento_id,),
         )
         conn.commit()
         return cursor.rowcount > 0
