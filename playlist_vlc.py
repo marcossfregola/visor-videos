@@ -1,7 +1,9 @@
 import glob
+import math
 import os
 import shutil
 import subprocess
+import tempfile
 
 
 def localizar_vlc():
@@ -101,3 +103,57 @@ def generar_m3u(entradas, ruta_destino):
 def abrir_playlist_en_vlc(ruta_m3u, ruta_vlc):
     """Lanza VLC una única vez con la playlist completa."""
     return subprocess.Popen([ruta_vlc, ruta_m3u])
+
+
+def _validar_instante(instante):
+    """Valida un instante de reproducción (B5.3).
+
+    Debe ser un número real finito mayor o igual que cero. Rechaza bool,
+    texto, `None`, NaN, infinito y valores negativos. La franja ya acota el
+    instante a `[0, duración]`, por lo que aquí solo se defiende la API
+    pública del servicio.
+    """
+    if isinstance(instante, bool) or not isinstance(instante, (int, float)):
+        raise TypeError("instante debe ser numérico")
+    if not math.isfinite(instante):
+        raise ValueError("instante debe ser un número finito")
+    if instante < 0:
+        raise ValueError("instante no puede ser negativo")
+
+
+def reproducir_desde_instante(ruta_video, nombre, instante, ruta_vlc):
+    """Abre VLC reproduciendo un video desde un instante exacto (B5.3).
+
+    Genera una playlist temporal de una sola entrada con
+    `#EXTVLCOPT:start-time=<instante>` (reutilizando la infraestructura de
+    `generar_m3u`) y lanza VLC una única vez con
+    `abrir_playlist_en_vlc`. No usa `stop-time` ni `--loop` todavía.
+
+    Devuelve el proceso `Popen` de VLC. En producción la instancia queda
+    bajo control del usuario (no se cierra automáticamente); los harness de
+    prueba deben cerrar ese PID propio.
+
+    Lanza:
+      - `TypeError` si `instante` no es numérico (o es bool).
+      - `ValueError` si `instante` es NaN, infinito o negativo.
+      - `FileNotFoundError` si `ruta_video` no existe.
+    """
+    _validar_instante(instante)
+    if not isinstance(ruta_video, str) or not ruta_video:
+        raise TypeError("ruta_video debe ser un texto no vacío")
+    if not os.path.isfile(ruta_video):
+        raise FileNotFoundError(f"El archivo no existe: {ruta_video}")
+    archivo_temporal = tempfile.NamedTemporaryFile(
+        mode="w",
+        suffix=".m3u",
+        prefix="visor_marcadores_",
+        delete=False,
+        encoding="utf-8",
+    )
+    ruta_m3u = archivo_temporal.name
+    archivo_temporal.close()
+    generar_m3u(
+        [{"ruta": ruta_video, "nombre": nombre, "tiempo": instante}],
+        ruta_m3u,
+    )
+    return abrir_playlist_en_vlc(ruta_m3u, ruta_vlc)

@@ -81,6 +81,7 @@ from playlist_vlc import (
     abrir_playlist_en_vlc,
     generar_m3u,
     localizar_vlc,
+    reproducir_desde_instante,
 )
 from tareas_videos import (
     TareaEscaneo,
@@ -600,6 +601,7 @@ class Tarjeta(QFrame):
     marcador_eliminado = Signal(object)
     marcadores_solicitados = Signal()
     segmentos_solicitados = Signal()
+    reproduccion_temporal_solicitada = Signal(float)
     densidad_cambiada = Signal(str, object)
 
     def __init__(self, fila, parent=None):
@@ -858,6 +860,7 @@ class Tarjeta(QFrame):
         self._marcadores = []
         self._marcadores_cargados = False
         self._marcadores_eliminados_carga = set()
+        self._marcador_creado_prensa = None
         self._segmentos = []
         self._segmentos_cargados = False
         self._franja = FranjaExploracion()
@@ -865,6 +868,9 @@ class Tarjeta(QFrame):
         self._franja.marcador_solicitado.connect(self._al_marcador_solicitado)
         self._franja.marcador_eliminar_solicitado.connect(
             self._al_marcador_eliminar_solicitado
+        )
+        self._franja.reproduccion_solicitada.connect(
+            self._al_reproduccion_solicitada
         )
         self._franja.installEventFilter(self)
         ancho, alto = dimensiones_miniatura()
@@ -1184,6 +1190,7 @@ class Tarjeta(QFrame):
         return 0.0
 
     def _al_marcador_solicitado(self, instante):
+        self._marcador_creado_prensa = None
         tiempos = [m["tiempo"] for m in self._marcadores]
         tolerancia = self._tolerancia_marcadores()
         _, agregado = agregar_marcador_ordenado(
@@ -1209,7 +1216,22 @@ class Tarjeta(QFrame):
             [m["tiempo"] for m in self._marcadores]
         )
         self._renderizar_marcadores()
+        self._marcador_creado_prensa = marcador
         self.marcador_creado.emit(marcador)
+
+    def _al_reproduccion_solicitada(self, instante):
+        """Doble clic sobre la franja: reproduce el video desde el instante.
+
+        La primera pulsación del doble clic crea un marcador (comportamiento
+        de clic simple); aquí se descarta ese marcador recién creado para que
+        el doble clic no deje marcadores, y se notifica la reproducción
+        temporal hacia el VisorVideos.
+        """
+        marcador = self._marcador_creado_prensa
+        self._marcador_creado_prensa = None
+        if marcador is not None:
+            self._al_marcador_eliminar_solicitado(marcador["tiempo"])
+        self.reproduccion_temporal_solicitada.emit(float(instante))
 
     def _posicionar_miniatura_marcada(self, marcador):
         etiqueta = marcador.get("etiqueta")
@@ -3303,6 +3325,11 @@ class VisorVideos(QMainWindow):
             tarjeta.segmentos_solicitados.connect(
                 lambda t=tarjeta: self._solicitar_carga_segmentos(t)
             )
+            tarjeta.reproduccion_temporal_solicitada.connect(
+                lambda instante, t=tarjeta: self._al_reproduccion_temporal_solicitada(
+                    t, instante
+                )
+            )
             tarjeta.densidad_cambiada.connect(self._al_densidad_cambiada)
             tarjeta.mostrar_check(self._modo_seleccion)
             self.tarjetas.append((fila[0], tarjeta))
@@ -3378,6 +3405,11 @@ class VisorVideos(QMainWindow):
             tarjeta.segmentos_solicitados.connect(
                 lambda t=tarjeta: self._solicitar_carga_segmentos(t)
             )
+            tarjeta.reproduccion_temporal_solicitada.connect(
+                lambda instante, t=tarjeta: self._al_reproduccion_temporal_solicitada(
+                    t, instante
+                )
+            )
             tarjeta.densidad_cambiada.connect(self._al_densidad_cambiada)
             tarjeta.mostrar_check(self._modo_seleccion)
             self.tarjetas.append((fila[0], tarjeta))
@@ -3391,6 +3423,34 @@ class VisorVideos(QMainWindow):
             abrir_video_con_aplicacion_predeterminada(nombre, carpeta)
         except (ValueError, FileNotFoundError, OSError):
             self.mensaje_carpeta.setText(MENSAJE_ERROR_ABRIR)
+            return
+        self.mensaje_carpeta.clear()
+
+    def _al_reproduccion_temporal_solicitada(self, tarjeta, instante):
+        """Doble clic sobre la franja temporal: abre VLC desde el instante.
+
+        La UI no construye playlists, no ejecuta subprocess ni accede al
+        filesystem: resuelve la ruta con el servicio de rutas y delega la
+        reproducción al servicio de playlists VLC.
+        """
+        ruta = self._ruta_video_de(tarjeta)
+        if ruta is None:
+            self.mensaje_carpeta.setText(
+                "El video ya no está disponible para reproducirse."
+            )
+            return
+        ruta_vlc = localizar_vlc()
+        if ruta_vlc is None:
+            caja = QMessageBox(self)
+            caja.setIcon(QMessageBox.Warning)
+            caja.setWindowTitle("Reproducir desde el instante")
+            caja.setText("VLC no está instalado o no pudo encontrarse.")
+            caja.exec()
+            return
+        try:
+            reproducir_desde_instante(ruta, tarjeta.nombre, instante, ruta_vlc)
+        except (TypeError, ValueError, FileNotFoundError, OSError) as exc:
+            self.mensaje_carpeta.setText(f"No se pudo reproducir: {exc}")
             return
         self.mensaje_carpeta.clear()
 

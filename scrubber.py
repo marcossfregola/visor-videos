@@ -82,6 +82,7 @@ class FranjaExploracion(QWidget):
     instante_seleccionado = Signal(float)
     marcador_solicitado = Signal(float)
     marcador_eliminar_solicitado = Signal(float)
+    reproduccion_solicitada = Signal(float)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -171,6 +172,10 @@ class FranjaExploracion(QWidget):
         super().mouseMoveEvent(event)
 
     def mouseDoubleClickEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            instante = self._instante_en(event.position().x())
+            if instante is not None:
+                self.reproduccion_solicitada.emit(instante)
         event.accept()
 
     def paintEvent(self, event):
