@@ -96,6 +96,29 @@ Decisión de producto (cerrada en la validación de la B4.1):
 
 ---
 
+## Segmentos A–B y secuencias de reproducción
+
+Decisiones estratégicas de producto (cerradas en la planificación **B5.0** de la Beta 5):
+
+- **Marcador y segmento son entidades distintas.** El marcador significa "un instante
+  interesante del video" y el segmento "un intervalo interesante del video". No se convierten
+  los marcadores en puntos de inicio/fin especiales: aunque compartan un mismo instante
+  temporal, ambos objetos son **independientes**.
+- Los **segmentos se definen mediante instantes/previews**: se construyen sobre la exploración
+  temporal (previews y fotogramas como superficie de interacción), no sobre una línea de tiempo
+  tradicional.
+- **Una lista de segmentos puede convertirse en una secuencia de reproducción**: reproducir
+  A→B, C→D, E→F automáticamente, sin intervención del usuario entre segmentos.
+- **VLC continúa siendo el reproductor externo preferente** para la reproducción avanzada
+  (inicio temporal, fin temporal, bucle A–B y secuencias de segmentos, mediante playlists
+  puras).
+- **El Visor sigue siendo principalmente un explorador visual**; la reproducción permanece
+  como función secundaria respecto de la exploración.
+- Cualquier **futura edición deberá seguir orientada a escenas/previews** y no evolucionar
+  hacia una línea de tiempo compleja tradicional.
+
+---
+
 ## Herramientas futuras
 
 - Recorte de videos utilizando previews como puntos de inicio y fin.

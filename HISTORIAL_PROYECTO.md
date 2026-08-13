@@ -5,7 +5,41 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
-## 101. Cierre formal de Beta 4
+## 102. Apertura y planificación de Beta 5 (B5.0)
+
+- **Fecha:** 2026-08-13
+- **Tipo:** etapa **exclusivamente documental y de preparación Git** (sin implementación
+  funcional; sin modificar archivos `.py`; sin instalador; sin merge a `main`; sin push).
+- **Origen:** rama `beta5` creada exactamente desde el cierre de la Beta 4,
+  `v4.0-beta` = `5ed40fa1ac4d257f29878a137b5a4240e36716ac`. No se modificó `beta4` ni `main`.
+- **Alcance inicial congelado (cuatro bloques, no necesariamente el alcance definitivo):**
+  - **A — Entrada temporal a VLC:** doble clic sobre una preview/instante temporal abre VLC
+    reproduciendo el video desde ese instante; se conserva el doble clic existente de la tarjeta.
+  - **B — Segmentos A–B:** nuevo concepto independiente (SEGMENTO = `video_id` + A + B, A < B),
+    con la decisión estratégica **MARCADOR ≠ SEGMENTO** (no se convierten marcadores en puntos
+    de inicio/fin).
+  - **C — Reproducción de segmento:** simple (A→B) y en bucle.
+  - **D — Secuencia automática de segmentos:** A→B, C→D, E→F sin intervención del usuario.
+- **Investigación VLC (B5.0, probado físicamente en VLC 3.0.23):** `start-time` y `stop-time`
+  funcionan por CLI y dentro de M3U, con decimales; el **bucle** se logra con playlist de una
+  entrada + `--loop`; la **secuencia** automática se logra con playlist de varias entradas del
+  mismo archivo. Pendiente: validación en notebook objetivo y frame-exactitud de límites.
+- **Modelo aprobado conceptualmente (dirección, NO implementado):** tabla independiente
+  `segmentos_video` (`id`, `video_id`, `inicio`, `fin`) con índice `(video_id, inicio)`,
+  orfandad igual que marcadores, sin CASCADE, sin hashes, migración aditiva e idempotente.
+- **Higiene de procesos VLC:** se detectó y **corrigió en infraestructura temporal** un residual
+  de una prueba `--loop` (proceso huérfano al terminar el script controlador); criterio
+  adoptado: limpieza por PID propio, cierre normal primero, `terminate`/`kill` como fallback,
+  prohibido matar globalmente `vlc.exe` y no cerrar instancias preexistentes del usuario. Los
+  scripts temporales de `%TEMP%` no se incorporan al repositorio.
+- **Plan de etapas:** **B5.1** (modelo SQLite y repositorio de segmentos), **B5.2** (tareas
+  asíncronas + carga lazy), **B5.3** (Bloque A), **B5.4** (Bloque B), **B5.5** (robustez/
+  persistencia/reconciliación), **B5.6** (Bloque C-1), **B5.7** (Bloque C-2), **B5.8** (Bloque D),
+  **B5.9** (auditoría integral y decisión de cerrar o ampliar la Beta 5).
+- **Sin implementación funcional:** ninguna de las etapas B5.x está implementada todavía.
+- **Próxima fase (no iniciada):** B5.1 — modelo SQLite y repositorio de segmentos.
+
+---
 
 - **Fecha:** 2026-08-10
 - **Decisión:** la **Beta 4 queda CERRADA y aprobada**. El cierre es **documental** (sin cambios de

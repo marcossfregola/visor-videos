@@ -1058,7 +1058,36 @@ completada en sus Etapas 1-2; no se declara la Beta 4 completa todavía.**
 `VisorVideos_Beta4_Setup.exe`, SHA-256 `730B4DAB1CD2F1F5CFDD184D2DC6FE80CF0481B8754080F0FF10CF991F89431F`),
 validada en la notebook (B4.11: validación manual amplia; B4.12: validación final corta) y con la
 suite integral posterior a las correcciones en **87 suites / 1570/1570 OK / 0 FAIL funcional**.
-**Próxima fase: pendiente de planificación.**
+**Beta 5 planificada (B5.0, rama `beta5`):** alcance inicial congelado con cuatro bloques (A:
+entrada temporal a VLC; B: segmentos A–B; C: reproducción de segmento simple y en bucle; D:
+secuencia automática de segmentos) y plan B5.1–B5.9; sin implementación funcional. Ver la
+sección "Modelo de segmentos (B5.0, dirección, NO implementado)" más abajo.
+
+**Decisión arquitectónica registrada en B5.0 — MARCADOR ≠ SEGMENTO (dirección, NO implementada):**
+el marcador ("instante interesante") y el segmento ("intervalo interesante", `video_id` + inicio
+`A` + fin `B`, con `A < B`) son **entidades independientes**; no se convierten marcadores en
+puntos de inicio/fin. Modelo previsto para B5.1 (sin CASCADE, misma política de orfandad que los
+marcadores, sin hashes, sin detección de renombrados, migración aditiva e idempotente):
+tabla independiente `segmentos_video (id INTEGER PRIMARY KEY AUTOINCREMENT, video_id INTEGER NOT
+NULL, inicio REAL NOT NULL, fin REAL NOT NULL)` e índice `idx_segmentos_video_video_id_inicio
+(video_id, inicio)`, con validaciones `video_id > 0`, `inicio >= 0`, `fin > inicio`. Se describe
+como **dirección aprobada conceptualmente**, no como esquema existente (no existe ninguna
+implementación todavía).
+
+**Evidencia técnica VLC de B5.0 (probada en VLC 3.0.23, video real de 12 s):** `start-time` y
+`stop-time` funcionan por CLI y dentro de M3U (`#EXTVLCOPT:start-time`/`#EXTVLCOPT:stop-time`), con
+valores decimales; el **bucle** se logra con una playlist de una entrada (`start-time` + `stop-time`)
+más `--loop` (no usa el A–B interactivo nativo); la **secuencia automática** se logra con una
+playlist de varias entradas del mismo archivo con `start-time` y `stop-time` (VLC salta solo al
+llegar a cada `stop-time`). Pendiente de validación en la notebook objetivo y de la precisión
+frame-exacta de los límites.
+
+**Criterio de higiene de procesos VLC para pruebas (B5.0):** cada VLC lanzado por una prueba debe
+conservar su **PID/handle** y la prueba debe cerrar **exclusivamente procesos propios** (prohibido
+matar globalmente `vlc.exe`); cleanup en `finally`, cierre normal primero y `terminate`/`kill` solo
+como fallback; no cerrar instancias VLC preexistentes del usuario. La investigación B5.0 detectó y
+corrigió un **residual** producido por una prueba `--loop` (proceso huérfano); los scripts
+temporales de `%TEMP%` no se incorporan al repositorio.
 
 **Observación arquitectónica (Etapa B3.1):** el instante que se muestra sobre
 cada preview se deriva de `(duración, índice)` con `calcular_tiempo_preview`,

@@ -30,8 +30,12 @@ arquitectónicas.
 > `198cdf533986b88c6e25dc0087722cf2b86e5f99`; instalador `VisorVideos_Beta4_Setup.exe`, SHA-256
 > `730B4DAB1CD2F1F5CFDD184D2DC6FE80CF0481B8754080F0FF10CF991F89431F`), validada en la notebook
 > objetivo (B4.11: validación manual amplia; B4.12: validación final corta). Suite integral
-> posterior a las correcciones: **87 suites / 1570/1570 OK / 0 FAIL funcional**. **Próxima fase:
-> pendiente de planificación.**
+> posterior a las correcciones: **87 suites / 1570/1570 OK / 0 FAIL funcional**. **Beta 5
+> planificada (B5.0):** cierre formal y documental de la planificación sobre la rama `beta5`
+> (punto de partida: cierre de la Beta 4, `v4.0-beta`); alcance inicial congelado con **cuatro
+> bloques** (A: entrada temporal a VLC; B: segmentos A–B con **marcador ≠ segmento**; C:
+> reproducción de segmento simple y en bucle; D: secuencia automática de segmentos) y plan de
+> etapas **B5.1–B5.9** (ver la sección "Beta 5"). Sin implementación funcional todavía.
 
 ------------------------------------------------------------------------
 
@@ -723,3 +727,137 @@ desarrolla sobre la rama `beta4` (punto de partida: cierre de la Beta 3).
    Detectar archivos movidos o renombrados y reasociar los marcadores que queden huérfanos
    (hoy los marcadores no se eliminan automáticamente si el registro del video desaparece, y
    no se intenta reasociar por nombre o ruta).
+
+---
+
+# Beta 5
+
+La Beta 5 se desarrolla sobre la rama `beta5` (punto de partida: cierre de la Beta 4,
+`v4.0-beta`). **B5.0 — Planificación y congelamiento del alcance inicial** quedó **cerrada
+formalmente** (2026-08-13): etapa exclusivamente documental, sin implementación funcional.
+
+## Alcance inicial
+
+Beta 5 comienza con **cuatro bloques iniciales**. Estos cuatro bloques **no constituyen
+necesariamente el alcance definitivo**: una vez completados se realizará una **auditoría de
+producto** y se decidirá: **A.** cerrar Beta 5; o **B.** incorporar nuevos bloques. No se declara
+desde ahora que estos bloques sean toda Beta 5.
+
+### BLOQUE A — Entrada temporal a VLC
+
+Doble clic sobre una preview/instante temporal → **abrir VLC** y reproducir el video **desde ese
+instante exacto**. Debe **conservarse el doble clic existente** de la tarjeta/video (apertura con
+la aplicación predeterminada).
+
+### BLOQUE B — Segmentos A–B
+
+Nuevo concepto independiente: **SEGMENTO** = `video_id` + inicio **A** + fin **B**, con **A < B**.
+Decisión estratégica obligatoria: **MARCADOR ≠ SEGMENTO** — el marcador significa *"un instante
+interesante"* y el segmento *"un intervalo interesante"*; **no** se convierten los marcadores en
+puntos de inicio/fin especiales. Ambos conceptos pueden compartir un mismo instante temporal pero
+siguen siendo **objetos independientes**. La arquitectura deberá permitir agregar en el futuro
+datos adicionales al segmento (nombre, orden, activación, categoría) **sin implementarlos ahora**.
+
+### BLOQUE C — Reproducción de segmento
+
+Reproducir A→B **una sola vez** y reproducir A→B **en bucle**. La investigación B5.0 demostró
+que VLC **3.0.23** admite `start-time`, `stop-time`, valores decimales y playlist de una entrada;
+el bucle **no** usa el A–B interactivo nativo de VLC, sino conceptualmente
+`start-time + stop-time + --loop` sobre una playlist de una entrada (sujeto a validación durante
+la implementación real).
+
+### BLOQUE D — Secuencia automática de segmentos
+
+Reproducir listas como **A→B, C→D, E→F** automáticamente: VLC reproduce A hasta B, salta a C,
+reproduce C hasta D, salta a E, reproduce E hasta F y termina, **sin que el usuario pulse
+"Siguiente"**. B5.0 demostró físicamente (VLC 3.0.23) que esto es posible con una **playlist de
+varias entradas del mismo archivo** con `start-time` y `stop-time`. Es conceptualmente distinto de
+la reproducción de marcadores de Beta 4 (que exige avance manual).
+
+## Evidencia técnica VLC de B5.0 (probado vs. hipótesis)
+
+**Probado físicamente** (VLC 3.0.23, video real de 12 s, PC de desarrollo):
+
+- **Inicio**: `start-time` funciona por CLI y dentro de M3U (`#EXTVLCOPT:start-time`; ya usado en
+  producción desde B4.4).
+- **Fin**: `stop-time` funciona por CLI, dentro de M3U (`#EXTVLCOPT:stop-time`) y con tiempos
+  decimales (p. ej. `1.5` → `3.25`).
+- **Bucle**: playlist de una entrada con `start-time=A` + `stop-time=B` más `--loop` reproduce
+  repetidamente A→B (confirmado mediante interfaz RC: ciclos `5→7` repetidos).
+- **Secuencia**: playlist con tres entradas del mismo video (1→3, 5→7, 9→11) reprodujo
+  automáticamente los tres segmentos y terminó sin intervención (~6.5 s ≈ 6 s de contenido).
+
+**Pendiente de validación durante la implementación**: notebook objetivo (versión de VLC y
+drivers distintos); precisión frame-exacta de los límites A/B (salto por keyframes); `stop-time`
+sin `start-time` (segmento desde 0); `#EXTVLCOPT:loop` por entrada (el bucle se logró con `--loop`
+en línea de comandos).
+
+## Higiene de procesos VLC (criterio técnico para pruebas)
+
+- Cada VLC lanzado por una prueba debe **conservar su PID/handle** (`subprocess.Popen` /
+  `Start-Process -PassThru`).
+- La prueba debe cerrar **exclusivamente procesos propios**; **prohibido** matar globalmente
+  `vlc.exe` (`taskkill /IM vlc.exe /F`).
+- Cleanup mediante `finally`; **cierre normal primero**, `terminate`/`kill` solo como fallback;
+  verificar que el proceso realmente terminó.
+- **No cerrar una instancia VLC preexistente del usuario.**
+- La investigación B5.0 detectó y corrigió un **residual** provocado por una prueba `--loop`
+  (proceso huérfano al terminar el script controlador). Los scripts temporales de `%TEMP%`
+  **no se incorporan al repositorio**.
+
+## Modelo de segmentos (dirección aprobada para B5.1, NO implementada)
+
+Tabla independiente prevista: `segmentos_video`, campos mínimos `id`, `video_id`, `inicio`, `fin`;
+índice recomendado `(video_id, inicio)`; reglas `video_id > 0`, `inicio >= 0`, `fin > inicio`;
+relación conceptual mediante `video_id`; **misma política de orfandad que los marcadores** (sin
+CASCADE); sin hashes; sin detección avanzada de renombrados; **migración aditiva e idempotente**.
+Se registra como **dirección**, no como implementación existente.
+
+## UX conceptual aprobada
+
+- Creación de segmentos sobre la **exploración temporal existente** (previews/fotogramas como
+  superficie de interacción); **sin timeline tradicional**.
+- Banda visual A–B; **carga lazy por video**; **sin widgets pesados por cada segmento**.
+- La interacción exacta de creación A/B podrá refinarse en B5.4 si las pruebas de usabilidad lo
+  justifican; no se congelan detalles visuales innecesarios todavía.
+
+## Rendimiento
+
+- **NO** cargar segmentos de todos los videos al iniciar; **carga lazy al expandir la tarjeta**
+  (mismo patrón que los marcadores).
+- Dibujar las bandas en la **franja** en lugar de crear widgets por segmento.
+- **Preservar la fluidez lograda en Beta 4**; sin dependencia de GPU.
+
+## Plan de etapas B5.x
+
+| Etapa | Objetivo |
+| --- | --- |
+| **B5.1** | Modelo SQLite y repositorio de segmentos (`segmentos_video`). |
+| **B5.2** | Tareas asíncronas + carga lazy de segmentos. |
+| **B5.3** | **Bloque A:** entrada temporal directa a VLC desde preview/franja. |
+| **B5.4** | **Bloque B:** creación, representación visual (banda), persistencia y eliminación de segmentos. |
+| **B5.5** | Robustez/persistencia/reconciliación de segmentos. |
+| **B5.6** | **Bloque C-1:** reproducción simple A→B. |
+| **B5.7** | **Bloque C-2:** bucle A→B. |
+| **B5.8** | **Bloque D:** secuencia automática de segmentos. |
+| **B5.9** | Auditoría integral de los cuatro bloques y decisión (cerrar Beta 5 / ampliar Beta 5). |
+
+Ninguna de estas etapas está implementada todavía.
+
+## Funciones fuera del alcance inicial
+
+Excluidas por ahora: nombres de segmentos; etiquetas; puntuaciones; reordenamiento manual;
+activar/desactivar segmentos; playlists persistentes de segmentos; exportación; recorte físico;
+unión; creación de videos nuevos; línea de tiempo; IA. Pueden mantenerse como **evolución futura**.
+
+## Riesgos conocidos
+
+1. `stop-time` confirmado en VLC **3.0.23**; validar en la **notebook objetivo**.
+2. Los límites A/B pueden **no ser frame-exactos** (búsqueda por keyframes).
+3. `--loop` repite la **playlist completa**; para un segmento se usará una playlist de **una
+   entrada**.
+4. Configuraciones de **instancia única** de VLC a validar en integración.
+5. Procesos VLC de pruebas: limpiar **por PID propio** (ver "Higiene de procesos VLC").
+6. **No** cargar segmentos globalmente.
+7. Orfandad tolerada igual que los marcadores.
+8. Renombrado externo sigue **fuera de alcance**.

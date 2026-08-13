@@ -16,8 +16,9 @@ corta) y con la suite integral posterior a las correcciones en **87 suites /
 finalizada y congelada en su momento con su instalador
 (`VisorVideos_Beta3_Setup.exe`); la **Beta 2** permanece como la última versión
 estable publicada. El ciclo Beta 4 se desarrolló sobre la **rama `beta4`**
-(punto de partida: cierre de la Beta 3, commit `4408d542`). **Próxima fase:
-pendiente de planificación.** La primera etapa, **B4.1 — Exploración
+(punto de partida: cierre de la Beta 3, commit `4408d542`). **Beta 5 planificada
+(B5.0):** alcance inicial congelado, sin implementación funcional (ver "Próxima fase").
+La primera etapa, **B4.1 — Exploración
 temporal interactiva y marcadores visuales**, quedó **aprobada e incorporada**:
 cada tarjeta puede expandirse en una **superficie temporal** que representa la
 duración completa del video (0–100 %), con marcador móvil que acompaña al
@@ -872,8 +873,18 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
 
 ## Próxima fase
 
-**La Beta 4 quedó CERRADA y aprobada** (cierre formal 2026-08-10). **Próxima fase: pendiente de
-planificación** (no se inicia automáticamente una Beta 5).
+**Beta 5 — planificación cerrada (B5.0, rama `beta5`, 2026-08-13).** La **Beta 4 quedó CERRADA y
+aprobada** (cierre formal 2026-08-10) y se inició la **planificación y congelamiento del alcance
+inicial de la Beta 5** (etapa **B5.0**, exclusivamente documental): rama `beta5` creada desde el
+cierre de la Beta 4 (`v4.0-beta`, `5ed40fa1ac4d257f29878a137b5a4240e36716ac`). El alcance inicial
+queda congelado con **cuatro bloques** — **A** (entrada temporal a VLC desde preview/franja),
+**B** (segmentos A–B, con la decisión **marcador ≠ segmento**), **C** (reproducción de segmento
+simple y en bucle) y **D** (secuencia automática de segmentos) — y un plan de etapas
+**B5.1–B5.9** (ver `ROADMAP.md`, sección "Beta 5"). La investigación técnica validó en VLC 3.0.23
+`start-time`, `stop-time` (CLI y M3U, con decimales), bucle `start-time + stop-time + --loop` y la
+secuencia automática por playlist. **Sin implementación funcional todavía**; estos cuatro bloques
+no constituyen necesariamente el alcance definitivo (tras completarlos se auditará y se decidirá
+cerrar o ampliar la Beta 5).
 
 Los pendientes técnicos conocidos quedan registrados como **deuda no bloqueante** de Beta 4 (no
 como pendientes de la fase): **RAM/retención de pixmaps originales** (~+690 MB por previews
@@ -885,9 +896,10 @@ del portapapeles bajo tooling; **riesgo obligatorio para una futura distribució
 desinstalador actual (`[UninstallDelete]`) puede eliminar datos de usuario (`biblioteca.db`,
 `configuracion.json`, `miniaturas/`, marcadores y cachés) — no bloquea el cierre técnico de Beta 4,
 pero debe resolverse antes de una release destinada a conservar datos reales. Líneas futuras no
-iniciadas (fuera de Beta 4): **selección A/B**, **loops**, **selección de fragmentos**,
-**corte/unión**, **detección de archivos movidos/renombrados** con **reasociación de marcadores
-huérfanos**, evoluciones de reproducción indicadas en `ROADMAP.md` y **batch**.
+iniciadas (fuera de Beta 4 y del alcance inicial de Beta 5): **selección A/B**, **loops**,
+**selección de fragmentos**, **corte/unión**, **detección de archivos movidos/renombrados** con
+**reasociación de marcadores huérfanos**, evoluciones de reproducción indicadas en `ROADMAP.md` y
+**batch**.
 
 ## Documentos del proyecto
 
