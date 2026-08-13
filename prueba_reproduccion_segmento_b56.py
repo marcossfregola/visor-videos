@@ -290,7 +290,11 @@ def test_03():
             _crear_segmento_ui(ventana, tarjeta, tarjeta._franja.width() * 0.2, tarjeta._franja.width() * 0.8)
             menu = _abrir_menu_segmento(ventana, tarjeta, tarjeta._franja.width() * 0.5)
             textos = [a.text() for a in menu.actions()]
-            ok = "Reproducir segmento" in textos and "Eliminar segmento" in textos
+            ok = (
+                "Reproducir segmento" in textos
+                and "Reproducir segmento en bucle" in textos
+                and "Eliminar segmento" in textos
+            )
         finally:
             ventana.close()
             _limpiar(ventana)

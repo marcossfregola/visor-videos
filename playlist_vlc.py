@@ -105,9 +105,17 @@ def generar_m3u(entradas, ruta_destino):
     return ruta_destino
 
 
-def abrir_playlist_en_vlc(ruta_m3u, ruta_vlc):
-    """Lanza VLC una única vez con la playlist completa."""
-    return subprocess.Popen([ruta_vlc, ruta_m3u])
+def abrir_playlist_en_vlc(ruta_m3u, ruta_vlc, bucle=False):
+    """Lanza VLC con la playlist completa.
+
+    `bucle=True` agrega exclusivamente `--loop` (B5.7). Retrocompatible:
+    el comportamiento previo (sin `bucle`) es idéntico.
+    """
+    argumentos = [ruta_vlc]
+    if bucle:
+        argumentos.append("--loop")
+    argumentos.append(ruta_m3u)
+    return subprocess.Popen(argumentos)
 
 
 def _validar_instante(instante):
@@ -180,23 +188,12 @@ def _validar_segmento_reproduccion(inicio, fin):
         raise ValueError("fin debe ser mayor que inicio")
 
 
-def reproducir_segmento(ruta_video, nombre, inicio, fin, ruta_vlc=None):
-    """Abre VLC reproduciendo una sola vez el intervalo [inicio, fin] (B5.6).
+def _preparar_playlist_segmento(ruta_video, nombre, inicio, fin, ruta_vlc):
+    """Valida, genera la playlist A→B temporal y resuelve VLC (B5.6/B5.7).
 
-    Genera una playlist temporal de **una sola entrada** con
-    `start-time=inicio` y `stop-time=fin`; **VLC es quien detiene la
-    entrada en `fin`** (sin `--loop`, sin timers de Python ni vigilancia de
-    posición). Reutiliza `generar_m3u`, la localización y la apertura
-    existentes.
-
-    Si `ruta_vlc` es `None`, se resuelve con `localizar_vlc()`. Devuelve el
-    proceso `Popen` de VLC (en producción queda bajo control del usuario;
-    los harness de prueba deben cerrar ese PID propio).
-
-    Lanza:
-      - `TypeError`/`ValueError` si `inicio`/`fin` no son válidos.
-      - `FileNotFoundError` si `ruta_video` no existe.
-      - `RuntimeError` si `ruta_vlc` es `None` y VLC no se encuentra.
+    Devuelve `(ruta_m3u, ruta_vlc)`. La generación de la playlist de una
+    sola entrada con `start-time`/`stop-time` es compartida por la
+    reproducción simple y la reproducción en bucle.
     """
     _validar_segmento_reproduccion(inicio, fin)
     if not isinstance(ruta_video, str) or not ruta_video:
@@ -227,4 +224,48 @@ def reproducir_segmento(ruta_video, nombre, inicio, fin, ruta_vlc=None):
         ],
         ruta_m3u,
     )
-    return abrir_playlist_en_vlc(ruta_m3u, ruta_vlc)
+    return ruta_m3u, ruta_vlc
+
+
+def reproducir_segmento(ruta_video, nombre, inicio, fin, ruta_vlc=None):
+    """Abre VLC reproduciendo una sola vez el intervalo [inicio, fin] (B5.6).
+
+    Genera una playlist temporal de **una sola entrada** con
+    `start-time=inicio` y `stop-time=fin`; **VLC es quien detiene la
+    entrada en `fin`** (sin `--loop`, sin timers de Python ni vigilancia de
+    posición). Reutiliza `generar_m3u`, la localización y la apertura
+    existentes.
+
+    Si `ruta_vlc` es `None`, se resuelve con `localizar_vlc()`. Devuelve el
+    proceso `Popen` de VLC (en producción queda bajo control del usuario;
+    los harness de prueba deben cerrar ese PID propio).
+
+    Lanza:
+      - `TypeError`/`ValueError` si `inicio`/`fin` no son válidos.
+      - `FileNotFoundError` si `ruta_video` no existe.
+      - `RuntimeError` si `ruta_vlc` es `None` y VLC no se encuentra.
+    """
+    ruta_m3u, ruta_vlc_resuelta = _preparar_playlist_segmento(
+        ruta_video, nombre, inicio, fin, ruta_vlc
+    )
+    return abrir_playlist_en_vlc(ruta_m3u, ruta_vlc_resuelta)
+
+
+def reproducir_segmento_en_bucle(ruta_video, nombre, inicio, fin, ruta_vlc=None):
+    """Abre VLC reproduciendo [inicio, fin] en bucle continuo (B5.7).
+
+    Misma playlist de una entrada (`start-time` + `stop-time`) que
+    `reproducir_segmento`, lanzada con `--loop`: VLC reinicia la entrada en
+    `inicio` al llegar a `fin` y repite indefinidamente, sin que la
+    aplicación controle el reloj, consulte posición ni relance VLC.
+
+    Devuelve el proceso `Popen` de VLC (en producción queda abierto bajo
+    control del usuario, que decide cuándo detenerlo; los harness de prueba
+    deben cerrar ese PID propio).
+
+    Lanza las mismas excepciones que `reproducir_segmento`.
+    """
+    ruta_m3u, ruta_vlc_resuelta = _preparar_playlist_segmento(
+        ruta_video, nombre, inicio, fin, ruta_vlc
+    )
+    return abrir_playlist_en_vlc(ruta_m3u, ruta_vlc_resuelta, bucle=True)

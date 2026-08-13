@@ -83,6 +83,7 @@ from playlist_vlc import (
     localizar_vlc,
     reproducir_desde_instante,
     reproducir_segmento,
+    reproducir_segmento_en_bucle,
 )
 from tareas_videos import (
     TareaEscaneo,
@@ -605,6 +606,7 @@ class Tarjeta(QFrame):
     segmento_creado = Signal(object)
     segmento_eliminado = Signal(object)
     segmento_reproduccion_solicitada = Signal(object)
+    segmento_bucle_solicitado = Signal(object)
     reproduccion_temporal_solicitada = Signal(float)
     densidad_cambiada = Signal(str, object)
 
@@ -1323,9 +1325,13 @@ class Tarjeta(QFrame):
         """
         menu = QMenu(self)
         accion_reproducir = menu.addAction("Reproducir segmento")
+        accion_bucle = menu.addAction("Reproducir segmento en bucle")
         accion_eliminar = menu.addAction("Eliminar segmento")
         accion_reproducir.triggered.connect(
             lambda *args, s=segmento: self.segmento_reproduccion_solicitada.emit(s)
+        )
+        accion_bucle.triggered.connect(
+            lambda *args, s=segmento: self.segmento_bucle_solicitado.emit(s)
         )
         accion_eliminar.triggered.connect(
             lambda *args, s=segmento: self._al_segmento_eliminar_solicitado(s)
@@ -3618,6 +3624,11 @@ class VisorVideos(QMainWindow):
                     t, segmento
                 )
             )
+            tarjeta.segmento_bucle_solicitado.connect(
+                lambda segmento, t=tarjeta: self._al_segmento_bucle_solicitado(
+                    t, segmento
+                )
+            )
             tarjeta.reproduccion_temporal_solicitada.connect(
                 lambda instante, t=tarjeta: self._al_reproduccion_temporal_solicitada(
                     t, instante
@@ -3709,6 +3720,11 @@ class VisorVideos(QMainWindow):
                     t, segmento
                 )
             )
+            tarjeta.segmento_bucle_solicitado.connect(
+                lambda segmento, t=tarjeta: self._al_segmento_bucle_solicitado(
+                    t, segmento
+                )
+            )
             tarjeta.reproduccion_temporal_solicitada.connect(
                 lambda instante, t=tarjeta: self._al_reproduccion_temporal_solicitada(
                     t, instante
@@ -3759,11 +3775,19 @@ class VisorVideos(QMainWindow):
         self.mensaje_carpeta.clear()
 
     def _al_segmento_reproduccion_solicitada(self, tarjeta, segmento):
-        """Reproduce un segmento A→B en VLC una sola vez (B5.6).
+        """Reproduce un segmento A→B en VLC una sola vez (B5.6)."""
+        self._reproducir_segmento(tarjeta, segmento, en_bucle=False)
+
+    def _al_segmento_bucle_solicitado(self, tarjeta, segmento):
+        """Reproduce un segmento A→B en VLC en bucle continuo (B5.7)."""
+        self._reproducir_segmento(tarjeta, segmento, en_bucle=True)
+
+    def _reproducir_segmento(self, tarjeta, segmento, en_bucle):
+        """Delega la reproducción A→B al servicio de playlists VLC.
 
         La UI no construye playlists, no ejecuta subprocess ni accede al
-        filesystem: resuelve la ruta con el servicio de rutas y delega la
-        reproducción al servicio de playlists VLC.
+        filesystem: resuelve la ruta con el servicio de rutas y delega al
+        servicio VLC (simple o en bucle según `en_bucle`).
         """
         ruta = self._ruta_video_de(tarjeta)
         if ruta is None:
@@ -3780,13 +3804,22 @@ class VisorVideos(QMainWindow):
             caja.exec()
             return
         try:
-            reproducir_segmento(
-                ruta,
-                tarjeta.nombre,
-                segmento["inicio"],
-                segmento["fin"],
-                ruta_vlc,
-            )
+            if en_bucle:
+                reproducir_segmento_en_bucle(
+                    ruta,
+                    tarjeta.nombre,
+                    segmento["inicio"],
+                    segmento["fin"],
+                    ruta_vlc,
+                )
+            else:
+                reproducir_segmento(
+                    ruta,
+                    tarjeta.nombre,
+                    segmento["inicio"],
+                    segmento["fin"],
+                    ruta_vlc,
+                )
         except (
             TypeError,
             ValueError,
