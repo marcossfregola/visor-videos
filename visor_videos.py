@@ -2538,6 +2538,14 @@ class VisorVideos(QMainWindow):
         if tipo == "crear":
             registro = op["registro"]
             registro["eliminada"] = False
+            tarjeta = self._tarjeta_por_nombre(op["nombre"])
+            if tarjeta is not None:
+                tarjeta._segmentos = [
+                    seg
+                    for seg in tarjeta._segmentos
+                    if seg is not registro
+                ]
+                tarjeta._franja.set_segmentos(tarjeta._segmentos)
             self.mensaje_carpeta.setText(
                 f"No se pudo guardar el segmento: {mensaje}"
             )
@@ -2545,10 +2553,24 @@ class VisorVideos(QMainWindow):
             self.mensaje_carpeta.setText(
                 f"No se pudo eliminar el segmento: {mensaje}"
             )
+            # La eliminación optimista quitó la banda, pero SQLite la conserva:
+            # se recarga para reconciliar RAM ↔ SQLite.
+            self._encolar_segmento(
+                {
+                    "tipo": "cargar",
+                    "video_id": op["video_id"],
+                    "nombre": op["nombre"],
+                }
+            )
         elif tipo == "cargar":
             self.mensaje_carpeta.setText(
                 f"No se pudieron cargar los segmentos: {mensaje}"
             )
+            # Permitir reintento en una futura expansión.
+            tarjeta = self._tarjeta_por_nombre(op["nombre"])
+            if tarjeta is not None:
+                tarjeta._segmentos_cargados = False
+                tarjeta._segmentos_eliminados_carga.clear()
 
     def _solicitar_carga_segmentos(self, tarjeta):
         video_id = getattr(tarjeta, "_video_id", None)
@@ -2560,6 +2582,7 @@ class VisorVideos(QMainWindow):
                 "tipo": "cargar",
                 "video_id": video_id,
                 "nombre": tarjeta.nombre,
+                "tarjeta": tarjeta,
             }
         )
 
@@ -2632,6 +2655,13 @@ class VisorVideos(QMainWindow):
         """
         tarjeta = self._tarjeta_por_nombre(op["nombre"])
         if tarjeta is None:
+            return
+        # Un resultado de carga solo se aplica al card que la solicitó: si el
+        # card fue reconstruido mientras la carga estaba en vuelo, se descarta
+        # (el card nuevo cargará por sí mismo al expandirse). Los reloads de
+        # reconciliación (sin `tarjeta`) se aplican por nombre.
+        tarjeta_esperada = op.get("tarjeta")
+        if tarjeta_esperada is not None and tarjeta is not tarjeta_esperada:
             return
         if getattr(tarjeta, "_video_id", None) != op["video_id"]:
             return
