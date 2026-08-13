@@ -86,12 +86,15 @@ from tareas_videos import (
     TareaEscaneo,
     TareaFFprobe,
     TareaGuardarMarcador,
+    TareaGuardarSegmento,
     TareaGuardarVideos,
     TareaEliminarMarcador,
+    TareaEliminarSegmento,
     TareaExploracionDensa,
     TareaLecturaCatalogoPaginada,
     TareaListarMarcadores,
     TareaListarMarcadoresVarios,
+    TareaListarSegmentos,
     TareaMiniaturas,
     TareaPreviewsProgresivas,
     TareaSincronizacionCatalogo,
@@ -596,6 +599,7 @@ class Tarjeta(QFrame):
     marcador_creado = Signal(object)
     marcador_eliminado = Signal(object)
     marcadores_solicitados = Signal()
+    segmentos_solicitados = Signal()
     densidad_cambiada = Signal(str, object)
 
     def __init__(self, fila, parent=None):
@@ -854,6 +858,8 @@ class Tarjeta(QFrame):
         self._marcadores = []
         self._marcadores_cargados = False
         self._marcadores_eliminados_carga = set()
+        self._segmentos = []
+        self._segmentos_cargados = False
         self._franja = FranjaExploracion()
         self._franja.instante_seleccionado.connect(self._al_instante_exploracion)
         self._franja.marcador_solicitado.connect(self._al_marcador_solicitado)
@@ -967,6 +973,7 @@ class Tarjeta(QFrame):
         self._mostrar_preview_para_instante(0.0)
         self._renderizar_marcadores()
         self.marcadores_solicitados.emit()
+        self.segmentos_solicitados.emit()
         QTimer.singleShot(0, self._reajustar_geometria_exploracion)
 
     def _ancho_visible_maximo(self):
@@ -1613,6 +1620,19 @@ class VisorVideos(QMainWindow):
         )
         self._cola_marcadores = []
         self._marcador_op_actual = None
+
+        self.gestor_segmentos = GestorTareas(self)
+        self.gestor_segmentos.tarea_resultado.connect(
+            self._al_resultado_segmentos
+        )
+        self.gestor_segmentos.tarea_error.connect(
+            self._al_error_segmentos
+        )
+        self.gestor_segmentos.tarea_finalizada.connect(
+            self._al_segmentos_finalizada
+        )
+        self._cola_segmentos = []
+        self._segmento_op_actual = None
 
         self.gestor_reproduccion = GestorTareas(self)
         self.gestor_reproduccion.tarea_resultado.connect(
@@ -2343,6 +2363,79 @@ class VisorVideos(QMainWindow):
             [m["tiempo"] for m in tarjeta._marcadores]
         )
         tarjeta._renderizar_marcadores()
+
+    def _encolar_segmento(self, op):
+        self._cola_segmentos.append(op)
+        self._procesar_siguiente_segmento()
+
+    def _procesar_siguiente_segmento(self):
+        if self.gestor_segmentos.activo:
+            return
+        if not self._cola_segmentos:
+            return
+        op = self._cola_segmentos.pop(0)
+        self._segmento_op_actual = op
+        tipo = op.get("tipo")
+        if tipo == "cargar":
+            tarea = TareaListarSegmentos(op["video_id"], self._ruta_db)
+        else:
+            self._segmento_op_actual = None
+            self._procesar_siguiente_segmento()
+            return
+        if not self.gestor_segmentos.iniciar(tarea):
+            self._segmento_op_actual = None
+            self._procesar_siguiente_segmento()
+
+    def _al_segmentos_finalizada(self):
+        self._segmento_op_actual = None
+        self._procesar_siguiente_segmento()
+
+    def _al_resultado_segmentos(self, resultado):
+        op = self._segmento_op_actual
+        if op is None:
+            return
+        tipo = op.get("tipo")
+        if tipo == "cargar":
+            self._aplicar_segmentos_cargados(op, resultado)
+
+    def _al_error_segmentos(self, mensaje):
+        op = self._segmento_op_actual
+        if op is None:
+            return
+        if op.get("tipo") == "cargar":
+            self.mensaje_carpeta.setText(
+                f"No se pudieron cargar los segmentos: {mensaje}"
+            )
+
+    def _solicitar_carga_segmentos(self, tarjeta):
+        video_id = getattr(tarjeta, "_video_id", None)
+        if video_id is None or tarjeta._segmentos_cargados:
+            return
+        tarjeta._segmentos_cargados = True
+        self._encolar_segmento(
+            {
+                "tipo": "cargar",
+                "video_id": video_id,
+                "nombre": tarjeta.nombre,
+            }
+        )
+
+    def _aplicar_segmentos_cargados(self, op, filas):
+        tarjeta = self._tarjeta_por_nombre(op["nombre"])
+        if tarjeta is None:
+            return
+        if getattr(tarjeta, "_video_id", None) != op["video_id"]:
+            return
+        tarjeta._segmentos_cargados = True
+        tarjeta._segmentos = [
+            {
+                "id": seg_id,
+                "inicio": float(inicio),
+                "fin": float(fin),
+            }
+            for seg_id, inicio, fin in filas
+        ]
+        tarjeta._segmentos.sort(key=lambda s: (s["inicio"], s["fin"], s["id"]))
 
     def _al_cambiar_modo_seleccion(self, activo):
         self._modo_seleccion = bool(activo)
@@ -3207,6 +3300,9 @@ class VisorVideos(QMainWindow):
             tarjeta.marcadores_solicitados.connect(
                 lambda t=tarjeta: self._solicitar_carga_marcadores(t)
             )
+            tarjeta.segmentos_solicitados.connect(
+                lambda t=tarjeta: self._solicitar_carga_segmentos(t)
+            )
             tarjeta.densidad_cambiada.connect(self._al_densidad_cambiada)
             tarjeta.mostrar_check(self._modo_seleccion)
             self.tarjetas.append((fila[0], tarjeta))
@@ -3278,6 +3374,9 @@ class VisorVideos(QMainWindow):
             )
             tarjeta.marcadores_solicitados.connect(
                 lambda t=tarjeta: self._solicitar_carga_marcadores(t)
+            )
+            tarjeta.segmentos_solicitados.connect(
+                lambda t=tarjeta: self._solicitar_carga_segmentos(t)
             )
             tarjeta.densidad_cambiada.connect(self._al_densidad_cambiada)
             tarjeta.mostrar_check(self._modo_seleccion)
@@ -3545,6 +3644,8 @@ class VisorVideos(QMainWindow):
             self.gestor_operaciones.cerrar()
         if self.gestor_marcadores is not None:
             self.gestor_marcadores.cerrar()
+        if self.gestor_segmentos is not None:
+            self.gestor_segmentos.cerrar()
         if self.gestor_reproduccion is not None:
             self.gestor_reproduccion.cerrar()
         super().closeEvent(event)

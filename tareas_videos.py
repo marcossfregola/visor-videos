@@ -14,14 +14,17 @@ from escanear_videos import (
     combinar_registros_con_tamanos,
     conectar_bd,
     eliminar_marcador,
+    eliminar_segmento,
     escanear_videos,
     generar_previews_faltantes,
     guardar_marcador,
+    guardar_segmento,
     guardar_video,
     guardar_videos,
     listar_marcadores,
     listar_marcadores_de,
     listar_registros_por_nombres,
+    listar_segmentos,
     listar_videos,
     listar_videos_paginado,
     obtener_datos_ffprobe,
@@ -473,6 +476,91 @@ class TareaEliminarMarcador(TareaBase):
 
     def _trabajo(self):
         return eliminar_marcador(self._marcador_id, self._ruta_db)
+
+
+class TareaListarSegmentos(TareaBase):
+    """Lee los segmentos persistidos de un video (B5.2).
+
+    Delegación exclusiva en `listar_segmentos`; devuelve el contrato
+    `[(id, inicio, fin)]`.
+    """
+
+    def __init__(self, video_id, ruta_db=None, parent=None):
+        super().__init__(parent)
+        self._video_id = video_id
+        self._ruta_db = ruta_db
+
+    @property
+    def video_id(self):
+        return self._video_id
+
+    @property
+    def ruta_db(self):
+        return self._ruta_db
+
+    def _trabajo(self):
+        return listar_segmentos(self._video_id, self._ruta_db)
+
+
+class TareaGuardarSegmento(TareaBase):
+    """Persiste un segmento y devuelve `(id, inicio, fin)` (B5.2).
+
+    Disponible para la UI desde B5.4; en B5.2 no existe todavía ninguna
+    acción de usuario que lo invoque.
+    """
+
+    def __init__(self, video_id, inicio, fin, ruta_db=None, parent=None):
+        super().__init__(parent)
+        self._video_id = video_id
+        self._inicio = inicio
+        self._fin = fin
+        self._ruta_db = ruta_db
+
+    @property
+    def video_id(self):
+        return self._video_id
+
+    @property
+    def inicio(self):
+        return self._inicio
+
+    @property
+    def fin(self):
+        return self._fin
+
+    @property
+    def ruta_db(self):
+        return self._ruta_db
+
+    def _trabajo(self):
+        return guardar_segmento(
+            self._video_id, self._inicio, self._fin, self._ruta_db
+        )
+
+
+class TareaEliminarSegmento(TareaBase):
+    """Elimina un segmento persistido por su `id` (B5.2).
+
+    Devuelve el booleano de `eliminar_segmento`. Disponible para la UI
+    desde B5.4; en B5.2 no existe todavía ninguna acción de usuario que lo
+    invoque.
+    """
+
+    def __init__(self, segmento_id, ruta_db=None, parent=None):
+        super().__init__(parent)
+        self._segmento_id = segmento_id
+        self._ruta_db = ruta_db
+
+    @property
+    def segmento_id(self):
+        return self._segmento_id
+
+    @property
+    def ruta_db(self):
+        return self._ruta_db
+
+    def _trabajo(self):
+        return eliminar_segmento(self._segmento_id, self._ruta_db)
 
 
 class TareaExploracionDensa(TareaBase):
