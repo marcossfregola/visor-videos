@@ -25,6 +25,7 @@ from escanear_videos import (
     listar_marcadores_de,
     listar_registros_por_nombres,
     listar_segmentos,
+    listar_segmentos_de,
     listar_videos,
     listar_videos_paginado,
     obtener_datos_ffprobe,
@@ -500,6 +501,30 @@ class TareaListarSegmentos(TareaBase):
 
     def _trabajo(self):
         return listar_segmentos(self._video_id, self._ruta_db)
+
+
+class TareaListarSegmentosVarios(TareaBase):
+    """Lee los segmentos persistidos de varios videos (B5.8).
+
+    Delegación exclusiva en `listar_segmentos_de` (una sola consulta SQL);
+    devuelve el contrato `[(id, video_id, inicio, fin)]`.
+    """
+
+    def __init__(self, video_ids, ruta_db=None, parent=None):
+        super().__init__(parent)
+        self._video_ids = list(video_ids)
+        self._ruta_db = ruta_db
+
+    @property
+    def video_ids(self):
+        return list(self._video_ids)
+
+    @property
+    def ruta_db(self):
+        return self._ruta_db
+
+    def _trabajo(self):
+        return listar_segmentos_de(self._video_ids, self._ruta_db)
 
 
 class TareaGuardarSegmento(TareaBase):

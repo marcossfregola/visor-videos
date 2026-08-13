@@ -82,8 +82,9 @@ def generar_m3u(entradas, ruta_destino):
     directorio temporal, para no acumular archivos. No borra la playlist
     recién creada. Cada entrada es un diccionario con `ruta`, `nombre` y
     `tiempo`; opcionalmente `fin` (B5.6) para añadir
-    `#EXTVLCOPT:stop-time=<fin>`. Sin `fin` el comportamiento es idéntico
-    al previo (B4.4/B5.3 intactos).
+    `#EXTVLCOPT:stop-time=<fin>`, y `titulo` (B5.8) para sobreescribir el
+    título `#EXTINF`. Sin `fin`/`titulo` el comportamiento es idéntico al
+    previo (B4.4/B5.3/B5.6/B5.7 intactos).
     """
     limpiar_playlists_anteriores(os.path.dirname(ruta_destino))
     lineas = ["#EXTM3U"]
@@ -93,7 +94,10 @@ def generar_m3u(entradas, ruta_destino):
         tiempo = entrada["tiempo"]
         if not (isinstance(ruta, str) and ruta):
             raise ValueError("ruta debe ser un texto no vacío")
-        lineas.append(f"#EXTINF:-1,{formatear_titulo_marcador(nombre, tiempo)}")
+        titulo = entrada.get("titulo")
+        if titulo is None:
+            titulo = formatear_titulo_marcador(nombre, tiempo)
+        lineas.append(f"#EXTINF:-1,{titulo}")
         lineas.append(f"#EXTVLCOPT:start-time={formatear_tiempo_vlc(tiempo)}")
         fin = entrada.get("fin")
         if fin is not None:
@@ -269,3 +273,88 @@ def reproducir_segmento_en_bucle(ruta_video, nombre, inicio, fin, ruta_vlc=None)
         ruta_video, nombre, inicio, fin, ruta_vlc
     )
     return abrir_playlist_en_vlc(ruta_m3u, ruta_vlc_resuelta, bucle=True)
+
+
+def formatear_titulo_segmento(nombre, inicio, fin):
+    """Título descriptivo de una entrada de secuencia (B5.8).
+
+    Formato: `<nombre> — <inicio> -> <fin>` en `HH:MM:SS.mmm`, para poder
+    distinguir las entradas dentro de VLC.
+    """
+    texto_i = formatear_titulo_marcador("", inicio).strip()
+    texto_f = formatear_titulo_marcador("", fin).strip()
+    nombre_limpio = str(nombre).replace("\n", " ").replace("\r", " ").strip()
+    return f"{nombre_limpio} — {texto_i} -> {texto_f}"
+
+
+def reproducir_secuencia_segmentos(segmentos, ruta_vlc=None):
+    """Abre VLC reproduciendo una secuencia automática de segmentos (B5.8).
+
+    `segmentos` es una lista de dicts `{ruta, nombre, inicio, fin}`. Genera
+    una playlist con **una entrada M3U por segmento** (`start-time` +
+    `stop-time`), de modo que VLC reproduce A→B, avanza solo al siguiente
+    segmento al llegar a cada `stop-time` y termina. Sin `--loop`, sin
+    timers, sin RC/HTTP/polling.
+
+    Valida toda la secuencia **antes** de lanzar (una entrada inválida aborta
+    con un error claro; no se abre una playlist parcialmente corrupta).
+    Reutiliza `generar_m3u`, los temporales, la localización y la apertura.
+
+    Devuelve el proceso `Popen` de VLC (en producción queda abierto bajo
+    control del usuario; los harness de prueba deben cerrar ese PID propio).
+
+    Lanza:
+      - `TypeError`/`ValueError` si una entrada no es un segmento válido.
+      - `FileNotFoundError` si una ruta de video no existe.
+      - `RuntimeError` si `ruta_vlc` es `None` y VLC no se encuentra.
+    """
+    if isinstance(segmentos, (str, bytes, bytearray)):
+        raise TypeError("segmentos debe ser una colección de entradas")
+    try:
+        lista = list(segmentos)
+    except TypeError:
+        raise TypeError("segmentos debe ser una colección iterable") from None
+    if not lista:
+        raise ValueError("no hay segmentos para reproducir")
+    # Validar toda la secuencia antes de lanzar VLC.
+    for seg in lista:
+        if not isinstance(seg, dict):
+            raise TypeError("cada segmento debe ser un diccionario")
+        inicio = seg.get("inicio")
+        fin = seg.get("fin")
+        ruta = seg.get("ruta")
+        nombre = seg.get("nombre")
+        if not (isinstance(ruta, str) and ruta):
+            raise ValueError("ruta debe ser un texto no vacío")
+        _validar_segmento_reproduccion(inicio, fin)
+        if not os.path.isfile(ruta):
+            raise FileNotFoundError(f"El archivo no existe: {ruta}")
+        if not (isinstance(nombre, str) and nombre):
+            raise ValueError("nombre debe ser un texto no vacío")
+    if ruta_vlc is None:
+        ruta_vlc = localizar_vlc()
+    if not ruta_vlc:
+        raise RuntimeError("VLC no está instalado o no pudo encontrarse")
+    archivo_temporal = tempfile.NamedTemporaryFile(
+        mode="w",
+        suffix=".m3u",
+        prefix="visor_marcadores_",
+        delete=False,
+        encoding="utf-8",
+    )
+    ruta_m3u = archivo_temporal.name
+    archivo_temporal.close()
+    entradas = [
+        {
+            "ruta": seg["ruta"],
+            "nombre": seg["nombre"],
+            "tiempo": seg["inicio"],
+            "fin": seg["fin"],
+            "titulo": formatear_titulo_segmento(
+                seg["nombre"], seg["inicio"], seg["fin"]
+            ),
+        }
+        for seg in lista
+    ]
+    generar_m3u(entradas, ruta_m3u)
+    return abrir_playlist_en_vlc(ruta_m3u, ruta_vlc)

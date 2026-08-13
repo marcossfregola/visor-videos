@@ -82,6 +82,7 @@ from playlist_vlc import (
     generar_m3u,
     localizar_vlc,
     reproducir_desde_instante,
+    reproducir_secuencia_segmentos,
     reproducir_segmento,
     reproducir_segmento_en_bucle,
 )
@@ -98,6 +99,7 @@ from tareas_videos import (
     TareaListarMarcadores,
     TareaListarMarcadoresVarios,
     TareaListarSegmentos,
+    TareaListarSegmentosVarios,
     TareaMiniaturas,
     TareaPreviewsProgresivas,
     TareaSincronizacionCatalogo,
@@ -3843,6 +3845,9 @@ class VisorVideos(QMainWindow):
         accion_reproducir_marcadores = menu.addAction(
             "Reproducir marcadores en VLC"
         )
+        accion_reproducir_segmentos = menu.addAction(
+            "Reproducir segmentos en VLC"
+        )
         accion_abrir.triggered.connect(lambda: self._abrir_video(nombre))
         accion_abrir_carpeta.triggered.connect(lambda: self._abrir_carpeta(nombre))
         accion_copiar_ruta.triggered.connect(lambda: self._copiar_ruta(nombre))
@@ -3851,6 +3856,10 @@ class VisorVideos(QMainWindow):
         accion_reproducir_marcadores.setEnabled(bool(self._nombres_seleccionados))
         accion_reproducir_marcadores.triggered.connect(
             self._reproducir_marcadores_en_vlc
+        )
+        accion_reproducir_segmentos.setEnabled(bool(self._nombres_seleccionados))
+        accion_reproducir_segmentos.triggered.connect(
+            self._reproducir_segmentos_en_vlc
         )
         menu.exec(QCursor.pos())
 
@@ -3899,9 +3908,32 @@ class VisorVideos(QMainWindow):
             self._procesar_reproduccion(seleccionados, {})
             return
         self._reproduccion_pendiente = seleccionados
+        self._reproduccion_modo = "marcadores"
         tarea = TareaListarMarcadoresVarios(video_ids, self._ruta_db)
         if not self.gestor_reproduccion.iniciar(tarea):
             self._reproduccion_pendiente = None
+            self._reproduccion_modo = None
+
+    def _reproducir_segmentos_en_vlc(self):
+        """Secuencia automática de todos los segmentos de los videos
+        seleccionados (B5.8), conceptualmente paralela a la reproducción de
+        marcadores pero con auto-avance entre segmentos.
+        """
+        seleccionados = self._seleccionados_para_reproduccion()
+        if not seleccionados:
+            return
+        video_ids = [
+            s["video_id"] for s in seleccionados if s["video_id"] is not None
+        ]
+        if not video_ids:
+            self._procesar_secuencia_segmentos(seleccionados, [])
+            return
+        self._reproduccion_pendiente = seleccionados
+        self._reproduccion_modo = "segmentos"
+        tarea = TareaListarSegmentosVarios(video_ids, self._ruta_db)
+        if not self.gestor_reproduccion.iniciar(tarea):
+            self._reproduccion_pendiente = None
+            self._reproduccion_modo = None
 
     def _seleccionados_para_reproduccion(self):
         seleccionados = []
@@ -3922,8 +3954,13 @@ class VisorVideos(QMainWindow):
 
     def _al_resultado_reproduccion(self, filas):
         seleccionados = self._reproduccion_pendiente
+        modo = self._reproduccion_modo
         self._reproduccion_pendiente = None
+        self._reproduccion_modo = None
         if not seleccionados:
+            return
+        if modo == "segmentos":
+            self._procesar_secuencia_segmentos(seleccionados, filas)
             return
         marcadores_por_video = {}
         for _marcador_id, video_id, tiempo in filas:
@@ -3931,10 +3968,85 @@ class VisorVideos(QMainWindow):
         self._procesar_reproduccion(seleccionados, marcadores_por_video)
 
     def _al_error_reproduccion(self, mensaje):
+        modo = self._reproduccion_modo
         self._reproduccion_pendiente = None
+        self._reproduccion_modo = None
+        if modo == "segmentos":
+            self.mensaje_carpeta.setText(
+                f"No se pudieron cargar los segmentos: {mensaje}"
+            )
+            return
         self.mensaje_carpeta.setText(
             f"No se pudieron cargar los marcadores: {mensaje}"
         )
+
+    def _procesar_secuencia_segmentos(self, seleccionados, filas):
+        """Construye la secuencia de segmentos y la reproduce en VLC.
+
+        Orden: videos seleccionados (mismo criterio visible que marcadores) y,
+        dentro de cada video, por `inicio, fin, id`. Los segmentos provienen
+        del repositorio (una sola consulta), por lo que también participan
+        videos nunca expandidos. Videos sin segmentos o con archivo inexistente
+        se omiten silenciosamente; si no queda ningún segmento reproducible, no
+        se abre VLC.
+        """
+        segmentos_por_video = {}
+        for _seg_id, video_id, inicio, fin in filas:
+            segmentos_por_video.setdefault(video_id, []).append(
+                (inicio, fin)
+            )
+        secuencia = []
+        sin_archivo = 0
+        for sel in seleccionados:
+            video_id = sel["video_id"]
+            segmentos = segmentos_por_video.get(video_id, [])
+            if not segmentos:
+                continue
+            if not sel["ruta"]:
+                sin_archivo += 1
+                continue
+            for inicio, fin in sorted(segmentos):
+                secuencia.append(
+                    {
+                        "ruta": sel["ruta"],
+                        "nombre": sel["nombre"],
+                        "inicio": inicio,
+                        "fin": fin,
+                    }
+                )
+        if not secuencia:
+            self.mensaje_carpeta.setText(
+                "Los videos seleccionados no tienen segmentos para reproducir."
+            )
+            return
+        ruta_vlc = localizar_vlc()
+        if ruta_vlc is None:
+            caja = QMessageBox(self)
+            caja.setIcon(QMessageBox.Warning)
+            caja.setWindowTitle("Reproducir segmentos en VLC")
+            caja.setText("VLC no está instalado o no pudo encontrarse.")
+            caja.exec()
+            return
+        try:
+            reproducir_secuencia_segmentos(secuencia, ruta_vlc)
+        except (
+            TypeError,
+            ValueError,
+            FileNotFoundError,
+            OSError,
+            RuntimeError,
+        ) as exc:
+            self.mensaje_carpeta.setText(
+                f"No se pudo reproducir la secuencia: {exc}"
+            )
+            return
+        if sin_archivo:
+            self.mensaje_carpeta.setText(
+                "Algunos videos ya no están disponibles y sus segmentos "
+                "fueron omitidos."
+            )
+        else:
+            self.mensaje_carpeta.clear()
 
     def _procesar_reproduccion(self, seleccionados, marcadores_por_video):
         faltantes = [s for s in seleccionados if not s["ruta"]]
