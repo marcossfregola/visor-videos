@@ -601,6 +601,8 @@ class Tarjeta(QFrame):
     marcador_eliminado = Signal(object)
     marcadores_solicitados = Signal()
     segmentos_solicitados = Signal()
+    segmento_creado = Signal(object)
+    segmento_eliminado = Signal(object)
     reproduccion_temporal_solicitada = Signal(float)
     densidad_cambiada = Signal(str, object)
 
@@ -863,6 +865,9 @@ class Tarjeta(QFrame):
         self._marcador_creado_prensa = None
         self._segmentos = []
         self._segmentos_cargados = False
+        self._segmentos_eliminados_carga = set()
+        self._extremo_segmento = None
+        self._modo_crear_segmento = False
         self._franja = FranjaExploracion()
         self._franja.instante_seleccionado.connect(self._al_instante_exploracion)
         self._franja.marcador_solicitado.connect(self._al_marcador_solicitado)
@@ -871,6 +876,12 @@ class Tarjeta(QFrame):
         )
         self._franja.reproduccion_solicitada.connect(
             self._al_reproduccion_solicitada
+        )
+        self._franja.extremo_segmento_solicitado.connect(
+            self._al_extremo_segmento_solicitado
+        )
+        self._franja.segmento_eliminar_solicitado.connect(
+            self._al_segmento_eliminar_solicitado
         )
         self._franja.installEventFilter(self)
         ancho, alto = dimensiones_miniatura()
@@ -890,8 +901,15 @@ class Tarjeta(QFrame):
         self._selector_densidad.currentIndexChanged.connect(
             self._al_cambiar_densidad
         )
+        self._boton_segmento = QPushButton("Segmento")
+        self._boton_segmento.setCheckable(True)
+        self._boton_segmento.setToolTip(
+            "Modo crear segmento: primer clic fija A, segundo clic fija B"
+        )
+        self._boton_segmento.toggled.connect(self._al_toggle_segmento)
         fila_densidad = QHBoxLayout()
         fila_densidad.addStretch(1)
+        fila_densidad.addWidget(self._boton_segmento)
         fila_densidad.addWidget(QLabel("Densidad:"))
         fila_densidad.addWidget(self._selector_densidad)
         self._contenedor_exploracion = QWidget()
@@ -965,6 +983,7 @@ class Tarjeta(QFrame):
             self._previews_densos = []
             self._imagen_exploracion.setPixmap(QPixmap())
             self._imagen_exploracion.hide()
+            self._cancelar_extremo_segmento()
         self.expansion_cambiada.emit(self._nombre, valor)
 
     def _preparar_exploracion(self):
@@ -973,6 +992,8 @@ class Tarjeta(QFrame):
         self._franja.set_marcadores(
             [m["tiempo"] for m in self._marcadores]
         )
+        self._franja.set_segmentos(self._segmentos)
+        self._franja.set_inicio_segmento_pendiente(None)
         self._reconstruir_previews_exploracion()
         self._limitar_ancho_superficie()
         self._actualizar_tiempo_exploracion(0.0)
@@ -1223,15 +1244,71 @@ class Tarjeta(QFrame):
         """Doble clic sobre la franja: reproduce el video desde el instante.
 
         La primera pulsación del doble clic crea un marcador (comportamiento
-        de clic simple); aquí se descarta ese marcador recién creado para que
-        el doble clic no deje marcadores, y se notifica la reproducción
-        temporal hacia el VisorVideos.
+        de clic simple) en modo normal; aquí se descarta ese marcador recién
+        creado para que el doble clic no deje marcadores. En modo segmento no
+        hay marcador (el extremo se difiere), pero se cancela el extremo
+        pendiente. En ambos casos se notifica la reproducción temporal.
         """
+        self._cancelar_extremo_segmento()
         marcador = self._marcador_creado_prensa
         self._marcador_creado_prensa = None
         if marcador is not None:
             self._al_marcador_eliminar_solicitado(marcador["tiempo"])
         self.reproduccion_temporal_solicitada.emit(float(instante))
+
+    def _al_toggle_segmento(self, marcado):
+        self._modo_crear_segmento = bool(marcado)
+        self._franja.set_modo_crear_segmento(bool(marcado))
+        if not marcado:
+            self._cancelar_extremo_segmento()
+
+    def _cancelar_extremo_segmento(self):
+        self._extremo_segmento = None
+        self._franja.set_inicio_segmento_pendiente(None)
+
+    def _al_extremo_segmento_solicitado(self, instante):
+        """Primer/segundo clic en modo segmento: fija A y luego B (normalizado).
+
+        A vive solo en RAM; el segmento se crea únicamente cuando hay dos
+        extremos con `fin > inicio`, se persiste asíncronamente y se pinta la
+        banda. El modo queda activo para seguir creando segmentos.
+        """
+        if not self._modo_crear_segmento:
+            return
+        if self._extremo_segmento is None:
+            self._extremo_segmento = float(instante)
+            self._franja.set_inicio_segmento_pendiente(self._extremo_segmento)
+            return
+        a = min(self._extremo_segmento, float(instante))
+        b = max(self._extremo_segmento, float(instante))
+        self._extremo_segmento = None
+        self._franja.set_inicio_segmento_pendiente(None)
+        if b <= a:
+            return
+        registro = {
+            "id": None,
+            "inicio": a,
+            "fin": b,
+            "eliminada": False,
+        }
+        self._segmentos.append(registro)
+        self._segmentos.sort(
+            key=lambda s: (
+                s["inicio"],
+                s["fin"],
+                s["id"] if s["id"] is not None else 0,
+            )
+        )
+        self._franja.set_segmentos(self._segmentos)
+        self.segmento_creado.emit(registro)
+
+    def _al_segmento_eliminar_solicitado(self, segmento):
+        for indice, seg in enumerate(self._segmentos):
+            if seg is segmento:
+                del self._segmentos[indice]
+                self._franja.set_segmentos(self._segmentos)
+                self.segmento_eliminado.emit(seg)
+                return
 
     def _posicionar_miniatura_marcada(self, marcador):
         etiqueta = marcador.get("etiqueta")
@@ -2400,6 +2477,14 @@ class VisorVideos(QMainWindow):
         tipo = op.get("tipo")
         if tipo == "cargar":
             tarea = TareaListarSegmentos(op["video_id"], self._ruta_db)
+        elif tipo == "crear":
+            tarea = TareaGuardarSegmento(
+                op["video_id"], op["inicio"], op["fin"], self._ruta_db
+            )
+        elif tipo == "eliminar":
+            tarea = TareaEliminarSegmento(
+                op["segmento_id"], self._ruta_db
+            )
         else:
             self._segmento_op_actual = None
             self._procesar_siguiente_segmento()
@@ -2419,12 +2504,48 @@ class VisorVideos(QMainWindow):
         tipo = op.get("tipo")
         if tipo == "cargar":
             self._aplicar_segmentos_cargados(op, resultado)
+        elif tipo == "crear":
+            registro = op["registro"]
+            seg_id, inicio, fin = resultado
+            registro["id"] = seg_id
+            tarjeta = self._tarjeta_por_nombre(op["nombre"])
+            if tarjeta is not None:
+                tarjeta._segmentos.sort(
+                    key=lambda s: (
+                        s["inicio"],
+                        s["fin"],
+                        s["id"] if s["id"] is not None else 0,
+                    )
+                )
+                tarjeta._franja.set_segmentos(tarjeta._segmentos)
+            if registro.get("eliminada"):
+                self._encolar_segmento(
+                    {
+                        "tipo": "eliminar",
+                        "segmento_id": seg_id,
+                        "video_id": op["video_id"],
+                        "nombre": op["nombre"],
+                    }
+                )
+        elif tipo == "eliminar":
+            pass
 
     def _al_error_segmentos(self, mensaje):
         op = self._segmento_op_actual
         if op is None:
             return
-        if op.get("tipo") == "cargar":
+        tipo = op.get("tipo")
+        if tipo == "crear":
+            registro = op["registro"]
+            registro["eliminada"] = False
+            self.mensaje_carpeta.setText(
+                f"No se pudo guardar el segmento: {mensaje}"
+            )
+        elif tipo == "eliminar":
+            self.mensaje_carpeta.setText(
+                f"No se pudo eliminar el segmento: {mensaje}"
+            )
+        elif tipo == "cargar":
             self.mensaje_carpeta.setText(
                 f"No se pudieron cargar los segmentos: {mensaje}"
             )
@@ -2442,22 +2563,130 @@ class VisorVideos(QMainWindow):
             }
         )
 
+    def _al_segmento_creado(self, tarjeta, registro):
+        video_id = getattr(tarjeta, "_video_id", None)
+        if video_id is None:
+            return
+        self._encolar_segmento(
+            {
+                "tipo": "crear",
+                "registro": registro,
+                "video_id": video_id,
+                "inicio": registro["inicio"],
+                "fin": registro["fin"],
+                "nombre": tarjeta.nombre,
+            }
+        )
+
+    def _al_segmento_eliminado(self, tarjeta, registro):
+        video_id = getattr(tarjeta, "_video_id", None)
+        if video_id is None:
+            return
+        seg_id = registro.get("id")
+        if seg_id is not None:
+            self._encolar_segmento(
+                {
+                    "tipo": "eliminar",
+                    "segmento_id": seg_id,
+                    "video_id": video_id,
+                    "nombre": tarjeta.nombre,
+                }
+            )
+        else:
+            registro["eliminada"] = True
+            self._cancelar_crear_pendiente_segmento(registro)
+            if self._hay_carga_pendiente_segmentos(tarjeta):
+                tarjeta._segmentos_eliminados_carga.add(
+                    (registro["inicio"], registro["fin"])
+                )
+
+    def _hay_carga_pendiente_segmentos(self, tarjeta):
+        op = self._segmento_op_actual
+        if (
+            op is not None
+            and op.get("tipo") == "cargar"
+            and op.get("nombre") == tarjeta.nombre
+        ):
+            return True
+        return any(
+            op.get("tipo") == "cargar"
+            and op.get("nombre") == tarjeta.nombre
+            for op in self._cola_segmentos
+        )
+
+    def _cancelar_crear_pendiente_segmento(self, registro):
+        self._cola_segmentos = [
+            op
+            for op in self._cola_segmentos
+            if not (
+                op.get("tipo") == "crear"
+                and op.get("registro") is registro
+            )
+        ]
+
     def _aplicar_segmentos_cargados(self, op, filas):
+        """Reconcilia el snapshot de SQLite con el estado optimista local.
+
+        No reemplaza el snapshot: conserva los segmentos creados localmente
+        (id `None`) y no reintroduce los eliminados durante la carga.
+        """
         tarjeta = self._tarjeta_por_nombre(op["nombre"])
         if tarjeta is None:
             return
         if getattr(tarjeta, "_video_id", None) != op["video_id"]:
             return
         tarjeta._segmentos_cargados = True
-        tarjeta._segmentos = [
-            {
-                "id": seg_id,
-                "inicio": float(inicio),
-                "fin": float(fin),
-            }
-            for seg_id, inicio, fin in filas
-        ]
-        tarjeta._segmentos.sort(key=lambda s: (s["inicio"], s["fin"], s["id"]))
+        tolerancia = tarjeta._tolerancia_marcadores()
+        eliminados = tarjeta._segmentos_eliminados_carga
+        for seg_id, inicio, fin in filas:
+            if any(
+                abs(inicio - e0) <= tolerancia
+                and abs(fin - e1) <= tolerancia
+                for e0, e1 in eliminados
+            ):
+                self._encolar_segmento(
+                    {
+                        "tipo": "eliminar",
+                        "segmento_id": seg_id,
+                        "video_id": op["video_id"],
+                        "nombre": op["nombre"],
+                    }
+                )
+                continue
+            encontrado = None
+            for seg in tarjeta._segmentos:
+                if seg.get("id") == seg_id:
+                    encontrado = seg
+                    break
+                if (
+                    seg.get("id") is None
+                    and abs(seg["inicio"] - inicio) <= tolerancia
+                    and abs(seg["fin"] - fin) <= tolerancia
+                ):
+                    encontrado = seg
+                    break
+            if encontrado is not None:
+                if encontrado["id"] is None:
+                    encontrado["id"] = seg_id
+                    self._cancelar_crear_pendiente_segmento(encontrado)
+                continue
+            tarjeta._segmentos.append(
+                {
+                    "id": seg_id,
+                    "inicio": float(inicio),
+                    "fin": float(fin),
+                    "eliminada": False,
+                }
+            )
+        tarjeta._segmentos_eliminados_carga.clear()
+        tarjeta._segmentos.sort(
+            key=lambda s: (
+                s["inicio"],
+                s["fin"],
+                s["id"] if s["id"] is not None else 0,
+            )
+        )
+        tarjeta._franja.set_segmentos(tarjeta._segmentos)
 
     def _al_cambiar_modo_seleccion(self, activo):
         self._modo_seleccion = bool(activo)
@@ -3325,6 +3554,12 @@ class VisorVideos(QMainWindow):
             tarjeta.segmentos_solicitados.connect(
                 lambda t=tarjeta: self._solicitar_carga_segmentos(t)
             )
+            tarjeta.segmento_creado.connect(
+                lambda registro, t=tarjeta: self._al_segmento_creado(t, registro)
+            )
+            tarjeta.segmento_eliminado.connect(
+                lambda registro, t=tarjeta: self._al_segmento_eliminado(t, registro)
+            )
             tarjeta.reproduccion_temporal_solicitada.connect(
                 lambda instante, t=tarjeta: self._al_reproduccion_temporal_solicitada(
                     t, instante
@@ -3404,6 +3639,12 @@ class VisorVideos(QMainWindow):
             )
             tarjeta.segmentos_solicitados.connect(
                 lambda t=tarjeta: self._solicitar_carga_segmentos(t)
+            )
+            tarjeta.segmento_creado.connect(
+                lambda registro, t=tarjeta: self._al_segmento_creado(t, registro)
+            )
+            tarjeta.segmento_eliminado.connect(
+                lambda registro, t=tarjeta: self._al_segmento_eliminado(t, registro)
             )
             tarjeta.reproduccion_temporal_solicitada.connect(
                 lambda instante, t=tarjeta: self._al_reproduccion_temporal_solicitada(
