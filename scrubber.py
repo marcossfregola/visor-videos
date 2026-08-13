@@ -87,7 +87,7 @@ class FranjaExploracion(QWidget):
     marcador_eliminar_solicitado = Signal(float)
     reproduccion_solicitada = Signal(float)
     extremo_segmento_solicitado = Signal(float)
-    segmento_eliminar_solicitado = Signal(object)
+    segmento_contextual_solicitado = Signal(object)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -268,7 +268,7 @@ class FranjaExploracion(QWidget):
                 return
             segmento = self._segmento_en_posicion(event.position().x())
             if segmento is not None:
-                self.segmento_eliminar_solicitado.emit(segmento)
+                self.segmento_contextual_solicitado.emit(segmento)
                 event.accept()
                 return
         super().mousePressEvent(event)

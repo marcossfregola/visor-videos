@@ -76,12 +76,14 @@ def limpiar_playlists_anteriores(directorio):
 
 
 def generar_m3u(entradas, ruta_destino):
-    """Escribe una playlist `.m3u` con una entrada por marcador.
+    """Escribe una playlist `.m3u` con una entrada por marcador/segmento.
 
     Antes de escribir elimina playlists propias anteriores del mismo
     directorio temporal, para no acumular archivos. No borra la playlist
     recién creada. Cada entrada es un diccionario con `ruta`, `nombre` y
-    `tiempo`.
+    `tiempo`; opcionalmente `fin` (B5.6) para añadir
+    `#EXTVLCOPT:stop-time=<fin>`. Sin `fin` el comportamiento es idéntico
+    al previo (B4.4/B5.3 intactos).
     """
     limpiar_playlists_anteriores(os.path.dirname(ruta_destino))
     lineas = ["#EXTM3U"]
@@ -93,6 +95,9 @@ def generar_m3u(entradas, ruta_destino):
             raise ValueError("ruta debe ser un texto no vacío")
         lineas.append(f"#EXTINF:-1,{formatear_titulo_marcador(nombre, tiempo)}")
         lineas.append(f"#EXTVLCOPT:start-time={formatear_tiempo_vlc(tiempo)}")
+        fin = entrada.get("fin")
+        if fin is not None:
+            lineas.append(f"#EXTVLCOPT:stop-time={formatear_tiempo_vlc(fin)}")
         lineas.append(ruta)
     contenido = "\n".join(lineas) + "\n"
     with open(ruta_destino, "w", encoding="utf-8") as archivo:
@@ -154,6 +159,72 @@ def reproducir_desde_instante(ruta_video, nombre, instante, ruta_vlc):
     archivo_temporal.close()
     generar_m3u(
         [{"ruta": ruta_video, "nombre": nombre, "tiempo": instante}],
+        ruta_m3u,
+    )
+    return abrir_playlist_en_vlc(ruta_m3u, ruta_vlc)
+
+
+def _validar_segmento_reproduccion(inicio, fin):
+    """Valida un intervalo `[inicio, fin]` para reproducir un segmento (B5.6).
+
+    Reutiliza `_validar_instante` para `inicio` y exige `fin` numérico,
+    finito y estrictamente mayor que `inicio`. Rechaza bool, texto, NaN,
+    infinito y valores negativos, y `fin <= inicio`.
+    """
+    _validar_instante(inicio)
+    if isinstance(fin, bool) or not isinstance(fin, (int, float)):
+        raise TypeError("fin debe ser numérico")
+    if not math.isfinite(fin):
+        raise ValueError("fin debe ser un número finito")
+    if not (fin > inicio):
+        raise ValueError("fin debe ser mayor que inicio")
+
+
+def reproducir_segmento(ruta_video, nombre, inicio, fin, ruta_vlc=None):
+    """Abre VLC reproduciendo una sola vez el intervalo [inicio, fin] (B5.6).
+
+    Genera una playlist temporal de **una sola entrada** con
+    `start-time=inicio` y `stop-time=fin`; **VLC es quien detiene la
+    entrada en `fin`** (sin `--loop`, sin timers de Python ni vigilancia de
+    posición). Reutiliza `generar_m3u`, la localización y la apertura
+    existentes.
+
+    Si `ruta_vlc` es `None`, se resuelve con `localizar_vlc()`. Devuelve el
+    proceso `Popen` de VLC (en producción queda bajo control del usuario;
+    los harness de prueba deben cerrar ese PID propio).
+
+    Lanza:
+      - `TypeError`/`ValueError` si `inicio`/`fin` no son válidos.
+      - `FileNotFoundError` si `ruta_video` no existe.
+      - `RuntimeError` si `ruta_vlc` es `None` y VLC no se encuentra.
+    """
+    _validar_segmento_reproduccion(inicio, fin)
+    if not isinstance(ruta_video, str) or not ruta_video:
+        raise TypeError("ruta_video debe ser un texto no vacío")
+    if not os.path.isfile(ruta_video):
+        raise FileNotFoundError(f"El archivo no existe: {ruta_video}")
+    if ruta_vlc is None:
+        ruta_vlc = localizar_vlc()
+    if not ruta_vlc:
+        raise RuntimeError("VLC no está instalado o no pudo encontrarse")
+    archivo_temporal = tempfile.NamedTemporaryFile(
+        mode="w",
+        suffix=".m3u",
+        prefix="visor_marcadores_",
+        delete=False,
+        encoding="utf-8",
+    )
+    ruta_m3u = archivo_temporal.name
+    archivo_temporal.close()
+    generar_m3u(
+        [
+            {
+                "ruta": ruta_video,
+                "nombre": nombre,
+                "tiempo": inicio,
+                "fin": fin,
+            }
+        ],
         ruta_m3u,
     )
     return abrir_playlist_en_vlc(ruta_m3u, ruta_vlc)

@@ -687,7 +687,7 @@ def test_20():
 
 
 def test_21():
-    """Clic derecho sobre una banda elimina el segmento."""
+    """Clic derecho sobre una banda abre el menú del segmento; Eliminar lo borra."""
     with _miniaturas_temporales():
         temp, ruta_db = _crear_bd_con_videos(["a.mp4"])
         ventana = _abrir_ventana(ruta_db)
@@ -700,13 +700,20 @@ def test_21():
             franja = tarjeta._franja
             ancho = franja.width()
             _press_derecho(franja, ancho * 0.5)
+            ok_menu = _esperar(lambda: tarjeta._menu_segmento_actual is not None)
+            menu = tarjeta._menu_segmento_actual
+            ok_menu = ok_menu and menu is not None and len(menu.actions()) >= 2
+            if menu is not None:
+                for accion in menu.actions():
+                    if accion.text() == "Eliminar segmento":
+                        accion.trigger()
             _drenar_segmentos(ventana)
-            ok = ok_creado and tarjeta._segmentos == []
+            ok = ok_creado and ok_menu and tarjeta._segmentos == []
         finally:
             ventana.close()
             _limpiar(ventana)
             temp.cleanup()
-        return ok, f"segmentos={len(tarjeta._segmentos)}"
+        return ok, f"creado={ok_creado} menu={ok_menu} segmentos={len(tarjeta._segmentos)}"
 
 
 def test_22():

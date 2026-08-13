@@ -82,6 +82,7 @@ from playlist_vlc import (
     generar_m3u,
     localizar_vlc,
     reproducir_desde_instante,
+    reproducir_segmento,
 )
 from tareas_videos import (
     TareaEscaneo,
@@ -603,6 +604,7 @@ class Tarjeta(QFrame):
     segmentos_solicitados = Signal()
     segmento_creado = Signal(object)
     segmento_eliminado = Signal(object)
+    segmento_reproduccion_solicitada = Signal(object)
     reproduccion_temporal_solicitada = Signal(float)
     densidad_cambiada = Signal(str, object)
 
@@ -868,6 +870,7 @@ class Tarjeta(QFrame):
         self._segmentos_eliminados_carga = set()
         self._extremo_segmento = None
         self._modo_crear_segmento = False
+        self._menu_segmento_actual = None
         self._franja = FranjaExploracion()
         self._franja.instante_seleccionado.connect(self._al_instante_exploracion)
         self._franja.marcador_solicitado.connect(self._al_marcador_solicitado)
@@ -880,8 +883,8 @@ class Tarjeta(QFrame):
         self._franja.extremo_segmento_solicitado.connect(
             self._al_extremo_segmento_solicitado
         )
-        self._franja.segmento_eliminar_solicitado.connect(
-            self._al_segmento_eliminar_solicitado
+        self._franja.segmento_contextual_solicitado.connect(
+            self._al_segmento_contextual_solicitado
         )
         self._franja.installEventFilter(self)
         ancho, alto = dimensiones_miniatura()
@@ -1309,6 +1312,26 @@ class Tarjeta(QFrame):
                 self._franja.set_segmentos(self._segmentos)
                 self.segmento_eliminado.emit(seg)
                 return
+
+    def _al_segmento_contextual_solicitado(self, segmento):
+        """Menú contextual del segmento bajo el cursor (B5.6).
+
+        La franja solo informa qué segmento está bajo el cursor; aquí se
+        construye el menú (acción de UI) con Reproducir/Eliminar y se muestra
+        de forma no bloqueante (`popup`), dejando la referencia disponible
+        para su inspección/accionado programático en pruebas.
+        """
+        menu = QMenu(self)
+        accion_reproducir = menu.addAction("Reproducir segmento")
+        accion_eliminar = menu.addAction("Eliminar segmento")
+        accion_reproducir.triggered.connect(
+            lambda *args, s=segmento: self.segmento_reproduccion_solicitada.emit(s)
+        )
+        accion_eliminar.triggered.connect(
+            lambda *args, s=segmento: self._al_segmento_eliminar_solicitado(s)
+        )
+        self._menu_segmento_actual = menu
+        menu.popup(QCursor.pos())
 
     def _posicionar_miniatura_marcada(self, marcador):
         etiqueta = marcador.get("etiqueta")
@@ -3590,6 +3613,11 @@ class VisorVideos(QMainWindow):
             tarjeta.segmento_eliminado.connect(
                 lambda registro, t=tarjeta: self._al_segmento_eliminado(t, registro)
             )
+            tarjeta.segmento_reproduccion_solicitada.connect(
+                lambda segmento, t=tarjeta: self._al_segmento_reproduccion_solicitada(
+                    t, segmento
+                )
+            )
             tarjeta.reproduccion_temporal_solicitada.connect(
                 lambda instante, t=tarjeta: self._al_reproduccion_temporal_solicitada(
                     t, instante
@@ -3676,6 +3704,11 @@ class VisorVideos(QMainWindow):
             tarjeta.segmento_eliminado.connect(
                 lambda registro, t=tarjeta: self._al_segmento_eliminado(t, registro)
             )
+            tarjeta.segmento_reproduccion_solicitada.connect(
+                lambda segmento, t=tarjeta: self._al_segmento_reproduccion_solicitada(
+                    t, segmento
+                )
+            )
             tarjeta.reproduccion_temporal_solicitada.connect(
                 lambda instante, t=tarjeta: self._al_reproduccion_temporal_solicitada(
                     t, instante
@@ -3722,6 +3755,48 @@ class VisorVideos(QMainWindow):
             reproducir_desde_instante(ruta, tarjeta.nombre, instante, ruta_vlc)
         except (TypeError, ValueError, FileNotFoundError, OSError) as exc:
             self.mensaje_carpeta.setText(f"No se pudo reproducir: {exc}")
+            return
+        self.mensaje_carpeta.clear()
+
+    def _al_segmento_reproduccion_solicitada(self, tarjeta, segmento):
+        """Reproduce un segmento A→B en VLC una sola vez (B5.6).
+
+        La UI no construye playlists, no ejecuta subprocess ni accede al
+        filesystem: resuelve la ruta con el servicio de rutas y delega la
+        reproducción al servicio de playlists VLC.
+        """
+        ruta = self._ruta_video_de(tarjeta)
+        if ruta is None:
+            self.mensaje_carpeta.setText(
+                "El video ya no está disponible para reproducirse."
+            )
+            return
+        ruta_vlc = localizar_vlc()
+        if ruta_vlc is None:
+            caja = QMessageBox(self)
+            caja.setIcon(QMessageBox.Warning)
+            caja.setWindowTitle("Reproducir segmento")
+            caja.setText("VLC no está instalado o no pudo encontrarse.")
+            caja.exec()
+            return
+        try:
+            reproducir_segmento(
+                ruta,
+                tarjeta.nombre,
+                segmento["inicio"],
+                segmento["fin"],
+                ruta_vlc,
+            )
+        except (
+            TypeError,
+            ValueError,
+            FileNotFoundError,
+            OSError,
+            RuntimeError,
+        ) as exc:
+            self.mensaje_carpeta.setText(
+                f"No se pudo reproducir el segmento: {exc}"
+            )
             return
         self.mensaje_carpeta.clear()
 
