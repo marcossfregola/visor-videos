@@ -158,6 +158,7 @@ def test_02():
         and not any(
             ("Eliminar" in c or "Eliminacion" in c)
             and "Marcador" not in c
+            and "Segmento" not in c
             for c in clases_tareas
         )
         and usados_eliminar is not None

@@ -1257,10 +1257,11 @@ class Tarjeta(QFrame):
         pendiente. En ambos casos se notifica la reproducción temporal.
         """
         self._cancelar_extremo_segmento()
-        marcador = self._marcador_creado_prensa
-        self._marcador_creado_prensa = None
-        if marcador is not None:
-            self._al_marcador_eliminar_solicitado(marcador["tiempo"])
+        if not self._modo_crear_segmento:
+            marcador = self._marcador_creado_prensa
+            self._marcador_creado_prensa = None
+            if marcador is not None:
+                self._al_marcador_eliminar_solicitado(marcador["tiempo"])
         self.reproduccion_temporal_solicitada.emit(float(instante))
 
     def _al_toggle_segmento(self, marcado):

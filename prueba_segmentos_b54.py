@@ -951,7 +951,7 @@ def test_28():
 
 
 def test_29():
-    """Doble clic en modo segmento no crea segmento (solo reproduce)."""
+    """Doble clic en modo segmento no crea segmento ni elimina marcadores."""
     with _miniaturas_temporales():
         temp, ruta_db = _crear_bd_con_videos(["a.mp4"])
         ventana = _abrir_ventana(ruta_db)
@@ -959,9 +959,13 @@ def test_29():
         try:
             tarjeta = dict(ventana.tarjetas)["a.mp4"]
             _expandir(tarjeta)
-            _activar_modo_segmento(tarjeta)
             franja = tarjeta._franja
             ancho = franja.width()
+            # marcador preexistente en modo normal
+            _press(franja, ancho * 0.7)
+            _esperar(lambda: len(tarjeta._marcadores) == 1)
+            _drenar_marcadores(ventana)
+            _activar_modo_segmento(tarjeta)
             original_reproducir = visor_videos.reproducir_desde_instante
             original_ruta = visor_videos.ruta_video_existente
             original_localizar = visor_videos.localizar_vlc
@@ -977,6 +981,7 @@ def test_29():
                 _enviar(franja, QEvent.MouseButtonRelease, ancho * 0.5, Qt.LeftButton)
                 _esperar(lambda: len(capturas) >= 1)
                 _drenar_segmentos(ventana)
+                _drenar_marcadores(ventana)
             finally:
                 visor_videos.reproducir_desde_instante = original_reproducir
                 visor_videos.ruta_video_existente = original_ruta
@@ -985,12 +990,13 @@ def test_29():
                 capturas == [50.0]
                 and tarjeta._segmentos == []
                 and tarjeta._extremo_segmento is None
+                and len(tarjeta._marcadores) == 1
             )
         finally:
             ventana.close()
             _limpiar(ventana)
             temp.cleanup()
-        return ok, f"capturas={capturas} segmentos={len(tarjeta._segmentos)}"
+        return ok, f"capturas={capturas} segmentos={len(tarjeta._segmentos)} marcadores={len(tarjeta._marcadores)}"
 
 
 def test_30():
