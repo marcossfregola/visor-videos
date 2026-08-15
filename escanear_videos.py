@@ -1316,6 +1316,33 @@ def eliminar_segmento(segmento_id, ruta_db=None):
         conn.close()
 
 
+def actualizar_segmento(segmento_id, inicio, fin, ruta_db=None):
+    """Actualiza los límites de un segmento persistido por su `id`.
+
+    Conserva `id` y `video_id` (nunca borra/reinserta). Exige `fin > inicio`
+    y devuelve `(segmento_id, inicio, fin)` si se actualizó una fila; `None`
+    si el segmento no existía en la base.
+    """
+    _validar_segmento_id(segmento_id)
+    _validar_inicio_segmento(inicio)
+    _validar_fin_segmento(inicio, fin)
+    conn = _conectar_repositorio_segmentos(ruta_db)
+    try:
+        cursor = conn.execute(
+            "UPDATE segmentos_video SET inicio = ?, fin = ? WHERE id = ?",
+            (inicio, fin, segmento_id),
+        )
+        conn.commit()
+        if cursor.rowcount <= 0:
+            return None
+        return (segmento_id, float(inicio), float(fin))
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 def main():
     conn = conectar_bd()
     sincronizar_bd(conn, ruta_carpeta_videos())

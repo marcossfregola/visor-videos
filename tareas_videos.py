@@ -8,6 +8,7 @@ from escanear_videos import (
     CANTIDAD_PREVIEWS,
     _es_archivo_preview,
     _metadata_reutilizable,
+    actualizar_segmento,
     asegurar_miniaturas,
     combinar_registros_con_ffprobe,
     combinar_registros_con_miniaturas,
@@ -586,6 +587,42 @@ class TareaEliminarSegmento(TareaBase):
 
     def _trabajo(self):
         return eliminar_segmento(self._segmento_id, self._ruta_db)
+
+
+class TareaActualizarSegmento(TareaBase):
+    """Actualiza los límites de un segmento persistido por su `id` (Pulido #4).
+
+    Conserva `id` y `video_id` (UPDATE, nunca delete+insert). Devuelve
+    `(segmento_id, inicio, fin)` o `None` si el segmento no existía.
+    """
+
+    def __init__(self, segmento_id, inicio, fin, ruta_db=None, parent=None):
+        super().__init__(parent)
+        self._segmento_id = segmento_id
+        self._inicio = inicio
+        self._fin = fin
+        self._ruta_db = ruta_db
+
+    @property
+    def segmento_id(self):
+        return self._segmento_id
+
+    @property
+    def inicio(self):
+        return self._inicio
+
+    @property
+    def fin(self):
+        return self._fin
+
+    @property
+    def ruta_db(self):
+        return self._ruta_db
+
+    def _trabajo(self):
+        return actualizar_segmento(
+            self._segmento_id, self._inicio, self._fin, self._ruta_db
+        )
 
 
 class TareaExploracionDensa(TareaBase):

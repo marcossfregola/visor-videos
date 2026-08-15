@@ -147,6 +147,7 @@ def _enviar(widget, tipo, x, boton):
 
 def _press(widget, x):
     _enviar(widget, QEvent.MouseButtonPress, x, Qt.LeftButton)
+    _enviar(widget, QEvent.MouseButtonRelease, x, Qt.LeftButton)
 
 
 def _press_derecho(widget, x):
@@ -589,18 +590,30 @@ def test_16():
 
 
 def test_17():
-    """Eliminar solo el ID objetivo (con duplicados)."""
+    """Eliminar solo el ID objetivo (con duplicados preexistidos).
+
+    Los duplicados idénticos se pre-persisten por repositorio: tras el
+    Pulido #4, un clic sobre un extremo existente edita (no crea A+B), así
+    que un duplicado exacto ya no puede crearse por clic sobre los mismos
+    extremos. El objetivo funcional (duplicados con IDs distintos y
+    eliminación por id) se conserva.
+    """
     with _miniaturas_temporales():
         temp, ruta_db = _crear_bd_con_videos(["a.mp4"])
+        id_a = _video_id(ruta_db, "a.mp4")
+        s1 = guardar_segmento(id_a, 20.0, 50.0, ruta_db)
+        s2 = guardar_segmento(id_a, 20.0, 50.0, ruta_db)
         ventana = _abrir_ventana(ruta_db)
         try:
             tarjeta = dict(ventana.tarjetas)["a.mp4"]
             _expandir(tarjeta)
-            _esperar(lambda: tarjeta._segmentos_cargados, timeout_ms=15000)
-            _crear_segmento_ui(ventana, tarjeta, tarjeta._franja.width() * 0.2, tarjeta._franja.width() * 0.5)
-            seg1 = tarjeta._segmentos[0]
-            _crear_segmento_ui(ventana, tarjeta, tarjeta._franja.width() * 0.2, tarjeta._franja.width() * 0.5, objetivo=2)
-            seg2 = tarjeta._segmentos[1]
+            _esperar(
+                lambda: tarjeta._segmentos_cargados
+                and len(tarjeta._segmentos) == 2,
+                timeout_ms=15000,
+            )
+            seg1 = next(s for s in tarjeta._segmentos if s["id"] == s1[0])
+            seg2 = next(s for s in tarjeta._segmentos if s["id"] == s2[0])
             ids = {s["id"] for s in tarjeta._segmentos}
             tarjeta._al_segmento_eliminar_solicitado(seg1)
             _drenar_segmentos(ventana)
@@ -617,29 +630,38 @@ def test_17():
 
 
 def test_18():
-    """Duplicados soportados (dos segmentos idénticos, IDs distintos)."""
+    """Duplicados soportados (dos segmentos idénticos, IDs distintos).
+
+    Idem Pulido #4: los duplicados se pre-persisten por repositorio porque
+    un clic sobre un extremo existente edita en lugar de crear A+B.
+    """
     with _miniaturas_temporales():
         temp, ruta_db = _crear_bd_con_videos(["a.mp4"])
+        id_a = _video_id(ruta_db, "a.mp4")
+        s1 = guardar_segmento(id_a, 20.0, 50.0, ruta_db)
+        s2 = guardar_segmento(id_a, 20.0, 50.0, ruta_db)
         ventana = _abrir_ventana(ruta_db)
         try:
             tarjeta = dict(ventana.tarjetas)["a.mp4"]
             _expandir(tarjeta)
-            _activar_modo_segmento(tarjeta)
-            _crear_segmento_ui(ventana, tarjeta, tarjeta._franja.width() * 0.2, tarjeta._franja.width() * 0.5)
-            s1 = dict(tarjeta._segmentos[0])
-            _crear_segmento_ui(ventana, tarjeta, tarjeta._franja.width() * 0.2, tarjeta._franja.width() * 0.5, objetivo=2)
-            s2 = dict(tarjeta._segmentos[1])
+            _esperar(
+                lambda: tarjeta._segmentos_cargados
+                and len(tarjeta._segmentos) == 2,
+                timeout_ms=15000,
+            )
+            s1_local = next(s for s in tarjeta._segmentos if s["id"] == s1[0])
+            s2_local = next(s for s in tarjeta._segmentos if s["id"] == s2[0])
             ok = (
                 len(tarjeta._segmentos) == 2
-                and s1["inicio"] == s2["inicio"]
-                and s1["fin"] == s2["fin"]
-                and s1["id"] != s2["id"]
+                and s1_local["inicio"] == s2_local["inicio"]
+                and s1_local["fin"] == s2_local["fin"]
+                and s1_local["id"] != s2_local["id"]
             )
         finally:
             ventana.close()
             _limpiar(ventana)
             temp.cleanup()
-        return ok, f"ids={s1['id']},{s2['id']}"
+        return ok, f"ids={s1_local['id']},{s2_local['id']}"
 
 
 def test_19():

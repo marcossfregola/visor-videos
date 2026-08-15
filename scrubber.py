@@ -13,7 +13,7 @@ texto de tiempo que la tarjeta le provee.
 """
 
 from PySide6.QtCore import QEvent, QPointF, QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPen
+from PySide6.QtGui import QBrush, QColor, QMouseEvent, QPainter, QPen
 from PySide6.QtWidgets import QApplication, QLabel, QSizePolicy, QWidget
 
 from exploracion_temporal import posicion_a_tiempo, tiempo_a_posicion
@@ -24,13 +24,15 @@ _COLOR_PISTA = QColor(224, 224, 224)
 _COLOR_MARCADOR = QColor(33, 150, 243)
 _COLOR_MARCA = QColor(229, 57, 53)
 _COLOR_TEXTO = QColor(30, 30, 30)
-_COLOR_SEGMENTO = QColor(33, 150, 243, 55)
-_COLOR_SEGMENTO_BORDE = QColor(33, 150, 243, 150)
+_COLOR_SEGMENTO = QColor(33, 150, 243, 120)
+_COLOR_SEGMENTO_BORDE = QColor(33, 150, 243, 230)
+_COLOR_SEGMENTO_PROVISIONAL = QColor(33, 150, 243, 170)
 _COLOR_EXTREMO = QColor(76, 175, 80)
 
 _MARGEN = 6
 _ALTO_PISTA = 10
 _TOLERANCIA_MARCA_PX = 6
+_TOLERANCIA_EXTREMO_PX = 12
 
 
 class MiniaturaMarcador(QLabel):
@@ -58,9 +60,52 @@ class MiniaturaMarcador(QLabel):
             event.accept()
             return
         if event.button() == Qt.LeftButton:
+            # Reenviar el clic izquierdo a la superficie (B5.9.2B): la miniatura
+            # cubre una amplia zona de la franja; si se traga el clic, no puede
+            # crearse un marcador temporalmente cercano aunque esté en un instante
+            # distinto. Se replica el patrón de `mouseMoveEvent`/doble clic.
+            superficie = self._superficie
+            if superficie is not None and superficie.width() > 0:
+                global_pos = self.mapToGlobal(event.position().toPoint())
+                local = superficie.mapFromGlobal(global_pos)
+                nuevo = QMouseEvent(
+                    QEvent.MouseButtonPress,
+                    QPointF(local),
+                    event.button(),
+                    event.buttons(),
+                    event.modifiers(),
+                )
+                QApplication.sendEvent(superficie, nuevo)
             event.accept()
             return
         super().mousePressEvent(event)
+
+    def mouseDoubleClickEvent(self, event):
+        """Reenvía el doble clic a la superficie (B5.9.2).
+
+        La miniatura se crea en el punto del marcador; sobre un video real
+        Qt entrega el doble clic a esta etiqueta (widget topmost) y, si no se
+        reenvía, la franja nunca recibe `reproduccion_solicitada`. Se replica
+        el patrón de `mouseMoveEvent`: se reenvía el evento en coordenadas de
+        la superficie para que el doble clic temporal (B5.3) siga abriendo VLC.
+        """
+        superficie = self._superficie
+        if (
+            event.button() == Qt.LeftButton
+            and superficie is not None
+            and superficie.width() > 0
+        ):
+            global_pos = self.mapToGlobal(event.position().toPoint())
+            local = superficie.mapFromGlobal(global_pos)
+            nuevo = QMouseEvent(
+                QEvent.MouseButtonDblClick,
+                QPointF(local),
+                event.button(),
+                event.buttons(),
+                event.modifiers(),
+            )
+            QApplication.sendEvent(superficie, nuevo)
+        event.accept()
 
     def mouseMoveEvent(self, event):
         superficie = self._superficie
@@ -87,6 +132,8 @@ class FranjaExploracion(QWidget):
     marcador_eliminar_solicitado = Signal(float)
     reproduccion_solicitada = Signal(float)
     extremo_segmento_solicitado = Signal(float)
+    segmento_arrastre_confirmado = Signal(float, float)
+    extremo_editado = Signal(object, float, float)
     segmento_contextual_solicitado = Signal(object)
 
     def __init__(self, parent=None):
@@ -102,6 +149,16 @@ class FranjaExploracion(QWidget):
         self._timer_extremo = QTimer(self)
         self._timer_extremo.setSingleShot(True)
         self._timer_extremo.timeout.connect(self._emitir_extremo)
+        self._boton_presionado = False
+        self._press_pos = None
+        self._press_instante = None
+        self._drag_activo = False
+        self._drag_inicio = None
+        self._drag_actual = None
+        self._suprimir_release_clic = False
+        self._edicion_candidato = None
+        self._edicion_activa = None
+        self._hover_extremo = None
         self.setMouseTracking(True)
 
     def set_duracion(self, duracion):
@@ -142,13 +199,20 @@ class FranjaExploracion(QWidget):
     def set_modo_crear_segmento(self, activo):
         """Activa/desactiva el modo de creación de segmentos.
 
-        En este modo, el clic izquierdo emite `extremo_segmento_solicitado`
-        (diferido por el intervalo de doble clic) en lugar de crear un
-        marcador. Al desactivar se cancela cualquier extremo pendiente.
+        En este modo, el clic izquierdo completo (press+release sin arrastre)
+        emite `extremo_segmento_solicitado` (diferido por el intervalo de
+        doble clic, solo tras el release) en lugar de crear un marcador; el
+        arrastre emite `segmento_arrastre_confirmado`. Al desactivar se
+        cancela cualquier extremo pendiente y estado de interacción.
         """
         self._modo_crear_segmento = bool(activo)
         if not self._modo_crear_segmento:
             self._cancelar_timer_extremo()
+            self._limpiar_drag()
+            self._suprimir_release_clic = False
+            self._hover_extremo = None
+            self.unsetCursor()
+            self.update()
 
     def segmentos(self):
         return list(self._segmentos)
@@ -227,17 +291,61 @@ class FranjaExploracion(QWidget):
             ),
         )
 
+    def _extremo_en_posicion(self, x):
+        """Extremo de segmento editable bajo `x` (solo en modo segmento).
+
+        Devuelve `(segmento, lado)` con `lado` en `{"inicio", "fin"}` si la
+        posición cae dentro de `_TOLERANCIA_EXTREMO_PX` de un extremo.
+        Regla determinista: menor distancia al cursor; desempate por el
+        segmento más corto (pintado encima), luego el `id` mayor y luego el
+        lado `"inicio"` antes que `"fin"`.
+        """
+        if not self._segmentos:
+            return None
+        mejor = None
+        mejor_clave = None
+        for seg in self._segmentos:
+            inicio = seg.get("inicio")
+            fin = seg.get("fin")
+            if not (
+                isinstance(inicio, (int, float))
+                and not isinstance(inicio, bool)
+                and isinstance(fin, (int, float))
+                and not isinstance(fin, bool)
+            ):
+                continue
+            xa = self._posicion_de(inicio)
+            xb = self._posicion_de(fin)
+            if xa is None or xb is None:
+                continue
+            for lado, x_ext in (("inicio", xa), ("fin", xb)):
+                distancia = abs(x_ext - x)
+                if distancia > _TOLERANCIA_EXTREMO_PX:
+                    continue
+                clave = (
+                    distancia,
+                    fin - inicio,
+                    -seg["id"] if isinstance(seg.get("id"), int) else 0,
+                    lado,
+                )
+                if mejor_clave is None or clave < mejor_clave:
+                    mejor_clave = clave
+                    mejor = (seg, lado)
+        return mejor
+
     def _cancelar_timer_extremo(self):
         if self._timer_extremo is not None and self._timer_extremo.isActive():
             self._timer_extremo.stop()
         self._extremo_pendiente_timer = None
 
     def _programar_extremo(self, instante):
-        """Difiere el extremo por el intervalo de doble clic (B5.4).
+        """Difiere un clic candidato por el intervalo de doble clic.
 
-        Así, un doble clic nunca emite un extremo de segmento y el doble
-        clic de B5.3 (reproducción temporal) queda intacto. Se reutiliza un
-        único QTimer persistente (se reinicia en cada pulsación).
+        Solo se programa DESPUÉS del release de un clic sin arrastre. Así, un
+        press sostenido jamás confirma un extremo por sí mismo: si llega un
+        doble clic, `mouseDoubleClickEvent` cancela el candidato; si no llega,
+        el timer emite el extremo (clic normal). Se reutiliza un único QTimer
+        persistente (se reinicia en cada pulsación).
         """
         self._cancelar_timer_extremo()
         self._extremo_pendiente_timer = float(instante)
@@ -249,13 +357,52 @@ class FranjaExploracion(QWidget):
         if instante is not None:
             self.extremo_segmento_solicitado.emit(instante)
 
+    def _limpiar_drag(self):
+        self._boton_presionado = False
+        self._press_pos = None
+        self._press_instante = None
+        self._drag_activo = False
+        self._drag_inicio = None
+        self._drag_actual = None
+        self._edicion_candidato = None
+        self._edicion_activa = None
+        self.update()
+
+    def _iniciar_edicion_extremo(self):
+        """Convierte un press sobre un extremo en edición real (≥ umbral)."""
+        segmento, lado = self._edicion_candidato
+        self._edicion_candidato = None
+        fijo = segmento["fin"] if lado == "inicio" else segmento["inicio"]
+        actual = segmento["inicio"] if lado == "inicio" else segmento["fin"]
+        self._edicion_activa = {
+            "segmento": segmento,
+            "lado": lado,
+            "fijo": float(fijo),
+            "actual": float(actual),
+            "inicio_original": float(segmento["inicio"]),
+            "fin_original": float(segmento["fin"]),
+        }
+        self._cancelar_timer_extremo()
+        self.update()
+
+    def _actualizar_edicion_extremo(self, instante):
+        if instante is None or self._edicion_activa is None:
+            return
+        self._edicion_activa["actual"] = float(instante)
+        self.update()
+
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
             instante = self._instante_en(event.position().x())
             if instante is not None:
                 self._actualizar_instante(instante)
                 if self._modo_crear_segmento:
-                    self._programar_extremo(instante)
+                    self._press_pos = event.position()
+                    self._press_instante = float(instante)
+                    self._boton_presionado = True
+                    self._edicion_candidato = self._extremo_en_posicion(
+                        event.position().x()
+                    )
                 else:
                     self.marcador_solicitado.emit(instante)
                 event.accept()
@@ -277,16 +424,136 @@ class FranjaExploracion(QWidget):
         instante = self._instante_en(event.position().x())
         if instante is not None:
             self._actualizar_instante(instante)
+        if (
+            self._modo_crear_segmento
+            and self._boton_presionado
+            and self._press_pos is not None
+        ):
+            if (
+                not self._drag_activo
+                and self._edicion_activa is None
+                and self._edicion_candidato is not None
+            ):
+                distancia = (
+                    event.position() - self._press_pos
+                ).manhattanLength()
+                if distancia >= QApplication.startDragDistance():
+                    self._iniciar_edicion_extremo()
+            elif (
+                self._edicion_activa is None
+                and not self._drag_activo
+            ):
+                distancia = (
+                    event.position() - self._press_pos
+                ).manhattanLength()
+                if distancia >= QApplication.startDragDistance():
+                    self._drag_activo = True
+                    self._cancelar_timer_extremo()
+                    self._drag_inicio = self._press_instante
+            if self._edicion_activa is not None:
+                self._actualizar_edicion_extremo(instante)
+            elif self._drag_activo:
+                self._drag_actual = (
+                    float(instante) if instante is not None else None
+                )
+                self.update()
+        elif not self._boton_presionado:
+            self._actualizar_cursor_extremo(event.position().x())
         event.accept()
         super().mouseMoveEvent(event)
 
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self._boton_presionado = False
+            if self._drag_activo:
+                inicio = self._drag_inicio
+                instante_final = self._instante_en(event.position().x())
+                self._limpiar_drag()
+                if (
+                    inicio is not None
+                    and instante_final is not None
+                ):
+                    a = min(inicio, instante_final)
+                    b = max(inicio, instante_final)
+                    if b > a:
+                        self.segmento_arrastre_confirmado.emit(a, b)
+                event.accept()
+                return
+            if self._edicion_activa is not None:
+                edicion = self._edicion_activa
+                fijo = edicion["fijo"]
+                actual = self._instante_en(event.position().x())
+                self._limpiar_drag()
+                if actual is not None:
+                    a = min(fijo, actual)
+                    b = max(fijo, actual)
+                    if b > a:
+                        self.extremo_editado.emit(
+                            edicion["segmento"], a, b
+                        )
+                event.accept()
+                return
+            if self._edicion_candidato is not None:
+                self._limpiar_drag()
+                event.accept()
+                return
+            if self._suprimir_release_clic:
+                self._suprimir_release_clic = False
+                self._limpiar_drag()
+                event.accept()
+                return
+            instante = self._press_instante
+            if instante is None:
+                instante = self._instante_en(event.position().x())
+            if self._modo_crear_segmento and instante is not None:
+                self._programar_extremo(instante)
+            self._limpiar_drag()
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+    def _actualizar_cursor_extremo(self, x):
+        extremo = (
+            self._extremo_en_posicion(x)
+            if self._modo_crear_segmento
+            else None
+        )
+        self._hover_extremo = extremo
+        if extremo is not None:
+            self.setCursor(Qt.SizeHorCursor)
+        else:
+            self.unsetCursor()
+        self.update()
+
+    def enterEvent(self, event):
+        self._actualizar_cursor_extremo(event.position().x())
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self._hover_extremo = None
+        self.unsetCursor()
+        self.update()
+        super().leaveEvent(event)
+
     def mouseDoubleClickEvent(self, event):
         self._cancelar_timer_extremo()
+        self._suprimir_release_clic = True
+        if self._drag_activo or self._edicion_activa is not None:
+            self._limpiar_drag()
         if event.button() == Qt.LeftButton:
             instante = self._instante_en(event.position().x())
             if instante is not None:
                 self.reproduccion_solicitada.emit(instante)
         event.accept()
+
+    def hideEvent(self, event):
+        self._cancelar_timer_extremo()
+        self._limpiar_drag()
+        self._suprimir_release_clic = False
+        self._hover_extremo = None
+        self.unsetCursor()
+        self.update()
+        super().hideEvent(event)
 
     def paintEvent(self, event):
         pintor = QPainter(self)
@@ -324,9 +591,85 @@ class FranjaExploracion(QWidget):
             izquierda = min(x1, x2)
             ancho_banda = max(0.0, abs(x2 - x1))
             rect_banda = QRectF(izquierda, y_pista, ancho_banda, _ALTO_PISTA)
-            pintor.fillRect(rect_banda, _COLOR_SEGMENTO)
-            pintor.setPen(QPen(_COLOR_SEGMENTO_BORDE, 1))
+            pintor.fillRect(rect_banda, QBrush(_COLOR_SEGMENTO))
+            pintor.setBrush(Qt.NoBrush)
+            pintor.setPen(QPen(_COLOR_SEGMENTO_BORDE, 2))
             pintor.drawRect(rect_banda)
+
+        if (
+            self._drag_activo
+            and self._drag_inicio is not None
+            and self._drag_actual is not None
+        ):
+            x1 = self._posicion_de(self._drag_inicio)
+            x2 = self._posicion_de(self._drag_actual)
+            if x1 is not None and x2 is not None:
+                izquierda = min(x1, x2)
+                ancho_banda = max(0.0, abs(x2 - x1))
+                rect_prov = QRectF(
+                    izquierda, y_pista, ancho_banda, _ALTO_PISTA
+                )
+                pintor.fillRect(
+                    rect_prov, QBrush(_COLOR_SEGMENTO_PROVISIONAL)
+                )
+                pintor.setBrush(Qt.NoBrush)
+                pintor.setPen(QPen(_COLOR_SEGMENTO_BORDE, 1, Qt.DashLine))
+                pintor.drawRect(rect_prov)
+
+        if self._edicion_activa is not None:
+            edicion = self._edicion_activa
+            a = min(edicion["fijo"], edicion["actual"])
+            b = max(edicion["fijo"], edicion["actual"])
+            x1 = self._posicion_de(a)
+            x2 = self._posicion_de(b)
+            x_ext = self._posicion_de(edicion["actual"])
+            if x1 is not None and x2 is not None:
+                izquierda = min(x1, x2)
+                ancho_banda = max(0.0, abs(x2 - x1))
+                rect_edit = QRectF(
+                    izquierda, y_pista, ancho_banda, _ALTO_PISTA
+                )
+                pintor.fillRect(
+                    rect_edit, QBrush(_COLOR_SEGMENTO_PROVISIONAL)
+                )
+                pintor.setBrush(Qt.NoBrush)
+                pintor.setPen(QPen(_COLOR_SEGMENTO_BORDE, 1, Qt.DashLine))
+                pintor.drawRect(rect_edit)
+            if x_ext is not None:
+                pintor.setPen(QPen(_COLOR_SEGMENTO_BORDE, 3))
+                pintor.drawLine(
+                    QPointF(x_ext, y_pista - 4),
+                    QPointF(x_ext, y_pista + _ALTO_PISTA + 4),
+                )
+
+        if (
+            self._hover_extremo is not None
+            and self._edicion_activa is None
+            and self._modo_crear_segmento
+        ):
+            seg_h, lado_h = self._hover_extremo
+            inst_h = (
+                seg_h.get("inicio")
+                if lado_h == "inicio"
+                else seg_h.get("fin")
+            )
+            xh = self._posicion_de(inst_h)
+            if xh is not None:
+                ancho_handle = 10.0
+                rect_handle = QRectF(
+                    xh - ancho_handle / 2.0,
+                    y_pista - 4,
+                    ancho_handle,
+                    _ALTO_PISTA + 8,
+                )
+                pintor.setBrush(QBrush(_COLOR_SEGMENTO_BORDE))
+                pintor.setPen(Qt.NoPen)
+                pintor.drawRoundedRect(rect_handle, 2, 2)
+                pintor.setPen(QPen(QColor(255, 255, 255), 1))
+                pintor.drawLine(
+                    QPointF(xh, y_pista),
+                    QPointF(xh, y_pista + _ALTO_PISTA),
+                )
 
         for marca in self._marcadores:
             x = self._posicion_de(marca)

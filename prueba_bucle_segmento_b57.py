@@ -148,6 +148,7 @@ def _enviar(widget, tipo, x, boton):
 
 def _press(widget, x):
     _enviar(widget, QEvent.MouseButtonPress, x, Qt.LeftButton)
+    _enviar(widget, QEvent.MouseButtonRelease, x, Qt.LeftButton)
 
 
 def _press_derecho(widget, x):

@@ -141,6 +141,7 @@ def _enviar(widget, tipo, x, boton):
 
 def _press(widget, x):
     _enviar(widget, QEvent.MouseButtonPress, x, Qt.LeftButton)
+    _enviar(widget, QEvent.MouseButtonRelease, x, Qt.LeftButton)
 
 
 def _press_derecho(widget, x):
@@ -764,9 +765,16 @@ def test_22():
 
 
 def test_23():
-    """Duplicados reproducibles: cada ID reproduce el mismo intervalo."""
+    """Duplicados reproducibles: cada ID reproduce el mismo intervalo.
+
+    Los duplicados idénticos se pre-persisten por repositorio: tras el
+    Pulido #4, un clic sobre un extremo existente edita (no crea A+B).
+    """
     with _miniaturas_temporales():
         temp, ruta_db = _crear_bd_con_videos(["a.mp4"])
+        id_a = _video_id(ruta_db, "a.mp4")
+        guardar_segmento(id_a, 20.0, 50.0, ruta_db)
+        guardar_segmento(id_a, 20.0, 50.0, ruta_db)
         ventana = _abrir_ventana(ruta_db)
         capturas = []
         original_reproducir = visor_videos.reproducir_segmento
@@ -780,8 +788,11 @@ def test_23():
         try:
             tarjeta = dict(ventana.tarjetas)["a.mp4"]
             _expandir(tarjeta)
-            _crear_segmento_ui(ventana, tarjeta, tarjeta._franja.width() * 0.2, tarjeta._franja.width() * 0.5)
-            _crear_segmento_ui(ventana, tarjeta, tarjeta._franja.width() * 0.2, tarjeta._franja.width() * 0.5, objetivo=2)
+            _esperar(
+                lambda: tarjeta._segmentos_cargados
+                and len(tarjeta._segmentos) == 2,
+                timeout_ms=15000,
+            )
             ok_dos = len(tarjeta._segmentos) == 2
             menu = _abrir_menu_segmento(ventana, tarjeta, tarjeta._franja.width() * 0.3)
             _accion(menu, "Reproducir segmento").trigger()

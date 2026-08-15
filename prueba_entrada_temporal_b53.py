@@ -847,6 +847,270 @@ def test_25():
         )
 
 
+def test_26():
+    """B5.9.2: doble clic entregado a la MiniaturaMarcador reproduce y no persiste marcador.
+
+    Sobre un video real la primera pulsación crea el marcador y su miniatura
+    en el punto del clic; Qt entrega el doble clic a esa etiqueta (widget
+    topmost). La etiqueta debe reenviarlo a la franja para que la reproducción
+    temporal (B5.3) siga abriendo VLC y el marcador se cancele (sin persistir).
+
+    Con B5.9.2B la pulsación izquierda sobre la miniatura se reenvía a la
+    franja (crea un marcador transitorio en el instante del clic); el doble
+    clic cancela ese marcador transitorio y reproduce. El marcador preexistente
+    (50.0) permanece, y no queda ningún marcador nuevo persistido.
+    """
+    from PySide6.QtGui import QColor, QPixmap
+
+    with _miniaturas_temporales():
+        temp, ruta_db = _crear_bd_con_videos(["a.mp4"])
+        try:
+            id_a = _video_id(ruta_db, "a.mp4")
+            ventana = _abrir_ventana(ruta_db)
+            capturas = []
+            try:
+                tarjeta = dict(ventana.tarjetas)["a.mp4"]
+                tarjeta.expandir()
+                _esperar(lambda: tarjeta._franja.width() > 0)
+                franja = tarjeta._franja
+                ancho = franja.width()
+                # preview sintética para que el marcador genere miniatura (como un video real)
+                pixmap = QPixmap(20, 20)
+                pixmap.fill(QColor(200, 200, 200))
+                tarjeta._previews_exploracion = [
+                    {
+                        "instante": 50.0,
+                        "pixmap": pixmap,
+                        "pixmap_escalado": pixmap,
+                    }
+                ]
+                original_reproducir = visor_videos.reproducir_desde_instante
+                original_ruta = visor_videos.ruta_video_existente
+                original_localizar = visor_videos.localizar_vlc
+                visor_videos.reproducir_desde_instante = (
+                    lambda r, n, i, v: capturas.append(i)
+                )
+                visor_videos.ruta_video_existente = lambda c, n: "C:\\videos\\" + n
+                visor_videos.localizar_vlc = lambda: "C:\\vlc\\vlc.exe"
+                try:
+                    # primera pulsación en la franja (modo normal) → marcador + miniatura
+                    _mouse_press(franja, ancho * 0.5)
+                    _mouse_release(franja, ancho * 0.5)
+                    _esperar(lambda: len(tarjeta._marcadores) == 1)
+                    etiqueta = tarjeta._marcadores[0]["etiqueta"]
+                    ok_etiqueta = etiqueta is not None
+                    if ok_etiqueta:
+                        # doble clic real: Qt lo entrega a la miniatura (widget topmost)
+                        _mouse_press(etiqueta, 5.0)
+                        _mouse_release(etiqueta, 5.0)
+                        _mouse_doble(etiqueta, 5.0)
+                        _mouse_release(etiqueta, 5.0)
+                    _esperar(lambda: len(capturas) >= 1)
+                    _esperar(
+                        lambda: not ventana.gestor_marcadores.activo
+                        and not ventana._cola_marcadores
+                    )
+                finally:
+                    visor_videos.reproducir_desde_instante = original_reproducir
+                    visor_videos.ruta_video_existente = original_ruta
+                    visor_videos.localizar_vlc = original_localizar
+                persistidos = escanear_mod.listar_marcadores(id_a, ruta_db)
+                ok = (
+                    ok_etiqueta
+                    and len(capturas) == 1
+                    and len(tarjeta._marcadores) == 1
+                    and abs(tarjeta._marcadores[0]["tiempo"] - 50.0) < 1e-6
+                    and len(persistidos) == 1
+                    and abs(persistidos[0][2] - 50.0) < 1e-6
+                )
+            finally:
+                ventana.close()
+                _limpiar(ventana)
+                temp.cleanup()
+            return ok, f"capturas={capturas} ram={[m['tiempo'] for m in tarjeta._marcadores]} sqlite={persistidos}"
+        finally:
+            temp.cleanup()
+
+
+def test_27():
+    """B5.9.2B: clic izquierdo sobre la MiniaturaMarcador crea un marcador cercano.
+
+    Un marcador fijo dibuja su miniatura (QLabel topmost) encima de la franja.
+    En la notebook no se podía crear otro marcador temporalmente cercano: la
+    miniatura se tragaba el clic izquierdo. Aquí se verifica que el clic
+    izquierdo sobre la miniatura se reenvía a la franja (mismo patrón del
+    doble clic de B5.9.2) y crea marcadores en los instantes correctos con
+    IDs independientes en SQLite; que un clic crea a lo sumo 1 marcador;
+    que el clic derecho sigue eliminando el marcador objetivo; que el doble
+    clic sigue reproduciendo sin persistir marcador nuevo ni borrar los
+    preexistentes; que el modo segmento queda intacto y que la miniatura y
+    sus previews siguen visibles (hover intacto).
+    """
+    from PySide6.QtGui import QColor, QPixmap
+
+    with _miniaturas_temporales():
+        temp, ruta_db = _crear_bd_con_videos(["a.mp4"])
+        try:
+            id_a = _video_id(ruta_db, "a.mp4")
+            ventana = _abrir_ventana(ruta_db)
+            capturas = []
+            try:
+                tarjeta = dict(ventana.tarjetas)["a.mp4"]
+                tarjeta.expandir()
+                _esperar(lambda: tarjeta._franja.width() > 0)
+                franja = tarjeta._franja
+                ancho = franja.width()
+                duracion = 100.0
+                # miniatura realista (cubre buena parte de la franja, como en
+                # la notebook con la miniatura de tamaño de preview)
+                pixmap = QPixmap(320, 180)
+                pixmap.fill(QColor(200, 200, 200))
+                tarjeta._previews_exploracion = [
+                    {"instante": 50.0, "pixmap": pixmap, "pixmap_escalado": pixmap}
+                ]
+                original_reproducir = visor_videos.reproducir_desde_instante
+                original_ruta = visor_videos.ruta_video_existente
+                original_localizar = visor_videos.localizar_vlc
+                visor_videos.reproducir_desde_instante = (
+                    lambda r, n, i, v: capturas.append(i)
+                )
+                visor_videos.ruta_video_existente = lambda c, n: "C:\\videos\\" + n
+                visor_videos.localizar_vlc = lambda: "C:\\vlc\\vlc.exe"
+                try:
+                    # M1 en el centro de la franja → genera su miniatura.
+                    x1 = ancho * 0.5
+                    _mouse_press(franja, x1)
+                    _mouse_release(franja, x1)
+                    _esperar(lambda: len(tarjeta._marcadores) == 1)
+                    etiqueta = tarjeta._marcadores[0]["etiqueta"]
+                    if etiqueta is None or etiqueta.width() <= 0:
+                        ok_marcadores = False
+                    else:
+                        # 1) Clic izquierdo sobre la miniatura de M1 → M2 en el
+                        #    instante correspondiente, aunque quede bajo ella.
+                        x2 = x1 + 4.0
+                        t2 = posicion_a_tiempo(x2, ancho, duracion)
+                        _mouse_press(etiqueta, x2 - etiqueta.x())
+                        _mouse_release(etiqueta, x2 - etiqueta.x())
+                        _esperar(lambda: len(tarjeta._marcadores) == 2)
+                        # 2) M3 aún más cerca (instante distinto) bajo la misma
+                        #    miniatura.
+                        x3 = x1 + 2.0
+                        t3 = posicion_a_tiempo(x3, ancho, duracion)
+                        _mouse_press(etiqueta, x3 - etiqueta.x())
+                        _mouse_release(etiqueta, x3 - etiqueta.x())
+                        _esperar(lambda: len(tarjeta._marcadores) == 3)
+                        _esperar(
+                            lambda: not ventana.gestor_marcadores.activo
+                            and not ventana._cola_marcadores
+                        )
+                        # 3) Un clic crea a lo sumo 1 marcador; tiempos únicos.
+                        tiempos_ram = sorted(m["tiempo"] for m in tarjeta._marcadores)
+                        ok_uno = (
+                            len(tarjeta._marcadores) == 3
+                            and len(set(round(t, 6) for t in tiempos_ram)) == 3
+                            and abs(tiempos_ram[0] - 50.0) < 1e-6
+                            and abs(tiempos_ram[1] - t3) < 1e-6
+                            and abs(tiempos_ram[2] - t2) < 1e-6
+                        )
+                        # 4) SQLite con IDs independientes para los 3.
+                        filas = escanear_mod.listar_marcadores(id_a, ruta_db)
+                        ok_ids = len(filas) == 3 and len({f[0] for f in filas}) == 3
+                        # 5) Clic derecho sobre la miniatura de M2 la elimina y
+                        #    deja M1 y M3.
+                        marcador_m2 = next(
+                            m
+                            for m in tarjeta._marcadores
+                            if abs(m["tiempo"] - t2) < 1e-9
+                        )
+                        _mouse_derecho(marcador_m2["etiqueta"], 5.0)
+                        _esperar(lambda: len(tarjeta._marcadores) == 2)
+                        _esperar(
+                            lambda: not ventana.gestor_marcadores.activo
+                            and not ventana._cola_marcadores
+                        )
+                        restantes = sorted(m["tiempo"] for m in tarjeta._marcadores)
+                        ok_borrado = (
+                            len(restantes) == 2
+                            and abs(restantes[0] - 50.0) < 1e-6
+                            and abs(restantes[1] - t3) < 1e-6
+                            and len(
+                                escanear_mod.listar_marcadores(id_a, ruta_db)
+                            ) == 2
+                        )
+                        # 6) Doble clic sobre la miniatura en instante distinto:
+                        #    reproduce, cancela el marcador de la primera
+                        #    pulsación y conserva los preexistentes.
+                        x4 = x1 + 6.0
+                        local4 = x4 - etiqueta.x()
+                        _doble_clic_real(etiqueta, local4)
+                        _esperar(lambda: len(capturas) >= 1)
+                        _esperar(
+                            lambda: not ventana.gestor_marcadores.activo
+                            and not ventana._cola_marcadores
+                        )
+                        ok_doble = (
+                            len(capturas) == 1
+                            and len(tarjeta._marcadores) == 2
+                            and len(
+                                escanear_mod.listar_marcadores(id_a, ruta_db)
+                            ) == 2
+                        )
+                        # 7) Modo segmento intacto: el clic sobre la miniatura
+                        #    programa un extremo diferido (sin marcador) y el
+                        #    doble clic lo cancela y reproduce.
+                        n_seg = len(tarjeta._marcadores)
+                        tarjeta._modo_crear_segmento = True
+                        franja.set_modo_crear_segmento(True)
+                        _mouse_press(etiqueta, local4)
+                        _mouse_release(etiqueta, local4)
+                        ok_segmento_pendiente = (
+                            franja._extremo_pendiente_timer is not None
+                            and len(tarjeta._marcadores) == n_seg
+                        )
+                        _doble_clic_real(etiqueta, local4)
+                        _esperar(lambda: len(capturas) >= 2)
+                        ok_segmento = (
+                            ok_segmento_pendiente
+                            and franja._extremo_pendiente_timer is None
+                            and len(tarjeta._marcadores) == n_seg
+                            and len(
+                                escanear_mod.listar_marcadores(id_a, ruta_db)
+                            ) == 2
+                        )
+                        tarjeta._modo_crear_segmento = False
+                        franja.set_modo_crear_segmento(False)
+                        # 8) Miniatura/previews siguen visibles (hover intacto).
+                        ok_preview = (
+                            etiqueta.isVisible()
+                            and len(tarjeta._previews_exploracion) == 1
+                        )
+                        ok_marcadores = (
+                            ok_uno
+                            and ok_ids
+                            and ok_borrado
+                            and ok_doble
+                            and ok_segmento
+                            and ok_preview
+                        )
+                finally:
+                    visor_videos.reproducir_desde_instante = original_reproducir
+                    visor_videos.ruta_video_existente = original_ruta
+                    visor_videos.localizar_vlc = original_localizar
+                persistidos = escanear_mod.listar_marcadores(id_a, ruta_db)
+                return (
+                    ok_marcadores,
+                    f"ram={[round(m['tiempo'], 2) for m in tarjeta._marcadores]} "
+                    f"sqlite={persistidos} reproducciones={len(capturas)}",
+                )
+            finally:
+                ventana.close()
+                _limpiar(ventana)
+                temp.cleanup()
+        finally:
+            temp.cleanup()
+
+
 def main():
     app = QApplication(sys.argv)
     pruebas = [
@@ -875,6 +1139,8 @@ def main():
         test_23,
         test_24,
         test_25,
+        test_26,
+        test_27,
     ]
     resultados = []
     for i, fn in enumerate(pruebas, start=1):

@@ -94,6 +94,7 @@ from tareas_videos import (
     TareaGuardarVideos,
     TareaEliminarMarcador,
     TareaEliminarSegmento,
+    TareaActualizarSegmento,
     TareaExploracionDensa,
     TareaLecturaCatalogoPaginada,
     TareaListarMarcadores,
@@ -607,6 +608,7 @@ class Tarjeta(QFrame):
     segmentos_solicitados = Signal()
     segmento_creado = Signal(object)
     segmento_eliminado = Signal(object)
+    segmento_actualizado = Signal(object, object)
     segmento_reproduccion_solicitada = Signal(object)
     segmento_bucle_solicitado = Signal(object)
     reproduccion_temporal_solicitada = Signal(float)
@@ -718,7 +720,16 @@ class Tarjeta(QFrame):
             etiqueta.installEventFilter(self)
 
         contenedor_imagenes.addStretch()
-        fila_principal.addLayout(contenedor_imagenes, 1)
+
+        contenedor_imagenes_widget = QWidget()
+        contenedor_imagenes_widget.setLayout(contenedor_imagenes)
+        self._area_imagenes = QScrollArea()
+        self._area_imagenes.setWidgetResizable(True)
+        self._area_imagenes.setFrameShape(QFrame.NoFrame)
+        self._area_imagenes.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self._area_imagenes.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._area_imagenes.setWidget(contenedor_imagenes_widget)
+        fila_principal.addWidget(self._area_imagenes, 1)
 
         self._check = QCheckBox()
         self._check.setVisible(False)
@@ -887,6 +898,10 @@ class Tarjeta(QFrame):
         self._franja.extremo_segmento_solicitado.connect(
             self._al_extremo_segmento_solicitado
         )
+        self._franja.segmento_arrastre_confirmado.connect(
+            self._al_segmento_arrastre_confirmado
+        )
+        self._franja.extremo_editado.connect(self._al_extremo_editado)
         self._franja.segmento_contextual_solicitado.connect(
             self._al_segmento_contextual_solicitado
         )
@@ -1287,16 +1302,77 @@ class Tarjeta(QFrame):
             self._extremo_segmento = float(instante)
             self._franja.set_inicio_segmento_pendiente(self._extremo_segmento)
             return
-        a = min(self._extremo_segmento, float(instante))
-        b = max(self._extremo_segmento, float(instante))
+        a = self._extremo_segmento
+        b = float(instante)
         self._extremo_segmento = None
         self._franja.set_inicio_segmento_pendiente(None)
-        if b <= a:
+        self._crear_segmento_normalizado(a, b)
+
+    def _al_segmento_arrastre_confirmado(self, a, b):
+        """Arrastre válido en modo segmento: crea el segmento A→B.
+
+        Reutiliza exactamente el flujo persistente de la creación por dos
+        clics. Si existía un A pendiente (de un clic anterior), se cancela:
+        el arrastre reemplaza el gesto previo y crea un único segmento.
+        """
+        if not self._modo_crear_segmento:
             return
+        self._extremo_segmento = None
+        self._franja.set_inicio_segmento_pendiente(None)
+        self._crear_segmento_normalizado(a, b)
+
+    def _al_extremo_editado(self, segmento, inicio, fin):
+        """Edición de un extremo de segmento existente (Pulido #4).
+
+        Actualiza de forma optimista el registro local (conservando `id`),
+        cancela cualquier A pendiente y notifica para persistir un único
+        UPDATE por id. `inicio`/`fin` ya llegan normalizados (inicio < fin).
+        """
+        if not self._modo_crear_segmento:
+            return
+        previo = {
+            "inicio": float(segmento["inicio"]),
+            "fin": float(segmento["fin"]),
+        }
+        inicio = float(inicio)
+        fin = float(fin)
+        if fin <= inicio:
+            return
+        if (
+            abs(previo["inicio"] - inicio) < 1e-9
+            and abs(previo["fin"] - fin) < 1e-9
+        ):
+            return
+        self._extremo_segmento = None
+        self._franja.set_inicio_segmento_pendiente(None)
+        segmento["inicio"] = inicio
+        segmento["fin"] = fin
+        self._segmentos.sort(
+            key=lambda s: (
+                s["inicio"],
+                s["fin"],
+                s["id"] if s["id"] is not None else 0,
+            )
+        )
+        self._franja.set_segmentos(self._segmentos)
+        self.segmento_actualizado.emit(segmento, previo)
+
+    def _crear_segmento_normalizado(self, a, b):
+        """Crea y persiste un segmento a partir de dos extremos.
+
+        Normaliza inicio/fin (inicio < fin), descarta duración nula o
+        negativa y encola la persistencia mediante `segmento_creado`
+        (mismo flujo optimista/reconcile asíncrono para los caminos de
+        creación por clic A+B y por arrastre).
+        """
+        inicio = min(float(a), float(b))
+        fin = max(float(a), float(b))
+        if fin <= inicio:
+            return None
         registro = {
             "id": None,
-            "inicio": a,
-            "fin": b,
+            "inicio": inicio,
+            "fin": fin,
             "eliminada": False,
         }
         self._segmentos.append(registro)
@@ -1309,6 +1385,7 @@ class Tarjeta(QFrame):
         )
         self._franja.set_segmentos(self._segmentos)
         self.segmento_creado.emit(registro)
+        return registro
 
     def _al_segmento_eliminar_solicitado(self, segmento):
         for indice, seg in enumerate(self._segmentos):
@@ -2517,6 +2594,13 @@ class VisorVideos(QMainWindow):
             tarea = TareaEliminarSegmento(
                 op["segmento_id"], self._ruta_db
             )
+        elif tipo == "actualizar":
+            tarea = TareaActualizarSegmento(
+                op["segmento_id"],
+                op["inicio"],
+                op["fin"],
+                self._ruta_db,
+            )
         else:
             self._segmento_op_actual = None
             self._procesar_siguiente_segmento()
@@ -2561,6 +2645,36 @@ class VisorVideos(QMainWindow):
                 )
         elif tipo == "eliminar":
             pass
+        elif tipo == "actualizar":
+            # El registro local ya refleja el nuevo intervalo de forma
+            # optimista; se reordena y se reaplica. Si el segmento ya no
+            # existía en la base (resultado None), se restaura lo previo.
+            registro = op["registro"]
+            tarjeta = self._tarjeta_por_nombre(op["nombre"])
+            if resultado is None:
+                registro["inicio"] = op["previo"]["inicio"]
+                registro["fin"] = op["previo"]["fin"]
+                if tarjeta is not None:
+                    tarjeta._segmentos.sort(
+                        key=lambda s: (
+                            s["inicio"],
+                            s["fin"],
+                            s["id"] if s["id"] is not None else 0,
+                        )
+                    )
+                    tarjeta._franja.set_segmentos(tarjeta._segmentos)
+                self.mensaje_carpeta.setText(
+                    "No se pudo actualizar el segmento: ya no existe."
+                )
+            elif tarjeta is not None:
+                tarjeta._segmentos.sort(
+                    key=lambda s: (
+                        s["inicio"],
+                        s["fin"],
+                        s["id"] if s["id"] is not None else 0,
+                    )
+                )
+                tarjeta._franja.set_segmentos(tarjeta._segmentos)
 
     def _al_error_segmentos(self, mensaje):
         op = self._segmento_op_actual
@@ -2603,6 +2717,24 @@ class VisorVideos(QMainWindow):
             if tarjeta is not None:
                 tarjeta._segmentos_cargados = False
                 tarjeta._segmentos_eliminados_carga.clear()
+        elif tipo == "actualizar":
+            # La edición optimista se revierte al estado previo.
+            registro = op["registro"]
+            registro["inicio"] = op["previo"]["inicio"]
+            registro["fin"] = op["previo"]["fin"]
+            tarjeta = self._tarjeta_por_nombre(op["nombre"])
+            if tarjeta is not None:
+                tarjeta._segmentos.sort(
+                    key=lambda s: (
+                        s["inicio"],
+                        s["fin"],
+                        s["id"] if s["id"] is not None else 0,
+                    )
+                )
+                tarjeta._franja.set_segmentos(tarjeta._segmentos)
+            self.mensaje_carpeta.setText(
+                f"No se pudo actualizar el segmento: {mensaje}"
+            )
 
     def _solicitar_carga_segmentos(self, tarjeta):
         video_id = getattr(tarjeta, "_video_id", None)
@@ -2654,6 +2786,30 @@ class VisorVideos(QMainWindow):
                 tarjeta._segmentos_eliminados_carga.add(
                     (registro["inicio"], registro["fin"])
                 )
+
+    def _al_segmento_actualizado(self, tarjeta, registro, previo):
+        """Persiste una edición de extremos con un único UPDATE por id."""
+        video_id = getattr(tarjeta, "_video_id", None)
+        if video_id is None:
+            return
+        seg_id = registro.get("id")
+        if seg_id is None:
+            registro["inicio"] = previo["inicio"]
+            registro["fin"] = previo["fin"]
+            tarjeta._franja.set_segmentos(tarjeta._segmentos)
+            return
+        self._encolar_segmento(
+            {
+                "tipo": "actualizar",
+                "registro": registro,
+                "segmento_id": seg_id,
+                "inicio": registro["inicio"],
+                "fin": registro["fin"],
+                "previo": previo,
+                "video_id": video_id,
+                "nombre": tarjeta.nombre,
+            }
+        )
 
     def _hay_carga_pendiente_segmentos(self, tarjeta):
         op = self._segmento_op_actual
@@ -3622,6 +3778,11 @@ class VisorVideos(QMainWindow):
             tarjeta.segmento_eliminado.connect(
                 lambda registro, t=tarjeta: self._al_segmento_eliminado(t, registro)
             )
+            tarjeta.segmento_actualizado.connect(
+                lambda registro, previo, t=tarjeta: self._al_segmento_actualizado(
+                    t, registro, previo
+                )
+            )
             tarjeta.segmento_reproduccion_solicitada.connect(
                 lambda segmento, t=tarjeta: self._al_segmento_reproduccion_solicitada(
                     t, segmento
@@ -3717,6 +3878,11 @@ class VisorVideos(QMainWindow):
             )
             tarjeta.segmento_eliminado.connect(
                 lambda registro, t=tarjeta: self._al_segmento_eliminado(t, registro)
+            )
+            tarjeta.segmento_actualizado.connect(
+                lambda registro, previo, t=tarjeta: self._al_segmento_actualizado(
+                    t, registro, previo
+                )
             )
             tarjeta.segmento_reproduccion_solicitada.connect(
                 lambda segmento, t=tarjeta: self._al_segmento_reproduccion_solicitada(
