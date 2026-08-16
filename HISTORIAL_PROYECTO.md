@@ -5,6 +5,33 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 103. Cierre interno de Beta 5
+
+- **Fecha:** 2026-08-15
+- **Tipo:** cierre formal interno y local de Beta 5 (identidad definitiva, documentación,
+  commit de cierre separado). **Sin** distribución pública, **sin** merge a `main`, **sin**
+  GitHub Release, **sin** push.
+- **Rama:** `beta5`.
+- **Commit técnico principal:** `969efcd9d71e78c1ca538bfa238a3e27f1484d9e`
+  («Pulir interacción, edición y visualización de segmentos en Beta 5»).
+- **Identidad definitiva:** `Beta 5 — B5.0` (constantes en `configuracion.py`).
+- **Instalador interno validado en notebook:** `VisorVideos_Beta5_ValidacionFinal_Setup.exe`
+  (SHA-256 `F40ACF41FE7D3931FF042AC718B6D2805460AE380092E9E782A918C42A650133`), aprobado.
+- **Funcionalidad incorporada en Beta 5:** doble clic temporal → VLC desde instante; modelo
+  persistente de segmentos A–B; carga lazy/asíncrona; creación visual A+B; robustez y ciclo de
+  vida; reproducción individual A→B; bucle A→B; secuencia de segmentos; creación por drag;
+  edición de extremos A/B conservando id; feedback visual de edición (handle/cursor); mejora de
+  visibilidad de segmentos; scroll horizontal local de previews.
+- **Correcciones B5.9.2:** doble clic interceptado por `MiniaturaMarcador`; creación de
+  marcadores cercanos bloqueada por solapamiento.
+- **Persistencia de edición:** UPDATE por id; tarea asíncrona; rollback en error.
+- **Validación final:** suites verdes; auditoría integral aprobada; notebook objetivo aprobada.
+- **Deudas registradas:** uninstaller destructivo (bloqueante futuro para distribución pública);
+  retención de pixmaps densos (deuda de Beta 4, no empeoró); flake ocasional de timing en
+  pruebas VLC/PySide6; seek VLC aproximado por keyframes.
+
+---
+
 ## 102. Apertura y planificación de Beta 5 (B5.0)
 
 - **Fecha:** 2026-08-13

@@ -16,8 +16,13 @@ corta) y con la suite integral posterior a las correcciones en **87 suites /
 finalizada y congelada en su momento con su instalador
 (`VisorVideos_Beta3_Setup.exe`); la **Beta 2** permanece como la última versión
 estable publicada. El ciclo Beta 4 se desarrolló sobre la **rama `beta4`**
-(punto de partida: cierre de la Beta 3, commit `4408d542`). **Beta 5 planificada
-(B5.0):** alcance inicial congelado, sin implementación funcional (ver "Próxima fase").
+(punto de partida: cierre de la Beta 3, commit `4408d542`). **Beta 5 CERRADA
+internamente (cierre formal 2026-08-15, rama `beta5`):** commit técnico principal
+`969efcd9d71e78c1ca538bfa238a3e27f1484d9e`; instalador interno validado
+`VisorVideos_Beta5_ValidacionFinal_Setup.exe` (SHA-256
+`F40ACF41FE7D3931FF042AC718B6D2805460AE380092E9E782A918C42A650133`), aprobado en la
+notebook objetivo; identidad definitiva **`Beta 5 — B5.0`**. Sin distribución
+pública, sin merge a `main`, sin GitHub Release (ver "Próxima fase").
 La primera etapa, **B4.1 — Exploración
 temporal interactiva y marcadores visuales**, quedó **aprobada e incorporada**:
 cada tarjeta puede expandirse en una **superficie temporal** que representa la
@@ -184,6 +189,45 @@ de `prueba_exploracion_densidad_b432.py` (ocasional `0xC0000409`; 12/12 funciona
 **Transición de builds:** `B4.11` = build ampliamente validada en la notebook; `B4.12` = build final
 validada en la notebook (validación final corta). **La Beta 4 quedó CERRADA y aprobada (ver
 "Próxima fase").**
+
+## Cierre interno de Beta 5
+
+**Fecha:** 2026-08-15 · **Rama:** `beta5`
+
+**Commit técnico principal:** `969efcd9d71e78c1ca538bfa238a3e27f1484d9e`
+(«Pulir interacción, edición y visualización de segmentos en Beta 5»).
+
+**Identidad definitiva:** `Beta 5 — B5.0` (constantes en `configuracion.py`).
+
+**Instalador interno validado en notebook:** `VisorVideos_Beta5_ValidacionFinal_Setup.exe`
+(SHA-256 `F40ACF41FE7D3931FF042AC718B6D2805460AE380092E9E782A918C42A650133`), aprobado.
+
+**Funcionalidad incorporada en Beta 5:**
+- doble clic temporal → VLC desde instante;
+- modelo persistente de segmentos A–B;
+- carga lazy/asíncrona de segmentos;
+- creación visual A+B;
+- robustez y ciclo de vida de segmentos;
+- reproducción individual A→B; bucle A→B; secuencia de segmentos;
+- creación de segmentos por drag;
+- edición de extremos A/B conservando id;
+- feedback visual de edición (handle/cursor);
+- mejora de visibilidad de segmentos;
+- scroll horizontal local de previews.
+
+**Correcciones B5.9.2:** doble clic interceptado por `MiniaturaMarcador`; creación de
+marcadores cercanos bloqueada por solapamiento.
+
+**Persistencia de edición:** UPDATE por id; tarea asíncrona; rollback en error.
+
+**Validación final:** suites verdes; auditoría integral aprobada; notebook objetivo aprobada.
+
+**Estado de cierre:** cierre interno y local. **Sin distribución pública; sin merge a `main`;
+sin GitHub Release.** Deudas registradas: uninstaller destructivo (bloqueante futuro para
+distribución pública), retención de pixmaps densos (deuda de Beta 4, no empeoró), flake
+ocasional de timing en pruebas VLC/PySide6, seek VLC aproximado por keyframes.
+
+---
 
 ## Último commit aprobado
 

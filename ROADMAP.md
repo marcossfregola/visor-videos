@@ -31,11 +31,13 @@ arquitectónicas.
 > `730B4DAB1CD2F1F5CFDD184D2DC6FE80CF0481B8754080F0FF10CF991F89431F`), validada en la notebook
 > objetivo (B4.11: validación manual amplia; B4.12: validación final corta). Suite integral
 > posterior a las correcciones: **87 suites / 1570/1570 OK / 0 FAIL funcional**. **Beta 5
-> planificada (B5.0):** cierre formal y documental de la planificación sobre la rama `beta5`
-> (punto de partida: cierre de la Beta 4, `v4.0-beta`); alcance inicial congelado con **cuatro
-> bloques** (A: entrada temporal a VLC; B: segmentos A–B con **marcador ≠ segmento**; C:
-> reproducción de segmento simple y en bucle; D: secuencia automática de segmentos) y plan de
-> etapas **B5.1–B5.9** (ver la sección "Beta 5"). Sin implementación funcional todavía.
+> CERRADA internamente (cierre formal 2026-08-15, rama `beta5`):** commit técnico principal
+> `969efcd9d71e78c1ca538bfa238a3e27f1484d9e`; instalador interno validado
+> `VisorVideos_Beta5_ValidacionFinal_Setup.exe` (SHA-256
+> `F40ACF41FE7D3931FF042AC718B6D2805460AE380092E9E782A918C42A650133`), aprobado en la notebook
+> objetivo; identidad definitiva **`Beta 5 — B5.0`**. Etapas **B5.1–B5.9** completadas más los
+> pulidos finales (drag de creación, edición de extremos, scroll local de previews). **Sin
+> distribución pública; sin merge a `main`; sin GitHub Release** (ver la sección "Beta 5").
 
 ------------------------------------------------------------------------
 
@@ -735,6 +737,13 @@ desarrolla sobre la rama `beta4` (punto de partida: cierre de la Beta 3).
 La Beta 5 se desarrolla sobre la rama `beta5` (punto de partida: cierre de la Beta 4,
 `v4.0-beta`). **B5.0 — Planificación y congelamiento del alcance inicial** quedó **cerrada
 formalmente** (2026-08-13): etapa exclusivamente documental, sin implementación funcional.
+**Beta 5 CERRADA internamente (2026-08-15):** etapas **B5.1–B5.9** completadas y aprobadas, más
+los pulidos finales de interacción (creación por drag, edición de extremos A/B con handle/feedback
+visual, corrección de press sostenido + drag, mejoras de visibilidad de segmentos y scroll
+horizontal local de previews). Commit técnico principal
+`969efcd9d71e78c1ca538bfa238a3e27f1484d9e`; instalador interno validado
+`VisorVideos_Beta5_ValidacionFinal_Setup.exe`; identidad **`Beta 5 — B5.0`**. **Sin
+distribución pública; sin merge a `main`; sin GitHub Release.**
 
 ## Alcance inicial
 
@@ -805,13 +814,13 @@ en línea de comandos).
   (proceso huérfano al terminar el script controlador). Los scripts temporales de `%TEMP%`
   **no se incorporan al repositorio**.
 
-## Modelo de segmentos (dirección aprobada para B5.1, NO implementada)
+## Modelo de segmentos (implementado en B5.1 y refinado en Beta 5)
 
-Tabla independiente prevista: `segmentos_video`, campos mínimos `id`, `video_id`, `inicio`, `fin`;
-índice recomendado `(video_id, inicio)`; reglas `video_id > 0`, `inicio >= 0`, `fin > inicio`;
-relación conceptual mediante `video_id`; **misma política de orfandad que los marcadores** (sin
-CASCADE); sin hashes; sin detección avanzada de renombrados; **migración aditiva e idempotente**.
-Se registra como **dirección**, no como implementación existente.
+Tabla independiente `segmentos_video`, campos `id`, `video_id`, `inicio`, `fin`; índice
+`(video_id, inicio)`; reglas `video_id > 0`, `inicio >= 0`, `fin > inicio`; relación
+conceptual mediante `video_id`; **misma política de orfandad que los marcadores** (sin CASCADE);
+migración aditiva e idempotente. La edición de extremos A/B conserva el `id` mediante
+`UPDATE` por id (tarea asíncrona, rollback en error).
 
 ## UX conceptual aprobada
 
@@ -842,7 +851,12 @@ Se registra como **dirección**, no como implementación existente.
 | **B5.8** | **Bloque D:** secuencia automática de segmentos. |
 | **B5.9** | Auditoría integral de los cuatro bloques y decisión (cerrar Beta 5 / ampliar Beta 5). |
 
-Ninguna de estas etapas está implementada todavía.
+**Estado:** todas las etapas **B5.1–B5.9 están implementadas y aprobadas** (cierre interno
+2026-08-15), junto con los pulidos finales de interacción. Las funciones fuera del alcance
+inicial (nombres/notas/etiquetas, colores/categorías, panel/lista de marcadores y segmentos,
+conversión marcador↔segmento, selección múltiple, snap, exportación, unión, secuencias
+editables/reordenables, undo/redo, funciones avanzadas de la visión de producto) quedan como
+**evolución futura**, sin implementar.
 
 ## Funciones fuera del alcance inicial
 

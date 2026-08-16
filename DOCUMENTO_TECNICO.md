@@ -1058,10 +1058,14 @@ completada en sus Etapas 1-2; no se declara la Beta 4 completa todavía.**
 `VisorVideos_Beta4_Setup.exe`, SHA-256 `730B4DAB1CD2F1F5CFDD184D2DC6FE80CF0481B8754080F0FF10CF991F89431F`),
 validada en la notebook (B4.11: validación manual amplia; B4.12: validación final corta) y con la
 suite integral posterior a las correcciones en **87 suites / 1570/1570 OK / 0 FAIL funcional**.
-**Beta 5 planificada (B5.0, rama `beta5`):** alcance inicial congelado con cuatro bloques (A:
-entrada temporal a VLC; B: segmentos A–B; C: reproducción de segmento simple y en bucle; D:
-secuencia automática de segmentos) y plan B5.1–B5.9; sin implementación funcional. Ver la
-sección "Modelo de segmentos (B5.0, dirección, NO implementado)" más abajo.
+**Beta 5 CERRADA internamente (2026-08-15, rama `beta5`):** commit técnico principal
+`969efcd9d71e78c1ca538bfa238a3e27f1484d9e`; instalador interno validado
+`VisorVideos_Beta5_ValidacionFinal_Setup.exe`; identidad **`Beta 5 — B5.0`**. Los cuatro bloques
+iniciales (A: entrada temporal a VLC; B: segmentos A–B; C: reproducción simple y en bucle; D:
+secuencia automática) y el plan B5.1–B5.9 quedaron **implementados**, junto con los pulidos
+finales de interacción (creación por drag, edición de extremos A/B, scroll horizontal local de
+previews, mejoras de visibilidad de segmentos y feedback visual de edición). Sin distribución
+pública, sin merge a `main`, sin GitHub Release. Ver la sección "Modelo de segmentos" más abajo.
 
 **Decisión arquitectónica registrada en B5.0 — MARCADOR ≠ SEGMENTO (dirección, NO implementada):**
 el marcador ("instante interesante") y el segmento ("intervalo interesante", `video_id` + inicio
