@@ -48,8 +48,9 @@ Name: "desktopicon"; Description: "Crear acceso directo en el escritorio"; Group
 Source: "dist\VisorVideos\VisorVideos.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "dist\VisorVideos\_internal\*"; DestDir: "{app}\_internal"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; Base de datos vacia con el esquema vigente (se genera en el paso previo del build;
-; onlyifdoesntexist preserva el catalogo del usuario en reinstalaciones)
-Source: "dist\VisorVideos\biblioteca.db"; DestDir: "{app}"; Flags: ignoreversion onlyifdoesntexist
+; onlyifdoesntexist preserva el catalogo del usuario en reinstalaciones;
+; uninsneveruninstall conserva la base y los datos del usuario al desinstalar)
+Source: "dist\VisorVideos\biblioteca.db"; DestDir: "{app}"; Flags: ignoreversion onlyifdoesntexist uninsneveruninstall
 
 [Icons]
 Name: "{autoprograms}\Visor de Videos"; Filename: "{app}\VisorVideos.exe"
@@ -58,8 +59,7 @@ Name: "{autodesktop}\Visor de Videos"; Filename: "{app}\VisorVideos.exe"; Tasks:
 [Run]
 Filename: "{app}\VisorVideos.exe"; Description: "Ejecutar Visor de Videos"; Flags: nowait postinstall skipifsilent
 
-[UninstallDelete]
-; Elimina tambien los datos creados en tiempo de ejecucion (biblioteca.db,
-; configuracion.json, miniaturas/ y cualquier dato generado por la aplicacion)
-; para una desinstalacion completa
-Type: filesandordirs; Name: "{app}"
+; Beta 6 / B6.1: la desinstalacion NO borra {app} recursivamente.
+; Los binarios instalados desde [Files] se eliminan de forma normal; los datos
+; persistentes del usuario (biblioteca.db, configuracion.json, miniaturas/) se
+; conservan al desinstalar para permitir una reinstalacion sin perdida de datos.
