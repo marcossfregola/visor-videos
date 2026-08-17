@@ -229,6 +229,24 @@ ocasional de timing en pruebas VLC/PySide6, seek VLC aproximado por keyframes.
 
 ---
 
+## Protocolo de colaboración y materialización de persistencia
+
+**Fecha:** 2026-08-17
+
+El protocolo de colaboración **ChatGPT ↔ Bridge ↔ OpenCode** (con
+Bridge/MCP/Telegram como transporte) está **activo**. Su autoridad detallada
+— actores, flujo, estados, auditoría, persistencia y seguridad — es
+`METODOLOGIA_DESARROLLO.md`.
+
+La **inspección de persistencia** quedó **cerrada y aprobada**, y la
+**materialización de la autoridad documental** (documento metodológico,
+reglas y protecciones Git) está **en curso**, como etapa previa a **B6.2**.
+Las normas permanentes del protocolo constan en `REGLAS_PROYECTO.md`; no se
+insertan aquí la matriz completa ni el detalle operativo (ver
+`METODOLOGIA_DESARROLLO.md`).
+
+---
+
 ## Último commit aprobado
 
 **Mensaje:** Cerrar regresiones y contratos de prueba de Beta 4
@@ -948,6 +966,8 @@ iniciadas (fuera de Beta 4 y del alcance inicial de Beta 5): **selección A/B**,
 ## Documentos del proyecto
 
 - `REGLAS_PROYECTO.md` — reglas permanentes de desarrollo.
+- `METODOLOGIA_DESARROLLO.md` — protocolo detallado de desarrollo y auditoría
+  (operación del Bridge, estado, evidencia, autorizaciones).
 - `DOCUMENTO_TECNICO.md` — arquitectura y referencia técnica.
 - `ROADMAP.md` — funcionalidades previstas.
 - `VISION_PRODUCTO.md` — decisiones estratégicas y filosofía.

@@ -5,6 +5,32 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 104. Adopción y estabilización del Bridge/MCP/Telegram; preparación de la persistencia
+
+- **Fecha:** 2026-08-17
+- **Tipo:** hito de proceso/colaboración y preparación documental (antes de B6.2).
+- **Adopción y estabilización del Bridge/MCP/Telegram y B4.2:** se adoptó y
+  estabilizó el Bridge/MCP/Telegram como transporte/orquestación del protocolo
+  y el mecanismo/contrato de auditoría B4/B4.2, con GitHub vivo como fuente de
+  verdad del producto y el ledger contextual subordinado.
+- **Validación del fallback y del retorno automático:** se validó el fallback
+  manual (que conserva alcance, evidencia, auditoría y autorizaciones) y los
+  criterios de retorno seguro al flujo automático.
+- **Cierre de la inspección de persistencia:** la inspección de persistencia
+  quedó cerrada y aprobada, definiendo qué se versiona y qué no, y el reparto
+  documental vigente.
+- **Inicio de la materialización documental:** se inició la materialización de
+  la autoridad documental (`METODOLOGIA_DESARROLLO.md` como detalle del
+  protocolo, referencia en `REGLAS_PROYECTO.md`, estado y protecciones Git)
+  como etapa previa a B6.2. Sin copia de código/runtime ni creación de
+  infraestructura real todavía.
+- **Detalle operativo:** el contrato operativo completo está en
+  `METODOLOGIA_DESARROLLO.md`; aquí solo se registra el hito.
+- **Próxima fase:** continuar la materialización de persistencia; B6.2
+  permanece no iniciada hasta cerrar y aprobar esa materialización.
+
+---
+
 ## 103. Cierre interno de Beta 5
 
 - **Fecha:** 2026-08-15

@@ -40,3 +40,42 @@ Distribucion/
 AUDITORIA_CLAUDE/
 Videos de muestra/
 Visor.rar
+
+# --- infra/bridge/ (protección futura; la carpeta se creará en una etapa posterior) ---
+# Los patrones **/ cubren también subdirectorios futuros (secrets/, mcp/, tunnel/, …).
+# Los templates *.example*, *.example, la documentación .md, los manifests
+# sanitizados y los schemas versionables NO se bloquean.
+
+# Secretos reales (mapeados por nombre; NO se usa un patrón genérico *token*)
+infra/bridge/**/*.dpapi
+infra/bridge/**/token.bin
+infra/bridge/**/creds.json
+infra/bridge/**/.env
+
+# Estado runtime, logs, reportes y temporales
+infra/bridge/**/state/
+infra/bridge/**/logs/
+infra/bridge/**/reports/
+infra/bridge/**/health.url
+
+# Entorno virtual y bytecode
+infra/bridge/**/venv/
+infra/bridge/**/__pycache__/
+infra/bridge/**/*.pyc
+
+# PIDs y locks
+infra/bridge/**/*.pid
+infra/bridge/**/*.lock
+
+# Configs reales de máquina (el template versionable será *.example)
+infra/bridge/**/config.json
+infra/bridge/**/settings.json
+infra/bridge/**/config.yaml
+infra/bridge/**/settings.yaml
+
+# Perfiles reales anidados (los templates versionables serán *.example / *.example.*)
+infra/bridge/**/profiles/*.yaml
+
+# Binarios terceros/locales (una futura decisión documentada podrá indicar lo contrario)
+infra/bridge/**/*.exe
+infra/bridge/**/*.dll
