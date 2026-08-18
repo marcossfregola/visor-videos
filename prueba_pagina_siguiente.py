@@ -362,7 +362,14 @@ def test_07():
         ]
         orig_listar = tv.listar_videos_paginado
 
-        def _pagina_duplicada(limite, desplazamiento=0, texto=None, ruta_db=None):
+        def _pagina_duplicada(
+            limite,
+            desplazamiento=0,
+            texto=None,
+            ruta_db=None,
+            orden_clave=None,
+            orden_direccion=None,
+        ):
             return {
                 "videos": filas_primera,
                 "total": 100,

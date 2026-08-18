@@ -270,12 +270,23 @@ class TareaLecturaCatalogo(TareaBase):
 
 
 class TareaLecturaCatalogoPaginada(TareaBase):
-    def __init__(self, limite, desplazamiento=0, texto=None, ruta_db=None, parent=None):
+    def __init__(
+        self,
+        limite,
+        desplazamiento=0,
+        texto=None,
+        ruta_db=None,
+        orden_clave=None,
+        orden_direccion=None,
+        parent=None,
+    ):
         super().__init__(parent)
         self._limite = limite
         self._desplazamiento = desplazamiento
         self._texto = texto
         self._ruta_db = ruta_db
+        self._orden_clave = orden_clave
+        self._orden_direccion = orden_direccion
 
     @property
     def limite(self):
@@ -293,12 +304,22 @@ class TareaLecturaCatalogoPaginada(TareaBase):
     def ruta_db(self):
         return self._ruta_db
 
+    @property
+    def orden_clave(self):
+        return self._orden_clave
+
+    @property
+    def orden_direccion(self):
+        return self._orden_direccion
+
     def _trabajo(self):
         return listar_videos_paginado(
             self._limite,
             self._desplazamiento,
             self._texto,
             self._ruta_db,
+            orden_clave=self._orden_clave,
+            orden_direccion=self._orden_direccion,
         )
 
 

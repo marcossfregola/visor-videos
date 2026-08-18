@@ -1,6 +1,12 @@
 import json
 import os
 
+from escanear_videos import (
+    ORDEN_CRITERIO_DEFAULT,
+    ORDEN_CRITERIOS,
+    ORDEN_DIRECCION_DEFAULT,
+    ORDEN_DIRECCIONES,
+)
 from rutas import ruta_configuracion
 
 CLAVE_CARPETA = "ultima_carpeta"
@@ -275,3 +281,32 @@ def obtener_modo_alcance(ruta_config=None):
             else MODO_ALCANCE_SOLO
         )
     return MODO_ALCANCE_SOLO
+
+
+CLAVE_ORDEN_CRITERIO = "orden_catalogo_clave"
+CLAVE_ORDEN_DIRECCION = "orden_catalogo_direccion"
+
+
+def guardar_orden_catalogo(clave, direccion, ruta_config=None):
+    if not isinstance(clave, str) or clave not in ORDEN_CRITERIOS:
+        return None
+    if not isinstance(direccion, str) or direccion not in ORDEN_DIRECCIONES:
+        return None
+    datos = _leer(ruta_config) or {}
+    datos[CLAVE_ORDEN_CRITERIO] = clave
+    datos[CLAVE_ORDEN_DIRECCION] = direccion
+    _escribir(datos, ruta_config)
+    return (clave, direccion)
+
+
+def obtener_orden_catalogo(ruta_config=None):
+    datos = _leer(ruta_config)
+    if datos is None:
+        return (ORDEN_CRITERIO_DEFAULT, ORDEN_DIRECCION_DEFAULT)
+    clave = datos.get(CLAVE_ORDEN_CRITERIO)
+    if not isinstance(clave, str) or clave not in ORDEN_CRITERIOS:
+        clave = ORDEN_CRITERIO_DEFAULT
+    direccion = datos.get(CLAVE_ORDEN_DIRECCION)
+    if not isinstance(direccion, str) or direccion not in ORDEN_DIRECCIONES:
+        direccion = ORDEN_DIRECCION_DEFAULT
+    return (clave, direccion)

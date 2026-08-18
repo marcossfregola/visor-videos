@@ -44,6 +44,7 @@ from configuracion import (
     TEXTO_VERSION_BUILD,
     guardar_cantidad_previews,
     guardar_modo_alcance,
+    guardar_orden_catalogo,
     guardar_preferencia_escaneo_automatico,
     guardar_preferencia_subcarpetas,
     guardar_retardo_vista_ampliada,
@@ -52,6 +53,7 @@ from configuracion import (
     guardar_ultima_carpeta,
     obtener_cantidad_previews,
     obtener_modo_alcance,
+    obtener_orden_catalogo,
     obtener_preferencia_escaneo_automatico,
     obtener_preferencia_subcarpetas,
     obtener_retardo_vista_ampliada,
@@ -200,6 +202,19 @@ MENSAJE_ERROR_RECARGA = "No se pudo actualizar el catálogo"
 MENSAJE_ERROR_PAGINA = "No se pudo cargar la página"
 MENSAJE_SIN_ESCANEO = "Sin escanear"
 MENSAJE_ERROR_ABRIR = "No se pudo abrir el video"
+
+TEXTOS_ORDEN_CRITERIOS = {
+    "nombre": "Nombre",
+    "duracion": "Duración",
+    "resolucion": "Resolución",
+    "codec": "Codec",
+    "tamano": "Tamaño",
+    "fecha_importacion": "Fecha de importación",
+}
+TEXTOS_ORDEN_DIRECCIONES = {
+    "asc": "Ascendente",
+    "desc": "Descendente",
+}
 
 
 def texto_resumen_sincronizacion(resumen):
@@ -1587,6 +1602,13 @@ class VisorVideos(QMainWindow):
         self._cola_carpetas_escaneo = []
         self._alcance_sincronizacion = None
 
+        clave_orden, direccion_orden = obtener_orden_catalogo(ruta_config)
+        self._orden_catalogo = (clave_orden, direccion_orden)
+        self._orden_generacion = 0
+        self._generacion_tarea_lectura = 0
+        self._reordenamiento_pendiente = False
+        self._bloqueo_orden = False
+
         self.busqueda = QLineEdit()
         self.busqueda.setPlaceholderText("Buscar por nombre...")
         self.busqueda.textChanged.connect(self.filtrar)
@@ -1675,6 +1697,20 @@ class VisorVideos(QMainWindow):
         self.boton_cargar_mas.setEnabled(False)
         self.boton_cargar_mas.clicked.connect(self.cargar_mas)
 
+        self.etiqueta_orden = QLabel("Ordenar por:")
+        self.combo_orden_criterio = QComboBox()
+        for clave, texto in TEXTOS_ORDEN_CRITERIOS.items():
+            self.combo_orden_criterio.addItem(texto, clave)
+        self.combo_orden_direccion = QComboBox()
+        for direccion, texto in TEXTOS_ORDEN_DIRECCIONES.items():
+            self.combo_orden_direccion.addItem(texto, direccion)
+        self.combo_orden_criterio.currentIndexChanged.connect(
+            self._al_cambiar_orden_catalogo
+        )
+        self.combo_orden_direccion.currentIndexChanged.connect(
+            self._al_cambiar_orden_catalogo
+        )
+
         self.etiqueta_carpeta = QLabel(MENSAJE_SIN_CARPETA)
         self.etiqueta_carpeta.setTextInteractionFlags(Qt.TextSelectableByMouse)
 
@@ -1703,6 +1739,9 @@ class VisorVideos(QMainWindow):
 
         barra = QHBoxLayout()
         barra.addWidget(self.busqueda, 1)
+        barra.addWidget(self.etiqueta_orden)
+        barra.addWidget(self.combo_orden_criterio)
+        barra.addWidget(self.combo_orden_direccion)
         barra.addWidget(self.contador)
         barra.addWidget(self.resumen_seleccion)
         barra.addWidget(self.boton_cargar_mas)
@@ -1917,11 +1956,21 @@ class VisorVideos(QMainWindow):
             self.combo_tamano_miniaturas.setCurrentIndex(idx_tamano)
         self.combo_tamano_miniaturas.blockSignals(False)
         configurar_tamano_miniaturas(tamano)
+        clave_orden, direccion_orden = self._orden_catalogo
+        self._bloqueo_orden = True
+        indice = self.combo_orden_criterio.findData(clave_orden)
+        if indice >= 0:
+            self.combo_orden_criterio.setCurrentIndex(indice)
+        indice_dir = self.combo_orden_direccion.findData(direccion_orden)
+        if indice_dir >= 0:
+            self.combo_orden_direccion.setCurrentIndex(indice_dir)
+        self._bloqueo_orden = False
         self._iniciar_carga()
 
     def _iniciar_carga(self):
         self.tarea_lectura = self._crear_tarea_lectura()
         self.gestor.iniciar(self.tarea_lectura)
+        self._generacion_tarea_lectura = self._orden_generacion
 
     def _sincronizar_alcance_desde_modo(self):
         self._sincronizando_alcance = True
@@ -2057,9 +2106,56 @@ class VisorVideos(QMainWindow):
         configurar_factor_vista_ampliada(factor)
 
     def _crear_tarea_lectura(self, desplazamiento=0):
+        clave_orden, direccion_orden = self._orden_catalogo
         return TareaLecturaCatalogoPaginada(
-            TAMANIO_PAGINA_INICIAL, desplazamiento, None, self._ruta_db
+            TAMANIO_PAGINA_INICIAL,
+            desplazamiento,
+            None,
+            self._ruta_db,
+            orden_clave=clave_orden,
+            orden_direccion=direccion_orden,
         )
+
+    def _lectura_obsoleta(self):
+        """Invalidación explícita de lecturas lanzadas con un orden previo.
+
+        Cada tarea de lectura captura `_generacion_tarea_lectura` al iniciarse;
+        cada cambio de orden incrementa `_orden_generacion`. Si al llegar el
+        resultado la generación no coincide, el resultado pertenece a una
+        lectura del orden anterior y no debe crear, anexar ni reemplazar el
+        catálogo: el reordenamiento pendiente ya disparará una recarga nueva.
+        """
+        return self._generacion_tarea_lectura != self._orden_generacion
+
+    def _al_cambiar_orden_catalogo(self, _indice):
+        if self._bloqueo_orden:
+            return
+        clave = self.combo_orden_criterio.currentData()
+        direccion = self.combo_orden_direccion.currentData()
+        if not isinstance(clave, str) or not isinstance(direccion, str):
+            return
+        if (clave, direccion) == self._orden_catalogo:
+            return
+        self._orden_catalogo = (clave, direccion)
+        self._orden_generacion += 1
+        guardar_orden_catalogo(clave, direccion, self._ruta_config)
+        self._pagina_pendiente = False
+        self.tarea_pagina = None
+        self._recarga_catalogo_pendiente = False
+        self.tarea_recarga_catalogo = None
+        self.area.verticalScrollBar().setValue(0)
+        self._reordenamiento_pendiente = True
+        self._actualizar_botones_carpeta()
+        self._procesar_reordenamiento()
+
+    def _procesar_reordenamiento(self):
+        if not self._reordenamiento_pendiente:
+            return
+        if self.gestor.activo:
+            return
+        self._reordenamiento_pendiente = False
+        self._recarga_catalogo_pendiente = True
+        self._iniciar_recarga_catalogo()
 
     def seleccionar_carpeta(self):
         ruta = QFileDialog.getExistingDirectory(
@@ -3351,6 +3447,8 @@ class VisorVideos(QMainWindow):
             return
         if self._carga_completada:
             return
+        if self._lectura_obsoleta():
+            return
         self.estado_carga.hide()
         self._total_catalogo = resultado.get("total")
         self._crear_tarjetas(resultado.get("videos", []))
@@ -3512,7 +3610,11 @@ class VisorVideos(QMainWindow):
             self._iniciar_sincronizacion()
             return
         if self._recarga_catalogo_pendiente:
+            self._reordenamiento_pendiente = False
             self._iniciar_recarga_catalogo()
+            return
+        if self._reordenamiento_pendiente:
+            self._procesar_reordenamiento()
             return
         if self._cola_carpetas_escaneo:
             siguiente = self._cola_carpetas_escaneo.pop(0)
@@ -3574,18 +3676,30 @@ class VisorVideos(QMainWindow):
             self._actualizar_botones_carpeta()
             return
         self.tarea_recarga_catalogo = tarea
+        self._generacion_tarea_lectura = self._orden_generacion
         self._mostrar_progreso("Actualizando catálogo…")
 
     def _al_resultado_recarga(self, resultado):
+        if self._lectura_obsoleta():
+            self._recarga_catalogo_pendiente = False
+            self.tarea_recarga_catalogo = None
+            return
         self._recarga_catalogo_pendiente = False
         self.tarea_recarga_catalogo = None
         self._total_catalogo = resultado.get("total", self._total_catalogo)
         self._reemplazar_tarjetas(resultado.get("videos", []))
+        self.estado_carga.hide()
+        self._carga_completada = True
         self._programar_previews()
+        self.area.verticalScrollBar().setValue(0)
         self._ocultar_progreso()
         self._actualizar_botones_carpeta()
 
     def _al_error_recarga(self, mensaje):
+        if self._lectura_obsoleta():
+            self._recarga_catalogo_pendiente = False
+            self.tarea_recarga_catalogo = None
+            return
         self._limpiar_cadena()
         self.estado_escaneo.setText(MENSAJE_ERROR_RECARGA)
         self._actualizar_botones_carpeta()
@@ -3620,9 +3734,14 @@ class VisorVideos(QMainWindow):
             self.tarea_pagina = None
             self._actualizar_botones_carpeta()
             return
+        self._generacion_tarea_lectura = self._orden_generacion
         self._actualizar_botones_carpeta()
 
     def _al_resultado_pagina(self, resultado):
+        if self._lectura_obsoleta():
+            self._pagina_pendiente = False
+            self.tarea_pagina = None
+            return
         self._pagina_pendiente = False
         self.tarea_pagina = None
         self._total_catalogo = resultado.get("total", self._total_catalogo)
@@ -3634,6 +3753,10 @@ class VisorVideos(QMainWindow):
         self._actualizar_botones_carpeta()
 
     def _al_error_pagina(self, mensaje):
+        if self._lectura_obsoleta():
+            self._pagina_pendiente = False
+            self.tarea_pagina = None
+            return
         self._limpiar_cadena()
         self.estado_escaneo.setText(MENSAJE_ERROR_PAGINA)
         self._actualizar_botones_carpeta()
@@ -3841,6 +3964,8 @@ class VisorVideos(QMainWindow):
             self._al_error_pagina(mensaje)
             return
         if self._carga_completada:
+            return
+        if self._lectura_obsoleta():
             return
         self.estado_carga.setText(MENSAJE_ERROR)
         self._carga_completada = True

@@ -33,6 +33,41 @@ COLUMNAS_EXTRA = [
     ("mtime_ns", "INTEGER"),
 ]
 
+ORDEN_CRITERIO_DEFAULT = "nombre"
+ORDEN_DIRECCION_DEFAULT = "asc"
+
+# Whitelists cerradas de dominio (B6.2). La UI/config solo pueden expresar
+# orden mediante estas claves y direcciones; ninguna de ellas es SQL.
+ORDEN_CRITERIOS = (
+    "nombre",
+    "duracion",
+    "resolucion",
+    "codec",
+    "tamano",
+    "fecha_importacion",
+)
+ORDEN_DIRECCIONES = ("asc", "desc")
+
+# Expresiones SQL internas (constantes cerradas): primer término detecta el
+# "nulo" para colocar siempre los NULL al final en ASC y DESC; el segundo es
+# el criterio de orden; el desempate final estable es siempre `id ASC`.
+_ORDEN_EXPRESION_NULO = {
+    "nombre": "(nombre IS NULL)",
+    "duracion": "(duracion_segundos IS NULL)",
+    "resolucion": "(ancho IS NULL OR alto IS NULL)",
+    "codec": "(codec_video IS NULL)",
+    "tamano": "(tamano_bytes IS NULL)",
+    "fecha_importacion": "(fecha_importacion IS NULL)",
+}
+_ORDEN_EXPRESION_CRITERIO = {
+    "nombre": "nombre",
+    "duracion": "duracion_segundos",
+    "resolucion": "(ancho * alto)",
+    "codec": "codec_video",
+    "tamano": "tamano_bytes",
+    "fecha_importacion": "fecha_importacion",
+}
+
 _ESCANEO_RECURSIVO = False
 
 
@@ -891,7 +926,38 @@ def eliminar_candidatos(plan, ruta_db=None):
     }
 
 
-def listar_videos_paginado(limite, desplazamiento=0, texto=None, ruta_db=None):
+def fragmento_orden_sql(clave, direccion):
+    """Única autoridad para convertir una clave/dirección válidas en SQL.
+
+    La UI/config no construyen SQL ni envían expresiones: solo claves y
+    direcciones de dominio. El fragmento final se interpola únicamente desde
+    las constantes internas de las whitelists cerradas `ORDEN_CRITERIOS` y
+    `ORDEN_DIRECCIONES`, con desempate final estable `id ASC` y NULLs siempre
+    al final (tanto en ASC como en DESC).
+    """
+    if not isinstance(clave, str):
+        raise TypeError("clave debe ser texto")
+    if clave not in ORDEN_CRITERIOS:
+        raise ValueError(f"criterio de orden desconocido: {clave!r}")
+    if not isinstance(direccion, str):
+        raise TypeError("direccion debe ser texto")
+    if direccion not in ORDEN_DIRECCIONES:
+        raise ValueError(f"dirección de orden desconocida: {direccion!r}")
+    sentido = "ASC" if direccion == "asc" else "DESC"
+    return (
+        f"{_ORDEN_EXPRESION_NULO[clave]} ASC, "
+        f"{_ORDEN_EXPRESION_CRITERIO[clave]} {sentido}, id ASC"
+    )
+
+
+def listar_videos_paginado(
+    limite,
+    desplazamiento=0,
+    texto=None,
+    ruta_db=None,
+    orden_clave=None,
+    orden_direccion=None,
+):
     if isinstance(limite, bool) or not isinstance(limite, int):
         raise TypeError("limite debe ser un entero")
     if limite < 1:
@@ -902,18 +968,25 @@ def listar_videos_paginado(limite, desplazamiento=0, texto=None, ruta_db=None):
         raise ValueError("desplazamiento debe ser un entero mayor o igual que cero")
     if texto is not None and not isinstance(texto, str):
         raise TypeError("texto debe ser None o texto")
+    if orden_clave is not None and not isinstance(orden_clave, str):
+        raise TypeError("orden_clave debe ser None o texto")
+    if orden_direccion is not None and not isinstance(orden_direccion, str):
+        raise TypeError("orden_direccion debe ser None o texto")
     if ruta_db is None:
         ruta_db = ruta_biblioteca()
     if not os.path.isfile(ruta_db):
         raise FileNotFoundError(f"Base de datos no encontrada: {ruta_db}")
+    clave = ORDEN_CRITERIO_DEFAULT if orden_clave is None else orden_clave
+    direccion = ORDEN_DIRECCION_DEFAULT if orden_direccion is None else orden_direccion
+    orden = fragmento_orden_sql(clave, direccion)
     conn = sqlite3.connect(ruta_db)
     try:
         if texto is None:
             filas = conn.execute(
-                """
+                f"""
                 SELECT nombre, duracion_segundos, ancho, alto, codec_video, cantidad_miniaturas, tamano_bytes, ruta, id
                 FROM videos
-                ORDER BY nombre
+                ORDER BY {orden}
                 LIMIT ? OFFSET ?
                 """,
                 (limite, desplazamiento),
@@ -922,11 +995,11 @@ def listar_videos_paginado(limite, desplazamiento=0, texto=None, ruta_db=None):
         else:
             patron = f"%{texto}%"
             filas = conn.execute(
-                """
+                f"""
                 SELECT nombre, duracion_segundos, ancho, alto, codec_video, cantidad_miniaturas, tamano_bytes, ruta, id
                 FROM videos
                 WHERE nombre LIKE ?
-                ORDER BY nombre
+                ORDER BY {orden}
                 LIMIT ? OFFSET ?
                 """,
                 (patron, limite, desplazamiento),
