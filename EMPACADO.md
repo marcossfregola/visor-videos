@@ -6,17 +6,43 @@ proyecto (`C:\prueba`). No depende de memoria ni de pasos manuales no documentad
 
 ## Decisiones oficiales de la Beta3 (fijadas por el auditor)
 
+Las decisiones de esta sección se conservan como **referencia histórica de la
+Beta 3**. Las que afectan la desinstalación fueron **reemplazadas por
+B6.1 — Preservación de datos del usuario al desinstalar** (ver "Comportamiento
+vigente de la desinstalación" más abajo); las restantes reglas de instalación
+siguen describiendo el procedimiento reproducible.
+
 - **Nombre oficial de la versión**: `Beta3`.
 - **Nombre visible**: Visor de Videos.
 - **Carpeta de instalación**: `%LOCALAPPDATA%\Programs\VisorVideos`.
 - **Instalación por usuario**, sin permisos de administrador (`PrivilegesRequired=lowest`).
 - **AppId nuevo e independiente** de Beta1/Beta2 (GUID fijo del producto).
-- **Desinstalación completa**: elimina el programa, `biblioteca.db`, `configuracion.json`,
-  `miniaturas/` y cualquier dato generado por la aplicación (`[UninstallDelete]`).
+- **Desinstalación (decisión histórica de la Beta 3, NO vigente)**: la Beta 3 eliminaba
+  el programa, `biblioteca.db`, `configuracion.json`, `miniaturas/` y cualquier dato
+  generado por la aplicación (`[UninstallDelete]`). **Desde B6.1 esta regla quedó
+  eliminada**: la desinstalación NO debe borrar los datos persistentes del usuario (ver
+  "Comportamiento vigente de la desinstalación").
 - **No incluir FFmpeg ni FFprobe** (se resuelven por PATH en la máquina destino).
 - Incluir **únicamente una `biblioteca.db` vacía** con el esquema vigente.
 - **No incluir** `configuracion.json` ni `miniaturas/` (se crean en tiempo de ejecución).
 - Instalador: `VisorVideos_Beta3_Setup.exe` en `Distribucion\Beta3\`.
+
+## Comportamiento vigente de la desinstalación (B6.1)
+
+Desde la **B6.1 — Preservación de datos del usuario al desinstalar** (rama
+`beta6`), desinstalar la aplicación **NO debe eliminar los datos persistentes
+del usuario** (`biblioteca.db`, `configuracion.json`, `miniaturas/`, marcadores
+y segmentos). El instalador actual (`instalador.iss`) instala `biblioteca.db`
+con `uninsneveruninstall` y **no** utiliza un `[UninstallDelete]` recursivo
+sobre `{app}`: la desinstalación elimina los binarios instalados desde `[Files]`
+y **conserva** los datos del usuario para permitir una reinstalación sin pérdida
+de datos.
+
+Este comportamiento **no debe revertirse en versiones futuras** sin autorización
+explícita: eliminar datos del usuario durante la desinstalación implica un riesgo
+de pérdida irreversible. Los casos de upgrade/reinstalación conservadora y la
+higiene de datos residuales quedan **fuera de lo demostrado por B6.1** y
+requerirían su propia etapa si fueran necesarios.
 
 ## Prerrequisitos
 
@@ -62,16 +88,17 @@ Compilar el script oficial con la versión y la etiqueta correspondientes:
 ```
 
 - Entrada: `instalador.iss` (instalación por usuario en
-  `%LOCALAPPDATA%\Programs\VisorVideos`, AppId independiente de Beta1/Beta2, desinstalador
-  completo, acceso directo, `biblioteca.db` vacía con `onlyifdoesntexist`, sin
-  FFmpeg/FFprobe, sin `configuracion.json`, sin `miniaturas/`).
+  `%LOCALAPPDATA%\Programs\VisorVideos`, AppId independiente de Beta1/Beta2, desinstalación
+  que **conserva los datos del usuario** desde B6.1, acceso directo, `biblioteca.db` vacía
+  con `onlyifdoesntexist`, sin FFmpeg/FFprobe, sin `configuracion.json`, sin `miniaturas/`).
 - Resultado: `Distribucion\Beta3\VisorVideos_Beta3_Setup.exe`.
 
 ## 4. Verificación
 
 - Ejecutar el portable `dist\VisorVideos\VisorVideos.exe` (debe abrir sin consola).
 - Instalar el `Setup.exe` en una máquina limpia: primer inicio desde el acceso directo,
-  catálogo creado, desinstalación total (elimina programa y datos generados).
+  catálogo creado y desinstalación que **elimina los binarios de la aplicación y
+  conserva los datos del usuario** (`biblioteca.db`, `configuracion.json`, `miniaturas/`).
 
 ## Repetir para una versión futura
 
@@ -79,11 +106,14 @@ Compilar el script oficial con la versión y la etiqueta correspondientes:
    `ISCC.exe /DAplicacionVersion=X.Y /DBetaEtiqueta=BetaN instalador.iss` (o editar los
    `#define AplicacionVersion` y `#define BetaEtiqueta` del script).
 2. Repetir los pasos 1-4 con el mismo comando de PyInstaller.
+3. Al adaptar el script para una versión futura, **conservar la regla de B6.1**:
+   la desinstalación no debe eliminar los datos persistentes del usuario.
 
 ## Notas
 
 - La versión de Inno Setup fijada por el proyecto es **6.7.3**.
 - `configuracion.json` y `miniaturas/` se crean en tiempo de ejecución junto al ejecutable;
-  el instalador no los incluye y el desinstalador los elimina (`[UninstallDelete]`).
+  el instalador no los incluye y, desde **B6.1**, la desinstalación **los conserva** (no se
+  utilizan `[UninstallDelete]` destructivos).
 - El nombre oficial de la aplicación es **Visor de Videos**; el ejecutable se llama
   `VisorVideos.exe`.

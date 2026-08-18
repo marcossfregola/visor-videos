@@ -5,6 +5,52 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 105. Finalización técnica de B6.2 y reconciliación del alcance de Beta 6
+
+- **Fecha:** 2026-08-18
+- **Tipo:** etapa **exclusivamente documental** (sin implementación funcional)
+  que formaliza la **finalización técnica de B6.2**, registra el estado de push y
+  **recupera/reconcilia el alcance originalmente acordado** de la Beta 6, que no
+  había quedado correctamente incorporado a la documentación viva del
+  repositorio.
+- **Rama:** `beta6`.
+- **B6.1 — Preservación de datos del usuario al desinstalar (ya realizada).**
+  Commit `8b6f19f` (2026-08-16): `instalador.iss` incorpora `uninsneveruninstall`
+  sobre `biblioteca.db` y elimina el `[UninstallDelete]` recursivo; la
+  desinstalación conserva los datos del usuario (`biblioteca.db`,
+  `configuracion.json`, `miniaturas/`) para permitir una reinstalación sin
+  pérdida de datos. Suite `prueba_instalador.py` incorporada.
+- **Bridge — infraestructura reconstruible:** la materialización prevista quedó
+  **completada y versionada** (commit `dd17c72` — documentación y persistencia;
+  commit `7a0feae` — infraestructura `infra/bridge/`).
+- **B6.2 — Ordenamiento configurable del catálogo (finalización técnica).**
+  Commit técnico local `52eddb8d4633282578638ba18ec2acdb2e00bf47` (2026-08-17,
+  "B6.2 Agregar ordenamiento configurable del catálogo"), **pendiente de push**
+  (HEAD local por delante de `origin/beta6`). Implementa el ordenamiento del
+  catálogo por criterio (nombre, duración, resolución, códec, tamaño, fecha de
+  importación) y dirección (asc/desc), persistente en `configuracion.json`, con
+  whitelists cerradas y fragmento SQL único autorizado (desempate estable por
+  `id ASC`, NULLs al final) y protección de lecturas obsoletas en la recarga.
+  Validación incorporada en el commit: suite nueva `prueba_ordenamiento_b62.py`
+  (18 pruebas, T01–T18) y adaptación de `prueba_pagina_siguiente.py`. **B6.2 no
+  cierra la Beta 6.**
+- **Reconciliación del alcance de Beta 6:** se recuperó y formalizó el alcance
+  amplio originalmente acordado para la Beta 6, que no estaba correctamente
+  reflejado en `ROADMAP.md`, `ESTADO_PROYECTO.md` e `HISTORIAL_PROYECTO.md`.
+- **Definición formal del ciclo:** **"Beta 6 — De marcar a conservar"** — cerrar
+  el ciclo iniciado en Beta 5: localizar las partes útiles de los videos,
+  clasificarlas y convertirlas en material definitivo conservando calidad,
+  trazabilidad e integridad de datos.
+- **Separación deliberada de Beta 7:** se definió **"Beta 7 — Organización y
+  operaciones de archivos"** como el siguiente gran ciclo (absorberá el
+  administrador de archivos completo); **no se adelanta durante Beta 6**.
+- **Decisión explícita de no cerrar Beta 6 en B6.2:** la Beta 6 continúa
+  abierta y la siguiente etapa prevista es **B6.3**.
+- **Alcance completo:** B6.1–B6.12 y el límite explícito de Beta 6 en
+  `ROADMAP.md`; estado vigente en `ESTADO_PROYECTO.md` ("Fase actual — Beta 6").
+
+---
+
 ## 104. Adopción y estabilización del Bridge/MCP/Telegram; preparación de la persistencia
 
 - **Fecha:** 2026-08-17

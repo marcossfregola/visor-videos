@@ -21,11 +21,19 @@ Explorar de forma visual y eficiente grandes colecciones de videos, facilitando 
 
 ## Estado actual
 
-**Beta 2** — versión congelada en fase de pruebas reales. El Centro de Navegación (Bloque de trabajo 2) está completo y aprobado.
+Desarrollo actual en **Beta 6 — "De marcar a conservar"** (rama `beta6`). La
+**Beta 5** quedó cerrada internamente y la **Beta 6 continúa abierta**, con
+**B6.1** y **B6.2** completadas; la próxima etapa funcional prevista es
+**B6.3**. Para el detalle del alcance completo y el estado vigente ver
+`ROADMAP.md` y `ESTADO_PROYECTO.md`.
 
 ## Distribución
 
-Los instaladores oficiales se publican en la sección **Releases** de este repositorio.
+La publicación de instaladores en la sección **Releases** de este repositorio se
+realiza **únicamente con autorización explícita** y mediante el procedimiento de
+`EMPACADO.md`. Las betas recientes se mantienen **sin distribución pública** ni
+GitHub Release; no debe asumirse que todos los instaladores generados estén
+publicados (ver `ESTADO_PROYECTO.md`).
 
 ## Licencia
 

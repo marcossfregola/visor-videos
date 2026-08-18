@@ -1,11 +1,36 @@
 # VISOR DE VIDEOS
 
+## Fase actual — Beta 6
+
+La **Beta 6 — "De marcar a conservar"** está **en curso** sobre la rama `beta6`
+(punto de partida: cierre de la Beta 5). Objetivo de producto: **cerrar el ciclo
+iniciado en Beta 5** — localizar las partes útiles de los videos, clasificarlas y
+convertirlas en material definitivo, conservando calidad, trazabilidad e
+integridad de datos.
+
+Estado actual:
+
+- **Rama actual:** `beta6`.
+- **B6.1 — Preservación de datos del usuario al desinstalar.** **Completada.**
+- **Infraestructura y metodología del Bridge** ya **incorporadas** y versionadas
+  (commits `dd17c72` y `7a0feae`).
+- **B6.2 — Ordenamiento configurable del catálogo.** **Completada y validada
+  técnicamente**; commit técnico local
+  `52eddb8d4633282578638ba18ec2acdb2e00bf47`, **pendiente de push** (HEAD local
+  por delante de `origin/beta6`).
+- **Beta 6 continúa abierta.** La siguiente etapa prevista es
+  **B6.3 — Clasificación visual de marcadores y segmentos**.
+- El **alcance completo** de Beta 6 (B6.1–B6.12) y su límite explícito (no se
+  elimina ni reemplaza automáticamente el video original) están en
+  `ROADMAP.md`. **Beta 7 — "Organización y operaciones de archivos"** queda
+  **diferida** y no se adelanta durante Beta 6 (ver `ROADMAP.md`).
+
 ## Estado general
 
 Proyecto de escritorio profesional para Windows orientado a explorar
 grandes colecciones de videos mediante miniaturas representativas.
 
-**Fase actual:** la **Beta 4 está CERRADA y aprobada** (cierre formal
+**Fase anterior (contexto histórico):** la **Beta 4 está CERRADA y aprobada** (cierre formal
 2026-08-10): build final **`Beta 4 — B4.12`** (commit técnico
 `198cdf533986b88c6e25dc0087722cf2b86e5f99`; instalador
 `VisorVideos_Beta4_Setup.exe`, SHA-256
@@ -240,14 +265,23 @@ Bridge/MCP/Telegram como transporte) está **activo**. Su autoridad detallada
 
 La **inspección de persistencia** quedó **cerrada y aprobada**, y la
 **materialización de la autoridad documental** (documento metodológico,
-reglas y protecciones Git) está **en curso**, como etapa previa a **B6.2**.
+reglas y protecciones Git) quedó **completada y versionada**: `METODOLOGIA_DESARROLLO.md`
+como detalle del protocolo y referencia en `REGLAS_PROYECTO.md` (commit `dd17c72`),
+más la **infraestructura reconstruible del Bridge** versionada en `infra/`
+(commit `7a0feae`). A partir de esa base se completaron **B6.1** y **B6.2**
+(ver "Fase actual — Beta 6").
 Las normas permanentes del protocolo constan en `REGLAS_PROYECTO.md`; no se
 insertan aquí la matriz completa ni el detalle operativo (ver
 `METODOLOGIA_DESARROLLO.md`).
 
 ---
 
-## Último commit aprobado
+## Registro de commits aprobados de Beta 4 (histórico)
+
+Sección **histórica** que registra el último commit aprobado del ciclo
+**Beta 4** (`B4.12`, 2026-08-10) y sus commits anteriores. **No representa el
+estado vigente ni el último commit del repositorio**: ver "Fase actual — Beta 6"
+y `HISTORIAL_PROYECTO.md`.
 
 **Mensaje:** Cerrar regresiones y contratos de prueba de Beta 4
 
@@ -935,33 +969,12 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
 
 ## Próxima fase
 
-**Beta 5 — planificación cerrada (B5.0, rama `beta5`, 2026-08-13).** La **Beta 4 quedó CERRADA y
-aprobada** (cierre formal 2026-08-10) y se inició la **planificación y congelamiento del alcance
-inicial de la Beta 5** (etapa **B5.0**, exclusivamente documental): rama `beta5` creada desde el
-cierre de la Beta 4 (`v4.0-beta`, `5ed40fa1ac4d257f29878a137b5a4240e36716ac`). El alcance inicial
-queda congelado con **cuatro bloques** — **A** (entrada temporal a VLC desde preview/franja),
-**B** (segmentos A–B, con la decisión **marcador ≠ segmento**), **C** (reproducción de segmento
-simple y en bucle) y **D** (secuencia automática de segmentos) — y un plan de etapas
-**B5.1–B5.9** (ver `ROADMAP.md`, sección "Beta 5"). La investigación técnica validó en VLC 3.0.23
-`start-time`, `stop-time` (CLI y M3U, con decimales), bucle `start-time + stop-time + --loop` y la
-secuencia automática por playlist. **Sin implementación funcional todavía**; estos cuatro bloques
-no constituyen necesariamente el alcance definitivo (tras completarlos se auditará y se decidirá
-cerrar o ampliar la Beta 5).
-
-Los pendientes técnicos conocidos quedan registrados como **deuda no bloqueante** de Beta 4 (no
-como pendientes de la fase): **RAM/retención de pixmaps originales** (~+690 MB por previews
-cargadas); `_construir_exploracion` crea widgets en tarjetas colapsadas; `_reemplazar_tarjetas`
-reconstruye tarjetas idénticas; `miniatura_principal` hace un `os.listdir` por tarjeta; previews
-normales reutilizables por existencia del archivo (sin validación por cambio del video);
-flakiness intermitente de teardown de `prueba_exploracion_densidad_b432.py`; flakiness ambiental
-del portapapeles bajo tooling; **riesgo obligatorio para una futura distribución pública**: el
-desinstalador actual (`[UninstallDelete]`) puede eliminar datos de usuario (`biblioteca.db`,
-`configuracion.json`, `miniaturas/`, marcadores y cachés) — no bloquea el cierre técnico de Beta 4,
-pero debe resolverse antes de una release destinada a conservar datos reales. Líneas futuras no
-iniciadas (fuera de Beta 4 y del alcance inicial de Beta 5): **selección A/B**, **loops**,
-**selección de fragmentos**, **corte/unión**, **detección de archivos movidos/renombrados** con
-**reasociación de marcadores huérfanos**, evoluciones de reproducción indicadas en `ROADMAP.md` y
-**batch**.
+La **Beta 6** continúa **abierta** sobre la rama `beta6`; la siguiente etapa
+prevista es **B6.3 — Clasificación visual de marcadores y segmentos**. Estado
+detallado en "Fase actual — Beta 6"; el alcance completo **B6.1–B6.12**, el
+límite explícito de Beta 6 y la dirección de **Beta 7 — "Organización y
+operaciones de archivos"** (diferida, sin implementar durante Beta 6) están en
+`ROADMAP.md`.
 
 ## Documentos del proyecto
 

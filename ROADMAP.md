@@ -59,7 +59,8 @@ guía de prioridades y no un compromiso rígido e inamovible:
 4. **Tarjetas expandibles** — mostrar entre 20 y 30 previews por video
    al expandir una tarjeta.
 5. **Ordenamientos del catálogo** — permitir ordenar por nombre,
-   duración, resolución, codec, tamaño o fecha.
+   duración, resolución, codec, tamaño o fecha. **Implementado (B6.2,
+   rama `beta6`).**
 6. **Organización** — favoritos, etiquetas y funciones relacionadas.
 
 ---
@@ -413,10 +414,10 @@ actual" / "Carpeta actual y todas las subcarpetas" / "Selección personalizada�
      cuatro combinaciones e indicadores visuales de carpetas escaneadas). El
      bloque de trabajo 2 queda **completado**; el desarrollo funcional se
      retoma con la implementación de la Beta 3 (ver Bloque de trabajo 3).
--   Paginación completa automática del catálogo — scroll infinito,
-    búsqueda en SQL desde la interfaz y ordenamiento configurable. La
-    carga manual de una página adicional con el botón "Cargar más" ya
-    existe.
+-   Paginación completa automática del catálogo — scroll infinito y
+    búsqueda en SQL desde la interfaz. El **ordenamiento configurable** quedó
+    **implementado en B6.2** (rama `beta6`); la carga manual de una página
+    adicional con el botón "Cargar más" ya existe.
 -   Deduplicación de nombres repetidos en el plan de sincronización.
 -   ~~Persistencia de preferencias generales de configuración~~ — más allá
     de la última carpeta seleccionada, que ya se persiste. **Implementada**
@@ -875,3 +876,149 @@ unión; creación de videos nuevos; línea de tiempo; IA. Pueden mantenerse como
 6. **No** cargar segmentos globalmente.
 7. Orfandad tolerada igual que los marcadores.
 8. Renombrado externo sigue **fuera de alcance**.
+
+---
+
+# Beta 6
+
+La **Beta 6 — "De marcar a conservar"** se desarrolla sobre la rama `beta6`
+(punto de partida: cierre de la Beta 5). Su objetivo de producto es **cerrar el
+ciclo iniciado en Beta 5**: localizar las partes útiles de los videos,
+clasificarlas y convertirlas en material definitivo, conservando **calidad,
+trazabilidad e integridad de datos**.
+
+Relato de evolución del producto:
+
+- **Beta 5** → explorar y delimitar.
+- **Beta 6** → clasificar y conservar las partes útiles.
+- **Beta 7** → organizar físicamente la biblioteca sin perder sus relaciones.
+
+## Límite explícito de Beta 6
+
+La Beta 6 **NO incluye** la eliminación ni el reemplazo automático del video
+original después de exportar. El flujo termina de forma segura en:
+
+```
+original → segmentos → video derivado verificado → incorporación al catálogo
+```
+
+El original permanece intacto. Una eventual eliminación/reemplazo requiere una
+**etapa posterior específica**, dada la posibilidad de pérdida irreversible de
+archivos.
+
+## Secuencia de etapas
+
+1. **B6.1 — Preservación de datos del usuario al desinstalar.** **Ya
+   realizada.** No se reinterpreta ni se renumeran las etapas previas del ciclo.
+2. **B6.2 — Ordenamiento configurable del catálogo.** **Ya desarrollada y
+   validada.** Commit técnico local
+   `52eddb8d4633282578638ba18ec2acdb2e00bf47`, **pendiente de push** (confirmado
+   en la inspección). Ordenamiento por criterio (nombre, duración, resolución,
+   códec, tamaño, fecha de importación) y dirección (asc/desc), persistente, con
+   whitelists cerradas y fragmento SQL único autorizado (desempate estable por
+   `id ASC`, NULLs siempre al final). No cierra la Beta 6.
+3. **B6.3 — Clasificación visual de marcadores y segmentos.** **Planificar**:
+   colores para marcadores; colores para segmentos; nombres globales opcionales
+   asociados a cada color; persistencia estable; compatibilidad con marcadores y
+   segmentos existentes; **sin convertir marcador en segmento ni fusionar ambos
+   conceptos**. La etapa de implementación posterior deberá decidir el modelo
+   concreto mediante inspección arquitectónica. Esta planificación **no inventa
+   todavía un schema SQLite definitivo**.
+4. **B6.4 — Marcadores y segmentos visibles en tarjetas colapsadas.**
+   **Planificar** la representación visual del material marcado aun cuando la
+   tarjeta no esté expandida: posición proporcional dentro de la duración
+   completa; diferenciación entre marcador y segmento; representación de los
+   colores de B6.3; **no sobrecargar visualmente** las tarjetas; mantener como
+   prioridad la exploración visual.
+5. **B6.5 — Filtros y localización del material marcado.** **Planificar** la
+   localización rápida de videos que contienen material relevante: videos con
+   marcadores; videos con segmentos; marcadores por color; segmentos por color
+   (p. ej. "segmentos verdes"). Incluir mejor navegación/localización de los
+   videos que contienen ese material. **No** convertirlo en un gestor multimedia
+   genérico.
+6. **B6.6 — Investigación y contrato del motor de exportación.** Antes de
+   generar archivos reales, etapa técnica específica para **validar físicamente
+   FFmpeg** sobre los casos reales y fijar contrato sobre: extracción sin
+   recodificación mediante **stream-copy** cuando sea técnicamente válida;
+   precisión temporal y dependencia de keyframes; margen temporal aceptable;
+   codecs y contenedores compatibles; audio/video/subtítulos u otros streams
+   existentes; timestamps; archivos problemáticos; cómo verificar objetivamente
+   el archivo resultante; comportamiento ante operaciones parciales o fallidas.
+   **Principio de producto:** prioridad absoluta a evitar recodificación y
+   pérdida de calidad; **no** introducir silenciosamente una recodificación
+   automática como fallback. Si existen casos donde stream-copy no puede cumplir
+   el contrato, deben presentarse como **limitación** y requerir decisión
+   explícita posterior. Toda generación debe ser **no destructiva**.
+7. **B6.7 — Extracción segura de un segmento.** Primer flujo completo:
+   `original → segmento → archivo nuevo → verificación`. Requisitos: jamás
+   modificar el original; jamás sobrescribir un archivo existente; salida
+   temporal/atómica cuando corresponda; detectar errores; verificar el resultado
+   antes de declararlo terminado; trabajos pesados fuera del hilo UI; feedback y
+   progreso coherentes; cancelación/limpieza segura si técnicamente procede.
+8. **B6.8 — Motor general y reutilizable de nombres.** Diseñar conceptualmente
+   un componente reutilizable (no lógica embebida exclusivamente en la UI de
+   exportación) con plantillas combinables que utilicen, al menos: nombre
+   original; numeración; fecha; texto personalizado; y combinaciones de esos
+   elementos. Debe incluir: vista previa antes de generar; normalización de
+   nombres inválidos para Windows; detección de colisiones; prohibición de
+   sobrescritura silenciosa. Preparado para reutilizarse en **Beta 7** para
+   renombrado masivo.
+9. **B6.9 — Exportación múltiple de segmentos separados.** Seleccionar varios
+   segmentos y producir un archivo independiente por segmento: selección
+   explícita; selección basada en clasificación (p. ej. "todos los segmentos
+   verdes"); uso del motor de nombres B6.8; progreso por lote; resultados
+   parciales seguros; no confundir un fallo individual con éxito total.
+10. **B6.10 — Unión de varios segmentos del mismo original.** Producir un único
+    video compuesto por varios segmentos pertenecientes al mismo video original:
+    prioridad por no recodificar; orden de segmentos claramente determinado;
+    validación técnica previa de compatibilidad; salida no destructiva;
+    verificación final. **No** extender todavía la función a unión arbitraria de
+    videos distintos.
+11. **B6.11 — Incorporación al catálogo y trazabilidad de videos derivados.**
+    Después de crear y verificar un archivo
+    (`original → segmentos → nuevo video verificado → catálogo`), el nuevo video
+    debe poder incorporarse automáticamente a la biblioteca preservando una
+    relación interna que permita saber de qué video original proviene.
+    Planificar: identidad propia del video derivado; relación derivado/original;
+    trazabilidad aunque el catálogo se recargue; integración con el pipeline
+    existente; no duplicar accidentalmente registros; integridad ante
+    movimientos/reescaneos dentro de las reglas existentes. **No** congelar
+    todavía un schema detallado sin una etapa posterior de inspección.
+12. **B6.12 — Integración, robustez y cierre funcional.** Etapa para integrar
+    todos los bloques anteriores antes del cierre de Beta 6. Debe incluir
+    posteriormente: regresiones completas; flujos combinados reales; errores
+    parciales; cancelaciones; archivos bloqueados; colisiones de nombres;
+    resultados incompletos; recuperación segura; integridad SQLite; rendimiento;
+    ejecución real; validación manual de UX; validación en la notebook objetivo
+    antes del cierre. **B6.12 no es el commit/tag de cierre de la beta.**
+    Después seguirán las etapas normales de identidad, empaquetado,
+    documentación final, commit de cierre, tag y distribución según autorización.
+
+---
+
+# Beta 7
+
+La **Beta 7 — "Organización y operaciones de archivos"** es la siguiente gran
+dirección de producto. **No se implementa nada de Beta 7 durante Beta 6**; el
+administrador de archivos completo queda absorbido por este ciclo y **NO debe
+adelantarse durante Beta 6**.
+
+Alcance previsto:
+
+- módulo especializado de archivos tipo Explorer;
+- vista a pantalla completa o modo dedicado;
+- doble panel;
+- copiar;
+- mover;
+- drag & drop;
+- atajos;
+- creación y organización de carpetas;
+- renombrado individual;
+- renombrado masivo;
+- Papelera/operaciones de eliminación seguras;
+- reutilización del motor de nombres creado en **B6.8**;
+- operaciones físicas conservando correctamente la **identidad lógica** de cada
+  video y sus relaciones con marcadores, segmentos y derivados.
+
+No se numeran todavía etapas B7.x: el repositorio no cuenta con una
+planificación formal suficiente para hacerlo.
