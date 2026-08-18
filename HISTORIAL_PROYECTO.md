@@ -5,6 +5,30 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 106. Publicación de B6.2 y planificación de Beta 6 (push fast-forward)
+
+- **Fecha:** 2026-08-18
+- **Tipo:** publicación remota de dos commits locales aprobados mediante un
+  **push fast-forward normal** de la rama `beta6`; **exclusivamente documental**
+  (sin implementación funcional, sin cambios sobre código ni instalador).
+- **Rama:** `beta6`.
+- **Commit técnico B6.2:** `52eddb8d4633282578638ba18ec2acdb2e00bf47` — "B6.2
+  Agregar ordenamiento configurable del catálogo".
+- **Commit documental de planificación:** `4fe46df7bfd7ed3d2d8b4408a8b3e410e43ed258`
+  — "B6 Documentar alcance De marcar a conservar" (reconciliación de Beta 6 y
+  delimitación de Beta 7).
+- **Resultado de la verificación post-push:** `beta6` local, `origin/beta6` y
+  `git ls-remote` quedaron **alineados en `4fe46df7bfd7ed3d2d8b4408a8b3e410e43ed258`**;
+  ahead/behind `0/0`; working tree limpio; cadena lineal
+  `7a0feae → 52eddb8 → 4fe46df`.
+- **Sin fuerza:** push fast-forward normal, sin `--force` ni `--force-with-lease`.
+- **Sin tag nuevo ni GitHub Release:** la lista de tags quedó en
+  `v2.0-beta`, `v3.0-beta`, `v4.0-beta`, `v5.0-beta`; sin `v6.0-beta`.
+- **Beta 6 continúa abierta** y la siguiente etapa prevista es
+  **B6.3 — Clasificación visual de marcadores y segmentos**.
+
+---
+
 ## 105. Finalización técnica de B6.2 y reconciliación del alcance de Beta 6
 
 - **Fecha:** 2026-08-18

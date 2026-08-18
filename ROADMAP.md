@@ -910,10 +910,10 @@ archivos.
 
 1. **B6.1 — Preservación de datos del usuario al desinstalar.** **Ya
    realizada.** No se reinterpreta ni se renumeran las etapas previas del ciclo.
-2. **B6.2 — Ordenamiento configurable del catálogo.** **Ya desarrollada y
-   validada.** Commit técnico local
-   `52eddb8d4633282578638ba18ec2acdb2e00bf47`, **pendiente de push** (confirmado
-   en la inspección). Ordenamiento por criterio (nombre, duración, resolución,
+2. **B6.2 — Ordenamiento configurable del catálogo.** **Ya desarrollada,
+   validada e incorporada/publicada en `beta6`** (commit técnico
+   `52eddb8d4633282578638ba18ec2acdb2e00bf47`). Ordenamiento por criterio
+   (nombre, duración, resolución,
    códec, tamaño, fecha de importación) y dirección (asc/desc), persistente, con
    whitelists cerradas y fragmento SQL único autorizado (desempate estable por
    `id ASC`, NULLs siempre al final). No cierra la Beta 6.

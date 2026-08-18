@@ -14,10 +14,11 @@ Estado actual:
 - **B6.1 — Preservación de datos del usuario al desinstalar.** **Completada.**
 - **Infraestructura y metodología del Bridge** ya **incorporadas** y versionadas
   (commits `dd17c72` y `7a0feae`).
-- **B6.2 — Ordenamiento configurable del catálogo.** **Completada y validada
-  técnicamente**; commit técnico local
-  `52eddb8d4633282578638ba18ec2acdb2e00bf47`, **pendiente de push** (HEAD local
-  por delante de `origin/beta6`).
+- **B6.2 — Ordenamiento configurable del catálogo.** **Completada, validada y
+  publicada en `beta6`** (commit técnico
+  `52eddb8d4633282578638ba18ec2acdb2e00bf47`; commit documental posterior
+  `4fe46df7bfd7ed3d2d8b4408a8b3e410e43ed258`). `beta6` local y remota
+  **alineadas en `4fe46df...`** según la verificación actual.
 - **Beta 6 continúa abierta.** La siguiente etapa prevista es
   **B6.3 — Clasificación visual de marcadores y segmentos**.
 - El **alcance completo** de Beta 6 (B6.1–B6.12) y su límite explícito (no se
