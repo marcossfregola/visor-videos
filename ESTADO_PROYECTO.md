@@ -17,8 +17,9 @@ Estado actual:
 - **B6.2 — Ordenamiento configurable del catálogo.** **Completada, validada y
   publicada en `beta6`** (commit técnico
   `52eddb8d4633282578638ba18ec2acdb2e00bf47`; commit documental posterior
-  `4fe46df7bfd7ed3d2d8b4408a8b3e410e43ed258`). `beta6` local y remota
-  **alineadas en `4fe46df...`** según la verificación actual.
+  `4fe46df7bfd7ed3d2d8b4408a8b3e410e43ed258`). **Ambos commits están
+  publicados en `beta6`** y la publicación fue verificada con alineación
+  local/remota.
 - **Beta 6 continúa abierta.** La siguiente etapa prevista es
   **B6.3 — Clasificación visual de marcadores y segmentos**.
 - El **alcance completo** de Beta 6 (B6.1–B6.12) y su límite explícito (no se
