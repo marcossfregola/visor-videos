@@ -896,3 +896,45 @@ class TareaExploracionDensa(TareaBase):
                 resultado = dict(resultado)
                 resultado["imagenes"] = imagenes
         return resultado
+
+
+class TareaResumenColapsado(TareaBase):
+    """Carga batch del resumen colapsado (B6.4).
+
+    En un único worker (fuera del hilo principal) y sin SQLite desde la UI,
+    obtiene para un lote de `video_ids` la metadata mínima necesaria para
+    pintar la barra colapsada: marcadores `(id, video_id, tiempo, color)` y
+    segmentos `(id, video_id, inicio, fin, color)`. No carga pixmaps ni
+    previews densos. Usa las operaciones batch existentes
+    `listar_marcadores_de` / `listar_segmentos_de` (una sola consulta por
+    tipo), por lo que un lote de N tarjetas se resuelve con 2 consultas en
+    1 tarea, no N tareas.
+    """
+
+    def __init__(self, video_ids, ruta_db=None, parent=None):
+        super().__init__(parent)
+        if isinstance(video_ids, (str, bytes, bytearray)):
+            raise TypeError("video_ids debe ser una colección, no texto")
+        try:
+            self._video_ids = list(video_ids)
+        except TypeError:
+            raise TypeError("video_ids debe ser una colección iterable") from None
+        self._ruta_db = ruta_db
+
+    @property
+    def video_ids(self):
+        return list(self._video_ids)
+
+    @property
+    def ruta_db(self):
+        return self._ruta_db
+
+    def _trabajo(self):
+        # Solo metadata mínima; nunca pixmaps.
+        marcadores = listar_marcadores_de(self._video_ids, self._ruta_db)
+        segmentos = listar_segmentos_de(self._video_ids, self._ruta_db)
+        return {
+            "video_ids": list(self._video_ids),
+            "marcadores": marcadores,
+            "segmentos": segmentos,
+        }

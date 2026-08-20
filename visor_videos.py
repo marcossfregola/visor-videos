@@ -83,7 +83,7 @@ from exploracion_temporal import (
     tiempos_objetivo,
 )
 from seleccion_carpetas import SeleccionCarpetas
-from scrubber import FranjaExploracion, MiniaturaMarcador
+from scrubber import BarraResumenColapsada, FranjaExploracion, MiniaturaMarcador
 from tareas import Estado, GestorTareas, TareaBase
 from apertura_videos import abrir_video_con_aplicacion_predeterminada
 from arbol_navegacion import ArbolNavegacion
@@ -116,6 +116,7 @@ from tareas_videos import (
     TareaListarSegmentosVarios,
     TareaMiniaturas,
     TareaPreviewsProgresivas,
+    TareaResumenColapsado,
     TareaSincronizacionCatalogo,
     TareaTamanosArchivos,
     _es_archivo_preview,
@@ -800,6 +801,12 @@ class Tarjeta(QFrame):
         layout = QVBoxLayout(self)
         layout.addLayout(fila_principal)
         self._construir_exploracion()
+        self._barra_colapsada = BarraResumenColapsada()
+        self._barra_colapsada.set_datos(
+            self._duracion, self._marcadores, self._segmentos
+        )
+        self._barra_colapsada.setVisible(not self._expandida)
+        layout.addWidget(self._barra_colapsada)
         layout.addWidget(self._contenedor_exploracion)
 
     @property
@@ -944,6 +951,11 @@ class Tarjeta(QFrame):
         self._segmentos = []
         self._segmentos_cargados = False
         self._segmentos_eliminados_carga = set()
+        # B6.4 collapsed resumen: versión/generación para carrera batch vs mutación local
+        self._resumen_version = 0
+        self._resumen_cargado = False
+        self._resumen_eliminados_marcadores = set()
+        self._resumen_eliminados_segmentos = set()
         self._extremo_segmento = None
         self._modo_crear_segmento = False
         self._menu_segmento_actual = None
@@ -1044,6 +1056,30 @@ class Tarjeta(QFrame):
                     indice, texto_color(clave, self._ruta_config)
                 )
 
+    def _sincronizar_barra_colapsada(self):
+        """Actualiza la barra fina colapsada con duración/marcadores/segmentos actuales (B6.4).
+
+        Reutiliza exactamente la misma fuente de verdad que la franja
+        expandida (listas locales `_marcadores`/`_segmentos` y `_duracion`),
+        sin consultas SQLite ni FFmpeg. La barra es pintura ligera
+        (un único QWidget con `paintEvent`), sin widgets hijos por elemento,
+        y se muestra solo en estado colapsado.
+        """
+        barra = getattr(self, "_barra_colapsada", None)
+        if barra is None:
+            return
+        try:
+            barra.set_datos(self._duracion, self._marcadores, self._segmentos)
+        except Exception:
+            pass
+
+    def _bump_resumen_version(self):
+        """Incrementa la generación local para la carrera batch (B6.4)."""
+        try:
+            self._resumen_version = int(getattr(self, "_resumen_version", 0)) + 1
+        except Exception:
+            self._resumen_version = 1
+
     def _tiempos_y_colores_marcadores(self):
         tiempos = []
         colores = {}
@@ -1111,6 +1147,9 @@ class Tarjeta(QFrame):
         self._boton_expandir.blockSignals(False)
         if valor:
             self._contenedor_exploracion.setVisible(True)
+            barra = getattr(self, "_barra_colapsada", None)
+            if barra is not None:
+                barra.setVisible(False)
             self._preparar_exploracion()
         else:
             self._contenedor_exploracion.setVisible(False)
@@ -1119,6 +1158,10 @@ class Tarjeta(QFrame):
             self._imagen_exploracion.setPixmap(QPixmap())
             self._imagen_exploracion.hide()
             self._cancelar_extremo_segmento()
+            barra = getattr(self, "_barra_colapsada", None)
+            if barra is not None:
+                barra.setVisible(True)
+                self._sincronizar_barra_colapsada()
         self.expansion_cambiada.emit(self._nombre, valor)
 
     def _preparar_exploracion(self):
@@ -1373,6 +1416,8 @@ class Tarjeta(QFrame):
             *self._tiempos_y_colores_marcadores()
         )
         self._renderizar_marcadores()
+        self._sincronizar_barra_colapsada()
+        self._bump_resumen_version()
         self._marcador_creado_prensa = marcador
         self.marcador_creado.emit(marcador)
 
@@ -1469,6 +1514,8 @@ class Tarjeta(QFrame):
             )
         )
         self._franja.set_segmentos(self._segmentos)
+        self._sincronizar_barra_colapsada()
+        self._bump_resumen_version()
         self.segmento_actualizado.emit(segmento, previo)
 
     def _crear_segmento_normalizado(self, a, b):
@@ -1499,6 +1546,8 @@ class Tarjeta(QFrame):
             )
         )
         self._franja.set_segmentos(self._segmentos)
+        self._sincronizar_barra_colapsada()
+        self._bump_resumen_version()
         self.segmento_creado.emit(registro)
         return registro
 
@@ -1507,6 +1556,8 @@ class Tarjeta(QFrame):
             if seg is segmento:
                 del self._segmentos[indice]
                 self._franja.set_segmentos(self._segmentos)
+                self._sincronizar_barra_colapsada()
+                self._bump_resumen_version()
                 self.segmento_eliminado.emit(seg)
                 return
 
@@ -1667,6 +1718,8 @@ class Tarjeta(QFrame):
                 self._franja.set_marcadores(
                     *self._tiempos_y_colores_marcadores()
                 )
+                self._sincronizar_barra_colapsada()
+                self._bump_resumen_version()
                 self.marcador_eliminado.emit(marcador)
                 return
 
@@ -2080,6 +2133,15 @@ class VisorVideos(QMainWindow):
         self._exploracion_objetivo = None
         self.tarea_exploracion = None
 
+        # B6.4 resumen colapsado: una sola tarea batch por lote de tarjetas, sin SQLite en UI
+        self.gestor_resumen = GestorTareas(self)
+        self.gestor_resumen.tarea_resultado.connect(self._al_resultado_resumen)
+        self.gestor_resumen.tarea_error.connect(self._al_error_resumen)
+        self.gestor_resumen.tarea_finalizada.connect(self._al_resumen_finalizada)
+        self._cola_resumen = []
+        self._resumen_op_actual = None
+        self._resumen_ids_en_vuelo = set()
+
         self._timer_previews = QTimer(self)
         self._timer_previews.setSingleShot(True)
         self._timer_previews.setInterval(300)
@@ -2320,6 +2382,9 @@ class VisorVideos(QMainWindow):
         self.tarea_pagina = None
         self._recarga_catalogo_pendiente = False
         self.tarea_recarga_catalogo = None
+        # B6.4 collapsed: limpiar cola batch obsoleta del orden anterior
+        self._cola_resumen.clear()
+        self._resumen_ids_en_vuelo.clear()
         self.area.verticalScrollBar().setValue(0)
         self._reordenamiento_pendiente = True
         self._actualizar_botones_carpeta()
@@ -2722,6 +2787,12 @@ class VisorVideos(QMainWindow):
             registro = op.get("registro")
             if registro is not None:
                 registro["color"] = op.get("color_previo")
+                tarjeta = self._tarjeta_por_nombre(op.get("nombre"))
+                if tarjeta is not None:
+                    tarjeta._franja.set_marcadores(
+                        *tarjeta._tiempos_y_colores_marcadores()
+                    )
+                    tarjeta._sincronizar_barra_colapsada()
             self.mensaje_carpeta.setText(
                 f"No se pudo asignar el color del marcador: {mensaje}"
             )
@@ -2786,6 +2857,11 @@ class VisorVideos(QMainWindow):
         tarjeta._franja.set_marcadores(
             *tarjeta._tiempos_y_colores_marcadores()
         )
+        tarjeta._sincronizar_barra_colapsada()
+        try:
+            tarjeta._bump_resumen_version()
+        except Exception:
+            pass
         if marcador_id is None:
             return
         self._encolar_marcador(
@@ -2894,6 +2970,7 @@ class VisorVideos(QMainWindow):
             *tarjeta._tiempos_y_colores_marcadores()
         )
         tarjeta._renderizar_marcadores()
+        tarjeta._sincronizar_barra_colapsada()
 
     def _encolar_segmento(self, op):
         self._cola_segmentos.append(op)
@@ -2965,6 +3042,7 @@ class VisorVideos(QMainWindow):
                     )
                 )
                 tarjeta._franja.set_segmentos(tarjeta._segmentos)
+                tarjeta._sincronizar_barra_colapsada()
             if registro.get("eliminada"):
                 self._encolar_segmento(
                     {
@@ -2994,6 +3072,7 @@ class VisorVideos(QMainWindow):
                         )
                     )
                     tarjeta._franja.set_segmentos(tarjeta._segmentos)
+                    tarjeta._sincronizar_barra_colapsada()
                 self.mensaje_carpeta.setText(
                     "No se pudo actualizar el segmento: ya no existe."
                 )
@@ -3006,6 +3085,7 @@ class VisorVideos(QMainWindow):
                     )
                 )
                 tarjeta._franja.set_segmentos(tarjeta._segmentos)
+                tarjeta._sincronizar_barra_colapsada()
 
     def _al_error_segmentos(self, mensaje):
         op = self._segmento_op_actual
@@ -3023,6 +3103,7 @@ class VisorVideos(QMainWindow):
                     if seg is not registro
                 ]
                 tarjeta._franja.set_segmentos(tarjeta._segmentos)
+                tarjeta._sincronizar_barra_colapsada()
             self.mensaje_carpeta.setText(
                 f"No se pudo guardar el segmento: {mensaje}"
             )
@@ -3046,6 +3127,7 @@ class VisorVideos(QMainWindow):
             tarjeta = self._tarjeta_por_nombre(op["nombre"])
             if tarjeta is not None:
                 tarjeta._franja.set_segmentos(tarjeta._segmentos)
+                tarjeta._sincronizar_barra_colapsada()
             self.mensaje_carpeta.setText(
                 f"No se pudo asignar el color del segmento: {mensaje}"
             )
@@ -3073,6 +3155,7 @@ class VisorVideos(QMainWindow):
                     )
                 )
                 tarjeta._franja.set_segmentos(tarjeta._segmentos)
+                tarjeta._sincronizar_barra_colapsada()
             self.mensaje_carpeta.setText(
                 f"No se pudo actualizar el segmento: {mensaje}"
             )
@@ -3143,6 +3226,11 @@ class VisorVideos(QMainWindow):
             nuevo_color = None
         registro["color"] = nuevo_color
         tarjeta._franja.set_segmentos(tarjeta._segmentos)
+        tarjeta._sincronizar_barra_colapsada()
+        try:
+            tarjeta._bump_resumen_version()
+        except Exception:
+            pass
         if seg_id is None:
             return
         self._encolar_segmento(
@@ -3276,6 +3364,7 @@ class VisorVideos(QMainWindow):
             )
         )
         tarjeta._franja.set_segmentos(tarjeta._segmentos)
+        tarjeta._sincronizar_barra_colapsada()
 
     def _al_cambiar_modo_seleccion(self, activo):
         self._modo_seleccion = bool(activo)
@@ -3726,8 +3815,10 @@ class VisorVideos(QMainWindow):
             return
         self.estado_carga.hide()
         self._total_catalogo = resultado.get("total")
-        self._crear_tarjetas(resultado.get("videos", []))
+        filas_iniciales = resultado.get("videos", [])
+        self._crear_tarjetas(filas_iniciales)
         self._carga_completada = True
+        self._encolar_resumen_para_lote(filas_iniciales)
         self._programar_previews()
 
     def _iniciar_tamanos(self):
@@ -3962,9 +4053,11 @@ class VisorVideos(QMainWindow):
         self._recarga_catalogo_pendiente = False
         self.tarea_recarga_catalogo = None
         self._total_catalogo = resultado.get("total", self._total_catalogo)
-        self._reemplazar_tarjetas(resultado.get("videos", []))
+        filas_recarga = resultado.get("videos", [])
+        self._reemplazar_tarjetas(filas_recarga)
         self.estado_carga.hide()
         self._carga_completada = True
+        self._encolar_resumen_para_lote(filas_recarga)
         self._programar_previews()
         self.area.verticalScrollBar().setValue(0)
         self._ocultar_progreso()
@@ -4024,6 +4117,7 @@ class VisorVideos(QMainWindow):
         existentes = {nombre for nombre, _ in self.tarjetas}
         filas_nuevas = [fila for fila in filas if fila[0] not in existentes]
         self._agregar_tarjetas(filas_nuevas)
+        self._encolar_resumen_para_lote(filas_nuevas)
         self._programar_previews()
         self._actualizar_botones_carpeta()
 
@@ -4772,6 +4866,223 @@ class VisorVideos(QMainWindow):
         palabra = "video" if cantidad == 1 else "videos"
         self.contador.setText(f"{cantidad} {palabra}")
 
+    # === B6.4 Resumen colapsado batch ===
+    def _tarjeta_por_video_id(self, video_id):
+        for _nombre, tarjeta in self.tarjetas:
+            if getattr(tarjeta, "_video_id", None) == video_id:
+                return tarjeta
+        return None
+
+    def _encolar_resumen_para_lote(self, filas):
+        """Encola un lote batch para las filas recién incorporadas (B6.4).
+
+        `filas` son las filas de `listar_videos_paginado` (nombre, duracion, ... , id).
+        Solo metadata mínima, sin pixmaps, en un único worker.
+        """
+        if not filas:
+            return
+        video_ids = []
+        for fila in filas:
+            try:
+                vid = fila[8]
+            except IndexError:
+                continue
+            if not isinstance(vid, int) or isinstance(vid, bool):
+                continue
+            if vid in self._resumen_ids_en_vuelo:
+                continue
+            tarjeta = self._tarjeta_por_video_id(vid)
+            if tarjeta is None:
+                continue
+            if getattr(tarjeta, "_resumen_cargado", False):
+                continue
+            video_ids.append(vid)
+        if not video_ids:
+            return
+        # deduplicar preservando orden
+        video_ids = list(dict.fromkeys(video_ids))
+        for vid in video_ids:
+            self._resumen_ids_en_vuelo.add(vid)
+        self._cola_resumen.append(video_ids)
+        self._procesar_siguiente_resumen()
+
+    def _procesar_siguiente_resumen(self):
+        if self.gestor_resumen.activo:
+            return
+        if not self._cola_resumen:
+            return
+        video_ids = self._cola_resumen.pop(0)
+        # filtrar ids cuyas tarjetas ya no existen (orden/recarga) o ya cargadas
+        vigentes = []
+        versiones = {}
+        for vid in video_ids:
+            tarjeta = self._tarjeta_por_video_id(vid)
+            if tarjeta is None:
+                self._resumen_ids_en_vuelo.discard(vid)
+                continue
+            if getattr(tarjeta, "_resumen_cargado", False):
+                self._resumen_ids_en_vuelo.discard(vid)
+                continue
+            vigentes.append(vid)
+            versiones[vid] = int(getattr(tarjeta, "_resumen_version", 0))
+        if not vigentes:
+            # intentar siguiente lote
+            self._procesar_siguiente_resumen()
+            return
+        tarea = TareaResumenColapsado(vigentes, self._ruta_db)
+        self._resumen_op_actual = {"video_ids": vigentes, "versiones": versiones}
+        if not self.gestor_resumen.iniciar(tarea):
+            # reencolar al frente
+            self._cola_resumen.insert(0, vigentes)
+            self._resumen_op_actual = None
+
+    def _al_resumen_finalizada(self):
+        self._resumen_op_actual = None
+        self._procesar_siguiente_resumen()
+
+    def _al_error_resumen(self, mensaje):
+        op = self._resumen_op_actual
+        if op is not None:
+            for vid in op.get("video_ids", []):
+                self._resumen_ids_en_vuelo.discard(vid)
+        self._resumen_op_actual = None
+        self._procesar_siguiente_resumen()
+
+    def _al_resultado_resumen(self, resultado):
+        op = self._resumen_op_actual
+        if op is None:
+            return
+        video_ids = op.get("video_ids", [])
+        versiones = op.get("versiones", {})
+        # agrupar por video_id
+        marcadores = resultado.get("marcadores", []) or []
+        segmentos = resultado.get("segmentos", []) or []
+        marcadores_por_vid = {}
+        for mid, vid, tiempo, color in marcadores:
+            marcadores_por_vid.setdefault(vid, []).append((mid, vid, tiempo, color))
+        segmentos_por_vid = {}
+        for sid, vid, inicio, fin, color in segmentos:
+            segmentos_por_vid.setdefault(vid, []).append((sid, inicio, fin, color))
+        for vid in video_ids:
+            tarjeta = self._tarjeta_por_video_id(vid)
+            if tarjeta is None:
+                self._resumen_ids_en_vuelo.discard(vid)
+                continue
+            # carrera: si versión cambió después del dispatch, no pisar color/mutación local
+            version_despachada = versiones.get(vid, 0)
+            version_actual = int(getattr(tarjeta, "_resumen_version", 0))
+            es_obsoleta = version_actual != version_despachada
+            filas_m = marcadores_por_vid.get(vid, [])
+            filas_s = segmentos_por_vid.get(vid, [])
+            self._aplicar_resumen_marcadores(tarjeta, filas_m, es_obsoleta)
+            self._aplicar_resumen_segmentos(tarjeta, filas_s, es_obsoleta)
+            tarjeta._resumen_cargado = True
+            self._resumen_ids_en_vuelo.discard(vid)
+            # sincronizar barra (datos mínimos, sin pixmaps)
+            try:
+                tarjeta._sincronizar_barra_colapsada()
+                # también mantener franja coherente sin crear widgets pesados
+                tarjeta._franja.set_marcadores(*tarjeta._tiempos_y_colores_marcadores())
+                tarjeta._franja.set_segmentos(tarjeta._segmentos)
+            except Exception:
+                pass
+        # no limpiar op aquí, lo hace _al_resumen_finalizada
+
+    def _aplicar_resumen_marcadores(self, tarjeta, filas, es_obsoleta):
+        """Merge de marcadores batch sin pisar mutaciones locales más nuevas (B6.4).
+
+        Nunca carga pixmaps ni crea `MiniaturaMarcador`; los marcadores batch
+        quedan con `pixmap=None, etiqueta=None`. Si `es_obsoleta`, preserva
+        el color local de marcadores ya existentes con mismo id.
+        """
+        if not filas:
+            return
+        tolerancia = tarjeta._tolerancia_marcadores()
+        # mapa id -> marcador local
+        por_id = {m.get("id"): m for m in tarjeta._marcadores if m.get("id") is not None}
+        for marcador_id, video_de_fila, tiempo, color in filas:
+            # respetar eliminados pendientes de la carga por expansión
+            if any(abs(tiempo - t) <= tolerancia for t in getattr(tarjeta, "_marcadores_eliminados_carga", set())):
+                continue
+            if marcador_id in por_id:
+                # ya existe con ese id: en caso obsoleto, no sobrescribir color local
+                if es_obsoleta:
+                    continue
+                # no obsoleta: actualizar color si difiere (preserva NULL)
+                existente = por_id[marcador_id]
+                if color in CLAVES_COLOR_CLASIFICACION or color is None:
+                    if existente.get("color") != (color if color in CLAVES_COLOR_CLASIFICACION else None):
+                        existente["color"] = color if color in CLAVES_COLOR_CLASIFICACION else None
+                continue
+            # buscar duplicado por proximidad temporal con pendiente id None
+            duplicado = None
+            for m in tarjeta._marcadores:
+                if m.get("id") is None and abs(m["tiempo"] - tiempo) <= tolerancia:
+                    duplicado = m
+                    break
+            if duplicado is not None:
+                duplicado["id"] = marcador_id
+                # si es obsoleta, mantener color local
+                if not es_obsoleta:
+                    duplicado["color"] = color if color in CLAVES_COLOR_CLASIFICACION else None
+                # cancelar crear pendiente si existía en cola
+                try:
+                    self._cancelar_crear_pendiente(duplicado)
+                except Exception:
+                    pass
+                continue
+            # nuevo marcador persistido nunca visto: añadir sin pixmap
+            tarjeta._marcadores.append({
+                "id": marcador_id,
+                "tiempo": float(tiempo),
+                "pixmap": None,
+                "etiqueta": None,
+                "color": color if color in CLAVES_COLOR_CLASIFICACION else None,
+                "eliminada": False,
+            })
+        tarjeta._marcadores.sort(key=lambda m: m["tiempo"])
+        # no _renderizar_marcadores aquí (evita pixmaps); solo franja datos
+
+    def _aplicar_resumen_segmentos(self, tarjeta, filas, es_obsoleta):
+        """Merge de segmentos batch sin pisar mutaciones locales más nuevas (B6.4)."""
+        if not filas:
+            return
+        tolerancia = tarjeta._tolerancia_marcadores()
+        por_id = {s.get("id"): s for s in tarjeta._segmentos if s.get("id") is not None}
+        for seg_id, inicio, fin, color in filas:
+            if any(abs(inicio - e0) <= tolerancia and abs(fin - e1) <= tolerancia for e0, e1 in getattr(tarjeta, "_segmentos_eliminados_carga", set())):
+                continue
+            if seg_id in por_id:
+                if es_obsoleta:
+                    continue
+                existente = por_id[seg_id]
+                if color in CLAVES_COLOR_CLASIFICACION or color is None:
+                    if existente.get("color") != (color if color in CLAVES_COLOR_CLASIFICACION else None):
+                        existente["color"] = color if color in CLAVES_COLOR_CLASIFICACION else None
+                continue
+            duplicado = None
+            for s in tarjeta._segmentos:
+                if s.get("id") is None and abs(s["inicio"] - inicio) <= tolerancia and abs(s["fin"] - fin) <= tolerancia:
+                    duplicado = s
+                    break
+            if duplicado is not None:
+                duplicado["id"] = seg_id
+                if not es_obsoleta:
+                    duplicado["color"] = color if color in CLAVES_COLOR_CLASIFICACION else None
+                try:
+                    self._cancelar_crear_pendiente_segmento(duplicado)
+                except Exception:
+                    pass
+                continue
+            tarjeta._segmentos.append({
+                "id": seg_id,
+                "inicio": float(inicio),
+                "fin": float(fin),
+                "color": color if color in CLAVES_COLOR_CLASIFICACION else None,
+                "eliminada": False,
+            })
+        tarjeta._segmentos.sort(key=lambda s: (s["inicio"], s["fin"], s["id"] if s["id"] is not None else 0))
+
     def closeEvent(self, event):
         self._timer_previews.stop()
         self._ocultar_vista()
@@ -4786,6 +5097,10 @@ class VisorVideos(QMainWindow):
             self.gestor_segmentos.cerrar()
         if self.gestor_reproduccion is not None:
             self.gestor_reproduccion.cerrar()
+        if getattr(self, "gestor_resumen", None) is not None:
+            self.gestor_resumen.cerrar()
+        if getattr(self, "gestor_exploracion", None) is not None:
+            self.gestor_exploracion.cerrar()
         super().closeEvent(event)
 
 

@@ -1223,7 +1223,8 @@ def listar_marcadores_de(video_ids, ruta_db=None):
 
     Devuelve una lista de tuplas `(id, video_id, tiempo, color)` agrupada
     por `video_id` en el orden recibido y, dentro de cada video, ordenada
-    por tiempo ascendente.
+    por tiempo ascendente. Usa **una sola consulta SQL** (`WHERE video_id IN (...)`),
+    sin consultas por video (B6.4 optimización batch).
     """
     if isinstance(video_ids, (str, bytes, bytearray)):
         raise TypeError("video_ids debe ser una colección de enteros")
@@ -1235,22 +1236,26 @@ def listar_marcadores_de(video_ids, ruta_db=None):
         _validar_video_id(video_id)
     if not lista:
         return []
+    ids_unicos = list(dict.fromkeys(lista))
     conn = _conectar_repositorio_marcadores(ruta_db)
     try:
-        marcadores = []
-        for video_id in lista:
-            marcadores.extend(
-                conn.execute(
-                    """
-                    SELECT id, video_id, tiempo, color
-                    FROM marcadores_video
-                    WHERE video_id = ?
-                    ORDER BY tiempo
-                    """,
-                    (video_id,),
-                ).fetchall()
+        por_video = {}
+        for marcador_id, video_de_fila, tiempo, color in conn.execute(
+            f"""
+            SELECT id, video_id, tiempo, color
+            FROM marcadores_video
+            WHERE video_id IN ({",".join("?" for _ in ids_unicos)})
+            ORDER BY video_id, tiempo, id
+            """,
+            ids_unicos,
+        ).fetchall():
+            por_video.setdefault(video_de_fila, []).append(
+                (marcador_id, video_de_fila, tiempo, color)
             )
-        return marcadores
+        resultado = []
+        for video_id in ids_unicos:
+            resultado.extend(por_video.get(video_id, []))
+        return resultado
     finally:
         conn.close()
 

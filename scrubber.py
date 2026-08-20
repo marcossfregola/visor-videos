@@ -16,7 +16,11 @@ from PySide6.QtCore import QEvent, QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QBrush, QColor, QMouseEvent, QPainter, QPen
 from PySide6.QtWidgets import QApplication, QLabel, QSizePolicy, QWidget
 
-from exploracion_temporal import posicion_a_tiempo, tiempo_a_posicion
+from exploracion_temporal import (
+    duracion_valida,
+    posicion_a_tiempo,
+    tiempo_a_posicion,
+)
 from escanear_videos import color_rgb
 
 _COLOR_FONDO = QColor(244, 244, 244)
@@ -34,6 +38,10 @@ _MARGEN = 6
 _ALTO_PISTA = 10
 _TOLERANCIA_MARCA_PX = 6
 _TOLERANCIA_EXTREMO_PX = 12
+
+_BARRA_COLAPSADA_ALTURA = 6
+_BARRA_COLAPSADA_MARGEN = 2
+_BARRA_COLAPSADA_ALTURA_FIJA = 10
 
 
 def _color_paleta(clave, por_defecto):
@@ -739,5 +747,148 @@ class FranjaExploracion(QWidget):
             pintor.drawLine(
                 QPointF(x, rect.top() + 2),
                 QPointF(x, rect.bottom() - 2),
+            )
+        pintor.end()
+
+
+class BarraResumenColapsada(QWidget):
+    """Indicador temporal fino para tarjeta colapsada (B6.4).
+
+    Barra discreta debajo de las miniaturas que representa la duración
+    completa del video (escala 0..duración). Marcadores como líneas
+    verticales pequeñas y segmentos como bandas proporcionales. Reutiliza
+    exactamente la paleta de B6.3 (`color_rgb` y _COLOR_* históricos) sin
+    duplicar lógica. No agrega edición, navegación, reproducción ni
+    interacciones: pintura ligera con un único widget.
+
+    Degradación segura: duración inválida/cero/None o datos incompletos no
+    rompen la tarjeta; solo se pinta la pista de fondo.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._duracion = None
+        self._marcadores = []
+        self._segmentos = []
+        self.setFixedHeight(_BARRA_COLAPSADA_ALTURA_FIJA)
+        self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self.setMouseTracking(False)
+
+    def set_duracion(self, duracion):
+        self._duracion = duracion
+        self.update()
+
+    def set_marcadores(self, marcadores):
+        if marcadores is None:
+            self._marcadores = []
+        else:
+            copia = []
+            for m in marcadores:
+                if not isinstance(m, dict):
+                    continue
+                t = m.get("tiempo")
+                if not isinstance(t, (int, float)) or isinstance(t, bool):
+                    continue
+                try:
+                    tf = float(t)
+                except (TypeError, ValueError):
+                    continue
+                copia.append({"tiempo": tf, "color": m.get("color")})
+            copia.sort(key=lambda d: d["tiempo"])
+            self._marcadores = copia
+        self.update()
+
+    def set_segmentos(self, segmentos):
+        if segmentos is None:
+            self._segmentos = []
+        else:
+            copia = []
+            for s in segmentos:
+                if not isinstance(s, dict):
+                    continue
+                inicio = s.get("inicio")
+                fin = s.get("fin")
+                if not isinstance(inicio, (int, float)) or isinstance(inicio, bool):
+                    continue
+                if not isinstance(fin, (int, float)) or isinstance(fin, bool):
+                    continue
+                try:
+                    a = float(inicio)
+                    b = float(fin)
+                except (TypeError, ValueError):
+                    continue
+                import math
+
+                if not math.isfinite(a) or not math.isfinite(b):
+                    continue
+                if b <= a:
+                    continue
+                copia.append({"inicio": a, "fin": b, "color": s.get("color")})
+            copia.sort(key=lambda d: (d["inicio"], d["fin"]))
+            self._segmentos = copia
+        self.update()
+
+    def set_datos(self, duracion, marcadores, segmentos):
+        self._duracion = duracion
+        self.set_marcadores(marcadores)
+        self.set_segmentos(segmentos)
+
+    def duracion(self):
+        return self._duracion
+
+    def marcadores(self):
+        return list(self._marcadores)
+
+    def segmentos(self):
+        return list(self._segmentos)
+
+    def _color_marca_para_barra(self, clave):
+        return _color_paleta(clave, _COLOR_MARCA)
+
+    def paintEvent(self, event):
+        pintor = QPainter(self)
+        rect = self.rect()
+        pintor.fillRect(rect, QColor(250, 250, 250))
+        margen = _BARRA_COLAPSADA_MARGEN
+        altura = _BARRA_COLAPSADA_ALTURA
+        y = (rect.height() - altura) // 2
+        ancho_util = max(0, rect.width() - 2 * margen)
+        pista = QRectF(margen, y, ancho_util, altura)
+        pintor.setPen(QPen(_COLOR_BORDE, 1))
+        pintor.setBrush(_COLOR_PISTA)
+        pintor.drawRoundedRect(pista, 2, 2)
+        if not duracion_valida(self._duracion) or ancho_util <= 0:
+            pintor.end()
+            return
+        for seg in self._segmentos:
+            inicio = seg.get("inicio")
+            fin = seg.get("fin")
+            x1 = tiempo_a_posicion(inicio, ancho_util, self._duracion)
+            x2 = tiempo_a_posicion(fin, ancho_util, self._duracion)
+            if x1 is None or x2 is None:
+                continue
+            izquierda = margen + min(x1, x2)
+            ancho_banda = max(1.0, abs(x2 - x1))
+            if izquierda + ancho_banda > margen + ancho_util:
+                ancho_banda = max(0.0, margen + ancho_util - izquierda)
+            if ancho_banda <= 0:
+                continue
+            rect_banda = QRectF(izquierda, y, ancho_banda, altura)
+            pintor.fillRect(rect_banda, QBrush(_color_fondo_segmento(seg)))
+            pintor.setBrush(Qt.NoBrush)
+            pintor.setPen(QPen(_color_borde_segmento(seg), 1))
+            pintor.drawRect(rect_banda)
+        for marca in self._marcadores:
+            t = marca.get("tiempo")
+            x = tiempo_a_posicion(t, ancho_util, self._duracion)
+            if x is None:
+                continue
+            x_abs = margen + x
+            clave = marca.get("color")
+            color = self._color_marca_para_barra(clave)
+            pintor.setPen(QPen(color, 1.5))
+            pintor.drawLine(
+                QPointF(x_abs, y - 1),
+                QPointF(x_abs, y + altura + 1),
             )
         pintor.end()

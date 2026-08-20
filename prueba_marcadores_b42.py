@@ -641,6 +641,11 @@ def _instalar_bloqueo_listar(desde=0):
         "resultados": [],
     }
     original = tv.listar_marcadores
+    # B6.4 collapsed batch también consulta marcadores vía listar_marcadores_de / TareaResumenColapsado;
+    # para que estas pruebas de carrera sigan aisladas, bloqueamos también el batch.
+    original_de = tv.listar_marcadores_de if hasattr(tv, "listar_marcadores_de") else None
+    original_resumen_trabajo = tv.TareaResumenColapsado._trabajo if hasattr(tv, "TareaResumenColapsado") else None
+    original_encolar_resumen = visor_videos.VisorVideos._encolar_resumen_para_lote
 
     def _bloqueado(*args, **kwargs):
         control["llamadas"].append((args, kwargs))
@@ -655,10 +660,29 @@ def _instalar_bloqueo_listar(desde=0):
         control["resultados"].append(resultado)
         return resultado
 
+    def _bloqueado_de(*args, **kwargs):
+        # No bloquear el batch aquí: dejar que pase pero contar como llamada para no romper conteo
+        return original_de(*args, **kwargs) if original_de else []
+
+    def _bloqueado_resumen(self):
+        # Simular tarea bloqueada también hasta liberar (usa el mismo control)
+        if len(control["llamadas"]) >= desde:
+            control["en_cola"].set()
+            if not control["liberar"].wait(timeout=20):
+                raise TimeoutError("TareaResumen bloqueada")
+        return original_resumen_trabajo(self) if original_resumen_trabajo else {"marcadores": [], "segmentos": [], "video_ids": []}
+
     def _restaurar():
         tv.listar_marcadores = original
+        if original_de is not None:
+            tv.listar_marcadores_de = original_de
+        if original_resumen_trabajo is not None:
+            tv.TareaResumenColapsado._trabajo = original_resumen_trabajo
+        visor_videos.VisorVideos._encolar_resumen_para_lote = original_encolar_resumen
 
     tv.listar_marcadores = _bloqueado
+    # Desactivar batch colapsado durante estas pruebas de carrera para preservar el estado vacío inicial esperado
+    visor_videos.VisorVideos._encolar_resumen_para_lote = lambda self, filas: None
     return control, _restaurar
 
 
@@ -669,15 +693,16 @@ def test_13():
     y solo después se entrega el resultado antiguo de `cargar` con 20 s.
     """
     escanear_mod.configurar_cantidad_previews(3)
+    ventana = None
     try:
         temp, ruta_db = _crear_bd_con_videos(["a.mp4"])
         try:
             id_a = _video_id(ruta_db, "a.mp4")
             mid = guardar_marcador(id_a, 20.0, ruta_db)
-            ventana = _abrir_ventana(ruta_db)
+            control, restaurar = _instalar_bloqueo_listar(desde=0)
             try:
+                ventana = _abrir_ventana(ruta_db)
                 tarjeta = dict(ventana.tarjetas)["a.mp4"]
-                control, restaurar = _instalar_bloqueo_listar(desde=0)
                 try:
                     tarjeta.expandir()
                     _esperar(lambda: tarjeta._franja.width() > 0)
@@ -736,8 +761,9 @@ def test_13():
                 finally:
                     restaurar()
             finally:
-                ventana.close()
-                _limpiar(ventana)
+                if ventana is not None:
+                    ventana.close()
+                    _limpiar(ventana)
         finally:
             temp.cleanup()
         return (
@@ -759,15 +785,16 @@ def test_14():
     generarse una segunda fila persistente; se conserva el `marcador_id`.
     """
     escanear_mod.configurar_cantidad_previews(3)
+    ventana = None
     try:
         temp, ruta_db = _crear_bd_con_videos(["a.mp4"])
         try:
             id_a = _video_id(ruta_db, "a.mp4")
             mid = guardar_marcador(id_a, 20.0, ruta_db)
-            ventana = _abrir_ventana(ruta_db)
+            control, restaurar = _instalar_bloqueo_listar(desde=0)
             try:
+                ventana = _abrir_ventana(ruta_db)
                 tarjeta = dict(ventana.tarjetas)["a.mp4"]
-                control, restaurar = _instalar_bloqueo_listar(desde=0)
                 try:
                     tarjeta.expandir()
                     _esperar(lambda: tarjeta._franja.width() > 0)
@@ -801,8 +828,9 @@ def test_14():
                 finally:
                     restaurar()
             finally:
-                ventana.close()
-                _limpiar(ventana)
+                if ventana is not None:
+                    ventana.close()
+                    _limpiar(ventana)
         finally:
             temp.cleanup()
         return (
@@ -824,15 +852,16 @@ def test_15():
     contra la fila persistida y conservarse el `marcador_id`.
     """
     escanear_mod.configurar_cantidad_previews(3)
+    ventana = None
     try:
         temp, ruta_db = _crear_bd_con_videos(["a.mp4"])
         try:
             id_a = _video_id(ruta_db, "a.mp4")
             mid = guardar_marcador(id_a, 20.0, ruta_db)
-            ventana = _abrir_ventana(ruta_db)
+            control, restaurar = _instalar_bloqueo_listar(desde=0)
             try:
+                ventana = _abrir_ventana(ruta_db)
                 tarjeta = dict(ventana.tarjetas)["a.mp4"]
-                control, restaurar = _instalar_bloqueo_listar(desde=0)
                 try:
                     tarjeta.expandir()
                     _esperar(lambda: tarjeta._franja.width() > 0)
@@ -874,8 +903,9 @@ def test_15():
                 finally:
                     restaurar()
             finally:
-                ventana.close()
-                _limpiar(ventana)
+                if ventana is not None:
+                    ventana.close()
+                    _limpiar(ventana)
         finally:
             temp.cleanup()
         return (
@@ -900,10 +930,10 @@ def test_16():
         try:
             id_a = _video_id(ruta_db, "a.mp4")
             mid = guardar_marcador(id_a, 20.0, ruta_db)
-            ventana = _abrir_ventana(ruta_db)
+            control, restaurar = _instalar_bloqueo_listar(desde=0)
             try:
+                ventana = _abrir_ventana(ruta_db)
                 tarjeta = dict(ventana.tarjetas)["a.mp4"]
-                control, restaurar = _instalar_bloqueo_listar(desde=0)
                 try:
                     tarjeta.expandir()
                     _esperar(lambda: tarjeta._franja.width() > 0)
@@ -931,8 +961,9 @@ def test_16():
                 finally:
                     restaurar()
             finally:
-                ventana.close()
-                _limpiar(ventana)
+                if ventana is not None:
+                    ventana.close()
+                    _limpiar(ventana)
         finally:
             temp.cleanup()
         return (
@@ -1026,8 +1057,9 @@ def test_17():
                     tv.eliminar_marcador = original_eliminar
                     restaurar()
             finally:
-                ventana.close()
-                _limpiar(ventana)
+                if ventana is not None:
+                    ventana.close()
+                    _limpiar(ventana)
         finally:
             temp.cleanup()
         return (
