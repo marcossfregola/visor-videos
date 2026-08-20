@@ -149,15 +149,15 @@ def test_02():
     fin = fuente.index("for marca in self._marcadores:")
     bloque = fuente[inicio:fin]
     ok = (
-        "fillRect(rect_banda, QBrush(_COLOR_SEGMENTO))" in bloque
+        "fillRect(rect_banda, QBrush(_color_fondo_segmento(seg)))" in bloque
         and "drawRect(rect_banda)" in bloque
-        and "_COLOR_SEGMENTO_BORDE" in bloque
+        and "_color_borde_segmento(seg)" in bloque
     )
     return (
         ok,
-        f"relleno={'fillRect(rect_banda, QBrush(_COLOR_SEGMENTO))' in bloque} "
+        f"relleno={'fillRect(rect_banda, QBrush(_color_fondo_segmento(seg)))' in bloque} "
         f"contorno={'drawRect' in bloque} "
-        f"borde_const={'_COLOR_SEGMENTO_BORDE' in bloque}",
+        f"borde_const={'_color_borde_segmento(seg)' in bloque}",
     )
 
 

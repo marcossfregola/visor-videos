@@ -227,7 +227,7 @@ def test_01():
         filas = listar_segmentos(id_video, ruta_db)
         ok = (
             resultado == (sid[0], 30.0, 60.0)
-            and filas == [(sid[0], 30.0, 60.0)]
+            and filas == [(sid[0], 30.0, 60.0, None)]
             and len(filas) == 1
         )
     finally:
@@ -258,7 +258,7 @@ def test_03():
         except ValueError:
             rechazo = True
         filas = listar_segmentos(id_video, ruta_db)
-        ok = rechazo and filas == [(sid[0], 20.0, 50.0)]
+        ok = rechazo and filas == [(sid[0], 20.0, 50.0, None)]
     finally:
         temp.cleanup()
     return ok, f"rechazo={rechazo} filas={filas}"
@@ -273,7 +273,10 @@ def test_04():
         s2 = guardar_segmento(id_video, 30.0, 40.0, ruta_db)
         actualizar_segmento(s1[0], 5.0, 25.0, ruta_db)
         filas = listar_segmentos(id_video, ruta_db)
-        ok = filas == [(s1[0], 5.0, 25.0), (s2[0], 30.0, 40.0)]
+        ok = filas == [
+            (s1[0], 5.0, 25.0, None),
+            (s2[0], 30.0, 40.0, None),
+        ]
     finally:
         temp.cleanup()
     return ok, f"filas={filas}"
@@ -298,7 +301,7 @@ def test_05():
         ok = (
             resultados == [(sid[0], 25.0, 55.0)]
             and not errores
-            and filas == [(sid[0], 25.0, 55.0)]
+            and filas == [(sid[0], 25.0, 55.0, None)]
         )
         gestor.cerrar()
     finally:
@@ -738,7 +741,7 @@ def test_22():
         _drenar_segmentos(ventana)
         filas = listar_segmentos(id_v, ruta_db)
         ok = (
-            filas == [(id_seg, 20.0, 65.0)]
+            filas == [(id_seg, 20.0, 65.0, None)]
             and len(filas) == 1
         )
     finally:

@@ -183,6 +183,7 @@ def test_02():
             ("video_id", "INTEGER"),
             ("inicio", "REAL"),
             ("fin", "REAL"),
+            ("color", "TEXT"),
         ]
         ok_indice = _indice(
             ruta_db, "idx_segmentos_video_video_id_inicio"
@@ -239,13 +240,17 @@ def test_04():
         despues_marcadores = _filas(ruta_db, "SELECT * FROM marcadores_video")
         ok_preserva = (
             antes_videos == despues_videos
-            and antes_marcadores == despues_marcadores
+            and antes_marcadores == [fila[:3] for fila in despues_marcadores]
         )
+        ok_color_nulo = _filas(
+            ruta_db,
+            "SELECT color FROM marcadores_video WHERE video_id = 1",
+        ) == [(None,)]
     finally:
         temp.cleanup()
     return (
-        ok_segmentos and ok_indice and ok_preserva,
-        f"segmentos={ok_segmentos} indice={ok_indice} videos={antes_videos == despues_videos} marcadores={antes_marcadores == despues_marcadores}",
+        ok_segmentos and ok_indice and ok_preserva and ok_color_nulo,
+        f"segmentos={ok_segmentos} indice={ok_indice} videos={antes_videos == despues_videos} marcadores={ok_preserva} color_nulo={ok_color_nulo}",
     )
 
 
@@ -295,7 +300,7 @@ def test_06():
             and guardado[2] == 20.5
         )
         ok_persiste = listar_segmentos(id_video, ruta_db) == [
-            (guardado[0], 10.0, 20.5)
+            (guardado[0], 10.0, 20.5, None)
         ]
         return (
             ok_tupla and ok_persiste,
@@ -314,7 +319,7 @@ def test_07():
         guardar_segmento(id_video, 5.0, 6.0, ruta_db)
         guardar_segmento(id_video, 3.0, 4.0, ruta_db)
         segmentos = listar_segmentos(id_video, ruta_db)
-        ok = len(segmentos) == 3 and all(len(s) == 3 for s in segmentos)
+        ok = len(segmentos) == 3 and all(len(s) == 4 for s in segmentos)
         return ok, f"segmentos={segmentos}"
     finally:
         temp.cleanup()
@@ -364,7 +369,7 @@ def test_10():
         s1 = guardar_segmento(id_a, 1.0, 2.0, ruta_db)
         guardar_segmento(id_b, 9.0, 10.0, ruta_db)
         segmentos_a = listar_segmentos(id_a, ruta_db)
-        ok = segmentos_a == [(s1[0], 1.0, 2.0)]
+        ok = segmentos_a == [(s1[0], 1.0, 2.0, None)]
         return ok, f"a={segmentos_a}"
     finally:
         temp.cleanup()
@@ -382,9 +387,9 @@ def test_11():
         sc = guardar_segmento(id_c, 5.0, 6.0, ruta_db)
         resultado = listar_segmentos_de([id_b, id_a, id_c], ruta_db)
         esperado = [
-            (sb[0], id_b, 3.0, 4.0),
-            (sa[0], id_a, 1.0, 2.0),
-            (sc[0], id_c, 5.0, 6.0),
+            (sb[0], id_b, 3.0, 4.0, None),
+            (sa[0], id_a, 1.0, 2.0, None),
+            (sc[0], id_c, 5.0, 6.0, None),
         ]
         ok = resultado == esperado
         return ok, f"resultado={resultado}"
@@ -424,7 +429,7 @@ def test_14():
         s2 = guardar_segmento(id_video, 3.0, 4.0, ruta_db)
         ok_eliminado = eliminar_segmento(s1[0], ruta_db) is True
         restantes = listar_segmentos(id_video, ruta_db)
-        ok_restantes = restantes == [(s2[0], 3.0, 4.0)]
+        ok_restantes = restantes == [(s2[0], 3.0, 4.0, None)]
         return ok_eliminado and ok_restantes, f"restantes={restantes}"
     finally:
         temp.cleanup()
@@ -451,7 +456,7 @@ def test_16():
         eliminar_segmento(sa[0], ruta_db)
         ok = (
             listar_segmentos(id_a, ruta_db) == []
-            and listar_segmentos(id_b, ruta_db) == [(sb[0], 3.0, 4.0)]
+            and listar_segmentos(id_b, ruta_db) == [(sb[0], 3.0, 4.0, None)]
         )
         return ok, f"a={listar_segmentos(id_a, ruta_db)} b={listar_segmentos(id_b, ruta_db)}"
     finally:
@@ -621,7 +626,7 @@ def test_27():
         s1 = guardar_segmento(id_video, 1.0, 2.0, ruta_db)
         eliminar_segmento(s1[0], ruta_db)
         marcadores = listar_marcadores(id_video, ruta_db)
-        ok = marcadores == [(m1, id_video, 5.0)]
+        ok = marcadores == [(m1, id_video, 5.0, None)]
         return ok, f"marcadores={marcadores}"
     finally:
         temp.cleanup()
@@ -682,7 +687,7 @@ def test_30():
     try:
         id_video = _video_id(ruta_db, "a.mp4")
         s = guardar_segmento(id_video, 0.0, 5.0, ruta_db)
-        ok = listar_segmentos(id_video, ruta_db) == [(s[0], 0.0, 5.0)]
+        ok = listar_segmentos(id_video, ruta_db) == [(s[0], 0.0, 5.0, None)]
         return ok, f"segmentos={listar_segmentos(id_video, ruta_db)}"
     finally:
         temp.cleanup()

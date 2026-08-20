@@ -182,6 +182,30 @@ def _clic_derecho(widget, x=5):
     QApplication.sendEvent(widget, evento)
 
 
+def _eliminar_marcador_via_menu(tarjeta, widget, x=5):
+    """B6.3: el clic derecho ya no borra, abre el menú contextual.
+
+    Abre el menú con un clic derecho y acciona la acción «Eliminar
+    marcador». Devuelve `True` si la eliminación se solicitó.
+    """
+    tarjeta._menu_marcador_actual = None
+    _clic_derecho(widget, x)
+    if not _esperar(
+        lambda t=tarjeta: t._menu_marcador_actual is not None
+    ):
+        return False
+    menu = tarjeta._menu_marcador_actual
+    accion = next(
+        (a for a in menu.actions() if a.text() == "Eliminar marcador"),
+        None,
+    )
+    if accion is None:
+        return False
+    accion.trigger()
+    QApplication.processEvents()
+    return True
+
+
 def test_01():
     modulos = [
         "escanear_videos.py",
@@ -241,14 +265,14 @@ def test_03():
         id4 = guardar_marcador(id_b, 10.0, ruta_db)
         ok_ids = all(isinstance(x, int) and x > 0 for x in (id1, id2, id3, id4))
         marcadores_a = listar_marcadores(id_a, ruta_db)
-        ok_orden = [t for _, _, t in marcadores_a] == [10.0, 20.0, 30.0]
-        ok_no_mezcla = [v for _, v, _ in marcadores_a] == [id_a, id_a, id_a]
+        ok_orden = [t for _, _, t, _ in marcadores_a] == [10.0, 20.0, 30.0]
+        ok_no_mezcla = [v for _, v, _, _ in marcadores_a] == [id_a, id_a, id_a]
         ok_mismo_tiempo = listar_marcadores(id_b, ruta_db) == [
-            (id4, id_b, 10.0)
+            (id4, id_b, 10.0, None)
         ]
         ok_borrado = eliminar_marcador(id3, ruta_db) is True
         restantes_a = listar_marcadores(id_a, ruta_db)
-        ok_restantes = [t for _, _, t in restantes_a] == [10.0, 30.0]
+        ok_restantes = [t for _, _, t, _ in restantes_a] == [10.0, 30.0]
         ok_eliminar_inexistente = eliminar_marcador(999999, ruta_db) is False
     finally:
         temp.cleanup()
@@ -270,7 +294,7 @@ def test_04():
         id_a = _video_id(ruta_db, "a.mp4")
         mid = guardar_marcador(id_a, 5.5, ruta_db)
         m = listar_marcadores(id_a, ruta_db)
-        ok = m == [(mid, id_a, 5.5)]
+        ok = m == [(mid, id_a, 5.5, None)]
     finally:
         temp.cleanup()
     return ok, f"m={m}"
@@ -299,7 +323,7 @@ def test_05():
         marcadores = listar_marcadores(id_despues, ruta_db)
         ok = (
             id_antes == id_despues
-            and marcadores == [(mid, id_antes, 12.0)]
+            and marcadores == [(mid, id_antes, 12.0, None)]
         )
     finally:
         temp.cleanup()
@@ -316,7 +340,7 @@ def test_06():
         conn.commit()
         conn.close()
         marcadores = listar_marcadores(id_a, ruta_db)
-        ok = marcadores == [(mid, id_a, 7.0)]
+        ok = marcadores == [(mid, id_a, 7.0, None)]
     finally:
         temp.cleanup()
     return ok, f"marcadores={marcadores}"
@@ -338,7 +362,7 @@ def test_07():
         ok = (
             id_new != id_old
             and marcadores_new == []
-            and marcadores_old == [(mid, id_old, 7.0)]
+            and marcadores_old == [(mid, id_old, 7.0, None)]
         )
     finally:
         temp.cleanup()
@@ -474,9 +498,11 @@ def test_10():
                     )
                     mid = tarjeta._marcadores[0]["id"]
                     ok_persistido = listar_marcadores(id_a, ruta_db) == [
-                        (mid, id_a, 30.0)
+                        (mid, id_a, 30.0, None)
                     ]
-                    _clic_derecho(tarjeta._marcadores[0]["etiqueta"])
+                    ok_solicitado = _eliminar_marcador_via_menu(
+                        tarjeta, tarjeta._marcadores[0]["etiqueta"]
+                    )
                     ok_borrado = _esperar(
                         lambda: listar_marcadores(id_a, ruta_db) == []
                         and not ventana.gestor_marcadores.activo
@@ -503,10 +529,11 @@ def test_10():
                 ok_visual
                 and ok_persiste
                 and ok_persistido
+                and ok_solicitado
                 and ok_borrado
                 and ok_visual_vacio
                 and ok_reabrir,
-                f"mid={mid} persistido={ok_persistido} borrado={ok_borrado} reabrir={ok_reabrir}",
+                f"mid={mid} persistido={ok_persistido} solicitado={ok_solicitado} borrado={ok_borrado} reabrir={ok_reabrir}",
             )
     finally:
         escanear_mod.configurar_cantidad_previews(3)
@@ -529,7 +556,9 @@ def test_11():
                     ancho = superficie.width()
                     _mouse_press(superficie, ancho * 0.5)
                     registro = tarjeta._marcadores[0]
-                    _clic_derecho(registro["etiqueta"])
+                    ok_solicitado = _eliminar_marcador_via_menu(
+                        tarjeta, registro["etiqueta"]
+                    )
                     ok_vacio = _esperar(
                         lambda: listar_marcadores(id_a, ruta_db) == []
                         and not ventana.gestor_marcadores.activo
@@ -537,7 +566,11 @@ def test_11():
                         timeout_ms=15000,
                     )
                     filas = listar_marcadores(id_a, ruta_db)
-                    ok = ok_vacio and filas == []
+                    ok = (
+                        ok_solicitado
+                        and ok_vacio
+                        and filas == []
+                    )
                 finally:
                     ventana.close()
                     _limpiar(ventana)
@@ -697,8 +730,8 @@ def test_13():
                     )
                     filas = listar_marcadores(id_a, ruta_db)
                     ok_sqlite = (
-                        sorted(t for _, _, t in filas) == [20.0, 60.0]
-                        and {i for i, _, _ in filas} == {mid, m60["id"]}
+                        sorted(t for _, _, t, _ in filas) == [20.0, 60.0]
+                        and {i for i, _, _, _ in filas} == {mid, m60["id"]}
                     )
                 finally:
                     restaurar()
@@ -764,7 +797,7 @@ def test_14():
                     )
                     ok_id = m.get("id") == mid
                     filas = listar_marcadores(id_a, ruta_db)
-                    ok_sqlite = filas == [(mid, id_a, 20.0)]
+                    ok_sqlite = filas == [(mid, id_a, 20.0, None)]
                 finally:
                     restaurar()
             finally:
@@ -837,7 +870,7 @@ def test_15():
                     )
                     ok_id = m.get("id") == mid
                     filas = listar_marcadores(id_a, ruta_db)
-                    ok_sqlite = filas == [(mid, id_a, 20.0)]
+                    ok_sqlite = filas == [(mid, id_a, 20.0, None)]
                 finally:
                     restaurar()
             finally:
@@ -879,8 +912,9 @@ def test_16():
                     ancho = superficie.width()
                     _mouse_press(superficie, ancho * 0.2)
                     QApplication.processEvents()
-                    _clic_derecho(superficie, ancho * 0.2)
-                    QApplication.processEvents()
+                    ok_menu = _eliminar_marcador_via_menu(
+                        tarjeta, superficie, ancho * 0.2
+                    )
                     ok_vacio = tarjeta._marcadores == []
                     ok_sin_crear = not any(
                         op.get("tipo") == "crear"
@@ -902,9 +936,9 @@ def test_16():
         finally:
             temp.cleanup()
         return (
-            ok_vacio and ok_sin_crear and ok_drena
+            ok_menu and ok_vacio and ok_sin_crear and ok_drena
             and ok_no_resurge and ok_sqlite,
-            f"vacio={ok_vacio} sin_crear={ok_sin_crear} drena={ok_drena} "
+            f"menu={ok_menu} vacio={ok_vacio} sin_crear={ok_sin_crear} drena={ok_drena} "
             f"no_resurge={ok_no_resurge} sqlite={ok_sqlite} filas={filas}",
         )
     finally:
@@ -948,7 +982,9 @@ def test_17():
                     )
                     superficie = tarjeta._franja
                     ancho = superficie.width()
-                    _clic_derecho(superficie, ancho * 0.3)
+                    ok_solicitado = _eliminar_marcador_via_menu(
+                        tarjeta, superficie, ancho * 0.3
+                    )
                     ok_recarga = _esperar(
                         lambda: control["en_cola"].is_set()
                         and len(control["llamadas"]) == 2
@@ -982,9 +1018,9 @@ def test_17():
                     ok_final = tiempos == [10.0, 30.0, 60.0]
                     filas = listar_marcadores(id_a, ruta_db)
                     ok_sqlite = (
-                        sorted(t for _, _, t in filas)
+                        sorted(t for _, _, t, _ in filas)
                         == [10.0, 30.0, 60.0]
-                        and len(filas) == len(set(i for i, _, _ in filas))
+                        and len(filas) == len(set(i for i, _, _, _ in filas))
                     )
                 finally:
                     tv.eliminar_marcador = original_eliminar
@@ -995,9 +1031,10 @@ def test_17():
         finally:
             temp.cleanup()
         return (
-            ok_carga and ok_recarga and ok_pendiente
+            ok_carga and ok_solicitado and ok_recarga and ok_pendiente
             and ok_drena and ok_final and ok_sqlite,
-            f"carga={ok_carga} recarga={ok_recarga} pendiente={ok_pendiente} "
+            f"carga={ok_carga} solicitado={ok_solicitado} recarga={ok_recarga} "
+            f"pendiente={ok_pendiente} "
             f"drena={ok_drena} final={ok_final} sqlite={ok_sqlite} "
             f"tiempos={tiempos} filas={filas}",
         )

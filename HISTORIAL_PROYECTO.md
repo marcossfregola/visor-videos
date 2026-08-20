@@ -5,6 +5,67 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 107. Finalización técnica de B6.3 — Clasificación visual de marcadores y segmentos
+
+- **Fecha:** 2026-08-20
+- **Tipo:** etapa **exclusivamente documental** para la **finalización técnica
+  de B6.3** (la aprobación técnica ya fue otorgada con anterioridad). **Sin
+  commit, push, tag, merge ni release**: los 18 archivos técnicos modificados
+  permanecen sin confirmar en el working tree de `beta6`.
+- **Rama:** `beta6`.
+- **Implementación verificada (resumen factual):**
+  - **Paleta cerrada de 6 colores** — `COLORES_CLASIFICACION` en
+    `escanear_videos.py` (rojo, naranja, amarillo, verde, azul, violeta),
+    única fuente de verdad, misma paleta para marcadores y segmentos;
+    `CLAVES_COLOR_CLASIFICACION`, `color_rgb` y `_validar_color_clasificacion`.
+  - **Persistencia SQLite aditiva e idempotente** — `color TEXT NULL` añadido
+    por migración a `marcadores_video` y `segmentos_video`
+    (`_asegurar_columna_color`, invocada desde `conectar_bd` via
+    `_asegurar_tabla_marcadores`/`_asegurar_tabla_segmentos`); `NULL` conserva
+    los colores históricos (marcador rojo, segmento azul). Sin cambio de
+    esquema para los datos existentes; sin CASCADE.
+  - **Asignar / quitar color** — `asignar_color_marcador(marcador_id, clave)`
+    y `asignar_color_segmento(segmento_id, clave)` (`UPDATE` transaccional que
+    devuelve la fila persistida o `None`); `guardar_marcador`/`guardar_segmento`
+    aceptan `color` en el mismo `INSERT`; las lecturas
+    (`listar_marcadores`, `listar_marcadores_de`, `listar_segmentos`,
+    `listar_segmentos_de`) devuelven `color` como último campo.
+  - **Tareas asíncronas fuera de SQLite directo desde la UI** —
+    `TareaAsignarColorMarcador`/`TareaAsignarColorSegmento` y soporte de
+    `color` en `TareaGuardarMarcador`/`TareaGuardarSegmento`; la interfaz
+    encola operaciones de tipo `"color"` en los gestores dedicados y **revierte
+    el color previo** ante un error de persistencia.
+  - **Render visual** — `scrubber.py` pinta las marcas y las bandas de
+    segmento con el color de la paleta (fondo y borde); un valor `NULL`
+    conserva el color histórico (rojo / azul).
+  - **Menús contextuales con submenú "Asignar color"** — clic derecho sobre
+    una marca abre el menú del marcador («Asignar color» con los 6 colores más
+    "Sin clasificar" y «Eliminar marcador»); el menú de segmento incorpora el
+    mismo submenú. El clic derecho sobre una marca ya **no elimina
+    directamente** (comportamiento previo de B4.2).
+  - **Nombres globales personalizables sin cambiar las claves** —
+    `configuracion.py` (`CLAVE_NOMBRES_COLORES = "nombres_colores"`,
+    `LIMITE_LONGITUD_NOMBRE_COLOR = 40`, `NOMBRES_COLORES_POR_DEFECTO`,
+    `guardar_nombre_color`, `obtener_nombres_colores`, `texto_color`);
+    sección "Nombres de colores de la clasificación" en `PreferenciasDialog` y
+    selector "Color:" por tarjeta (`_selector_color`), aplicado a marcadores y
+    segmentos nuevos.
+  - **Corrección del defecto PySide/QMenu** — los submenús se crean con el menú
+    como padre `QObject` (`QMenu("Asignar color", menu)`) y se conserva la
+    referencia previa en la tarjeta (`_submenu_segmento_color_actual` /
+    `_submenu_marcador_color_actual`), evitando que PySide libere el submenú
+    antes de mostrarlo.
+- **Verificación:** suite propia `prueba_color_b63.py` **21/21**; regresiones
+  afectadas (marcadores, segmentos, entrada temporal, reproducción VLC) y smoke
+  en verde; `git diff --check` limpio. Los fallos VLC ambientales reales (b56
+  P27, b57 P23, b58 P27/P28) **no son parte funcional de B6.3** y quedan
+  registrados como deuda ambiental en `ESTADO_PROYECTO.md`.
+- **Beta 6 continúa abierta** y la siguiente etapa prevista es
+  **B6.4 — Marcadores y segmentos visibles en tarjetas colapsadas** (definida
+  en `ROADMAP.md`).
+
+---
+
 ## 106. Publicación de B6.2 y planificación de Beta 6 (push fast-forward)
 
 - **Fecha:** 2026-08-18

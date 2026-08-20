@@ -315,8 +315,8 @@ def test_03():
             if gestor is not None:
                 gestor.cerrar()
         esperado = [
-            (sb[0], id_b, 5.0, 7.0),
-            (sa[0], id_a, 1.0, 2.0),
+            (sb[0], id_b, 5.0, 7.0, None),
+            (sa[0], id_a, 1.0, 2.0, None),
         ]
         ok = ok_aceptada and ok_gestor and resultado == esperado
         return ok, f"resultado={resultado}"

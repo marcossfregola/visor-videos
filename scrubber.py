@@ -17,6 +17,7 @@ from PySide6.QtGui import QBrush, QColor, QMouseEvent, QPainter, QPen
 from PySide6.QtWidgets import QApplication, QLabel, QSizePolicy, QWidget
 
 from exploracion_temporal import posicion_a_tiempo, tiempo_a_posicion
+from escanear_videos import color_rgb
 
 _COLOR_FONDO = QColor(244, 244, 244)
 _COLOR_BORDE = QColor(204, 204, 204)
@@ -35,17 +36,43 @@ _TOLERANCIA_MARCA_PX = 6
 _TOLERANCIA_EXTREMO_PX = 12
 
 
+def _color_paleta(clave, por_defecto):
+    """QColor de la paleta para `clave`, o el color histórico por defecto."""
+    rgb = color_rgb(clave)
+    if rgb is None:
+        return por_defecto
+    return QColor(rgb[0], rgb[1], rgb[2])
+
+
+def _color_fondo_segmento(seg):
+    """Fondo de una banda según su color; NULL conserva el azul histórico."""
+    if isinstance(seg, dict):
+        fondo = _color_paleta(seg.get("color"), _COLOR_SEGMENTO)
+        return QColor(fondo.red(), fondo.green(), fondo.blue(), _COLOR_SEGMENTO.alpha())
+    return _COLOR_SEGMENTO
+
+
+def _color_borde_segmento(seg):
+    """Borde de una banda según su color; NULL conserva el azul histórico."""
+    if isinstance(seg, dict):
+        borde = _color_paleta(seg.get("color"), _COLOR_SEGMENTO_BORDE)
+        return QColor(borde.red(), borde.green(), borde.blue(), _COLOR_SEGMENTO_BORDE.alpha())
+    return _COLOR_SEGMENTO_BORDE
+
+
 class MiniaturaMarcador(QLabel):
     """Miniatura fijada de un marcador temporal.
 
-    Recibe únicamente el clic derecho para solicitar la eliminación del
-    marcador asociado. El clic izquierdo queda reservado para funciones
-    futuras (no crea ni elimina nada). El movimiento del mouse se reenvía
-    a la superficie en coordenadas de la superficie para que el scrubbing
-    continúe funcionando aunque el cursor pase por encima de la miniatura.
+    Recibe únicamente el clic derecho para solicitar el menú contextual del
+    marcador asociado (B6.3): la tarjeta abre «Asignar color» y «Eliminar
+    marcador». El clic izquierdo queda reservado para funciones futuras (no
+    crea ni elimina nada). El movimiento del mouse se reenvía a la superficie
+    en coordenadas de la superficie para que el scrubbing continúe
+    funcionando aunque el cursor pase por encima de la miniatura.
     """
 
     eliminar_solicitado = Signal(float)
+    contextual_solicitado = Signal(float)
 
     def __init__(self, superficie, tiempo):
         super().__init__(superficie)
@@ -56,7 +83,7 @@ class MiniaturaMarcador(QLabel):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.RightButton:
-            self.eliminar_solicitado.emit(self._tiempo)
+            self.contextual_solicitado.emit(self._tiempo)
             event.accept()
             return
         if event.button() == Qt.LeftButton:
@@ -130,6 +157,7 @@ class FranjaExploracion(QWidget):
     instante_seleccionado = Signal(float)
     marcador_solicitado = Signal(float)
     marcador_eliminar_solicitado = Signal(float)
+    marcador_contextual_solicitado = Signal(float)
     reproduccion_solicitada = Signal(float)
     extremo_segmento_solicitado = Signal(float)
     segmento_arrastre_confirmado = Signal(float, float)
@@ -169,12 +197,27 @@ class FranjaExploracion(QWidget):
         self._instante = instante
         self.update()
 
-    def set_marcadores(self, marcadores):
+    def set_marcadores(self, marcadores, colores=None):
         self._marcadores = [
             m for m in marcadores
             if isinstance(m, (int, float)) and not isinstance(m, bool)
         ]
+        self._marcador_colores = {}
+        if isinstance(colores, dict):
+            for tiempo, clave in colores.items():
+                try:
+                    tiempo_num = float(tiempo)
+                except (TypeError, ValueError):
+                    continue
+                if clave is not None:
+                    self._marcador_colores[tiempo_num] = clave
         self.update()
+
+    def _color_marca_para(self, tiempo):
+        clave = None
+        if getattr(self, "_marcador_colores", None):
+            clave = self._marcador_colores.get(float(tiempo))
+        return _color_paleta(clave, _COLOR_MARCA)
 
     def set_texto_tiempo(self, texto):
         self._texto_tiempo = texto if isinstance(texto, str) else ""
@@ -410,7 +453,7 @@ class FranjaExploracion(QWidget):
         elif event.button() == Qt.RightButton:
             tiempo = self._marcador_en_posicion(event.position().x())
             if tiempo is not None:
-                self.marcador_eliminar_solicitado.emit(tiempo)
+                self.marcador_contextual_solicitado.emit(tiempo)
                 event.accept()
                 return
             segmento = self._segmento_en_posicion(event.position().x())
@@ -591,9 +634,9 @@ class FranjaExploracion(QWidget):
             izquierda = min(x1, x2)
             ancho_banda = max(0.0, abs(x2 - x1))
             rect_banda = QRectF(izquierda, y_pista, ancho_banda, _ALTO_PISTA)
-            pintor.fillRect(rect_banda, QBrush(_COLOR_SEGMENTO))
+            pintor.fillRect(rect_banda, QBrush(_color_fondo_segmento(seg)))
             pintor.setBrush(Qt.NoBrush)
-            pintor.setPen(QPen(_COLOR_SEGMENTO_BORDE, 2))
+            pintor.setPen(QPen(_color_borde_segmento(seg), 2))
             pintor.drawRect(rect_banda)
 
         if (
@@ -675,7 +718,7 @@ class FranjaExploracion(QWidget):
             x = self._posicion_de(marca)
             if x is None:
                 continue
-            pintor.setPen(QPen(_COLOR_MARCA, 2))
+            pintor.setPen(QPen(self._color_marca_para(marca), 2))
             pintor.drawLine(
                 QPointF(x, _MARGEN - 2),
                 QPointF(x, y_pista - 2),

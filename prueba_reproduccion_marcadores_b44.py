@@ -302,7 +302,7 @@ def test_06_listar_marcadores_de():
         )
         try:
             filas = listar_marcadores_de([ids["b.mp4"], ids["a.mp4"]], ruta_db)
-            tiempos = [tiempo for _, _, tiempo in filas]
+            tiempos = [tiempo for _, _, tiempo, _ in filas]
             ok = (
                 tiempos == [5.0, 30.0, 10.5, 40.0, 70.0]
                 and listar_marcadores_de([], ruta_db) == []
@@ -558,7 +558,7 @@ def test_15_archivo_inexistente():
                 espero
                 and entradas is not None
                 and [e["ruta"] for e in entradas] == [rutas["A.mp4"]]
-                and [tiempo for _, _, tiempo in marcadores_aun] == [20.0]
+                and [tiempo for _, _, tiempo, _ in marcadores_aun] == [20.0]
             )
             return ok, (
                 f"rutas={[e['ruta'] for e in entradas] if entradas else None} "

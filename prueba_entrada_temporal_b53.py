@@ -130,6 +130,30 @@ def _mouse_derecho(widget, x):
     _enviar(widget, QEvent.MouseButtonPress, x, Qt.RightButton)
 
 
+def _eliminar_marcador_via_menu(tarjeta, widget, x):
+    """B6.3: el clic derecho ya no borra, abre el menú contextual.
+
+    Acciona la acción «Eliminar marcador» del menú. Devuelve `True` si la
+    eliminación se solicitó.
+    """
+    tarjeta._menu_marcador_actual = None
+    _mouse_derecho(widget, x)
+    if not _esperar(
+        lambda t=tarjeta: t._menu_marcador_actual is not None
+    ):
+        return False
+    menu = tarjeta._menu_marcador_actual
+    accion = next(
+        (a for a in menu.actions() if a.text() == "Eliminar marcador"),
+        None,
+    )
+    if accion is None:
+        return False
+    accion.trigger()
+    QApplication.processEvents()
+    return True
+
+
 def _enviar(widget, tipo, x, boton):
     evento = QMouseEvent(
         tipo,
@@ -550,7 +574,7 @@ def test_17():
 
 
 def test_18():
-    """Clic derecho conserva la eliminación de marcadores."""
+    """Clic derecho abre el menú; Eliminar marcador lo borra."""
     with _miniaturas_temporales():
         temp, ruta_db = _crear_bd_con_videos(["a.mp4"])
         ventana = _abrir_ventana(ruta_db)
@@ -561,13 +585,18 @@ def test_18():
             superficie = tarjeta._franja
             ancho = superficie.width()
             _mouse_press(superficie, ancho * 0.25)
-            _mouse_derecho(superficie, ancho * 0.25)
-            ok = len(tarjeta._marcadores) == 0
+            ok_menu = _eliminar_marcador_via_menu(
+                tarjeta, superficie, ancho * 0.25
+            )
+            ok = ok_menu and len(tarjeta._marcadores) == 0
         finally:
             ventana.close()
             _limpiar(ventana)
             temp.cleanup()
-        return ok, f"marcadores={[m['tiempo'] for m in tarjeta._marcadores]}"
+        return (
+            ok,
+            f"menu={ok_menu} marcadores={[m['tiempo'] for m in tarjeta._marcadores]}",
+        )
 
 
 def test_19():
@@ -1023,7 +1052,9 @@ def test_27():
                             for m in tarjeta._marcadores
                             if abs(m["tiempo"] - t2) < 1e-9
                         )
-                        _mouse_derecho(marcador_m2["etiqueta"], 5.0)
+                        ok_solicita_menu = _eliminar_marcador_via_menu(
+                            tarjeta, marcador_m2["etiqueta"], 5.0
+                        )
                         _esperar(lambda: len(tarjeta._marcadores) == 2)
                         _esperar(
                             lambda: not ventana.gestor_marcadores.activo
@@ -1031,7 +1062,8 @@ def test_27():
                         )
                         restantes = sorted(m["tiempo"] for m in tarjeta._marcadores)
                         ok_borrado = (
-                            len(restantes) == 2
+                            ok_solicita_menu
+                            and len(restantes) == 2
                             and abs(restantes[0] - 50.0) < 1e-6
                             and abs(restantes[1] - t3) < 1e-6
                             and len(

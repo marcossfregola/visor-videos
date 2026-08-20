@@ -38,12 +38,15 @@ from PySide6.QtWidgets import (
 )
 
 from configuracion import (
+    LIMITE_LONGITUD_NOMBRE_COLOR,
     MODO_ALCANCE_SELECCION,
     MODO_ALCANCE_SOLO,
     MODO_ALCANCE_SUBCARPETAS,
+    NOMBRES_COLORES_POR_DEFECTO,
     TEXTO_VERSION_BUILD,
     guardar_cantidad_previews,
     guardar_modo_alcance,
+    guardar_nombre_color,
     guardar_orden_catalogo,
     guardar_preferencia_escaneo_automatico,
     guardar_preferencia_subcarpetas,
@@ -53,6 +56,7 @@ from configuracion import (
     guardar_ultima_carpeta,
     obtener_cantidad_previews,
     obtener_modo_alcance,
+    obtener_nombres_colores,
     obtener_orden_catalogo,
     obtener_preferencia_escaneo_automatico,
     obtener_preferencia_subcarpetas,
@@ -60,10 +64,14 @@ from configuracion import (
     obtener_tamano_miniaturas,
     obtener_tamano_vista_ampliada,
     obtener_ultima_carpeta,
+    texto_color,
 )
 from escanear_videos import (
+    CLAVES_COLOR_CLASIFICACION,
+    COLORES_CLASIFICACION,
     _nombre_seguro,
     calcular_tiempo_preview,
+    color_rgb,
     configurar_cantidad_previews,
     configurar_escaneo_recursivo,
 )
@@ -89,6 +97,9 @@ from playlist_vlc import (
     reproducir_segmento_en_bucle,
 )
 from tareas_videos import (
+    TareaActualizarSegmento,
+    TareaAsignarColorMarcador,
+    TareaAsignarColorSegmento,
     TareaEscaneo,
     TareaFFprobe,
     TareaGuardarMarcador,
@@ -520,12 +531,43 @@ class PreferenciasDialog(QDialog):
         fila2.addWidget(self.combo_factor_vista)
         fila2.addStretch()
         layout.addLayout(fila2)
+        titulo_colores = QLabel("<b>Nombres de colores de la clasificación:</b>")
+        layout.addWidget(titulo_colores)
+        self._cajas_color = {}
+        nombres = obtener_nombres_colores(ruta_config)
+        for clave, *_resto in COLORES_CLASIFICACION:
+            fila_color = QHBoxLayout()
+            muestra = QLabel()
+            rgb = color_rgb(clave)
+            pixmap_color = QPixmap(14, 14)
+            pixmap_color.fill(
+                QColor(rgb[0], rgb[1], rgb[2])
+            )
+            muestra.setPixmap(pixmap_color)
+            fila_color.addWidget(muestra)
+            fila_color.addWidget(
+                QLabel(f"{clave.capitalize()} (nombre global):")
+            )
+            caja = QLineEdit()
+            caja.setMaxLength(LIMITE_LONGITUD_NOMBRE_COLOR)
+            caja.setPlaceholderText(
+                NOMBRES_COLORES_POR_DEFECTO.get(clave, "")
+            )
+            caja.setText(nombres.get(clave, ""))
+            fila_color.addWidget(caja, 1)
+            self._cajas_color[clave] = caja
+            layout.addLayout(fila_color)
         botones = QDialogButtonBox(
             QDialogButtonBox.Ok | QDialogButtonBox.Cancel
         )
         botones.accepted.connect(self.accept)
         botones.rejected.connect(self.reject)
         layout.addWidget(botones)
+
+    def accept(self):
+        for clave, caja in self._cajas_color.items():
+            guardar_nombre_color(clave, caja.text(), self._ruta_config)
+        super().accept()
 
     def _indice_retardo(self, ms):
         if ms in RETARDOS_VISTA_AMPLIADA:
@@ -628,11 +670,15 @@ class Tarjeta(QFrame):
     segmento_bucle_solicitado = Signal(object)
     reproduccion_temporal_solicitada = Signal(float)
     densidad_cambiada = Signal(str, object)
+    marcador_color_solicitado = Signal(object, object)
+    segmento_color_solicitado = Signal(object, object)
 
-    def __init__(self, fila, parent=None):
+    def __init__(self, fila, parent=None, ruta_config=None):
         super().__init__(parent)
         self.setFrameShape(QFrame.StyledPanel)
         self.setFrameShadow(QFrame.Raised)
+        self._ruta_config = ruta_config
+        self._color_activo = None
         fila_principal = QHBoxLayout()
 
         nombre, duracion, ancho, alto, codec, miniaturas, tamano, *_resto = fila
@@ -901,11 +947,17 @@ class Tarjeta(QFrame):
         self._extremo_segmento = None
         self._modo_crear_segmento = False
         self._menu_segmento_actual = None
+        self._submenu_segmento_color_actual = None
+        self._menu_marcador_actual = None
+        self._submenu_marcador_color_actual = None
         self._franja = FranjaExploracion()
         self._franja.instante_seleccionado.connect(self._al_instante_exploracion)
         self._franja.marcador_solicitado.connect(self._al_marcador_solicitado)
         self._franja.marcador_eliminar_solicitado.connect(
             self._al_marcador_eliminar_solicitado
+        )
+        self._franja.marcador_contextual_solicitado.connect(
+            self._al_marcador_contextual_solicitado
         )
         self._franja.reproduccion_solicitada.connect(
             self._al_reproduccion_solicitada
@@ -949,12 +1001,58 @@ class Tarjeta(QFrame):
         fila_densidad.addWidget(self._boton_segmento)
         fila_densidad.addWidget(QLabel("Densidad:"))
         fila_densidad.addWidget(self._selector_densidad)
+        fila_color = QHBoxLayout()
+        fila_color.addStretch(1)
+        fila_color.addWidget(QLabel("Color:"))
+        self._selector_color = QComboBox()
+        self._selector_color.addItem("Sin clasificar", None)
+        for clave, *_resto in COLORES_CLASIFICACION:
+            self._selector_color.addItem(
+                texto_color(clave, self._ruta_config), clave
+            )
+        self._selector_color.currentIndexChanged.connect(
+            self._al_cambiar_color_activo
+        )
+        self._al_cambiar_color_activo()
+        fila_color.addWidget(self._selector_color)
         self._contenedor_exploracion = QWidget()
         disposicion = QVBoxLayout(self._contenedor_exploracion)
         disposicion.setContentsMargins(0, 4, 0, 0)
         disposicion.addLayout(fila_densidad)
+        disposicion.addLayout(fila_color)
         disposicion.addWidget(self._franja)
         self._contenedor_exploracion.setVisible(False)
+
+    def _al_cambiar_color_activo(self):
+        self._color_activo = self._selector_color.currentData()
+
+    def _refrescar_textos_colores(self):
+        """Actualiza los textos visibles del selector de color (B6.3).
+
+        No cambia índices, datos ni la selección actual: solo refresca el
+        texto de los ítems tras guardar nombres globales en preferencias.
+        Los menús contextuales se construyen por demanda y ya usan
+        `texto_color`, por lo que no requieren reconstrucción.
+        """
+        if not hasattr(self, "_selector_color"):
+            return
+        self._selector_color.setItemText(0, "Sin clasificar")
+        for indice in range(1, self._selector_color.count()):
+            clave = self._selector_color.itemData(indice)
+            if clave in CLAVES_COLOR_CLASIFICACION:
+                self._selector_color.setItemText(
+                    indice, texto_color(clave, self._ruta_config)
+                )
+
+    def _tiempos_y_colores_marcadores(self):
+        tiempos = []
+        colores = {}
+        for marcador in self._marcadores:
+            tiempos.append(marcador["tiempo"])
+            clave = marcador.get("color")
+            if clave is not None:
+                colores[marcador["tiempo"]] = clave
+        return tiempos, colores
 
     def _al_cambiar_densidad(self):
         valor = self._selector_densidad.currentData()
@@ -1027,7 +1125,7 @@ class Tarjeta(QFrame):
         self._franja.set_duracion(self._duracion)
         self._franja.set_instante(0.0)
         self._franja.set_marcadores(
-            [m["tiempo"] for m in self._marcadores]
+            *self._tiempos_y_colores_marcadores()
         )
         self._franja.set_segmentos(self._segmentos)
         self._franja.set_inicio_segmento_pendiente(None)
@@ -1261,6 +1359,7 @@ class Tarjeta(QFrame):
             "tiempo": float(instante),
             "pixmap": self._pixmap_para_instante(instante),
             "etiqueta": None,
+            "color": self._color_activo,
             "eliminada": False,
         }
         posicion = 0
@@ -1271,7 +1370,7 @@ class Tarjeta(QFrame):
             posicion += 1
         self._marcadores.insert(posicion, marcador)
         self._franja.set_marcadores(
-            [m["tiempo"] for m in self._marcadores]
+            *self._tiempos_y_colores_marcadores()
         )
         self._renderizar_marcadores()
         self._marcador_creado_prensa = marcador
@@ -1388,6 +1487,7 @@ class Tarjeta(QFrame):
             "id": None,
             "inicio": inicio,
             "fin": fin,
+            "color": self._color_activo,
             "eliminada": False,
         }
         self._segmentos.append(registro)
@@ -1411,16 +1511,34 @@ class Tarjeta(QFrame):
                 return
 
     def _al_segmento_contextual_solicitado(self, segmento):
-        """Menú contextual del segmento bajo el cursor (B5.6).
+        """Menú contextual del segmento bajo el cursor (B5.6/B6.3).
 
         La franja solo informa qué segmento está bajo el cursor; aquí se
-        construye el menú (acción de UI) con Reproducir/Eliminar y se muestra
-        de forma no bloqueante (`popup`), dejando la referencia disponible
-        para su inspección/accionado programático en pruebas.
+        construye el menú (acción de UI) con Reproducir/Bucle/Asignar color/
+        Eliminar y se muestra de forma no bloqueante (`popup`), dejando la
+        referencia disponible para su inspección/accionado programático en
+        pruebas.
         """
         menu = QMenu(self)
         accion_reproducir = menu.addAction("Reproducir segmento")
         accion_bucle = menu.addAction("Reproducir segmento en bucle")
+        submenu_color = QMenu("Asignar color", menu)
+        menu.addMenu(submenu_color)
+        for clave, *_resto in COLORES_CLASIFICACION:
+            accion = submenu_color.addAction(
+                texto_color(clave, self._ruta_config)
+            )
+            accion.triggered.connect(
+                lambda *args, s=segmento, c=clave: self._emitir_color_segmento(
+                    s, c
+                )
+            )
+        accion_quitar = submenu_color.addAction("Sin clasificar")
+        accion_quitar.triggered.connect(
+            lambda *args, s=segmento: self._emitir_color_segmento(s, None)
+        )
+        if not segmento.get("color"):
+            accion_quitar.setEnabled(False)
         accion_eliminar = menu.addAction("Eliminar segmento")
         accion_reproducir.triggered.connect(
             lambda *args, s=segmento: self.segmento_reproduccion_solicitada.emit(s)
@@ -1432,7 +1550,60 @@ class Tarjeta(QFrame):
             lambda *args, s=segmento: self._al_segmento_eliminar_solicitado(s)
         )
         self._menu_segmento_actual = menu
+        self._submenu_segmento_color_actual = submenu_color
         menu.popup(QCursor.pos())
+
+    def _emitir_color_segmento(self, segmento, clave):
+        self.segmento_color_solicitado.emit(segmento, clave)
+
+    def _al_marcador_contextual_solicitado(self, tiempo):
+        """Menú contextual del marcador bajo el cursor (B6.3).
+
+        Reemplaza la eliminación directa por clic derecho: ahora se abre un
+        menú no bloqueante con «Asignar color» y «Eliminar marcador». La
+        referencia del menú queda en `_menu_marcador_actual` para pruebas.
+        """
+        objetivo = float(tiempo)
+        marcador = next(
+            (
+                m
+                for m in self._marcadores
+                if abs(m["tiempo"] - objetivo) < 1e-9
+            ),
+            None,
+        )
+        if marcador is None:
+            return
+        menu = QMenu(self)
+        submenu_color = QMenu("Asignar color", menu)
+        menu.addMenu(submenu_color)
+        for clave, *_resto in COLORES_CLASIFICACION:
+            accion = submenu_color.addAction(
+                texto_color(clave, self._ruta_config)
+            )
+            accion.triggered.connect(
+                lambda *args, m=marcador, c=clave: self._emitir_color_marcador(
+                    m, c
+                )
+            )
+        accion_quitar = submenu_color.addAction("Sin clasificar")
+        accion_quitar.triggered.connect(
+            lambda *args, m=marcador: self._emitir_color_marcador(m, None)
+        )
+        if not marcador.get("color"):
+            accion_quitar.setEnabled(False)
+        accion_eliminar = menu.addAction("Eliminar marcador")
+        accion_eliminar.triggered.connect(
+            lambda *args, m=marcador: self._al_marcador_eliminar_solicitado(
+                m["tiempo"]
+            )
+        )
+        self._menu_marcador_actual = menu
+        self._submenu_marcador_color_actual = submenu_color
+        menu.popup(QCursor.pos())
+
+    def _emitir_color_marcador(self, marcador, clave):
+        self.marcador_color_solicitado.emit(marcador, clave)
 
     def _posicionar_miniatura_marcada(self, marcador):
         etiqueta = marcador.get("etiqueta")
@@ -1473,6 +1644,9 @@ class Tarjeta(QFrame):
                 etiqueta.eliminar_solicitado.connect(
                     self._al_marcador_eliminar_solicitado
                 )
+                etiqueta.contextual_solicitado.connect(
+                    self._al_marcador_contextual_solicitado
+                )
                 marcador["etiqueta"] = etiqueta
             else:
                 pixmap = marcador.get("pixmap")
@@ -1487,10 +1661,11 @@ class Tarjeta(QFrame):
                 etiqueta = marcador.get("etiqueta")
                 if etiqueta is not None:
                     etiqueta.hide()
+                    etiqueta.setParent(None)
                     etiqueta.deleteLater()
                 del self._marcadores[indice]
                 self._franja.set_marcadores(
-                    [m["tiempo"] for m in self._marcadores]
+                    *self._tiempos_y_colores_marcadores()
                 )
                 self.marcador_eliminado.emit(marcador)
                 return
@@ -2091,6 +2266,8 @@ class VisorVideos(QMainWindow):
             self._aplicar_tamano_vista_ampliada(
                 dialogo.factor_vista_seleccionado()
             )
+            for _, tarjeta in self.tarjetas:
+                tarjeta._refrescar_textos_colores()
 
     def _aplicar_retardo_vista_ampliada(self, ms):
         self._retardo_vista_ampliada = ms
@@ -2474,11 +2651,18 @@ class VisorVideos(QMainWindow):
             tarea = TareaListarMarcadores(op["video_id"], self._ruta_db)
         elif tipo == "crear":
             tarea = TareaGuardarMarcador(
-                op["video_id"], op["tiempo"], self._ruta_db
+                op["video_id"],
+                op["tiempo"],
+                self._ruta_db,
+                color=op.get("color"),
             )
         elif tipo == "eliminar":
             tarea = TareaEliminarMarcador(
                 op["marcador_id"], self._ruta_db
+            )
+        elif tipo == "color":
+            tarea = TareaAsignarColorMarcador(
+                op["marcador_id"], op["color"], self._ruta_db
             )
         else:
             self._marcador_op_actual = None
@@ -2534,6 +2718,13 @@ class VisorVideos(QMainWindow):
                     "nombre": op["nombre"],
                 }
             )
+        elif tipo == "color":
+            registro = op.get("registro")
+            if registro is not None:
+                registro["color"] = op.get("color_previo")
+            self.mensaje_carpeta.setText(
+                f"No se pudo asignar el color del marcador: {mensaje}"
+            )
         elif tipo == "cargar":
             self.mensaje_carpeta.setText(
                 f"No se pudieron cargar los marcadores: {mensaje}"
@@ -2552,6 +2743,7 @@ class VisorVideos(QMainWindow):
                 "registro": registro,
                 "video_id": video_id,
                 "tiempo": registro["tiempo"],
+                "color": registro.get("color"),
                 "nombre": tarjeta.nombre,
             }
         )
@@ -2577,6 +2769,36 @@ class VisorVideos(QMainWindow):
                 tarjeta._marcadores_eliminados_carga.add(
                     registro["tiempo"]
                 )
+
+    def _al_marcador_color_solicitado(self, tarjeta, registro, clave):
+        video_id = getattr(tarjeta, "_video_id", None)
+        if video_id is None:
+            return
+        marcador_id = registro.get("id")
+        color_previo = registro.get("color")
+        if color_previo == clave:
+            return
+        if clave in CLAVES_COLOR_CLASIFICACION:
+            nuevo_color = clave
+        else:
+            nuevo_color = None
+        registro["color"] = nuevo_color
+        tarjeta._franja.set_marcadores(
+            *tarjeta._tiempos_y_colores_marcadores()
+        )
+        if marcador_id is None:
+            return
+        self._encolar_marcador(
+            {
+                "tipo": "color",
+                "registro": registro,
+                "marcador_id": marcador_id,
+                "video_id": video_id,
+                "color": nuevo_color,
+                "color_previo": color_previo,
+                "nombre": tarjeta.nombre,
+            }
+        )
 
     def _hay_carga_pendiente(self, tarjeta):
         op = self._marcador_op_actual
@@ -2626,7 +2848,7 @@ class VisorVideos(QMainWindow):
         video_id = op["video_id"]
         nombre = op["nombre"]
         tolerancia = tarjeta._tolerancia_marcadores()
-        for marcador_id, video_de_fila, tiempo in filas:
+        for marcador_id, video_de_fila, tiempo, color in filas:
             if video_de_fila != video_id:
                 continue
             if any(
@@ -2658,13 +2880,18 @@ class VisorVideos(QMainWindow):
                     "tiempo": float(tiempo),
                     "pixmap": None,
                     "etiqueta": None,
+                    "color": (
+                        color
+                        if color in CLAVES_COLOR_CLASIFICACION
+                        else None
+                    ),
                     "eliminada": False,
                 }
             )
         tarjeta._marcadores_eliminados_carga.clear()
         tarjeta._marcadores.sort(key=lambda m: m["tiempo"])
         tarjeta._franja.set_marcadores(
-            [m["tiempo"] for m in tarjeta._marcadores]
+            *tarjeta._tiempos_y_colores_marcadores()
         )
         tarjeta._renderizar_marcadores()
 
@@ -2684,7 +2911,11 @@ class VisorVideos(QMainWindow):
             tarea = TareaListarSegmentos(op["video_id"], self._ruta_db)
         elif tipo == "crear":
             tarea = TareaGuardarSegmento(
-                op["video_id"], op["inicio"], op["fin"], self._ruta_db
+                op["video_id"],
+                op["inicio"],
+                op["fin"],
+                self._ruta_db,
+                color=op.get("color"),
             )
         elif tipo == "eliminar":
             tarea = TareaEliminarSegmento(
@@ -2696,6 +2927,10 @@ class VisorVideos(QMainWindow):
                 op["inicio"],
                 op["fin"],
                 self._ruta_db,
+            )
+        elif tipo == "color":
+            tarea = TareaAsignarColorSegmento(
+                op["segmento_id"], op["color"], self._ruta_db
             )
         else:
             self._segmento_op_actual = None
@@ -2804,6 +3039,16 @@ class VisorVideos(QMainWindow):
                     "nombre": op["nombre"],
                 }
             )
+        elif tipo == "color":
+            registro = op.get("registro")
+            if registro is not None:
+                registro["color"] = op.get("color_previo")
+            tarjeta = self._tarjeta_por_nombre(op["nombre"])
+            if tarjeta is not None:
+                tarjeta._franja.set_segmentos(tarjeta._segmentos)
+            self.mensaje_carpeta.setText(
+                f"No se pudo asignar el color del segmento: {mensaje}"
+            )
         elif tipo == "cargar":
             self.mensaje_carpeta.setText(
                 f"No se pudieron cargar los segmentos: {mensaje}"
@@ -2857,6 +3102,7 @@ class VisorVideos(QMainWindow):
                 "video_id": video_id,
                 "inicio": registro["inicio"],
                 "fin": registro["fin"],
+                "color": registro.get("color"),
                 "nombre": tarjeta.nombre,
             }
         )
@@ -2882,6 +3128,34 @@ class VisorVideos(QMainWindow):
                 tarjeta._segmentos_eliminados_carga.add(
                     (registro["inicio"], registro["fin"])
                 )
+
+    def _al_segmento_color_solicitado(self, tarjeta, registro, clave):
+        video_id = getattr(tarjeta, "_video_id", None)
+        if video_id is None:
+            return
+        seg_id = registro.get("id")
+        color_previo = registro.get("color")
+        if color_previo == clave:
+            return
+        if clave in CLAVES_COLOR_CLASIFICACION:
+            nuevo_color = clave
+        else:
+            nuevo_color = None
+        registro["color"] = nuevo_color
+        tarjeta._franja.set_segmentos(tarjeta._segmentos)
+        if seg_id is None:
+            return
+        self._encolar_segmento(
+            {
+                "tipo": "color",
+                "registro": registro,
+                "segmento_id": seg_id,
+                "video_id": video_id,
+                "color": nuevo_color,
+                "color_previo": color_previo,
+                "nombre": tarjeta.nombre,
+            }
+        )
 
     def _al_segmento_actualizado(self, tarjeta, registro, previo):
         """Persiste una edición de extremos con un único UPDATE por id."""
@@ -2952,7 +3226,7 @@ class VisorVideos(QMainWindow):
         tarjeta._segmentos_cargados = True
         tolerancia = tarjeta._tolerancia_marcadores()
         eliminados = tarjeta._segmentos_eliminados_carga
-        for seg_id, inicio, fin in filas:
+        for seg_id, inicio, fin, color in filas:
             if any(
                 abs(inicio - e0) <= tolerancia
                 and abs(fin - e1) <= tolerancia
@@ -2989,6 +3263,7 @@ class VisorVideos(QMainWindow):
                     "id": seg_id,
                     "inicio": float(inicio),
                     "fin": float(fin),
+                    "color": color if color in CLAVES_COLOR_CLASIFICACION else None,
                     "eliminada": False,
                 }
             )
@@ -3874,7 +4149,7 @@ class VisorVideos(QMainWindow):
         inicio = len(self.tarjetas)
         for indice, fila in enumerate(filas):
             posicion = inicio + indice
-            tarjeta = Tarjeta(fila)
+            tarjeta = Tarjeta(fila, ruta_config=self._ruta_config)
             tarjeta.doble_clic.connect(self._abrir_video)
             tarjeta.seleccionada.connect(self._al_seleccionar_tarjeta)
             tarjeta.seleccion_por_rango.connect(self._al_seleccion_por_rango)
@@ -3922,6 +4197,16 @@ class VisorVideos(QMainWindow):
                 )
             )
             tarjeta.densidad_cambiada.connect(self._al_densidad_cambiada)
+            tarjeta.marcador_color_solicitado.connect(
+                lambda registro, clave, t=tarjeta: self._al_marcador_color_solicitado(
+                    t, registro, clave
+                )
+            )
+            tarjeta.segmento_color_solicitado.connect(
+                lambda registro, clave, t=tarjeta: self._al_segmento_color_solicitado(
+                    t, registro, clave
+                )
+            )
             tarjeta.mostrar_check(self._modo_seleccion)
             self.tarjetas.append((fila[0], tarjeta))
             self.visibles.append(fila[0])
@@ -3977,7 +4262,7 @@ class VisorVideos(QMainWindow):
 
     def _crear_tarjetas(self, filas):
         for indice, fila in enumerate(filas):
-            tarjeta = Tarjeta(fila)
+            tarjeta = Tarjeta(fila, ruta_config=self._ruta_config)
             tarjeta.doble_clic.connect(self._abrir_video)
             tarjeta.seleccionada.connect(self._al_seleccionar_tarjeta)
             tarjeta.seleccion_por_rango.connect(self._al_seleccion_por_rango)
@@ -4025,6 +4310,16 @@ class VisorVideos(QMainWindow):
                 )
             )
             tarjeta.densidad_cambiada.connect(self._al_densidad_cambiada)
+            tarjeta.marcador_color_solicitado.connect(
+                lambda registro, clave, t=tarjeta: self._al_marcador_color_solicitado(
+                    t, registro, clave
+                )
+            )
+            tarjeta.segmento_color_solicitado.connect(
+                lambda registro, clave, t=tarjeta: self._al_segmento_color_solicitado(
+                    t, registro, clave
+                )
+            )
             tarjeta.mostrar_check(self._modo_seleccion)
             self.tarjetas.append((fila[0], tarjeta))
             self.visibles.append(fila[0])
@@ -4255,7 +4550,7 @@ class VisorVideos(QMainWindow):
             self._procesar_secuencia_segmentos(seleccionados, filas)
             return
         marcadores_por_video = {}
-        for _marcador_id, video_id, tiempo in filas:
+        for _marcador_id, video_id, tiempo, _color in filas:
             marcadores_por_video.setdefault(video_id, []).append(tiempo)
         self._procesar_reproduccion(seleccionados, marcadores_por_video)
 
@@ -4283,7 +4578,7 @@ class VisorVideos(QMainWindow):
         se abre VLC.
         """
         segmentos_por_video = {}
-        for _seg_id, video_id, inicio, fin in filas:
+        for _seg_id, video_id, inicio, fin, _color in filas:
             segmentos_por_video.setdefault(video_id, []).append(
                 (inicio, fin)
             )

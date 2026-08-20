@@ -48,6 +48,43 @@ ORDEN_CRITERIOS = (
 )
 ORDEN_DIRECCIONES = ("asc", "desc")
 
+# Paleta cerrada de clasificación por color (B6.3). Las claves son estables y
+# se persisten en SQLite (`color TEXT NULL` en `marcadores_video` y
+# `segmentos_video`). La misma paleta sirve para marcadores y segmentos;
+# `NULL` conserva los colores históricos (marcador rojo, segmento azul).
+# Es la única fuente de verdad de la paleta: la UI y la configuración solo
+# pueden expresar colores mediante estas claves.
+COLORES_CLASIFICACION = (
+    ("rojo", 229, 57, 53),
+    ("naranja", 255, 152, 0),
+    ("amarillo", 251, 192, 45),
+    ("verde", 76, 175, 80),
+    ("azul", 33, 150, 243),
+    ("violeta", 156, 39, 176),
+)
+CLAVES_COLOR_CLASIFICACION = frozenset(
+    clave for clave, *_resto in COLORES_CLASIFICACION
+)
+
+
+def color_rgb(clave):
+    """Devuelve `(r, g, b)` de una clave de la paleta o `None` si no existe."""
+    for candidata, r, g, b in COLORES_CLASIFICACION:
+        if candidata == clave:
+            return (r, g, b)
+    return None
+
+
+def _validar_color_clasificacion(clave):
+    """Valida una clave de color: `None` (quitar color) o clave estable."""
+    if clave is None:
+        return None
+    if not isinstance(clave, str):
+        raise TypeError("color debe ser texto o None")
+    if clave not in CLAVES_COLOR_CLASIFICACION:
+        raise ValueError(f"color no reconocido: {clave!r}")
+    return clave
+
 # Expresiones SQL internas (constantes cerradas): primer término detecta el
 # "nulo" para colocar siempre los NULL al final en ASC y DESC; el segundo es
 # el criterio de orden; el desempate final estable es siempre `id ASC`.
@@ -314,13 +351,28 @@ def conectar_bd(ruta_db=None):
     return conn
 
 
+def _asegurar_columna_color(conn, tabla):
+    """Migración aditiva e idempotente de `color TEXT NULL` (B6.3).
+
+    Añade la columna si falta; no toca datos existentes. Los registros
+    históricos quedan en `NULL` (colores por defecto: marcador rojo,
+    segmento azul).
+    """
+    existentes = {
+        fila[1] for fila in conn.execute(f"PRAGMA table_info({tabla})")
+    }
+    if "color" not in existentes:
+        conn.execute(f"ALTER TABLE {tabla} ADD COLUMN color TEXT NULL")
+
+
 def _asegurar_tabla_marcadores(conn):
     """Migración aditiva e idempotente de la tabla de marcadores (B4.2).
 
-    Crea `marcadores_video` (y su índice) si no existen. No activa
-    `PRAGMA foreign_keys` ni usa `ON DELETE CASCADE`: los marcadores son
-    datos del usuario y su coherencia con `videos.id` se gestiona en la
-    capa de servicio, no por borrado automático.
+    Crea `marcadores_video` (y su índice) si no existen y añade la columna
+    `color` (B6.3). No activa `PRAGMA foreign_keys` ni usa `ON DELETE
+    CASCADE`: los marcadores son datos del usuario y su coherencia con
+    `videos.id` se gestiona en la capa de servicio, no por borrado
+    automático.
     """
     conn.execute("""
         CREATE TABLE IF NOT EXISTS marcadores_video (
@@ -333,15 +385,16 @@ def _asegurar_tabla_marcadores(conn):
         CREATE INDEX IF NOT EXISTS idx_marcadores_video_video_id_tiempo
         ON marcadores_video(video_id, tiempo)
     """)
+    _asegurar_columna_color(conn, "marcadores_video")
 
 def _asegurar_tabla_segmentos(conn):
     """Migración aditiva e idempotente de la tabla de segmentos (B5.1).
 
-    Crea `segmentos_video` (y su índice) si no existen. No activa
-    `PRAGMA foreign_keys` ni usa `ON DELETE CASCADE`: los segmentos son
-    datos del usuario y su coherencia con `videos.id` se gestiona en la
-    capa de servicio, no por borrado automático (misma política de
-    orfandad tolerada que los marcadores).
+    Crea `segmentos_video` (y su índice) si no existen y añade la columna
+    `color` (B6.3). No activa `PRAGMA foreign_keys` ni usa `ON DELETE
+    CASCADE`: los segmentos son datos del usuario y su coherencia con
+    `videos.id` se gestiona en la capa de servicio, no por borrado
+    automático (misma política de orfandad tolerada que los marcadores).
     """
     conn.execute("""
         CREATE TABLE IF NOT EXISTS segmentos_video (
@@ -355,6 +408,7 @@ def _asegurar_tabla_segmentos(conn):
         CREATE INDEX IF NOT EXISTS idx_segmentos_video_video_id_inicio
         ON segmentos_video(video_id, inicio)
     """)
+    _asegurar_columna_color(conn, "segmentos_video")
 
 def obtener_datos_ffprobe(ruta):
     try:
@@ -1144,14 +1198,16 @@ def _validar_marcador_id(marcador_id):
 def listar_marcadores(video_id, ruta_db=None):
     """Marcadores persistidos de un video, ordenados por tiempo.
 
-    Devuelve una lista de tuplas `(id, video_id, tiempo)`.
+    Devuelve una lista de tuplas `(id, video_id, tiempo, color)`. `color`
+    es una clave estable de `COLORES_CLASIFICACION` o `None` (color
+    histórico rojo).
     """
     _validar_video_id(video_id)
     conn = _conectar_repositorio_marcadores(ruta_db)
     try:
         return conn.execute(
             """
-            SELECT id, video_id, tiempo
+            SELECT id, video_id, tiempo, color
             FROM marcadores_video
             WHERE video_id = ?
             ORDER BY tiempo
@@ -1165,9 +1221,9 @@ def listar_marcadores(video_id, ruta_db=None):
 def listar_marcadores_de(video_ids, ruta_db=None):
     """Marcadores persistidos de varios videos (B4.4).
 
-    Devuelve una lista de tuplas `(id, video_id, tiempo)` agrupada por
-    `video_id` en el orden recibido y, dentro de cada video, ordenada por
-    tiempo ascendente.
+    Devuelve una lista de tuplas `(id, video_id, tiempo, color)` agrupada
+    por `video_id` en el orden recibido y, dentro de cada video, ordenada
+    por tiempo ascendente.
     """
     if isinstance(video_ids, (str, bytes, bytearray)):
         raise TypeError("video_ids debe ser una colección de enteros")
@@ -1186,7 +1242,7 @@ def listar_marcadores_de(video_ids, ruta_db=None):
             marcadores.extend(
                 conn.execute(
                     """
-                    SELECT id, video_id, tiempo
+                    SELECT id, video_id, tiempo, color
                     FROM marcadores_video
                     WHERE video_id = ?
                     ORDER BY tiempo
@@ -1199,15 +1255,24 @@ def listar_marcadores_de(video_ids, ruta_db=None):
         conn.close()
 
 
-def guardar_marcador(video_id, tiempo, ruta_db=None):
-    """Persiste un marcador y devuelve su `id` de la base."""
+def guardar_marcador(video_id, tiempo, ruta_db=None, color=None):
+    """Persiste un marcador y devuelve su `id` de la base.
+
+    `color` es opcional (B6.3): una clave estable de
+    `COLORES_CLASIFICACION` o `None`. Se inserta en el mismo INSERT que el
+    resto del marcador, nunca en una segunda escritura. Los callers
+    históricos sin color siguen funcionando (el color queda `NULL` en la
+    base, conservando el color histórico rojo).
+    """
     _validar_video_id(video_id)
     _validar_tiempo_marcador(tiempo)
+    _validar_color_clasificacion(color)
     conn = _conectar_repositorio_marcadores(ruta_db)
     try:
         cursor = conn.execute(
-            "INSERT INTO marcadores_video (video_id, tiempo) VALUES (?, ?)",
-            (video_id, tiempo),
+            "INSERT INTO marcadores_video (video_id, tiempo, color) "
+            "VALUES (?, ?, ?)",
+            (video_id, tiempo, color),
         )
         conn.commit()
         return cursor.lastrowid
@@ -1232,6 +1297,37 @@ def eliminar_marcador(marcador_id, ruta_db=None):
         )
         conn.commit()
         return cursor.rowcount > 0
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def asignar_color_marcador(marcador_id, clave, ruta_db=None):
+    """Asigna (o quita, con `clave=None`) el color de clasificación de un
+    marcador (B6.3).
+
+    `clave` debe ser una clave estable de `COLORES_CLASIFICACION` o `None`
+    (conserva el color histórico rojo). Devuelve la fila persistida
+    `(id, video_id, tiempo, color)` si el marcador existía; `None` si no.
+    """
+    _validar_marcador_id(marcador_id)
+    _validar_color_clasificacion(clave)
+    conn = _conectar_repositorio_marcadores(ruta_db)
+    try:
+        cursor = conn.execute(
+            "UPDATE marcadores_video SET color = ? WHERE id = ?",
+            (clave, marcador_id),
+        )
+        conn.commit()
+        if cursor.rowcount <= 0:
+            return None
+        return conn.execute(
+            "SELECT id, video_id, tiempo, color "
+            "FROM marcadores_video WHERE id = ?",
+            (marcador_id,),
+        ).fetchone()
     except Exception:
         conn.rollback()
         raise
@@ -1277,17 +1373,18 @@ def _validar_segmento_id(segmento_id):
 def listar_segmentos(video_id, ruta_db=None):
     """Segmentos persistidos de un video, ordenados por inicio, fin e id.
 
-    Devuelve una lista de tuplas `(id, inicio, fin)`. El `video_id` no se
-    incluye porque es redundante en una consulta por video (a diferencia de
-    `listar_segmentos_de`, donde sí se devuelve para identificar la
-    agrupación).
+    Devuelve una lista de tuplas `(id, inicio, fin, color)`. El `video_id`
+    no se incluye porque es redundante en una consulta por video (a
+    diferencia de `listar_segmentos_de`, donde sí se devuelve para
+    identificar la agrupación). `color` es una clave estable de
+    `COLORES_CLASIFICACION` o `None` (color histórico azul).
     """
     _validar_video_id(video_id)
     conn = _conectar_repositorio_segmentos(ruta_db)
     try:
         return conn.execute(
             """
-            SELECT id, inicio, fin
+            SELECT id, inicio, fin, color
             FROM segmentos_video
             WHERE video_id = ?
             ORDER BY inicio, fin, id
@@ -1301,10 +1398,10 @@ def listar_segmentos(video_id, ruta_db=None):
 def listar_segmentos_de(video_ids, ruta_db=None):
     """Segmentos persistidos de varios videos (preparado para B5.8).
 
-    Devuelve una lista de tuplas `(id, video_id, inicio, fin)` agrupada por
-    `video_id` en el orden recibido (deduplicado) y, dentro de cada video,
-    ordenada por inicio, fin e id ascendente. Usa **una sola consulta SQL**
-    (`WHERE video_id IN (...)`), sin consultas por video.
+    Devuelve una lista de tuplas `(id, video_id, inicio, fin, color)`
+    agrupada por `video_id` en el orden recibido (deduplicado) y, dentro de
+    cada video, ordenada por inicio, fin e id ascendente. Usa **una sola
+    consulta SQL** (`WHERE video_id IN (...)`), sin consultas por video.
     """
     if isinstance(video_ids, (str, bytes, bytearray)):
         raise TypeError("video_ids debe ser una colección de enteros")
@@ -1320,9 +1417,9 @@ def listar_segmentos_de(video_ids, ruta_db=None):
     conn = _conectar_repositorio_segmentos(ruta_db)
     try:
         por_video = {}
-        for seg_id, video_de_fila, inicio, fin in conn.execute(
+        for seg_id, video_de_fila, inicio, fin, color in conn.execute(
             f"""
-            SELECT id, video_id, inicio, fin
+            SELECT id, video_id, inicio, fin, color
             FROM segmentos_video
             WHERE video_id IN ({",".join("?" for _ in ids_unicos)})
             ORDER BY video_id, inicio, fin, id
@@ -1330,21 +1427,28 @@ def listar_segmentos_de(video_ids, ruta_db=None):
             ids_unicos,
         ).fetchall():
             por_video.setdefault(video_de_fila, []).append(
-                (seg_id, inicio, fin)
+                (seg_id, inicio, fin, color)
             )
         resultado = []
         for video_id in ids_unicos:
             resultado.extend(
-                (seg_id, video_id, inicio, fin)
-                for seg_id, inicio, fin in por_video.get(video_id, [])
+                (seg_id, video_id, inicio, fin, color)
+                for seg_id, inicio, fin, color in por_video.get(video_id, [])
             )
         return resultado
     finally:
         conn.close()
 
 
-def guardar_segmento(video_id, inicio, fin, ruta_db=None):
+def guardar_segmento(video_id, inicio, fin, ruta_db=None, color=None):
     """Persiste un segmento y devuelve `(id, inicio, fin)` persistidos.
+
+    `color` es opcional (B6.3): una clave estable de
+    `COLORES_CLASIFICACION` o `None`. Se inserta en el mismo INSERT que el
+    resto del segmento, nunca en una segunda escritura. Los callers
+    históricos sin color siguen funcionando (el color queda `NULL` en la
+    base, conservando el color histórico azul). El contrato de retorno no
+    cambia: sigue siendo `(id, inicio, fin)`.
 
     No deduplica: dos segmentos idénticos pueden existir (no hay regla que
     lo prohíba).
@@ -1352,12 +1456,13 @@ def guardar_segmento(video_id, inicio, fin, ruta_db=None):
     _validar_video_id(video_id)
     _validar_inicio_segmento(inicio)
     _validar_fin_segmento(inicio, fin)
+    _validar_color_clasificacion(color)
     conn = _conectar_repositorio_segmentos(ruta_db)
     try:
         cursor = conn.execute(
-            "INSERT INTO segmentos_video (video_id, inicio, fin) "
-            "VALUES (?, ?, ?)",
-            (video_id, inicio, fin),
+            "INSERT INTO segmentos_video (video_id, inicio, fin, color) "
+            "VALUES (?, ?, ?, ?)",
+            (video_id, inicio, fin, color),
         )
         conn.commit()
         return (cursor.lastrowid, float(inicio), float(fin))
@@ -1382,6 +1487,37 @@ def eliminar_segmento(segmento_id, ruta_db=None):
         )
         conn.commit()
         return cursor.rowcount > 0
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def asignar_color_segmento(segmento_id, clave, ruta_db=None):
+    """Asigna (o quita, con `clave=None`) el color de clasificación de un
+    segmento (B6.3).
+
+    `clave` debe ser una clave estable de `COLORES_CLASIFICACION` o `None`
+    (conserva el color histórico azul). Devuelve la fila persistida
+    `(id, inicio, fin, color)` si el segmento existía; `None` si no.
+    """
+    _validar_segmento_id(segmento_id)
+    _validar_color_clasificacion(clave)
+    conn = _conectar_repositorio_segmentos(ruta_db)
+    try:
+        cursor = conn.execute(
+            "UPDATE segmentos_video SET color = ? WHERE id = ?",
+            (clave, segmento_id),
+        )
+        conn.commit()
+        if cursor.rowcount <= 0:
+            return None
+        return conn.execute(
+            "SELECT id, inicio, fin, color "
+            "FROM segmentos_video WHERE id = ?",
+            (segmento_id,),
+        ).fetchone()
     except Exception:
         conn.rollback()
         raise

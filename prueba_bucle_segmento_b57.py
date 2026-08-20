@@ -325,6 +325,7 @@ def test_02():
                 == [
                     "Reproducir segmento",
                     "Reproducir segmento en bucle",
+                    "Asignar color",
                     "Eliminar segmento",
                 ]
             )

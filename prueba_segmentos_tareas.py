@@ -147,7 +147,7 @@ def test_01():
 
 
 def test_02():
-    """`TareaListarSegmentos` devuelve el contrato `[(id, inicio, fin)]`."""
+    """`TareaListarSegmentos` devuelve el contrato `[(id, inicio, fin, color)]`."""
     temp, ruta_db = _crear_bd_con_videos(["a.mp4"])
     try:
         id_video = _video_id(ruta_db, "a.mp4")
@@ -169,8 +169,8 @@ def test_02():
             and info.get("fin") is True
             and resultado
             == [
-                (s1[0], 1.0, 2.0),
-                (s2[0], 3.0, 4.0),
+                (s1[0], 1.0, 2.0, None),
+                (s2[0], 3.0, 4.0, None),
             ]
         )
         return ok, f"aceptada={aceptada} resultado={resultado}"
@@ -203,7 +203,7 @@ def test_03():
             and resultado[2] == 9.5
         )
         ok_persiste = listar_segmentos(id_video, ruta_db) == [
-            (resultado[0], 5.0, 9.5)
+            (resultado[0], 5.0, 9.5, None)
         ]
         ok = (
             aceptada

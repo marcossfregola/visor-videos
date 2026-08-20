@@ -20,8 +20,18 @@ Estado actual:
   `4fe46df7bfd7ed3d2d8b4408a8b3e410e43ed258`). **Ambos commits están
   publicados en `beta6`** y la publicación fue verificada con alineación
   local/remota.
+- **B6.3 — Clasificación visual de marcadores y segmentos.** **Técnicamente
+  completada** (2026-08-20): paleta cerrada de 6 colores; persistencia SQLite
+  aditiva e idempotente (`color TEXT NULL` en `marcadores_video` y
+  `segmentos_video`, `NULL` conserva los colores históricos: marcador rojo,
+  segmento azul); asignar/quitar color por menú contextual y selector por
+  tarjeta; nombres globales personalizables sin cambiar las claves; render
+  visual de marcas y bandas; suite `prueba_color_b63.py` **21/21** y
+  regresiones/smoke en verde. **Sin commit ni push en esta etapa** (registro
+  documental; ver `HISTORIAL_PROYECTO.md` ##107 y `ROADMAP.md`).
 - **Beta 6 continúa abierta.** La siguiente etapa prevista es
-  **B6.3 — Clasificación visual de marcadores y segmentos**.
+  **B6.4 — Marcadores y segmentos visibles en tarjetas colapsadas** (definida
+  en `ROADMAP.md`).
 - El **alcance completo** de Beta 6 (B6.1–B6.12) y su límite explícito (no se
   elimina ni reemplaza automáticamente el video original) están en
   `ROADMAP.md`. **Beta 7 — "Organización y operaciones de archivos"** queda
@@ -968,11 +978,23 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
   en la corrección previa al cierre de B4.12**: la regla AST quedó precisa
   excluyendo las tareas legítimas de marcadores (`TareaEliminarMarcador`, B4.2);
   suite 16/16.
+- **Fallos VLC ambientales reales** — deuda técnica **preexistente y ambiental**,
+  registrada para su estudio en una etapa futura, **no atribuible a B6.3** ni a
+  ninguna etapa reciente de Beta 6: las suites de reproducción VLC (que lanzan
+  procesos VLC reales y dependen de `start-time`/`stop-time`, seek por keyframes y
+  timing de procesos) mostraron fallos intermitentes en ejecución real:
+  `prueba_reproduccion_segmento_b56.py` P27 (26/27), `prueba_bucle_segmento_b57.py`
+  P23 (23/24) y `prueba_secuencia_segmentos_b58.py` P27/P28 (27/29). No corregidas
+  en esta etapa documental (fuera de alcance) ni en B6.3; quedan como deuda
+  ambiental pendiente de una etapa específica de estabilización de las pruebas VLC.
 
 ## Próxima fase
 
-La **Beta 6** continúa **abierta** sobre la rama `beta6`; la siguiente etapa
-prevista es **B6.3 — Clasificación visual de marcadores y segmentos**. Estado
+La **Beta 6** continúa **abierta** sobre la rama `beta6`; la etapa
+**B6.3 — Clasificación visual de marcadores y segmentos** quedó
+**técnicamente completada** (2026-08-20; ver `HISTORIAL_PROYECTO.md` ##107) y
+la siguiente etapa prevista es **B6.4 — Marcadores y segmentos visibles en
+tarjetas colapsadas** (definida en `ROADMAP.md`). Estado
 detallado en "Fase actual — Beta 6"; el alcance completo **B6.1–B6.12**, el
 límite explícito de Beta 6 y la dirección de **Beta 7 — "Organización y
 operaciones de archivos"** (diferida, sin implementar durante Beta 6) están en

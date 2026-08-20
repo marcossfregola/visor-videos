@@ -137,22 +137,51 @@ prueba/
 - `_asegurar_tabla_marcadores(conn)` — **migración aditiva e idempotente** de la tabla de
   marcadores (B4.2): `CREATE TABLE IF NOT EXISTS marcadores_video (id INTEGER PRIMARY KEY
   AUTOINCREMENT, video_id INTEGER NOT NULL, tiempo REAL NOT NULL)` e
-  `idx_marcadores_video_video_id_tiempo`. Se invoca desde `conectar_bd` y desde la conexión
+  `idx_marcadores_video_video_id_tiempo`. **B6.3**: además añade la columna `color` mediante
+  `_asegurar_columna_color`. Se invoca desde `conectar_bd` y desde la conexión
   del repositorio de marcadores. No activa `PRAGMA foreign_keys` ni usa `ON DELETE CASCADE`.
 - `listar_marcadores(video_id, ruta_db=None)` — marcadores persistidos de un video, ordenados
-  por tiempo; devuelve tuplas `(id, video_id, tiempo)` de la tabla `marcadores_video`
-  (`WHERE video_id = ?`). **Validación previa**: `video_id` entero positivo (bool →
+  por tiempo; devuelve tuplas `(id, video_id, tiempo, color)` de la tabla `marcadores_video`
+  (`WHERE video_id = ?`); `color` (B6.3) es una clave estable de `COLORES_CLASIFICACION` o
+  `None` (color histórico rojo). **Validación previa**: `video_id` entero positivo (bool →
   `TypeError`; ≤ 0 → `ValueError`). Abre y cierra su propia conexión (mismo patrón que
   `listar_videos`); base inexistente → `FileNotFoundError` sin crear archivos. No ejecuta
   FFprobe/FFmpeg ni toca la interfaz.
-- `guardar_marcador(video_id, tiempo, ruta_db=None)` — persiste un marcador y devuelve su
-  **`id` de la base** (`cursor.lastrowid`). **Validación previa**: `video_id` entero positivo;
-  `tiempo` numérico no negativo (bool → `TypeError`; < 0 → `ValueError`). Ciclo transaccional:
+- `guardar_marcador(video_id, tiempo, ruta_db=None, color=None)` — persiste un marcador y
+  devuelve su **`id` de la base** (`cursor.lastrowid`). **B6.3**: `color` es opcional (clave
+  estable o `None`) y se inserta en el mismo `INSERT`, nunca en una segunda escritura; los
+  callers históricos sin color quedan en `NULL`. **Validación previa**: `video_id` entero
+  positivo; `tiempo` numérico no negativo (bool → `TypeError`; < 0 → `ValueError`); `color`
+  validado con `_validar_color_clasificacion`. Ciclo transaccional:
   conexión propia, `INSERT`, `commit` solo si terminó correctamente, `rollback` ante error y
   `close` en `finally`. No ejecuta FFprobe/FFmpeg ni toca la interfaz.
 - `eliminar_marcador(marcador_id, ruta_db=None)` — elimina un marcador por su `id`; devuelve
   `True` si se eliminó una fila (`rowcount > 0`) y `False` si no existía. **Validación previa**:
   `marcador_id` entero positivo. Ciclo transaccional propio (patrón de `guardar_marcador`).
+- **Paleta cerrada de clasificación por color (B6.3).** `COLORES_CLASIFICACION` — paleta de 6
+  colores `(clave, r, g, b)` (rojo, naranja, amarillo, verde, azul, violeta), **única fuente de
+  verdad** del subsistema de clasificación (la UI y la configuración solo expresan colores
+  mediante estas claves). La misma paleta sirve para **marcadores y segmentos**; `NULL`
+  conserva los colores históricos (marcador rojo, segmento azul). API: `CLAVES_COLOR_CLASIFICACION`
+  (frozenset de claves), `color_rgb(clave)` (RGB o `None`) y `_validar_color_clasificacion(clave)`
+  (`None` aceptado = quitar color; no-texto → `TypeError`; clave ajena a la paleta → `ValueError`).
+- `_asegurar_columna_color(conn, tabla)` — **migración aditiva e idempotente** de la columna
+  `color TEXT NULL` (B6.3), invocada desde `_asegurar_tabla_marcadores`,
+  `_asegurar_tabla_segmentos` y los conectores de los repositorios. Consulta
+  `PRAGMA table_info(tabla)` y ejecuta `ALTER TABLE ... ADD COLUMN` solo si falta; no toca los
+  datos existentes (los registros históricos quedan en `NULL`).
+- `asignar_color_marcador(marcador_id, clave, ruta_db=None)` — asigna o quita (`clave=None`)
+  el color de clasificación de un marcador persistido (B6.3): `UPDATE marcadores_video SET
+  color = ? WHERE id = ?` en ciclo transaccional propio (`commit`/`rollback`/`close`); devuelve
+  la fila persistida `(id, video_id, tiempo, color)` si el marcador existía (`rowcount > 0`) o
+  `None` si no. **Validación previa**: `marcador_id` entero positivo y clave con
+  `_validar_color_clasificacion`.
+- **Segmentos con color (B6.3).** Las funciones del repositorio de segmentos
+  (`listar_segmentos`, `listar_segmentos_de`, `guardar_segmento`) siguen el mismo esquema que
+  sus equivalentes de marcadores: `color` como último campo de la tupla (B6.3) y parámetro
+  opcional de creación en el mismo `INSERT`, con `None` que conserva el color histórico azul.
+  `asignar_color_segmento(segmento_id, clave, ruta_db=None)` es el análogo de
+  `asignar_color_marcador` (devuelve la fila `(id, inicio, fin, color)` o `None`).
 - `main()` — CLI: sincroniza el catálogo contra `videos_prueba/` (ruta resuelta por `rutas.py`).
 
 ### `rutas.py` — capa centralizada de resolución de rutas
@@ -190,6 +219,18 @@ Módulo **de servicio** que separa de la interfaz la persistencia de la configur
 - `guardar_ultima_carpeta(carpeta, ruta_config=None)` — persiste la carpeta. **Validación previa**: `carpeta` texto no vacío tras `strip()` (si no → `ValueError`); la ruta se **absolutiza** (`os.path.abspath`) y se comprueba con `os.path.isdir` que exista y sea un directorio (si no → devuelve `None` sin escribir). Escritura **atómica**: lee el JSON existente (o `{}`), añade `CLAVE_CARPETA` y escribe en un archivo temporal `<ruta>.tmp` que luego se **reemplaza** con `os.replace` (no quedan archivos parciales). Crea el directorio padre con `os.makedirs(..., exist_ok=True)`. Devuelve la ruta absoluta guardada.
 - `obtener_ultima_carpeta(ruta_config=None)` — restaura la carpeta persistida. **Tolerante**: si el archivo no existe, el JSON es corrupto (`OSError`/`ValueError`), no es un diccionario, la clave no es texto no vacío o la carpeta dejó de existir, devuelve `None` sin lanzar y sin crear el archivo. Devuelve la ruta **absoluta**.
 - Internos: `_leer(ruta_config)` (JSON a `dict` o `None` ante ausencia/corrupción) y `_escribir(datos, ruta_config)` (escritura atómica con `.tmp` + `os.replace`). Persiste además la preferencia `incluir_subcarpetas` (booleano) mediante `guardar_preferencia_subcarpetas(activado, ruta_config)` y `obtener_preferencia_subcarpetas(ruta_config)` (devuelve `False` por defecto), y la preferencia **`escaneo_automatico`** (booleano) mediante `CLAVE_ESCANEO_AUTOMATICO = "escaneo_automatico"`, `guardar_preferencia_escaneo_automatico(activado, ruta_config)` y `obtener_preferencia_escaneo_automatico(ruta_config)` (**devuelve `True` por defecto**, preservando el comportamiento previo y la compatibilidad con archivos de configuración antiguos sin la clave). **Etapa B3.3**: además persiste el **tamaño de las miniaturas** mediante `CLAVE_TAMANIO_MINIATURAS = "tamano_miniaturas"`, `guardar_tamano_miniaturas(nombre, ruta_config)` (valida `pequeno`/`mediano`/`grande`; valor inválido → `None` sin escribir) y `obtener_tamano_miniaturas(ruta_config)` (**devuelve `"mediano"` por defecto**; si el valor almacenado no es texto o no es uno de los tres tamaños válidos vuelve automáticamente a `"mediano"`), con el mismo patrón atómico. **Etapa B3.5**: además persiste el **retardo de la vista ampliada** mediante `CLAVE_RETARDO_VISTA_AMPLIADA = "retardo_vista_ampliada_ms"`, `guardar_retardo_vista_ampliada(ms, ruta_config)` (valida los valores discretos `-1/0/250/400/600`; `-1` = "Desactivado" desde la Etapa B3.14a; valor inválido → `None` sin escribir) y `obtener_retardo_vista_ampliada(ruta_config)` (**devuelve `400` por defecto**; valor almacenado inválido → `400`), aditivo y sin migración para configuraciones antiguas. **Etapa B3.7**: además persiste el **factor de la vista ampliada** mediante `CLAVE_TAMANO_VISTA_AMPLIADA = "tamano_vista_ampliada"`, `guardar_tamano_vista_ampliada(factor, ruta_config)` (valida `1.2/1.6/2.0/2.5/3.0/3.5`, con 3.0 y 3.5 incorporados en la Etapa B3.14b; valor inválido → `None` sin escribir) y `obtener_tamano_vista_ampliada(ruta_config)` (**devuelve `1.6` por defecto**; valor almacenado inválido → `1.6`), también aditivo.
+
+- **Nombres globales de colores de la clasificación (B6.3).** Persiste en el mismo
+  `configuracion.json` los nombres visibles opcionales por clave de paleta, **sin cambiar las
+  claves estables**: `CLAVE_NOMBRES_COLORES = "nombres_colores"` (clave raíz del JSON),
+  `LIMITE_LONGITUD_NOMBRE_COLOR = 40` y `NOMBRES_COLORES_POR_DEFECTO` (de fábrica). API:
+  `guardar_nombre_color(clave, nombre, ruta_config=None)` (permite solo claves de la paleta y
+  texto ≤ 40 tras `strip()`; un nombre vacío elimina la entrada y restaura el de fábrica;
+  devuelve el texto efectivo o `None`), `obtener_nombres_colores(ruta_config=None)` (solo
+  claves válidas, recortadas y dentro del límite) y `texto_color(clave, ruta_config=None)`
+  (nombre configurado o el de fábrica; `None` para claves ajenas). Mismo patrón atómico
+  `.tmp` + `os.replace`; aditivo, sin migración (configuraciones antiguas sin la clave usan
+  los nombres de fábrica).
 
 ### `arbol_navegacion.py` — árbol de navegación del panel izquierdo
 Módulo **de interfaz** que encapsula el árbol del panel izquierdo, base del futuro Centro de Navegación. Separado en un módulo propio para no mezclar la lógica de archivos con el resto de la interfaz:
@@ -298,6 +339,22 @@ Módulo **de interfaz** que encapsula el árbol del panel izquierdo, base del fu
 - `configuracion.py` — **modo de alcance del escaneo** (Etapa 6): constantes `MODO_ALCANCE_SOLO`/`MODO_ALCANCE_SUBCARPETAS`/`MODO_ALCANCE_SELECCION` (`MODOS_ALCANCE_VALIDOS`), `CLAVE_MODO_ALCANCE`, `guardar_modo_alcance(modo, ruta_config=None)` (persiste el modo y mantiene sincronizada la clave booleana `incluir_subcarpetas` para compatibilidad) y `obtener_modo_alcance(ruta_config=None)` con **migración retrocompatible**: si no hay modo válido, migra desde el booleano `incluir_subcarpetas` (True → "con_subcarpetas", False → "solo_carpeta"); default "solo_carpeta". `visor_videos.py` lo restaura al iniciar (`self._modo_alcance`) y lo expone en `combo_modo_alcance` (única fuente de verdad visible); el checkbox "Incluir subcarpetas" queda como adaptador de compatibilidad oculto.
 - `operaciones.py` — módulo de **lógica pura de operaciones sobre archivos** (incorporado a la arquitectura en B3.14; conserva `sumar`): `copiar_archivos(origen, archivos, destino, on_progreso=None)` valida los argumentos (`origen`/`destino` texto no vacío; `archivos` colección no texto), copia con `shutil.copy2` preservando metadatos, crea directorios padre, omite archivos existentes, captura `OSError` por archivo y devuelve el resumen `{"copiados": [rutas], "omitidos": [rutas], "errores": [(ruta, mensaje)]}`. `pegar_archivos(archivos, destino, on_progreso=None)` (B3.15) copia cada ruta de origen con `shutil.copy2` a `os.path.join(destino, os.path.basename(ruta))`, **omite** destinos ya existentes (nunca sobrescribe), registra errores por archivo (`OSError` o origen inexistente) y continúa, devolviendo el mismo resumen. `eliminar_archivos(archivos, on_progreso=None)` (B3.16) envía cada ruta a la **Papelera de reciclaje de Windows mediante la API nativa `SHFileOperationW` a través de `ctypes`** (`_SHFILEOPSTRUCTW` con `FO_DELETE` + `FOF_ALLOWUNDO`, `FOF_NOCONFIRMATION`, `FOF_NOERRORUI` y `FOF_SILENT`; `pFrom` con lista de doble NUL), una invocación por archivo para aislar errores y continuar; **nunca borra permanentemente**; origen inexistente o archivo bloqueado se registran como errores; devuelve `{"eliminados": [rutas], "omitidos": [], "errores": [(ruta, mensaje)]}`. **Callback de progreso opcional** (Etapa B3.22): las tres funciones emiten `on_progreso(indice + 1, total)` **una vez por archivo** (incluyendo omitidos y errores); sin callback, el comportamiento es idéntico. **Sin dependencias externas** y sin Qt, SQLite ni pipeline.
 - `closeEvent(event)` — apagado ordenado: detiene `_timer_previews`, llama `gestor.cerrar()`, `gestor_previews.cerrar()` y `gestor_marcadores.cerrar()` (timeout por defecto 5000 ms) y acepta el evento.
+- **Clasificación visual por color (B6.3) en la interfaz.** La `Tarjeta` incorpora un selector
+  `_selector_color` (QComboBox "Sin clasificar" + los 6 colores de la paleta, textos con
+  `texto_color`); el color activo se adjunta a los marcadores y segmentos nuevos que se crean
+  en esa tarjeta. Los **menús contextuales** de marcador y de segmento incluyen el submenú
+  **"Asignar color"** (6 colores + "Sin clasificar", deshabilitado si el ítem ya no tiene
+  color); en el marcador el clic derecho ya **no elimina** directamente (ofrece "Eliminar
+  marcador" dentro del menú). Las operaciones se enrutan como tipo `"color"` en la cola de
+  los gestores dedicados y, ante error, se **revierte el color previo**; la marca/banda local
+  se recolorea de inmediato (`set_marcadores`/`set_segmentos`). **Corrección del defecto
+  PySide/QMenu**: los submenús se crean con el menú como padre `QObject`
+  (`QMenu("Asignar color", menu)`) y se conservan las referencias
+  (`_submenu_marcador_color_actual` / `_submenu_segmento_color_actual`), evitando que PySide
+  libere el submenú antes de mostrarlo. `PreferenciasDialog` gana la sección **"Nombres de
+  colores de la clasificación"** (muestra del color + `QLineEdit` por clave, límite de 40, y
+  al aceptar persiste con `guardar_nombre_color`); `_refrescar_textos_colores` actualiza los
+  textos del selector y los menús se construyen por demanda con `texto_color`.
 - `miniatura_principal(nombre)` — ubica la primera miniatura cuyo prefijo coincide con el video, **excluyendo los archivos `_preview_`** (`_es_archivo_preview`), de modo que la miniatura principal nunca es un preview.
 - `main()` — **punto de entrada de producción**: solo inicia la interfaz gráfica —`QApplication(sys.argv)`, `VisorVideos()`, `resize(900, 600)`, `show()` y `sys.exit(app.exec())`—. **No ejecuta pruebas automáticamente**: el arranque normal ya no lanza el smoke test, que se independizó en el arnés `prueba_smoke.py` (ver la sección siguiente).
 
@@ -331,20 +388,34 @@ Capa de **tareas asíncronas**: no define lógica de catálogo ni de datos. Re-e
 
 - `TareaListarMarcadores(TareaBase)` — **lectura asíncrona de marcadores** (B4.2): recibe
   `video_id` (y `ruta_db` opcional) y `_trabajo()` invoca `listar_marcadores(video_id, ruta_db)`,
-  devolviendo su resultado (lista de tuplas `(id, video_id, tiempo)`). Expone las propiedades
+  devolviendo su resultado (lista de tuplas `(id, video_id, tiempo, color)` desde **B6.3**).
+  Expone las propiedades
   de solo lectura `video_id` y `ruta_db`. Los errores de contrato y de lectura se convierten
   en la señal `error` gestionada por `TareaBase`. Conexión abierta y cerrada en el hilo de
   trabajo (patrón de `TareaLecturaCatalogo`).
 - `TareaGuardarMarcador(TareaBase)` — **persistencia asíncrona de un marcador** (B4.2): recibe
-  `video_id`, `tiempo` y `ruta_db` opcional; `_trabajo()` invoca
-  `guardar_marcador(video_id, tiempo, ruta_db)` y devuelve el **`id` de la base**. El `commit`
-  y el `rollback` ocurren dentro del hilo de trabajo. Expone las propiedades `video_id`,
-  `tiempo` y `ruta_db`.
+  `video_id`, `tiempo` y `ruta_db` opcional; **B6.3** acepta además `color` (clave estable o
+  `None`, persistido en el mismo `INSERT`). `_trabajo()` invoca
+  `guardar_marcador(video_id, tiempo, ruta_db, color)` y devuelve el **`id` de la base**. El
+  `commit` y el `rollback` ocurren dentro del hilo de trabajo. Expone las propiedades
+  `video_id`, `tiempo`, `color` y `ruta_db`.
 - `TareaEliminarMarcador(TareaBase)` — **eliminación asíncrona de un marcador** (B4.2): recibe
   `marcador_id` (y `ruta_db` opcional); `_trabajo()` invoca
   `eliminar_marcador(marcador_id, ruta_db)` y devuelve `True`/`False`. Expone las propiedades
   `marcador_id` y `ruta_db`. La interfaz la ejecuta con un **gestor dedicado**
   (`gestor_marcadores`, cuarto gestor), no con el gestor principal ni el de previews.
+- `TareaAsignarColorMarcador(TareaBase)` — **asignación asíncrona de color a un marcador**
+  (B6.3): recibe `marcador_id`, `color` (clave estable o `None` = quitar) y `ruta_db`
+  opcional; `_trabajo()` invoca `asignar_color_marcador(marcador_id, color, ruta_db)` y
+  devuelve la fila persistida `(id, video_id, tiempo, color)` o `None`. Expone las propiedades
+  `marcador_id`, `color` y `ruta_db`. Mismo gestor dedicado que las demás operaciones de
+  marcadores.
+- `TareaAsignarColorSegmento(TareaBase)` — **asignación asíncrona de color a un segmento**
+  (B6.3): recibe `segmento_id`, `color` (clave estable o `None` = quitar) y `ruta_db`
+  opcional; `_trabajo()` invoca `asignar_color_segmento(segmento_id, color, ruta_db)` y
+  devuelve la fila persistida `(id, inicio, fin, color)` o `None`. Expone las propiedades
+  `segmento_id`, `color` y `ruta_db`. Mismo patrón que la instrucción de segmentos del gestor
+  dedicado de la interfaz.
 - `TareaExploracionDensa(TareaBase)` — **cobertura densa de exploración temporal de un video**
   (B4.3.2 / B4.3.3): recibe `video_id`, `ruta_video`, `duracion`, `parent` y, desde B4.3.3,
   `objetivo_manual` (None = Auto); captura **instantáneas inmutables** y expone las propiedades
@@ -407,13 +478,24 @@ Módulo **de interfaz** con dos clases:
   representa la duración completa del video (izquierda = 0 %, derecha = 100 %). Convierte el
   movimiento del mouse (usa **solo la coordenada X**; la altura es irrelevante) en la señal
   `instante_seleccionado(float)`, el clic izquierdo en `marcador_solicitado(float)` y el clic
-  derecho sobre una marca en `marcador_eliminar_solicitado(float)`. Dibuja la pista, el marcador
-  móvil azul del cursor, las marcas rojas persistentes y el texto del tiempo. No conoce videos,
+  derecho sobre una marca en `marcador_contextual_solicitado(float)` (**B6.3**; antes
+  `marcador_eliminar_solicitado`, por el menú contextual). Dibuja la pista, el marcador
+  móvil azul del cursor, las marcas persistentes (color de clasificación o rojo histórico,
+  B6.3) y el texto del tiempo. No conoce videos,
   previews, FFmpeg, SQLite ni caché.
 - `MiniaturaMarcador(QLabel)` — miniatura fijada de un marcador: recibe el **clic derecho** y
-  emite `eliminar_solicitado(tiempo)`; el clic izquierdo queda reservado (no crea ni elimina);
+  emite `contextual_solicitado(tiempo)` (**B6.3**; antes `eliminar_solicitado`, porque el clic
+  derecho ya no elimina directamente sino que abre el menú contextual del marcador); el clic
+  izquierdo queda reservado (no crea ni elimina);
   reenvía el movimiento del mouse a la superficie en coordenadas de la superficie para que el
   scrubbing continúe aunque el cursor pase por encima de la miniatura.
+- **Render del color de clasificación (B6.3).** `FranjaExploracion` recibe además los colores
+  de los marcadores (`set_marcadores(marcadores, colores=None)`, mapa `tiempo → clave`) y
+  pinta cada marca con `_color_marca_para(tiempo)` (QColor de la paleta vía `color_rgb`, o el
+  rojo histórico `_COLOR_MARCA` si la clave falta o es `NULL`). Las bandas de segmento se
+  dibujan con `_color_fondo_segmento(seg)` / `_color_borde_segmento(seg)`: si el segmento es
+  un `dict` con `color` de la paleta, usan ese color (fondo con la alpha histórica); cualquier
+  otro caso conserva el azul histórico (`_COLOR_SEGMENTO` / `_COLOR_SEGMENTO_BORDE`).
 
 **Integración con `Tarjeta` (`visor_videos.py`):** la tarjeta conserva el **estado de los
 marcadores** (`_marcadores` = lista de `{"tiempo": float, "pixmap": QPixmap, "etiqueta": QLabel}`,

@@ -175,6 +175,32 @@ def _clic_derecho(widget, x=5):
     QApplication.sendEvent(widget, evento)
 
 
+def _eliminar_marcador_via_menu(tarjeta, widget, x=5):
+    """B6.3: el clic derecho ya no borra, abre el menú contextual y se debe
+    accionar «Eliminar marcador».
+
+    Al accionar la acción se cierra el menú (como en la UX real al hacer
+    clic) para que las eliminaciones diferidas de etiquetas se procesen.
+    """
+    tarjeta._menu_marcador_actual = None
+    _clic_derecho(widget, x)
+    if not _esperar(
+        lambda t=tarjeta: t._menu_marcador_actual is not None
+    ):
+        return False
+    menu = tarjeta._menu_marcador_actual
+    accion = next(
+        (a for a in menu.actions() if a.text() == "Eliminar marcador"),
+        None,
+    )
+    if accion is None:
+        return False
+    accion.trigger()
+    menu.close()
+    QApplication.processEvents()
+    return True
+
+
 def _limpiar(ventana):
     if ventana is None:
         return
@@ -1055,7 +1081,7 @@ def test_23():
                 if len(originales) != 3:
                     return False, f"creados={len(originales)}"
                 central = tarjeta._marcadores[1]["etiqueta"]
-                _clic_derecho(central)
+                ok_menu = _eliminar_marcador_via_menu(tarjeta, central)
                 QApplication.processEvents()
                 restantes = [m["tiempo"] for m in tarjeta._marcadores]
                 ok_conteo = len(restantes) == 2
@@ -1075,12 +1101,13 @@ def test_23():
                 _limpiar(ventana)
                 temp.cleanup()
             return (
-                ok_conteo
+                ok_menu
+                and ok_conteo
                 and ok_tiempos
                 and ok_marca
                 and ok_labels
                 and ok_otras,
-                f"restantes={restantes} labels={len(etiquetas)}",
+                f"menu={ok_menu} restantes={restantes} labels={len(etiquetas)}",
             )
     finally:
         escanear_mod.configurar_cantidad_previews(_CANTIDAD_ORIGINAL_PREVIEWS)
@@ -1104,13 +1131,21 @@ def test_24():
                 QApplication.processEvents()
                 originales = [m["tiempo"] for m in tarjeta._marcadores]
 
-                _clic_derecho(tarjeta._marcadores[0]["etiqueta"])
-                QApplication.processEvents()
-                ok_primero = [m["tiempo"] for m in tarjeta._marcadores] == originales[1:]
+                ok_primer_menu = _eliminar_marcador_via_menu(
+                    tarjeta, tarjeta._marcadores[0]["etiqueta"]
+                )
+                ok_primero = (
+                    ok_primer_menu
+                    and [m["tiempo"] for m in tarjeta._marcadores] == originales[1:]
+                )
 
-                _clic_derecho(tarjeta._marcadores[-1]["etiqueta"])
-                QApplication.processEvents()
-                ok_ultimo = [m["tiempo"] for m in tarjeta._marcadores] == originales[1:2]
+                ok_ultimo_menu = _eliminar_marcador_via_menu(
+                    tarjeta, tarjeta._marcadores[-1]["etiqueta"]
+                )
+                ok_ultimo = (
+                    ok_ultimo_menu
+                    and [m["tiempo"] for m in tarjeta._marcadores] == originales[1:2]
+                )
 
                 _mouse_move(superficie, ancho * 0.5)
                 ok_mover = abs(superficie.instante() - 50.0) < 1e-6
@@ -1120,10 +1155,12 @@ def test_24():
                 _esperar(lambda: tarjeta._franja.width() > 0)
                 ok_reexpand = [m["tiempo"] for m in tarjeta._marcadores] == originales[1:2]
 
-                _clic_derecho(tarjeta._marcadores[0]["etiqueta"])
-                QApplication.processEvents()
+                ok_vacio_menu = _eliminar_marcador_via_menu(
+                    tarjeta, tarjeta._marcadores[0]["etiqueta"]
+                )
                 ok_vacio = (
-                    tarjeta._marcadores == []
+                    ok_vacio_menu
+                    and tarjeta._marcadores == []
                     and tarjeta._franja._marcadores == []
                 )
 
@@ -1135,10 +1172,13 @@ def test_24():
                 _limpiar(ventana)
                 temp.cleanup()
             return (
-                ok_primero
+                ok_primer_menu
+                and ok_primero
+                and ok_ultimo_menu
                 and ok_ultimo
                 and ok_mover
                 and ok_reexpand
+                and ok_vacio_menu
                 and ok_vacio
                 and ok_crear,
                 f"restantes={[m['tiempo'] for m in tarjeta._marcadores]}",
@@ -1213,13 +1253,30 @@ def test_25():
                     ventana._limpiar_seleccion()
                     menu_antes = MenuContador.creados
                     snapshot_antes = _snapshot()
+                    tarjeta._menu_marcador_actual = None
                     _clic_derecho(tarjeta._marcadores[0]["etiqueta"])
                     QApplication.processEvents()
+                    ok_abre_menu = (
+                        _esperar(
+                            lambda t=tarjeta: t._menu_marcador_actual is not None
+                        )
+                        and MenuContador.creados == menu_antes + 2
+                    )
+                    accion_eliminar = next(
+                        (
+                            a
+                            for a in tarjeta._menu_marcador_actual.actions()
+                            if a.text() == "Eliminar marcador"
+                        ),
+                        None,
+                    )
+                    if accion_eliminar is not None:
+                        accion_eliminar.trigger()
+                        QApplication.processEvents()
                     ok_elimina = len(tarjeta._marcadores) == n_antes - 1
                     ok_no_selecciona = (
                         "a.mp4" not in ventana._nombres_seleccionados
                     )
-                    ok_no_menu = MenuContador.creados == menu_antes
                     ok_ffmpeg = llamadas_ffmpeg["n"] == 0
                     ok_sin_lectura = QPixmapContador.lecturas == 0
                     ok_snapshot = snapshot_antes == _snapshot()
@@ -1233,9 +1290,9 @@ def test_25():
                 temp.cleanup()
             return (
                 ok_no_crea
+                and ok_abre_menu
                 and ok_elimina
                 and ok_no_selecciona
-                and ok_no_menu
                 and ok_ffmpeg
                 and ok_sin_lectura
                 and ok_snapshot,
@@ -1279,12 +1336,18 @@ def test_26():
                 original_menu = visor_videos.QMenu
                 visor_videos.QMenu = MenuContador
                 try:
-                    _clic_derecho(superficie, x_tick)
+                    ok_tick_menu = _eliminar_marcador_via_menu(
+                        tarjeta, superficie, x_tick
+                    )
                     QApplication.processEvents()
                     restantes = [m["tiempo"] for m in tarjeta._marcadores]
-                    ok_tick = len(restantes) == 1 and restantes == [
-                        originales[0]
-                    ]
+                    ok_tick = (
+                        ok_tick_menu
+                        and len(restantes) == 1
+                        and restantes == [
+                            originales[0]
+                        ]
+                    )
                     x_vacio = tiempo_a_posicion(
                         (originales[0] + originales[1]) / 2, ancho, 100.0
                     )
@@ -1298,8 +1361,8 @@ def test_26():
                 _limpiar(ventana)
                 temp.cleanup()
             return (
-                ok_tick and ok_no_tick,
-                f"restantes={restantes}",
+                ok_tick_menu and ok_tick and ok_no_tick,
+                f"menu={ok_tick_menu} restantes={restantes}",
             )
     finally:
         escanear_mod.configurar_cantidad_previews(_CANTIDAD_ORIGINAL_PREVIEWS)

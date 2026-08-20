@@ -917,13 +917,22 @@ archivos.
    códec, tamaño, fecha de importación) y dirección (asc/desc), persistente, con
    whitelists cerradas y fragmento SQL único autorizado (desempate estable por
    `id ASC`, NULLs siempre al final). No cierra la Beta 6.
-3. **B6.3 — Clasificación visual de marcadores y segmentos.** **Planificar**:
-   colores para marcadores; colores para segmentos; nombres globales opcionales
-   asociados a cada color; persistencia estable; compatibilidad con marcadores y
-   segmentos existentes; **sin convertir marcador en segmento ni fusionar ambos
-   conceptos**. La etapa de implementación posterior deberá decidir el modelo
-   concreto mediante inspección arquitectónica. Esta planificación **no inventa
-   todavía un schema SQLite definitivo**.
+3. **B6.3 — Clasificación visual de marcadores y segmentos.** **Técnicamente
+   completada** (2026-08-20). Sin commit ni push en esta etapa (registro
+   exclusivamente documental; ver `HISTORIAL_PROYECTO.md` ##107). Implementa:
+   **paleta cerrada de 6 colores** (`COLORES_CLASIFICACION`: rojo, naranja,
+   amarillo, verde, azul, violeta; única fuente de verdad, misma paleta para
+   marcadores y segmentos); persistencia SQLite **aditiva e idempotente**
+   (`color TEXT NULL` añadido por migración a `marcadores_video` y
+   `segmentos_video`; `NULL` conserva los colores históricos — marcador rojo,
+   segmento azul); asignar y quitar color (menú contextual con submenú
+   "Asignar color" y selector por tarjeta); **nombres globales opcionales
+   personalizables sin cambiar las claves** de la paleta; render visual de
+   marcas y bandas con el color asignado; **sin convertir marcador en segmento
+   ni fusionar ambos conceptos** (tablas independientes, sin CASCADE, misma
+   política de orfandad que B4.2/B5.1). Verificación de la etapa:
+   `prueba_color_b63.py` **21/21**; regresiones y smoke en verde; `git diff
+   --check` limpio. No cierra la Beta 6.
 4. **B6.4 — Marcadores y segmentos visibles en tarjetas colapsadas.**
    **Planificar** la representación visual del material marcado aun cuando la
    tarjeta no esté expandida: posición proporcional dentro de la duración

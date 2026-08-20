@@ -154,6 +154,30 @@ def _press_derecho(widget, x):
     _enviar(widget, QEvent.MouseButtonPress, x, Qt.RightButton)
 
 
+def _eliminar_marcador_via_menu(tarjeta, widget, x):
+    """B6.3: el clic derecho ya no borra, abre el menú contextual.
+
+    Abre el menú y acciona la acción «Eliminar marcador». Devuelve `True`
+    si la eliminación se solicitó.
+    """
+    tarjeta._menu_marcador_actual = None
+    _press_derecho(widget, x)
+    if not _esperar(
+        lambda t=tarjeta: t._menu_marcador_actual is not None
+    ):
+        return False
+    menu = tarjeta._menu_marcador_actual
+    accion = next(
+        (a for a in menu.actions() if a.text() == "Eliminar marcador"),
+        None,
+    )
+    if accion is None:
+        return False
+    accion.trigger()
+    QApplication.processEvents()
+    return True
+
+
 def _expandir(tarjeta):
     tarjeta.expandir()
     _esperar(lambda: tarjeta._franja.width() > 0)
@@ -688,7 +712,7 @@ def test_19():
 
 
 def test_20():
-    """Clic derecho sobre un marcador sigue eliminando el marcador."""
+    """Clic derecho sobre un marcador abre el menú; Eliminar marcador lo borra."""
     with _miniaturas_temporales():
         temp, ruta_db = _crear_bd_con_videos(["a.mp4"])
         ventana = _abrir_ventana(ruta_db)
@@ -699,13 +723,17 @@ def test_20():
             ancho = franja.width()
             _press(franja, ancho * 0.3)
             ok_marcador = len(tarjeta._marcadores) == 1
-            _press_derecho(franja, ancho * 0.3)
-            ok = ok_marcador and tarjeta._marcadores == []
+            ok_menu = _eliminar_marcador_via_menu(tarjeta, franja, ancho * 0.3)
+            _drenar_marcadores(ventana)
+            ok = ok_marcador and ok_menu and tarjeta._marcadores == []
         finally:
             ventana.close()
             _limpiar(ventana)
             temp.cleanup()
-        return ok, f"marcadores={len(tarjeta._marcadores)}"
+        return (
+            ok,
+            f"marcador={ok_marcador} menu={ok_menu} marcadores={len(tarjeta._marcadores)}",
+        )
 
 
 def test_21():
@@ -758,14 +786,22 @@ def test_22():
             _drenar_segmentos(ventana)
             ok_ambos = len(tarjeta._marcadores) == 1 and len(tarjeta._segmentos) == 1
             # clic derecho exactamente sobre la marca del marcador
-            _press_derecho(franja, ancho * 0.5)
+            ok_menu = _eliminar_marcador_via_menu(tarjeta, franja, ancho * 0.5)
             _drenar_marcadores(ventana)
-            ok = ok_ambos and tarjeta._marcadores == [] and len(tarjeta._segmentos) == 1
+            ok = (
+                ok_ambos
+                and ok_menu
+                and tarjeta._marcadores == []
+                and len(tarjeta._segmentos) == 1
+            )
         finally:
             ventana.close()
             _limpiar(ventana)
             temp.cleanup()
-        return ok, f"marcadores={len(tarjeta._marcadores)} segmentos={len(tarjeta._segmentos)}"
+        return (
+            ok,
+            f"ambos={ok_ambos} menu={ok_menu} marcadores={len(tarjeta._marcadores)} segmentos={len(tarjeta._segmentos)}",
+        )
 
 
 def test_23():

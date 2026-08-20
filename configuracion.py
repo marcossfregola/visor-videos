@@ -2,6 +2,7 @@ import json
 import os
 
 from escanear_videos import (
+    CLAVES_COLOR_CLASIFICACION,
     ORDEN_CRITERIO_DEFAULT,
     ORDEN_CRITERIOS,
     ORDEN_DIRECCION_DEFAULT,
@@ -310,3 +311,76 @@ def obtener_orden_catalogo(ruta_config=None):
     if not isinstance(direccion, str) or direccion not in ORDEN_DIRECCIONES:
         direccion = ORDEN_DIRECCION_DEFAULT
     return (clave, direccion)
+
+
+CLAVE_NOMBRES_COLORES = "nombres_colores"
+LIMITE_LONGITUD_NOMBRE_COLOR = 40
+NOMBRES_COLORES_POR_DEFECTO = {
+    "rojo": "Rojo",
+    "naranja": "Naranja",
+    "amarillo": "Amarillo",
+    "verde": "Verde",
+    "azul": "Azul",
+    "violeta": "Violeta",
+}
+
+
+def guardar_nombre_color(clave, nombre, ruta_config=None):
+    """Guarda el nombre global opcional de un color (B6.3).
+
+    Permite solo claves estables de la paleta. Un nombre vacío (o solo
+    espacios) elimina el nombre configurado y restaura el de fábrica. Si el
+    nombre (recortado) supera `LIMITE_LONGITUD_NOMBRE_COLOR`, no se guarda.
+    Devuelve el texto efectivo o `None` si la clave/nombre no es válido.
+    """
+    if not isinstance(clave, str) or clave not in CLAVES_COLOR_CLASIFICACION:
+        return None
+    if not isinstance(nombre, str):
+        return None
+    nombre_normalizado = nombre.strip()
+    if len(nombre_normalizado) > LIMITE_LONGITUD_NOMBRE_COLOR:
+        return None
+    datos = _leer(ruta_config) or {}
+    nombres = datos.get(CLAVE_NOMBRES_COLORES)
+    if not isinstance(nombres, dict):
+        nombres = {}
+    if nombre_normalizado:
+        nombres[clave] = nombre_normalizado
+    else:
+        nombres.pop(clave, None)
+    datos[CLAVE_NOMBRES_COLORES] = nombres
+    _escribir(datos, ruta_config)
+    return nombre_normalizado or NOMBRES_COLORES_POR_DEFECTO[clave]
+
+
+def obtener_nombres_colores(ruta_config=None):
+    """Devuelve las claves→nombres configurados (solo claves válidas,
+    recortadas y dentro del límite)."""
+    datos = _leer(ruta_config)
+    if datos is None:
+        return {}
+    valor = datos.get(CLAVE_NOMBRES_COLORES)
+    if not isinstance(valor, dict):
+        return {}
+    nombres = {}
+    for clave, nombre in valor.items():
+        if not isinstance(clave, str) or clave not in CLAVES_COLOR_CLASIFICACION:
+            continue
+        if not isinstance(nombre, str):
+            continue
+        nombre = nombre.strip()
+        if not nombre:
+            continue
+        if len(nombre) > LIMITE_LONGITUD_NOMBRE_COLOR:
+            continue
+        nombres[clave] = nombre
+    return nombres
+
+
+def texto_color(clave, ruta_config=None):
+    """Texto visible de una clave: el nombre global configurado o el de
+    fábrica. `None` si la clave no pertenece a la paleta."""
+    if not isinstance(clave, str) or clave not in CLAVES_COLOR_CLASIFICACION:
+        return None
+    nombres = obtener_nombres_colores(ruta_config)
+    return nombres.get(clave, NOMBRES_COLORES_POR_DEFECTO[clave])

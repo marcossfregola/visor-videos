@@ -9,6 +9,8 @@ from escanear_videos import (
     _es_archivo_preview,
     _metadata_reutilizable,
     actualizar_segmento,
+    asignar_color_marcador,
+    asignar_color_segmento,
     asegurar_miniaturas,
     combinar_registros_con_ffprobe,
     combinar_registros_con_miniaturas,
@@ -457,12 +459,17 @@ class TareaListarMarcadoresVarios(TareaBase):
 
 
 class TareaGuardarMarcador(TareaBase):
-    """Persiste un marcador y devuelve su `id` de la base (B4.2)."""
+    """Persiste un marcador y devuelve su `id` de la base (B4.2).
 
-    def __init__(self, video_id, tiempo, ruta_db=None, parent=None):
+    `color` (B6.3) es opcional: clave estable de `COLORES_CLASIFICACION` o
+    `None`. Se persiste en el mismo INSERT de creación.
+    """
+
+    def __init__(self, video_id, tiempo, ruta_db=None, parent=None, color=None):
         super().__init__(parent)
         self._video_id = video_id
         self._tiempo = tiempo
+        self._color = color
         self._ruta_db = ruta_db
 
     @property
@@ -474,11 +481,17 @@ class TareaGuardarMarcador(TareaBase):
         return self._tiempo
 
     @property
+    def color(self):
+        return self._color
+
+    @property
     def ruta_db(self):
         return self._ruta_db
 
     def _trabajo(self):
-        return guardar_marcador(self._video_id, self._tiempo, self._ruta_db)
+        return guardar_marcador(
+            self._video_id, self._tiempo, self._ruta_db, self._color
+        )
 
 
 class TareaEliminarMarcador(TareaBase):
@@ -499,6 +512,37 @@ class TareaEliminarMarcador(TareaBase):
 
     def _trabajo(self):
         return eliminar_marcador(self._marcador_id, self._ruta_db)
+
+
+class TareaAsignarColorMarcador(TareaBase):
+    """Asigna (o quita) el color de clasificación de un marcador (B6.3).
+
+    `color` es una clave estable de `COLORES_CLASIFICACION` o `None`.
+    Devuelve la fila persistida `(id, video_id, tiempo, color)` o `None`.
+    """
+
+    def __init__(self, marcador_id, color, ruta_db=None, parent=None):
+        super().__init__(parent)
+        self._marcador_id = marcador_id
+        self._color = color
+        self._ruta_db = ruta_db
+
+    @property
+    def marcador_id(self):
+        return self._marcador_id
+
+    @property
+    def color(self):
+        return self._color
+
+    @property
+    def ruta_db(self):
+        return self._ruta_db
+
+    def _trabajo(self):
+        return asignar_color_marcador(
+            self._marcador_id, self._color, self._ruta_db
+        )
 
 
 class TareaListarSegmentos(TareaBase):
@@ -552,15 +596,21 @@ class TareaListarSegmentosVarios(TareaBase):
 class TareaGuardarSegmento(TareaBase):
     """Persiste un segmento y devuelve `(id, inicio, fin)` (B5.2).
 
+    `color` (B6.3) es opcional: clave estable de `COLORES_CLASIFICACION` o
+    `None`. Se persiste en el mismo INSERT de creación.
+
     Disponible para la UI desde B5.4; en B5.2 no existe todavía ninguna
     acción de usuario que lo invoque.
     """
 
-    def __init__(self, video_id, inicio, fin, ruta_db=None, parent=None):
+    def __init__(
+        self, video_id, inicio, fin, ruta_db=None, parent=None, color=None
+    ):
         super().__init__(parent)
         self._video_id = video_id
         self._inicio = inicio
         self._fin = fin
+        self._color = color
         self._ruta_db = ruta_db
 
     @property
@@ -576,12 +626,20 @@ class TareaGuardarSegmento(TareaBase):
         return self._fin
 
     @property
+    def color(self):
+        return self._color
+
+    @property
     def ruta_db(self):
         return self._ruta_db
 
     def _trabajo(self):
         return guardar_segmento(
-            self._video_id, self._inicio, self._fin, self._ruta_db
+            self._video_id,
+            self._inicio,
+            self._fin,
+            self._ruta_db,
+            self._color,
         )
 
 
@@ -608,6 +666,37 @@ class TareaEliminarSegmento(TareaBase):
 
     def _trabajo(self):
         return eliminar_segmento(self._segmento_id, self._ruta_db)
+
+
+class TareaAsignarColorSegmento(TareaBase):
+    """Asigna (o quita) el color de clasificación de un segmento (B6.3).
+
+    `color` es una clave estable de `COLORES_CLASIFICACION` o `None`.
+    Devuelve la fila persistida `(id, inicio, fin, color)` o `None`.
+    """
+
+    def __init__(self, segmento_id, color, ruta_db=None, parent=None):
+        super().__init__(parent)
+        self._segmento_id = segmento_id
+        self._color = color
+        self._ruta_db = ruta_db
+
+    @property
+    def segmento_id(self):
+        return self._segmento_id
+
+    @property
+    def color(self):
+        return self._color
+
+    @property
+    def ruta_db(self):
+        return self._ruta_db
+
+    def _trabajo(self):
+        return asignar_color_segmento(
+            self._segmento_id, self._color, self._ruta_db
+        )
 
 
 class TareaActualizarSegmento(TareaBase):

@@ -23,9 +23,9 @@ Explorar de forma visual y eficiente grandes colecciones de videos, facilitando 
 
 Desarrollo actual en **Beta 6 — "De marcar a conservar"** (rama `beta6`). La
 **Beta 5** quedó cerrada internamente y la **Beta 6 continúa abierta**, con
-**B6.1** y **B6.2** completadas; la próxima etapa funcional prevista es
-**B6.3**. Para el detalle del alcance completo y el estado vigente ver
-`ROADMAP.md` y `ESTADO_PROYECTO.md`.
+**B6.1** y **B6.2** completadas y **B6.3** técnicamente completada; la próxima
+etapa funcional prevista es **B6.4**. Para el detalle del alcance completo y el
+estado vigente ver `ROADMAP.md` y `ESTADO_PROYECTO.md`.
 
 ## Distribución
 

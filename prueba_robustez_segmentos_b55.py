@@ -210,7 +210,8 @@ def _par(segmentos):
 
 def _par_db(ruta_db, video_id):
     return sorted(
-        (inicio, fin, sid) for sid, inicio, fin in listar_segmentos(video_id, ruta_db)
+        (inicio, fin, sid)
+        for sid, inicio, fin, _color in listar_segmentos(video_id, ruta_db)
     )
 
 
@@ -240,7 +241,7 @@ def test_02():
             segs = listar_segmentos(id2, ruta_db)
             ok = (
                 id1 == id2
-                and segs == [(s[0], 10.0, 20.0)]
+                and segs == [(s[0], 10.0, 20.0, None)]
                 and len(segs) == 1
             )
         finally:
@@ -270,7 +271,7 @@ def test_03():
             segs = listar_segmentos(id2, ruta_db)
             ok = (
                 id1 == id2
-                and segs == [(s[0], 5.0, 9.0)]
+                and segs == [(s[0], 5.0, 9.0, None)]
                 and segs[0][0] == s[0]
             )
         finally:
@@ -298,7 +299,7 @@ def test_04():
             guardar_videos([_registro_ruta("v1.mp4", ruta2)], ruta_db)
             id2 = _video_id(ruta_db, "v1.mp4")
             segs = listar_segmentos(id2, ruta_db)
-            ok = id1 == id2 and segs == [(s[0], 3.0, 7.0)]
+            ok = id1 == id2 and segs == [(s[0], 3.0, 7.0, None)]
         finally:
             temp.cleanup()
         return ok, f"id={id1}->{id2} segs={segs}"
@@ -325,7 +326,7 @@ def test_05():
             orfanos = escanear_mod.listar_segmentos_de([id1], ruta_db)
             ok = (
                 "v1.mp4" not in nombres
-                and orfanos == [(s[0], id1, 1.0, 2.0)]
+                and orfanos == [(s[0], id1, 1.0, 2.0, None)]
             )
         finally:
             temp.cleanup()
