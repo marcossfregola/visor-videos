@@ -905,6 +905,54 @@ class TareaExploracionDensa(TareaBase):
         return resultado
 
 
+class TareaExportarSegmento(TareaBase):
+    """Exporta un segmento existente a un archivo nuevo mediante recodificación CPU precisa (B6.7).
+
+    Delegación exclusiva en `exportar_segmento.exportar_segmento` (servicio sin
+    Qt). La tarea corre fuera del hilo principal (GestorTareas), sin FFmpeg ni
+    SQLite directos desde la UI. Soporta cancelación real: `cancelar()` marca
+    el flag y el servicio termina FFmpeg y limpia el temporal.
+    """
+
+    def __init__(self, fuente, inicio, fin, destino, parent=None):
+        super().__init__(parent)
+        self._fuente = fuente
+        self._inicio = inicio
+        self._fin = fin
+        self._destino = destino
+        self._cancelada = False
+
+    @property
+    def fuente(self):
+        return self._fuente
+
+    @property
+    def inicio(self):
+        return self._inicio
+
+    @property
+    def fin(self):
+        return self._fin
+
+    @property
+    def destino(self):
+        return self._destino
+
+    def cancelar(self):
+        self._cancelada = True
+
+    def _trabajo(self):
+        import exportar_segmento as exp
+
+        return exp.exportar_segmento(
+            self._fuente,
+            self._inicio,
+            self._fin,
+            self._destino,
+            cancel_check=lambda: self._cancelada,
+        )
+
+
 class TareaResumenColapsado(TareaBase):
     """Carga batch del resumen colapsado (B6.4).
 

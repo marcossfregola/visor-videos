@@ -23,8 +23,8 @@ Explorar de forma visual y eficiente grandes colecciones de videos, facilitando 
 
 Desarrollo actual en **Beta 6 — "De marcar a conservar"** (rama `beta6`). La
 **Beta 5** quedó cerrada internamente y la **Beta 6 continúa abierta**, con
-**B6.1–B6.5** completadas (B6.3 commit `c28ccf6`, B6.4 commit `74bb459` en `origin/beta6`, B6.5 validada y cerrada en este commit; suites `prueba_filtro_b65` 24/24, `prueba_color_b63` 21/21, `prueba_ordenamiento_b62` 18/18, `prueba_resumen_colapsado_b64` 8/8); la próxima
-etapa funcional prevista es **B6.6**. Para el detalle del alcance completo y el
+**B6.1–B6.7** completadas (B6.3 commit `c28ccf6`, B6.4 commit `74bb459` en `origin/beta6`, B6.5 cerrada en `a837fd2`, **B6.6 investigación/contrato completada y B6.7 extracción segura implementada, probada y validada manualmente en este commit**; suites `prueba_exportacion_b67` 21/21, `prueba_filtro_b65` 24/24, `prueba_color_b63` 21/21, `prueba_ordenamiento_b62` 18/18, `prueba_resumen_colapsado_b64` 8/8); la próxima
+etapa funcional prevista es **B6.8 — motor general de nombres**. Para el detalle del alcance completo y el
 estado vigente ver `ROADMAP.md` y `ESTADO_PROYECTO.md`.
 
 ## Distribución

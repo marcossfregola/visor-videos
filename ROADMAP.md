@@ -935,25 +935,8 @@ archivos.
    --check` limpio. No cierra la Beta 6.
 4. **B6.4 — Marcadores y segmentos visibles en tarjetas colapsadas.** **Completada y publicada en `beta6`** (2026-08-20; commit `74bb4590fa59c506fba2e00d070e530b0b8cf34f` en `origin/beta6`; suite `prueba_resumen_colapsado_b64.py` **8/8** y regresiones en verde). Implementa la representación resumida del material marcado en **tarjetas colapsadas** (posición proporcional dentro de la duración completa; diferenciación marcador/segmento; colores B6.3; sin sobrecargar visualmente) manteniendo la exploración visual como prioridad. No cierra la Beta 6.
 5. **B6.5 — Filtros y localización del material marcado.** **Completada y validada visualmente por Marcos; cerrada en este commit** (filtros estructurados del catálogo a nivel **SQLite paginado/background** con **whitelist cerrada**: `todos`, `con_marcadores`, `con_segmentos`, `marcador:<color>`, `segmento:<color>`, `marcador:sin_clasificar`, `segmento:sin_clasificar` — combinable con búsqueda por texto mediante `AND` y `COUNT==SELECT`, paginación, orden B6.2 y `Cargar más`; `EXISTS` parametrizado sin interpolación; combo compacto `Mostrar:` en la barra; recarga controlada ante mutaciones bajo filtro activo; suite `prueba_filtro_b65.py` **24/24** y regresiones `prueba_color_b63.py` **21/21**, `prueba_ordenamiento_b62.py` **18/18**, `prueba_resumen_colapsado_b64.py` **8/8** en verde). **No** convierte el visor en gestor multimedia genérico. No cierra la Beta 6.
-6. **B6.6 — Investigación y contrato del motor de exportación.** Antes de
-   generar archivos reales, etapa técnica específica para **validar físicamente
-   FFmpeg** sobre los casos reales y fijar contrato sobre: extracción sin
-   recodificación mediante **stream-copy** cuando sea técnicamente válida;
-   precisión temporal y dependencia de keyframes; margen temporal aceptable;
-   codecs y contenedores compatibles; audio/video/subtítulos u otros streams
-   existentes; timestamps; archivos problemáticos; cómo verificar objetivamente
-   el archivo resultante; comportamiento ante operaciones parciales o fallidas.
-   **Principio de producto:** prioridad absoluta a evitar recodificación y
-   pérdida de calidad; **no** introducir silenciosamente una recodificación
-   automática como fallback. Si existen casos donde stream-copy no puede cumplir
-   el contrato, deben presentarse como **limitación** y requerir decisión
-   explícita posterior. Toda generación debe ser **no destructiva**.
-7. **B6.7 — Extracción segura de un segmento.** Primer flujo completo:
-   `original → segmento → archivo nuevo → verificación`. Requisitos: jamás
-   modificar el original; jamás sobrescribir un archivo existente; salida
-   temporal/atómica cuando corresponda; detectar errores; verificar el resultado
-   antes de declararlo terminado; trabajos pesados fuera del hilo UI; feedback y
-   progreso coherentes; cancelación/limpieza segura si técnicamente procede.
+6. **B6.6 — Investigación y contrato del motor de exportación.** **Completada (2026-08-20).** Etapa de investigación y contrato técnico: se validó físicamente FFmpeg sobre casos reales (H.264/AAC, doble audio, sin audio, subtítulos, límites, cancelación) y se fijó contrato para B6.7 — **recodificación CPU precisa (libx264/aac, no stream-copy)** para precisión temporal independiente de keyframes; tolerancias de duración/start; manejo explícito de streams; temporal único en mismo directorio con publicación solo tras verificación FFprobe; no sobrescribir jamás original ni destino existente; operación atómica sin `-y`; cancelación real con terminación de FFmpeg y limpieza. Principio no destructivo preservado. No cierra la Beta 6.
+7. **B6.7 — Extracción segura de un segmento.** **Completada, implementada, probada y validada manualmente; publicada en `beta6` (2026-08-20, este commit).** Primer flujo completo `original → segmento → archivo nuevo → verificación`: servicio `exportar_segmento.py` con validación de entrada, FFprobe fuente, temporal atómico `*.tmp_<id>.mp4/.mkv` en mismo directorio, construcción FFmpeg explícita (recodificación precisa `libx264 veryfast crf18 yuv420p`/`aac 128k`, mapeo `0:v/0:a/0:s`, `+faststart` en MP4, sin `-y`), verificación posterior (duración con `TOLERANCIA_DURACION_EXPORT 0.35s`, start cercano a 0, video/audio/subs, no vacío) y doble comprobación de colisión con publicación `os.rename`; `TareaExportarSegmento` en `tareas_videos.py` fuera del hilo UI con cancelación cooperativa (terminate/kill + limpieza); UI `visor_videos.py` — menú contextual del segmento "Exportar segmento…" (`segmento_exportacion_solicitada`), diálogo `QFileDialog.getSaveFileName` con sugerencia `base_segmento_inicio-fin.mp4`, sanitización Windows, validación de extensión/colisión y botón "Cancelar exportación" con estados; suite `prueba_exportacion_b67.py` **21/21** y regresiones B6.3–B6.5 en verde; **evidencia humana: Marcos confirmó que el flujo visual y funcional de exportación de un segmento funciona correctamente y que el archivo resultante se reproduce y corresponde al tramo seleccionado** (selección de destino, exportación y reproducción correctas). **Beta 6 sigue abierta; próxima etapa B6.8 — motor general de nombres.** No cierra la Beta 6.
 8. **B6.8 — Motor general y reutilizable de nombres.** Diseñar conceptualmente
    un componente reutilizable (no lógica embebida exclusivamente en la UI de
    exportación) con plantillas combinables que utilicen, al menos: nombre

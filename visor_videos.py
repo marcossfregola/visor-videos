@@ -103,6 +103,7 @@ from tareas_videos import (
     TareaAsignarColorMarcador,
     TareaAsignarColorSegmento,
     TareaEscaneo,
+    TareaExportarSegmento,
     TareaFFprobe,
     TareaGuardarMarcador,
     TareaGuardarSegmento,
@@ -675,6 +676,7 @@ class Tarjeta(QFrame):
     densidad_cambiada = Signal(str, object)
     marcador_color_solicitado = Signal(object, object)
     segmento_color_solicitado = Signal(object, object)
+    segmento_exportacion_solicitada = Signal(object)
 
     def __init__(self, fila, parent=None, ruta_config=None):
         super().__init__(parent)
@@ -964,6 +966,7 @@ class Tarjeta(QFrame):
         self._submenu_segmento_color_actual = None
         self._menu_marcador_actual = None
         self._submenu_marcador_color_actual = None
+        self._accion_exportar_segmento_actual = None
         self._franja = FranjaExploracion()
         self._franja.instante_seleccionado.connect(self._al_instante_exploracion)
         self._franja.marcador_solicitado.connect(self._al_marcador_solicitado)
@@ -1593,6 +1596,7 @@ class Tarjeta(QFrame):
         if not segmento.get("color"):
             accion_quitar.setEnabled(False)
         accion_eliminar = menu.addAction("Eliminar segmento")
+        accion_exportar = menu.addAction("Exportar segmento…")
         accion_reproducir.triggered.connect(
             lambda *args, s=segmento: self.segmento_reproduccion_solicitada.emit(s)
         )
@@ -1602,8 +1606,12 @@ class Tarjeta(QFrame):
         accion_eliminar.triggered.connect(
             lambda *args, s=segmento: self._al_segmento_eliminar_solicitado(s)
         )
+        accion_exportar.triggered.connect(
+            lambda *args, s=segmento: self.segmento_exportacion_solicitada.emit(s)
+        )
         self._menu_segmento_actual = menu
         self._submenu_segmento_color_actual = submenu_color
+        self._accion_exportar_segmento_actual = accion_exportar
         menu.popup(QCursor.pos())
 
     def _emitir_color_segmento(self, segmento, clave):
@@ -2013,11 +2021,19 @@ class VisorVideos(QMainWindow):
         self.area.setWidgetResizable(True)
         self.area.setWidget(self.contenedor)
 
+        self.boton_cancelar_export = QPushButton("Cancelar exportación")
+        self.boton_cancelar_export.setVisible(False)
+        self.boton_cancelar_export.clicked.connect(self._cancelar_export)
+
         raiz = PanelPrincipal()
         layout = QVBoxLayout(raiz)
         layout.addLayout(fila_carpeta)
         layout.addLayout(barra)
         layout.addWidget(self.barra_progreso)
+        fila_export = QHBoxLayout()
+        fila_export.addWidget(self.boton_cancelar_export)
+        fila_export.addStretch()
+        layout.addLayout(fila_export)
         layout.addWidget(self.area)
 
         panel_izquierdo = QWidget()
@@ -2157,6 +2173,15 @@ class VisorVideos(QMainWindow):
         self._cola_resumen = []
         self._resumen_op_actual = None
         self._resumen_ids_en_vuelo = set()
+
+        # B6.7 exportación segura de un segmento (sin SQLite directo desde UI)
+        self.gestor_export = GestorTareas(self)
+        self.gestor_export.tarea_resultado.connect(self._al_resultado_export)
+        self.gestor_export.tarea_error.connect(self._al_error_export)
+        self.gestor_export.tarea_finalizada.connect(self._al_export_finalizada)
+        self.gestor_export.actividad_cambiada.connect(self._al_actividad_export)
+        self._export_segmento_actual = None
+        self._export_destino_actual = None
 
         self._timer_previews = QTimer(self)
         self._timer_previews.setSingleShot(True)
@@ -3400,6 +3425,125 @@ class VisorVideos(QMainWindow):
             }
         )
 
+    def _al_segmento_exportacion_solicitada(self, tarjeta, segmento):
+        """Acción mínima B6.7: exportar un segmento individual a archivo nuevo."""
+        if self.gestor_export.activo:
+            QMessageBox.information(
+                self, "Exportar segmento", "Ya hay una exportación en curso."
+            )
+            return
+        video_id = getattr(tarjeta, "_video_id", None)
+        if video_id is None:
+            QMessageBox.warning(self, "Exportar segmento", "Video no disponible.")
+            return
+        inicio = segmento.get("inicio")
+        fin = segmento.get("fin")
+        if not isinstance(inicio, (int, float)) or not isinstance(fin, (int, float)):
+            QMessageBox.warning(self, "Exportar segmento", "Segmento con tiempos inválidos.")
+            return
+        ruta_fuente = self._ruta_video_de(tarjeta)
+        if ruta_fuente is None:
+            QMessageBox.warning(
+                self, "Exportar segmento", "El video de origen ya no está disponible."
+            )
+            return
+        # Sugerir nombre: base + _segmento_inicio-fin
+        base = os.path.splitext(tarjeta.nombre)[0]
+        sugerido = f"{base}_segmento_{inicio:.2f}-{fin:.2f}.mp4".replace(":", "-")
+        # Sanitizar caracteres inválidos de Windows
+        for ch in '<>:"/\\|?*':
+            sugerido = sugerido.replace(ch, "_")
+        ruta_dest, filtro = QFileDialog.getSaveFileName(
+            self,
+            "Exportar segmento",
+            sugerido,
+            "Video MP4 (*.mp4);;Video MKV (*.mkv)",
+        )
+        if not ruta_dest:
+            return
+        # Asegurar extensión
+        ext = os.path.splitext(ruta_dest)[1].lower()
+        if ext not in (".mp4", ".mkv"):
+            # Si el usuario no puso extensión, agregar .mp4
+            ruta_dest += ".mp4"
+        if os.path.exists(ruta_dest):
+            QMessageBox.warning(
+                self, "Exportar segmento", "El archivo de destino ya existe. Elija otro nombre."
+            )
+            return
+        # No sobrescribir jamás el original ni un destino existente (segunda validación en servicio)
+        if os.path.normcase(os.path.normpath(os.path.abspath(ruta_dest))) == os.path.normcase(
+            os.path.normpath(os.path.abspath(ruta_fuente))
+        ):
+            QMessageBox.warning(
+                self, "Exportar segmento", "El destino no puede ser el mismo archivo que el origen."
+            )
+            return
+        tarea = TareaExportarSegmento(ruta_fuente, float(inicio), float(fin), ruta_dest)
+        if not self.gestor_export.iniciar(tarea):
+            QMessageBox.warning(self, "Exportar segmento", f"No se pudo iniciar: {self.gestor_export.ultimo_rechazo}")
+            return
+        self._export_segmento_actual = segmento
+        self._export_destino_actual = ruta_dest
+        self._mostrar_progreso("Exportando segmento…")
+        self.boton_cancelar_export.setVisible(True)
+        self.boton_cancelar_export.setEnabled(True)
+
+    def _cancelar_export(self):
+        tarea = getattr(self.gestor_export, "tarea", None)
+        if tarea is not None and hasattr(tarea, "cancelar"):
+            try:
+                tarea.cancelar()
+            except Exception:
+                pass
+        self.estado_escaneo.setText("Cancelando exportación…")
+        self.boton_cancelar_export.setEnabled(False)
+
+    def _al_resultado_export(self, resultado):
+        self._ocultar_progreso()
+        self.boton_cancelar_export.setVisible(False)
+        if not isinstance(resultado, dict):
+            QMessageBox.warning(self, "Exportar segmento", f"Resultado inesperado: {resultado}")
+            return
+        if resultado.get("cancelado"):
+            QMessageBox.information(self, "Exportar segmento", "Exportación cancelada.")
+            self.estado_escaneo.setText("Exportación cancelada")
+            return
+        if resultado.get("ok"):
+            salida = resultado.get("salida")
+            dur = resultado.get("duracion")
+            dur_txt = f"{dur:.2f}s" if isinstance(dur, (int, float)) else "desconocida"
+            QMessageBox.information(
+                self, "Exportar segmento", f"Segmento exportado correctamente:\n{salida}\nDuración: {dur_txt}"
+            )
+            self.estado_escaneo.setText(f"Exportado: {os.path.basename(salida)} ({dur_txt})")
+            return
+        error = resultado.get("error") or "error desconocido"
+        QMessageBox.warning(self, "Exportar segmento", f"No se pudo exportar:\n{error}")
+        self.estado_escaneo.setText(f"Error al exportar: {error}")
+
+    def _al_error_export(self, mensaje):
+        self._ocultar_progreso()
+        self.boton_cancelar_export.setVisible(False)
+        QMessageBox.warning(self, "Exportar segmento", f"Error en exportación:\n{mensaje}")
+        self.estado_escaneo.setText(f"Error al exportar: {mensaje}")
+
+    def _al_export_finalizada(self):
+        self.boton_cancelar_export.setVisible(False)
+        self._export_segmento_actual = None
+        self._export_destino_actual = None
+        # Si no hay otro progreso activo, ocultar barra
+        if not self._pipeline_activo and not self.gestor_export.activo and not self.gestor.activo:
+            self._ocultar_progreso()
+
+    def _al_actividad_export(self, activo):
+        # No bloquear escaneo, solo reflejar que hay tarea en curso
+        if activo:
+            self.boton_cancelar_export.setVisible(True)
+        else:
+            # la visibilidad se maneja en resultado/error/finalizada
+            pass
+
     def _hay_carga_pendiente_segmentos(self, tarjeta):
         op = self._segmento_op_actual
         if (
@@ -4432,6 +4576,11 @@ class VisorVideos(QMainWindow):
                     t, registro, clave
                 )
             )
+            tarjeta.segmento_exportacion_solicitada.connect(
+                lambda segmento, t=tarjeta: self._al_segmento_exportacion_solicitada(
+                    t, segmento
+                )
+            )
             tarjeta.mostrar_check(self._modo_seleccion)
             self.tarjetas.append((fila[0], tarjeta))
             self.visibles.append(fila[0])
@@ -4543,6 +4692,11 @@ class VisorVideos(QMainWindow):
             tarjeta.segmento_color_solicitado.connect(
                 lambda registro, clave, t=tarjeta: self._al_segmento_color_solicitado(
                     t, registro, clave
+                )
+            )
+            tarjeta.segmento_exportacion_solicitada.connect(
+                lambda segmento, t=tarjeta: self._al_segmento_exportacion_solicitada(
+                    t, segmento
                 )
             )
             tarjeta.mostrar_check(self._modo_seleccion)
