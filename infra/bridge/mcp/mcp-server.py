@@ -1,6 +1,6 @@
 """Servidor MCP real del puente ChatGPT <-> OpenCode (INFRA 0.4 + B4 + B4.2).
 
-Expone siete herramientas:
+Expone ocho herramientas:
   - get_status: lectura del estado del bridge (incluye campos de atención B4).
   - queue_task: encola una tarea en el bridge (TAREA DISPONIBLE). NO ejecuta OpenCode.
     Desde SIN TAREA encola tareas independientes; desde TERMINADO/ERROR/AUTOEJECUCIÓN
@@ -15,6 +15,10 @@ Expone siete herramientas:
   - cancel_task: registra una solicitud durable de cancelación de una tarea pendiente
     (available o aun en inbox); la aplica el executor (available -> cancelled). NO
     ejecuta OpenCode y nunca cancela una tarea TRABAJANDO.
+  - abandon_task: registra una solicitud durable de abandono administrativo de una tarea
+    pendiente que nunca comenzó (available o aun en inbox); la aplica el executor
+    (available -> abandoned; inbox -> descarte preservando el payload). NO ejecuta
+    OpenCode y nunca abandona una tarea TRABAJANDO ni una tarea ya iniciada.
   - get_report: recupera la evidencia local de una tarea (solo lectura).
   - get_audit_context: reconstruye el contexto durable de auditoría para una tarea o
     contexto (solo lectura, sin red/shell/git/GitHub).
@@ -35,7 +39,7 @@ from mcp.types import ToolAnnotations
 
 from bridge_client import (  # noqa: E402
     load_config, queue_task, get_status, get_report, resolve_decision, post_audit,
-    get_audit_context, cancel_task,
+    get_audit_context, cancel_task, abandon_task,
 )
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -199,6 +203,38 @@ def resolve_decision_tool(task_id: str, resolution: str) -> dict:
 )
 def cancel_task_tool(task_id: str, reason: str) -> dict:
     return cancel_task(_BRIDGE_DIR, task_id, reason)
+
+
+@server.tool(
+    name="abandon_task",
+    title="Solicitar abandono administrativo de tarea pendiente",
+    description=(
+        "Registra una solicitud durable de abandono administrativo. La aplicación efectiva es "
+        "asíncrona y corresponde al executor. Solo aplica a tareas pendientes que todavía no "
+        "comenzaron: aún en inbox (state/inbox) o materializadas como 'available' en el estado. "
+        "v1: solo se abandona un eslabón con supersedesTaskId cuando se confirma explícitamente "
+        "con confirm_chain_abandon=true (cadena preservada íntegra, la tarea anterior nunca se "
+        "reactiva); una tarea con supersededByTaskId (ya reemplazada por otra) se rechaza SIEMPRE. "
+        "Nunca abandona una tarea TRABAJANDO, una tarea ya iniciada (startedAt/pid), una tarea "
+        "auditada ni una tarea con estado no pendiente. Nunca mata procesos y nunca ejecuta "
+        "OpenCode.\n"
+        "task_id es obligatorio (sin comodines ni 'abandonar la actual'). reason es obligatorio, "
+        "con trim, no vacío y hasta 200 caracteres. confirm_chain_abandon es opcional (bool, "
+        "default False). Esta tool NUNCA escribe state.json: solo escribe la solicitud atómica "
+        "en state/abandonments/<task_id>.abandon.json y devuelve que la SOLICITUD fue registrada. "
+        "La respuesta inmediata no afirma que la tarea quedó abandonada; el executor la aplica "
+        "(available -> abandoned; inbox -> descarte preservando el payload) en su siguiente ciclo "
+        "y el resultado se observa luego con get_status/get_report."
+    ),
+    annotations=ToolAnnotations(
+        readOnlyHint=False,
+        destructiveHint=True,
+        idempotentHint=True,
+        openWorldHint=False,
+    ),
+)
+def abandon_task_tool(task_id: str, reason: str, confirm_chain_abandon: bool = False) -> dict:
+    return abandon_task(_BRIDGE_DIR, task_id, reason, confirm_chain_abandon=confirm_chain_abandon)
 
 
 @server.tool(

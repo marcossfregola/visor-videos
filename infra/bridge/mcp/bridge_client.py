@@ -29,6 +29,13 @@ TASK_STATUS_CANCELLED = "cancelled"
 # límite del motivo de cancelación
 MAX_CANCEL_REASON_CHARS = 200
 
+# ABANDON: estado de tarea abandonada administrativamente (nunca se ejecutó).
+# Diferenciado de cancelled (semántica distinta) y de superseded (no es un
+# eslabón reemplazado por otra tarea, sino una continuidad cerrada por decisión).
+TASK_STATUS_ABANDONED = "abandoned"
+# límite del motivo de abandono
+MAX_ABANDON_REASON_CHARS = 200
+
 # B4: solo desde SIN TAREA se encola una tarea independiente sin previous_task_id.
 # Desde TERMINADO / ERROR / AUTOEJECUCIÓN BLOQUEADA solo se encola una tarea
 # RELACIONADA (corrección / siguiente etapa) mediante previous_task_id exacto y
@@ -153,6 +160,14 @@ def _cancellations_history_dir(bridge_dir: str) -> str:
     return os.path.join(_cancellations_dir(bridge_dir), "history")
 
 
+def _abandonments_dir(bridge_dir: str) -> str:
+    return os.path.join(bridge_dir, "state", "abandonments")
+
+
+def _abandonments_history_dir(bridge_dir: str) -> str:
+    return os.path.join(_abandonments_dir(bridge_dir), "history")
+
+
 def _reports_dir(bridge_dir: str) -> str:
     return os.path.join(bridge_dir, "reports")
 
@@ -246,6 +261,18 @@ def pending_inbox_has(bridge_dir: str, task_id: str) -> bool:
     return os.path.exists(os.path.join(_inbox_dir(bridge_dir), task_id + ".task.json"))
 
 
+def read_inbox_payload(bridge_dir: str, task_id: str):
+    """Lee el payload de un archivo de inbox (dict) o None si no existe/corrupto."""
+    path = os.path.join(_inbox_dir(bridge_dir), task_id + ".task.json")
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return None
+
+
 def pending_resolution_has(bridge_dir: str, task_id: str) -> bool:
     return os.path.exists(os.path.join(_resolutions_dir(bridge_dir), task_id + ".resolution.json"))
 
@@ -271,6 +298,10 @@ def read_pending_audit(bridge_dir: str, task_id: str):
 
 def pending_cancel_has(bridge_dir: str, task_id: str) -> bool:
     return os.path.exists(os.path.join(_cancellations_dir(bridge_dir), task_id + ".cancel.json"))
+
+
+def pending_abandon_has(bridge_dir: str, task_id: str) -> bool:
+    return os.path.exists(os.path.join(_abandonments_dir(bridge_dir), task_id + ".abandon.json"))
 
 
 # --- B4.2: contexto durable de auditoría -------------------------------
@@ -639,6 +670,8 @@ def _cancel_incompatible_reason(state: dict, task_id: str) -> str:
     tstatus = t.get("status")
     if tstatus == TASK_STATUS_CANCELLED:
         return "la tarea ya fue cancelada"
+    if tstatus == TASK_STATUS_ABANDONED:
+        return "la tarea ya fue abandonada"
     if tstatus == "running":
         return "la tarea esta TRABAJANDO: no se puede cancelar"
     if tstatus in ("done", "resolved", "failed", "decision", "superseded"):
@@ -696,6 +729,150 @@ def cancel_task(bridge_dir: str, task_id: str, reason: str) -> dict:
             base["reason"] = incompat
             return base
     write_cancel_atomic(bridge_dir, task_id, clean_reason)
+    base["accepted"] = True
+    base["reason"] = ""
+    return base
+
+
+# --- ABANDON: abandono administrativo de tarea pendiente -------------------
+
+def validate_abandon_reason(reason) -> str:
+    """Valida el motivo de abandono: obligatorio, con trim, no vacío, max 200."""
+    if not isinstance(reason, str):
+        raise BridgeError("reason debe ser texto")
+    trimmed = reason.strip()
+    if not trimmed:
+        raise BridgeError("reason vacio")
+    if len(trimmed) > MAX_ABANDON_REASON_CHARS:
+        raise BridgeError("reason demasiado grande: max {} caracteres".format(MAX_ABANDON_REASON_CHARS))
+    return trimmed
+
+
+def write_abandon_atomic(bridge_dir: str, task_id: str, reason: str,
+                         confirm_chain_abandon: bool) -> None:
+    """Escribe atómicamente la solicitud de abandono en state/abandonments.
+
+    El MCP jamás escribe state.json; el executor es el único que aplica.
+    """
+    d = _abandonments_dir(bridge_dir)
+    os.makedirs(d, exist_ok=True)
+    payload = {
+        "task_id": task_id,
+        "reason": reason,
+        "confirm_chain_abandon": bool(confirm_chain_abandon),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "source": "mcp",
+    }
+    tmp = os.path.join(d, ".tmp-" + uuid.uuid4().hex)
+    final = os.path.join(d, task_id + ".abandon.json")
+    with open(tmp, "w", encoding="utf-8", newline="") as fh:
+        json.dump(payload, fh, ensure_ascii=False)
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(tmp, final)
+
+
+def _abandon_incompatible_reason(state: dict, task_id: str, confirm_chain_abandon: bool) -> str:
+    """Motivo de rechazo si la tarea ya materializada no es abandonable (o "" si lo es)."""
+    tasks = state.get("tasks") or {}
+    t = tasks.get(task_id) or {}
+    tstatus = t.get("status")
+    if tstatus == TASK_STATUS_ABANDONED:
+        return "la tarea ya fue abandonada (already-abandoned)"
+    if tstatus == TASK_STATUS_CANCELLED:
+        return "la tarea ya fue cancelada"
+    if tstatus == "running":
+        return "la tarea esta TRABAJANDO: no se puede abandonar"
+    if tstatus in ("done", "resolved", "failed", "decision", "superseded"):
+        return "estado incompatible de la tarea ({}): no se puede abandonar".format(tstatus)
+    if tstatus != "available":
+        return "estado incompatible de la tarea ({}): no se puede abandonar".format(tstatus)
+    if t.get("startedAt"):
+        return "la tarea ya comenzo (startedAt presente): no se puede abandonar"
+    if t.get("pid"):
+        return "la tarea tiene un proceso asociado (pid presente): no se puede abandonar"
+    if t.get("auditedAt"):
+        return "la tarea ya fue auditada: no se puede abandonar"
+    if t.get("supersededByTaskId"):
+        # v1: un eslabón ya reemplazado por otra tarea nunca se abandona.
+        return "la tarea ya fue supersedida por otra tarea (supersededByTaskId): no se puede abandonar"
+    if t.get("supersedesTaskId") and not confirm_chain_abandon:
+        return "la tarea pertenece a una cadena de supersesion (supersedesTaskId): se requiere confirm_chain_abandon=true"
+    return ""
+
+
+def abandon_task(bridge_dir: str, task_id: str, reason: str,
+                 confirm_chain_abandon: bool = False) -> dict:
+    """Solicita durablemente el abandono administrativo de una tarea pendiente.
+
+    NO ejecuta OpenCode, NO toca state.json. Solo registra la solicitud en
+    state/abandonments/<task_id>.abandon.json; el executor la aplica de forma
+    asíncrona (available -> abandoned, o applied-inbox para tareas aún solo
+    en inbox) en su siguiente ciclo.
+
+    Solo aplica a tareas pendientes que NUNCA comenzaron. v1:
+    - tarea independiente available: abandonable sin confirmación;
+    - tarea available con supersedesTaskId: requiere confirm_chain_abandon=True
+      (se preserva íntegra la cadena, la anterior no se reactiva);
+    - tarea con supersededByTaskId: SIEMPRE rechazada en v1 (eslabón intermedio);
+    - tarea aún solo en inbox: aplicable con las mismas reglas de cadena.
+
+    La respuesta inmediata solo informa que la SOLICITUD fue registrada, no que
+    la tarea quedó abandonada.
+    """
+    base = {"task_id": task_id, "accepted": False, "duplicate": False,
+            "resulting_state": None, "reason": ""}
+    if not valid_task_id(task_id):
+        base["reason"] = "task_id invalido: 1..128 caracteres alfanumericos, punto, guion o guion bajo"
+        return base
+    if not isinstance(confirm_chain_abandon, bool):
+        base["reason"] = "confirm_chain_abandon debe ser booleano"
+        return base
+    try:
+        clean_reason = validate_abandon_reason(reason)
+    except BridgeError as exc:
+        base["reason"] = str(exc)
+        return base
+    state = read_bridge_state(bridge_dir)
+    status = state.get("status", "SIN TAREA")
+    base["resulting_state"] = status
+    if pending_abandon_has(bridge_dir, task_id):
+        base["duplicate"] = True
+        base["reason"] = "solicitud de abandono ya registrada (pendiente de aplicar)"
+        return base
+    if not pending_inbox_has(bridge_dir, task_id) and task_id not in (state.get("tasks") or {}):
+        base["reason"] = "tarea inexistente (no está en inbox ni en el estado)"
+        return base
+    # Tarea solo en inbox: conservador. Prevalidación del payload de cadena; el
+    # executor re-valida como autoridad antes de aplicar.
+    if pending_inbox_has(bridge_dir, task_id):
+        if task_id in (state.get("tasks") or {}):
+            incompat = _abandon_incompatible_reason(state, task_id, confirm_chain_abandon)
+            if incompat:
+                base["reason"] = incompat
+                return base
+        else:
+            payload = read_inbox_payload(bridge_dir, task_id)
+            if payload is not None:
+                # equivalente a supersededByTaskId en inbox: eslabón ya reemplazado
+                if payload.get("superseded_by_task_id"):
+                    base["reason"] = ("la tarea fue supersedida por otra tarea "
+                                      "(superseded_by_task_id): no se puede abandonar")
+                    return base
+                if payload.get("previous_task_id"):
+                    base["reason"] = ("la tarea pertenece a una cadena de supersesion "
+                                      "(previous_task_id): se requiere confirm_chain_abandon=true")
+                    return base
+                if payload.get("supersedes_task_id") and not confirm_chain_abandon:
+                    base["reason"] = ("la tarea pertenece a una cadena de supersesion "
+                                      "(supersedes_task_id): se requiere confirm_chain_abandon=true")
+                    return base
+    elif task_id in (state.get("tasks") or {}):
+        incompat = _abandon_incompatible_reason(state, task_id, confirm_chain_abandon)
+        if incompat:
+            base["reason"] = incompat
+            return base
+    write_abandon_atomic(bridge_dir, task_id, clean_reason, confirm_chain_abandon)
     base["accepted"] = True
     base["reason"] = ""
     return base
@@ -1061,6 +1238,9 @@ def get_report(bridge_dir: str, task_id: str) -> dict:
         "cancelled_at": None,
         "cancel_reason": None,
         "cancel_source": None,
+        "abandoned_at": None,
+        "abandon_reason": None,
+        "abandon_source": None,
         "reason": "",
     }
     if not valid_task_id(task_id):
@@ -1093,6 +1273,9 @@ def get_report(bridge_dir: str, task_id: str) -> dict:
     base["cancelled_at"] = t.get("cancelledAt")
     base["cancel_reason"] = t.get("cancelReason")
     base["cancel_source"] = t.get("cancelSource")
+    base["abandoned_at"] = t.get("abandonedAt")
+    base["abandon_reason"] = t.get("abandonReason")
+    base["abandon_source"] = t.get("abandonSource")
     base["exit_code"] = t.get("exitCode")
     base["started_at"] = t.get("startedAt")
     base["completed_at"] = t.get("completedAt")
@@ -1131,9 +1314,17 @@ def get_report(bridge_dir: str, task_id: str) -> dict:
         base["resultado"] = "ERROR"
     elif tstatus == TASK_STATUS_CANCELLED:
         base["resultado"] = "CANCELADA"
+    elif tstatus == TASK_STATUS_ABANDONED:
+        base["resultado"] = "ABANDONADA"
 
     # CANCEL: una tarea cancelada nunca tuvo evidencia de ejecución.
     if tstatus == TASK_STATUS_CANCELLED:
+        base["report_available"] = False
+        base["reason"] = ""
+        return base
+
+    # ABANDON: una tarea abandonada nunca tuvo evidencia de ejecución.
+    if tstatus == TASK_STATUS_ABANDONED:
         base["report_available"] = False
         base["reason"] = ""
         return base

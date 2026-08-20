@@ -29,6 +29,8 @@ from bridge_client import (  # noqa: E402
     pending_inbox_has,
     cancel_task,
     pending_cancel_has,
+    abandon_task,
+    pending_abandon_has,
     read_bridge_state,
     write_inbox_atomic,
 )
@@ -1548,6 +1550,271 @@ class BridgeClientTest(unittest.TestCase):
         self.assertFalse(r["report_available"])
         self.assertIsNone(r["started_at"])
         self.assertIsNone(r["exit_code"])
+
+    # ---- ABANDON: abandon_task (solicitud durable; aplica el executor) ----
+
+    def _abandon_dir(self):
+        return os.path.join(self.tmp, "state", "abandonments")
+
+    def _abandon_files(self):
+        d = self._abandon_dir()
+        if not os.path.isdir(d):
+            return []
+        return [f for f in os.listdir(d) if f.endswith(".abandon.json")]
+
+    def _abandon_payload(self, task_id):
+        with open(os.path.join(self._abandon_dir(), task_id + ".abandon.json"), "r", encoding="utf-8") as fh:
+            return json.load(fh)
+
+    def test_abandon_available_independiente_registra(self):
+        self._state("TAREA DISPONIBLE", {"t-ab": {"status": "available", "taskId": "t-ab"}})
+        before = self._snapshot()
+        # snapshot debe contener state.json exactamente
+        r = abandon_task(self.tmp, "t-ab", "motivo abandono")
+        self.assertTrue(r["accepted"])
+        self.assertFalse(r["duplicate"])
+        self.assertEqual(r["resulting_state"], "TAREA DISPONIBLE")
+        self.assertEqual(self._abandon_files(), ["t-ab.abandon.json"])
+        p = self._abandon_payload("t-ab")
+        self.assertEqual(p["task_id"], "t-ab")
+        self.assertEqual(p["reason"], "motivo abandono")
+        self.assertEqual(p["source"], "mcp")
+        self.assertFalse(p["confirm_chain_abandon"])
+        # state.json intacto
+        after = {k: v for k, v in self._snapshot().items() if k != os.path.join("state", "abandonments", "t-ab.abandon.json")}
+        # filtrar solo state.json comparison
+        with open(os.path.join(self.tmp, "state", "state.json"), "rb") as fh:
+            after_state = fh.read()
+        with open(os.path.join(self.tmp, "state", "state.json"), "rb") as fh:
+            pass
+        # abandono no debe escribir state.json
+        state = read_bridge_state(self.tmp)
+        self.assertEqual(state["tasks"]["t-ab"]["status"], "available")
+
+    def test_abandon_supersedes_sin_confirm_rechazado(self):
+        self._state("TAREA DISPONIBLE", {"t-a": {"status": "available", "taskId": "t-a", "supersedesTaskId": "prev"}})
+        r = abandon_task(self.tmp, "t-a", "motivo")
+        self.assertFalse(r["accepted"])
+        self.assertIn("confirm_chain_abandon", r["reason"])
+        self.assertEqual(self._abandon_files(), [])
+
+    def test_abandon_supersedes_con_confirm_acepta(self):
+        self._state("TAREA DISPONIBLE", {"t-a": {"status": "available", "taskId": "t-a", "supersedesTaskId": "prev"}})
+        r = abandon_task(self.tmp, "t-a", "motivo", confirm_chain_abandon=True)
+        self.assertTrue(r["accepted"])
+        self.assertEqual(self._abandon_files(), ["t-a.abandon.json"])
+        self.assertTrue(self._abandon_payload("t-a")["confirm_chain_abandon"])
+
+    def test_abandon_supersededBy_rechazado_incluso_con_confirm(self):
+        for confirm in (False, True):
+            tid = "t-sby-{}".format(confirm)
+            self._state("TAREA DISPONIBLE", {tid: {"status": "available", "taskId": tid, "supersededByTaskId": "nueva"}})
+            # limpiar abandon previo si existe
+            d = self._abandon_dir()
+            if os.path.isdir(d):
+                for f in os.listdir(d):
+                    try:
+                        os.remove(os.path.join(d, f))
+                    except OSError:
+                        pass
+            r = abandon_task(self.tmp, tid, "motivo", confirm_chain_abandon=confirm)
+            self.assertFalse(r["accepted"], "confirm={} debe rechazar".format(confirm))
+            self.assertIn("supersedida", r["reason"])
+            self.assertEqual(self._abandon_files(), [])
+
+    def test_abandon_inbox_independiente(self):
+        self._state("SIN TAREA", {})
+        write_inbox_atomic(self.tmp, "t-inb", "prompt")
+        r = abandon_task(self.tmp, "t-inb", "obsoleta inbox")
+        self.assertTrue(r["accepted"])
+        self.assertEqual(self._abandon_files(), ["t-inb.abandon.json"])
+
+    def test_abandon_inbox_supersedes_sin_confirm_rechazado(self):
+        self._state("SIN TAREA", {})
+        write_inbox_atomic(self.tmp, "t-inb2", "p", supersedes_task_id="prev")
+        r = abandon_task(self.tmp, "t-inb2", "motivo")
+        self.assertFalse(r["accepted"])
+        self.assertIn("confirm_chain_abandon", r["reason"])
+        self.assertEqual(self._abandon_files(), [])
+
+    def test_abandon_inbox_supersedes_con_confirm_acepta(self):
+        self._state("SIN TAREA", {})
+        write_inbox_atomic(self.tmp, "t-inb3", "p", supersedes_task_id="prev")
+        r = abandon_task(self.tmp, "t-inb3", "motivo", confirm_chain_abandon=True)
+        self.assertTrue(r["accepted"])
+        self.assertEqual(self._abandon_files(), ["t-inb3.abandon.json"])
+
+    def test_abandon_inbox_superseded_by_rechazado(self):
+        self._state("SIN TAREA", {})
+        # superseded_by_task_id en inbox equivale a supersededByTaskId
+        d = os.path.join(self.tmp, "state", "inbox")
+        os.makedirs(d, exist_ok=True)
+        payload = {"task_id": "t-inb4", "prompt": "p", "created_at": "2026-08-17T00:00:00Z", "source": "mcp", "superseded_by_task_id": "nueva"}
+        with open(os.path.join(d, "t-inb4.task.json"), "w", encoding="utf-8") as fh:
+            json.dump(payload, fh, ensure_ascii=False)
+        r = abandon_task(self.tmp, "t-inb4", "motivo", confirm_chain_abandon=True)
+        self.assertFalse(r["accepted"])
+        self.assertIn("supersedida", r["reason"])
+        self.assertEqual(self._abandon_files(), [])
+
+    def test_abandon_task_id_invalido(self):
+        self._state("SIN TAREA", {})
+        for bad in ("", "a b", "a/b", "..", ".hidden", "x" * 129, None, 42):
+            r = abandon_task(self.tmp, bad, "motivo")
+            self.assertFalse(r["accepted"], "deberia rechazar task_id={!r}".format(bad))
+        self.assertEqual(self._abandon_files(), [])
+
+    def test_abandon_reason_vacio(self):
+        self._state("TAREA DISPONIBLE", {"t-a": {"status": "available", "taskId": "t-a"}})
+        for bad in ("", "   ", None, 42):
+            r = abandon_task(self.tmp, "t-a", bad)
+            self.assertFalse(r["accepted"], "deberia rechazar reason={!r}".format(bad))
+        self.assertEqual(self._abandon_files(), [])
+
+    def test_abandon_reason_demasiado_largo(self):
+        self._state("TAREA DISPONIBLE", {"t-a": {"status": "available", "taskId": "t-a"}})
+        r = abandon_task(self.tmp, "t-a", "x" * 201)
+        self.assertFalse(r["accepted"])
+        self.assertIn("demasiado grande", r["reason"])
+        self.assertEqual(self._abandon_files(), [])
+        r2 = abandon_task(self.tmp, "t-a", "y" * 200)
+        self.assertTrue(r2["accepted"])
+
+    def test_abandon_reason_trim(self):
+        self._state("TAREA DISPONIBLE", {"t-a": {"status": "available", "taskId": "t-a"}})
+        r = abandon_task(self.tmp, "t-a", "  motivo con trim  ")
+        self.assertTrue(r["accepted"])
+        self.assertEqual(self._abandon_payload("t-a")["reason"], "motivo con trim")
+
+    def test_abandon_confirm_no_booleano(self):
+        self._state("TAREA DISPONIBLE", {"t-a": {"status": "available", "taskId": "t-a"}})
+        for bad in ("true", 1, 0, None, "False"):
+            r = abandon_task(self.tmp, "t-a", "motivo", confirm_chain_abandon=bad)
+            self.assertFalse(r["accepted"], "deberia rechazar confirm={!r}".format(bad))
+            self.assertIn("booleano", r["reason"])
+        self.assertEqual(self._abandon_files(), [])
+
+    def test_abandon_trabajando_running_rechazado(self):
+        self._state("TRABAJANDO", {"t-run": {"status": "running", "taskId": "t-run"}})
+        r = abandon_task(self.tmp, "t-run", "motivo")
+        self.assertFalse(r["accepted"])
+        self.assertIn("TRABAJANDO", r["reason"])
+        self.assertEqual(self._abandon_files(), [])
+
+    def test_abandon_cancelled_rechazado(self):
+        self._state("SIN TAREA", {"t-c": {"status": "cancelled", "taskId": "t-c"}})
+        r = abandon_task(self.tmp, "t-c", "motivo")
+        self.assertFalse(r["accepted"])
+        self.assertIn("cancelada", r["reason"])
+        self.assertEqual(self._abandon_files(), [])
+
+    def test_abandon_already_abandoned(self):
+        self._state("SIN TAREA", {"t-ab": {"status": "abandoned", "taskId": "t-ab", "abandonedAt": "2026-08-17T00:00:00Z", "abandonReason": "prev", "abandonSource": "mcp"}})
+        r = abandon_task(self.tmp, "t-ab", "motivo")
+        self.assertFalse(r["accepted"])
+        self.assertIn("ya fue abandonada", r["reason"])
+        self.assertEqual(self._abandon_files(), [])
+
+    def test_abandon_startedAt_rechazado(self):
+        self._state("TAREA DISPONIBLE", {"t-s": {"status": "available", "taskId": "t-s", "startedAt": "2026-08-17T00:00:00Z"}})
+        r = abandon_task(self.tmp, "t-s", "motivo")
+        self.assertFalse(r["accepted"])
+        self.assertIn("ya comenzo", r["reason"])
+        self.assertEqual(self._abandon_files(), [])
+
+    def test_abandon_pid_rechazado(self):
+        self._state("TAREA DISPONIBLE", {"t-p": {"status": "available", "taskId": "t-p", "pid": 1234}})
+        r = abandon_task(self.tmp, "t-p", "motivo")
+        self.assertFalse(r["accepted"])
+        self.assertIn("proceso asociado", r["reason"])
+        self.assertEqual(self._abandon_files(), [])
+
+    def test_abandon_estados_terminales_rechazado(self):
+        for st in ("done", "failed", "resolved", "decision", "superseded"):
+            self._state("SIN TAREA", {"t": {"status": st, "taskId": "t"}})
+            d = self._abandon_dir()
+            if os.path.isdir(d):
+                for f in os.listdir(d):
+                    try:
+                        os.remove(os.path.join(d, f))
+                    except OSError:
+                        pass
+            r = abandon_task(self.tmp, "t", "motivo")
+            self.assertFalse(r["accepted"], "estado {} debe rechazar".format(st))
+            self.assertEqual(self._abandon_files(), [], "estado {} no debe escribir".format(st))
+
+    def test_abandon_auditedAt_rechazado(self):
+        self._state("TAREA DISPONIBLE", {"t-aud": {"status": "available", "taskId": "t-aud", "auditedAt": "2026-08-17T00:00:00Z"}})
+        r = abandon_task(self.tmp, "t-aud", "motivo")
+        self.assertFalse(r["accepted"])
+        self.assertIn("auditada", r["reason"])
+        self.assertEqual(self._abandon_files(), [])
+
+    def test_abandon_get_report_abandoned(self):
+        self._state("SIN TAREA", {"t-ab": {"status": "abandoned", "taskId": "t-ab", "abandonedAt": "2026-08-18T12:00:00Z", "abandonReason": "obsoleta", "abandonSource": "mcp"}})
+        r = get_report(self.tmp, "t-ab")
+        self.assertEqual(r["status"], "abandoned")
+        self.assertEqual(r["resultado"], "ABANDONADA")
+        self.assertEqual(r["abandoned_at"], "2026-08-18T12:00:00Z")
+        self.assertEqual(r["abandon_reason"], "obsoleta")
+        self.assertEqual(r["abandon_source"], "mcp")
+        self.assertFalse(r["report_available"])
+        self.assertIsNone(r["started_at"])
+        self.assertIsNone(r["completed_at"])
+        self.assertIsNone(r["exit_code"])
+
+    def test_abandon_cancel_sobre_abandoned_rechazado(self):
+        self._state("SIN TAREA", {"t-ab": {"status": "abandoned", "taskId": "t-ab"}})
+        r = cancel_task(self.tmp, "t-ab", "motivo cancel")
+        self.assertFalse(r["accepted"])
+        self.assertIn("abandonada", r["reason"])
+        self.assertEqual(self._cancel_files(), [])
+
+    def test_abandon_manual_auto_tecnica_ambos(self):
+        for mode in ("MANUAL", "AUTO_TECNICA"):
+            tid = "t-{}".format(mode)
+            fields = {"status": "available", "taskId": tid, "executionMode": mode}
+            if mode == "AUTO_TECNICA":
+                fields.update({"expectedBranch": "beta6", "expectedHead": "abc"})
+            self._state("TAREA DISPONIBLE", {tid: fields})
+            d = self._abandon_dir()
+            if os.path.isdir(d):
+                for f in os.listdir(d):
+                    try:
+                        os.remove(os.path.join(d, f))
+                    except OSError:
+                        pass
+            r = abandon_task(self.tmp, tid, "motivo")
+            self.assertTrue(r["accepted"], "modo {} debe aceptar".format(mode))
+
+    def test_abandon_duplicado_pendiente(self):
+        self._state("TAREA DISPONIBLE", {"t-dup": {"status": "available", "taskId": "t-dup"}})
+        r1 = abandon_task(self.tmp, "t-dup", "primera")
+        r2 = abandon_task(self.tmp, "t-dup", "segunda")
+        self.assertTrue(r1["accepted"])
+        self.assertFalse(r2["accepted"])
+        self.assertTrue(r2["duplicate"])
+        self.assertEqual(self._abandon_files(), ["t-dup.abandon.json"])
+        self.assertEqual(self._abandon_payload("t-dup")["reason"], "primera")
+
+    def test_abandon_inexistente(self):
+        self._state("SIN TAREA", {})
+        r = abandon_task(self.tmp, "noexiste", "motivo")
+        self.assertFalse(r["accepted"])
+        self.assertIn("inexistente", r["reason"])
+        self.assertEqual(self._abandon_files(), [])
+
+    def test_abandon_no_ejecuta_opencode(self):
+        self._state("TAREA DISPONIBLE", {"t-ab": {"status": "available", "taskId": "t-ab"}})
+        r = abandon_task(self.tmp, "t-ab", "motivo")
+        self.assertTrue(r["accepted"])
+        self.assertEqual(self._abandon_files(), ["t-ab.abandon.json"])
+        self.assertFalse(os.path.isdir(os.path.join(self.tmp, "logs")))
+
+    def test_abandon_solicitud_persiste_tras_reinicio(self):
+        self._state("TAREA DISPONIBLE", {"t-ab": {"status": "available", "taskId": "t-ab"}})
+        abandon_task(self.tmp, "t-ab", "motivo")
+        self.assertTrue(pending_abandon_has(self.tmp, "t-ab"))
 
     def test_load_config_expande_localappdata(self):
         # load_config debe expandir %LOCALAPPDATA% para resolver el LocalAppData real

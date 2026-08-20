@@ -1,4 +1,4 @@
-"""Verifica tools/list y annotations de las siete herramientas MCP (INFRA 0.4.2 + B4.2 + CANCEL)."""
+"""Verifica tools/list y annotations de las ocho herramientas MCP (INFRA 0.4.2 + B4.2 + CANCEL + ABANDON)."""
 
 import asyncio
 import importlib.util
@@ -27,7 +27,7 @@ class McpToolsTest(unittest.TestCase):
 
     def test_tools_list_exactamente_siete(self):
         names = sorted(self.tools.keys())
-        self.assertEqual(names, ["cancel_task", "get_audit_context", "get_report", "get_status", "post_audit", "queue_task", "resolve_decision"])
+        self.assertEqual(names, ["abandon_task", "cancel_task", "get_audit_context", "get_report", "get_status", "post_audit", "queue_task", "resolve_decision"])
 
     def test_get_status_annotations(self):
         a = self.tools["get_status"].annotations
@@ -149,6 +149,32 @@ class McpToolsTest(unittest.TestCase):
         self.assertIn("task_id", props)
         self.assertIn("context_scope", props)
         self.assertIn("include_history", props)
+
+    def test_abandon_task_annotations(self):
+        a = self.tools["abandon_task"].annotations
+        self.assertFalse(a.read_only_hint)
+        self.assertTrue(a.destructive_hint)
+        self.assertTrue(a.idempotent_hint)
+        self.assertFalse(a.open_world_hint)
+
+    def test_abandon_task_descripcion_honesta(self):
+        desc = self.tools["abandon_task"].description
+        self.assertIn("abandono administrativo", desc)
+        self.assertIn("aplicación efectiva es asíncrona", desc)
+        self.assertIn("executor", desc)
+        self.assertIn("confirm_chain_abandon", desc)
+        self.assertIn("TRABAJANDO", desc)
+
+    def test_schema_abandon_task(self):
+        schema = self.tools["abandon_task"].input_schema
+        props = schema.get("properties") or {}
+        required = schema.get("required") or []
+        self.assertIn("task_id", props)
+        self.assertIn("reason", props)
+        self.assertIn("confirm_chain_abandon", props)
+        self.assertIn("task_id", required)
+        self.assertIn("reason", required)
+        self.assertNotIn("confirm_chain_abandon", required)
 
 
 if __name__ == "__main__":

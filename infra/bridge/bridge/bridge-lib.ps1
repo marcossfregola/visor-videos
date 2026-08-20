@@ -10,6 +10,8 @@ $script:AuditsDir = Join-Path $script:StateDir 'audits'
 $script:AuditsHistoryDir = Join-Path $script:AuditsDir 'history'
 $script:CancellationsDir = Join-Path $script:StateDir 'cancellations'
 $script:CancellationsHistoryDir = Join-Path $script:CancellationsDir 'history'
+$script:AbandonmentsDir = Join-Path $script:StateDir 'abandonments'
+$script:AbandonmentsHistoryDir = Join-Path $script:AbandonmentsDir 'history'
 $script:SecretsDir = Join-Path $script:BaseDir 'secrets'
 $script:ReportsDir = Join-Path $script:BaseDir 'reports'
 $script:ConfigFile = Join-Path $script:BaseDir 'config.json'
@@ -585,6 +587,186 @@ function Invoke-CancelPoll {
 
         # archivo durable con outcome (trazabilidad; nunca desaparece el registro)
         $histFile = Join-Path $script:CancellationsHistoryDir ('cancel-' + $tid + '.json')
+        $historyPayload | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $histFile -Encoding utf8
+        Remove-Item -LiteralPath $f.FullName -Force -ErrorAction SilentlyContinue
+    }
+    if ($changed) {
+        Save-State -State $State
+    }
+    return $changed
+}
+
+function Invoke-AbandonPoll {
+    param([hashtable]$State)
+    # ABANDON: aplica solicitudes durables de abandono administrativo
+    # (state/abandonments/*.abandon.json). El MCP jamás escribe state.json; el
+    # executor es el único escritor. Debe ejecutarse ANTES de Invoke-CancelPoll,
+    # de Invoke-InboxPoll (para descartar tareas todavía en inbox) y de
+    # Invoke-AutoStart. v1: nunca abandona eslabones ya supersedidos por otra
+    # tarea (supersededByTaskId) ni tareas que comenzaron.
+    New-Item -ItemType Directory -Path $script:AbandonmentsDir, $script:AbandonmentsHistoryDir -Force | Out-Null
+    $changed = $false
+    foreach ($f in @(Get-ChildItem -LiteralPath $script:AbandonmentsDir -Filter '*.abandon.json' -File)) {
+        $payload = $null
+        $tid = $null
+        $reason = $null
+        $confirm = $false
+        $inboxPayloadForSnapshot = $null
+        try {
+            $payload = Get-Content -LiteralPath $f.FullName -Raw | ConvertFrom-Json -AsHashtable
+            $tid = [string]$payload.task_id
+            $reason = [string]$payload.reason
+            $confirm = [bool]$payload.confirm_chain_abandon
+        }
+        catch {
+            Write-BridgeLog 'WARN' ('abandon invalido, se elimina: ' + $f.Name)
+            Remove-Item -LiteralPath $f.FullName -Force -ErrorAction SilentlyContinue
+            continue
+        }
+        if ([string]::IsNullOrWhiteSpace($tid)) {
+            Write-BridgeLog 'WARN' ('abandon sin task_id, se elimina: ' + $f.Name)
+            Remove-Item -LiteralPath $f.FullName -Force -ErrorAction SilentlyContinue
+            continue
+        }
+        $historyPayload = $payload
+        $historyPayload.abandonedAt = (Get-Date).ToUniversalTime().ToString('o')
+        $historyPayload.abandonedBy = 'executor'
+
+        if ($State.status -eq 'TRABAJANDO' -and $State.taskId -eq $tid) {
+            # Nunca abandonar la tarea que está trabajando.
+            $historyPayload.outcome = 'rejected-working'
+            Write-BridgeLog 'WARN' ('abandon rechazada (TRABAJANDO) task=' + $tid)
+        }
+        elseif ($State.tasks.ContainsKey($tid)) {
+            $t = $State.tasks[$tid]
+            if ($t.status -eq 'abandoned') {
+                # idempotencia: ya abandonada.
+                $historyPayload.outcome = 'already-abandoned'
+                Write-BridgeLog 'INFO' ('abandon duplicada (ya abandonada) task=' + $tid)
+            }
+            elseif ($t.status -ne 'available') {
+                $historyPayload.outcome = 'rejected-state'
+                Write-BridgeLog 'WARN' ('abandon rechazada (estado ' + $t.status + ') task=' + $tid)
+            }
+            elseif ($t.startedAt -or $t.pid) {
+                # nunca afirmar abandono si pudo haber comenzado.
+                $historyPayload.outcome = 'rejected-started'
+                Write-BridgeLog 'WARN' ('abandon rechazada (posible inicio) task=' + $tid)
+            }
+            elseif ($t.auditedAt) {
+                $historyPayload.outcome = 'rejected-audited'
+                Write-BridgeLog 'WARN' ('abandon rechazada (auditada) task=' + $tid)
+            }
+            elseif ($t.supersededByTaskId) {
+                # v1: eslabón ya reemplazado por otra tarea; nunca se abandona.
+                $historyPayload.outcome = 'rejected-chain-state'
+                Write-BridgeLog 'WARN' ('abandon rechazada (supersededByTaskId no abandonable en v1) task=' + $tid)
+            }
+            elseif ($t.supersedesTaskId -and -not $confirm) {
+                # cadena con supersede: requiere confirmación explícita.
+                $historyPayload.outcome = 'rejected-chain'
+                Write-BridgeLog 'WARN' ('abandon rechazada (cadena sin confirmacion) task=' + $tid)
+            }
+            else {
+                # ABANDON aplicada: available -> abandoned. Se preserva íntegra la
+                # cadena (supersedesTaskId/supersededByTaskId no se tocan).
+                $t.status = 'abandoned'
+                $t.abandonedAt = (Get-Date).ToUniversalTime().ToString('o')
+                $t.abandonReason = $reason
+                $t.abandonSource = 'mcp'
+                $historyPayload.outcome = 'applied'
+                Write-BridgeLog 'INFO' ('ABANDON TASK task=' + $tid + ' reason=' + $reason)
+                # Estado global tras abandonar una tarea materializada.
+                $firstAvail = Get-OldestAvailableTask -State $State
+                if ($null -ne $firstAvail) {
+                    if ($State.status -ne 'TRABAJANDO') {
+                        $State.status = 'TAREA DISPONIBLE'
+                        $State.statusDetail = 'Tarea pendiente: ' + $firstAvail.taskId
+                        $State.taskId = $firstAvail.taskId
+                        $State.commentId = $firstAvail.commentId
+                    }
+                }
+                else {
+                    $State.status = 'SIN TAREA'
+                    $State.statusDetail = ''
+                    $State.taskId = $null
+                    $State.commentId = $null
+                }
+                $changed = $true
+            }
+        }
+        else {
+            # Tarea todavía únicamente en inbox: impedir materialización y archivar payload completo.
+            $inboxFile = Join-Path $script:InboxDir ($tid + '.task.json')
+            if (Test-Path -LiteralPath $inboxFile) {
+                try {
+                    $inboxPayload = Get-Content -LiteralPath $inboxFile -Raw | ConvertFrom-Json -AsHashtable
+                    $inboxPayloadForSnapshot = $inboxPayload
+                }
+                catch {
+                    $inboxPayload = $null
+                }
+                if ($null -ne $inboxPayload -and $inboxPayload.superseded_by_task_id) {
+                    # eslabón ya reemplazado por otra tarea (payload de inbox): v1 conservador.
+                    $historyPayload.outcome = 'rejected-chain-state'
+                    Write-BridgeLog 'WARN' ('abandon rechazada (inbox con superseded_by_task_id) task=' + $tid)
+                }
+                elseif ($null -ne $inboxPayload -and -not $confirm -and (
+                            $inboxPayload.supersedes_task_id -or $inboxPayload.previous_task_id)) {
+                    # cadena en inbox requiere confirmación explícita.
+                    $historyPayload.outcome = 'rejected-chain'
+                    Write-BridgeLog 'WARN' ('abandon rechazada (inbox con supersede sin confirmacion) task=' + $tid)
+                }
+                else {
+                    # 1) conservar el .task.json COMPLETO en abandonments/history
+                    $origName = Join-Path $script:AbandonmentsHistoryDir ('inbox-' + $tid + '.task.json')
+                    Copy-Item -LiteralPath $inboxFile -Destination $origName -Force
+                    # 2) eliminar la tarea del inbox para impedir su materialización
+                    Remove-Item -LiteralPath $inboxFile -Force -ErrorAction SilentlyContinue
+                    # 3) no crear tarea en state.json; nunca ejecutar OpenCode
+                    $historyPayload.inboxTaskPreserved = $true
+                    $historyPayload.outcome = 'applied-inbox'
+                    Write-BridgeLog 'INFO' ('ABANDON TASK (inbox) task=' + $tid + ' reason=' + $reason)
+                    if ($State.taskId -eq $tid) {
+                        $firstAvail = Get-OldestAvailableTask -State $State
+                        if ($null -ne $firstAvail) {
+                            $State.status = 'TAREA DISPONIBLE'
+                            $State.statusDetail = 'Tarea pendiente: ' + $firstAvail.taskId
+                            $State.taskId = $firstAvail.taskId
+                            $State.commentId = $firstAvail.commentId
+                        }
+                        else {
+                            $State.status = 'SIN TAREA'
+                            $State.statusDetail = ''
+                            $State.taskId = $null
+                            $State.commentId = $null
+                        }
+                    }
+                    $changed = $true
+                }
+            }
+            else {
+                $historyPayload.outcome = 'rejected-notfound'
+                Write-BridgeLog 'WARN' ('abandon rechazada (tarea inexistente) task=' + $tid)
+            }
+        }
+
+        # snapshot de relaciones de cadena relevantes (trazabilidad v1)
+        if ($State.tasks.ContainsKey($tid)) {
+            $snap = $State.tasks[$tid]
+            if ($snap.supersedesTaskId) { $historyPayload.supersedes_task_id = [string]$snap.supersedesTaskId }
+            if ($snap.supersededByTaskId) { $historyPayload.superseded_by_task_id = [string]$snap.supersededByTaskId }
+            $historyPayload.snapshot_status = [string]$snap.status
+        }
+        elseif ($null -ne $inboxPayloadForSnapshot) {
+            if ($inboxPayloadForSnapshot.supersedes_task_id) { $historyPayload.supersedes_task_id = [string]$inboxPayloadForSnapshot.supersedes_task_id }
+            if ($inboxPayloadForSnapshot.superseded_by_task_id) { $historyPayload.superseded_by_task_id = [string]$inboxPayloadForSnapshot.superseded_by_task_id }
+            if ($inboxPayloadForSnapshot.previous_task_id) { $historyPayload.previous_task_id = [string]$inboxPayloadForSnapshot.previous_task_id }
+            if ($inboxPayloadForSnapshot.context_scope) { $historyPayload.context_scope = [string]$inboxPayloadForSnapshot.context_scope }
+            if ($inboxPayloadForSnapshot.stage_id) { $historyPayload.stage_id = [string]$inboxPayloadForSnapshot.stage_id }
+        }
+        # archivo durable con outcome (trazabilidad; nunca desaparece el registro)
+        $histFile = Join-Path $script:AbandonmentsHistoryDir ('abandon-' + $tid + '.json')
         $historyPayload | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $histFile -Encoding utf8
         Remove-Item -LiteralPath $f.FullName -Force -ErrorAction SilentlyContinue
     }
