@@ -280,6 +280,7 @@ class TareaLecturaCatalogoPaginada(TareaBase):
         ruta_db=None,
         orden_clave=None,
         orden_direccion=None,
+        filtro=None,
         parent=None,
     ):
         super().__init__(parent)
@@ -289,6 +290,7 @@ class TareaLecturaCatalogoPaginada(TareaBase):
         self._ruta_db = ruta_db
         self._orden_clave = orden_clave
         self._orden_direccion = orden_direccion
+        self._filtro = filtro
 
     @property
     def limite(self):
@@ -314,6 +316,10 @@ class TareaLecturaCatalogoPaginada(TareaBase):
     def orden_direccion(self):
         return self._orden_direccion
 
+    @property
+    def filtro(self):
+        return self._filtro
+
     def _trabajo(self):
         return listar_videos_paginado(
             self._limite,
@@ -322,6 +328,7 @@ class TareaLecturaCatalogoPaginada(TareaBase):
             self._ruta_db,
             orden_clave=self._orden_clave,
             orden_direccion=self._orden_direccion,
+            filtro=self._filtro,
         )
 
 

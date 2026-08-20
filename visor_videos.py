@@ -69,6 +69,8 @@ from configuracion import (
 from escanear_videos import (
     CLAVES_COLOR_CLASIFICACION,
     COLORES_CLASIFICACION,
+    FILTRO_MARCADOR_SIN_CLASIFICAR,
+    FILTRO_SEGMENTO_SIN_CLASIFICAR,
     _nombre_seguro,
     calcular_tiempo_preview,
     color_rgb,
@@ -1837,6 +1839,10 @@ class VisorVideos(QMainWindow):
         self._reordenamiento_pendiente = False
         self._bloqueo_orden = False
 
+        # B6.5 filtro estructurado del catálogo (SQLite paginado)
+        self._filtro_catalogo = "todos"
+        self._bloqueo_filtro = False
+
         self.busqueda = QLineEdit()
         self.busqueda.setPlaceholderText("Buscar por nombre...")
         self.busqueda.textChanged.connect(self.filtrar)
@@ -1939,6 +1945,14 @@ class VisorVideos(QMainWindow):
             self._al_cambiar_orden_catalogo
         )
 
+        # B6.5 control compacto Mostrar: (Todos, Con marcadores/segmentos, por color)
+        self.etiqueta_filtro = QLabel("Mostrar:")
+        self.combo_filtro = QComboBox()
+        self._poblar_combo_filtro()
+        self.combo_filtro.currentIndexChanged.connect(
+            self._al_cambiar_filtro_catalogo
+        )
+
         self.etiqueta_carpeta = QLabel(MENSAJE_SIN_CARPETA)
         self.etiqueta_carpeta.setTextInteractionFlags(Qt.TextSelectableByMouse)
 
@@ -1967,6 +1981,8 @@ class VisorVideos(QMainWindow):
 
         barra = QHBoxLayout()
         barra.addWidget(self.busqueda, 1)
+        barra.addWidget(self.etiqueta_filtro)
+        barra.addWidget(self.combo_filtro)
         barra.addWidget(self.etiqueta_orden)
         barra.addWidget(self.combo_orden_criterio)
         barra.addWidget(self.combo_orden_direccion)
@@ -2330,6 +2346,8 @@ class VisorVideos(QMainWindow):
             )
             for _, tarjeta in self.tarjetas:
                 tarjeta._refrescar_textos_colores()
+            self._refrescar_textos_filtro()
+            self._poblar_combo_filtro()
 
     def _aplicar_retardo_vista_ampliada(self, ms):
         self._retardo_vista_ampliada = ms
@@ -2344,8 +2362,110 @@ class VisorVideos(QMainWindow):
         guardar_tamano_vista_ampliada(factor, self._ruta_config)
         configurar_factor_vista_ampliada(factor)
 
+    def _poblar_combo_filtro(self):
+        """Puebla el combo Mostrar: con Todos, Con marcadores/segmentos, Sin clasificar y por color (B6.5 UX)."""
+        combo = getattr(self, "combo_filtro", None)
+        if combo is None:
+            return
+        combo.blockSignals(True)
+        combo.clear()
+        combo.addItem("Todos", "todos")
+        combo.addItem("Con marcadores", "con_marcadores")
+        combo.addItem("Con segmentos", "con_segmentos")
+        combo.addItem("Marcador: Sin clasificar", FILTRO_MARCADOR_SIN_CLASIFICAR)
+        combo.addItem("Segmento: Sin clasificar", FILTRO_SEGMENTO_SIN_CLASIFICAR)
+        for clave, *_resto in COLORES_CLASIFICACION:
+            texto = texto_color(clave, self._ruta_config)
+            combo.addItem(f"Marcador: {texto}", f"marcador:{clave}")
+        for clave, *_resto in COLORES_CLASIFICACION:
+            texto = texto_color(clave, self._ruta_config)
+            combo.addItem(f"Segmento: {texto}", f"segmento:{clave}")
+        # seleccionar filtro actual por data (no por texto)
+        filtro = getattr(self, "_filtro_catalogo", "todos")
+        idx = combo.findData(filtro)
+        if idx >= 0:
+            combo.setCurrentIndex(idx)
+        combo.blockSignals(False)
+
+    def _refrescar_textos_filtro(self):
+        """Actualiza los textos visibles del filtro tras cambiar nombres globales (B6.5)."""
+        combo = getattr(self, "combo_filtro", None)
+        if combo is None:
+            return
+        # preservar selección por data (estable, no por texto visible)
+        data_actual = combo.currentData()
+        combo.blockSignals(True)
+        # Fijos: Todos / Con marcadores / Con segmentos + 2 Sin clasificar
+        combo.setItemText(0, "Todos")
+        combo.setItemText(1, "Con marcadores")
+        combo.setItemText(2, "Con segmentos")
+        combo.setItemText(3, "Marcador: Sin clasificar")
+        combo.setItemText(4, "Segmento: Sin clasificar")
+        # Marcadores por color: índices 5..10
+        for i, (clave, *_resto) in enumerate(COLORES_CLASIFICACION):
+            idx = 5 + i
+            if idx < combo.count():
+                combo.setItemText(idx, f"Marcador: {texto_color(clave, self._ruta_config)}")
+        for i, (clave, *_resto) in enumerate(COLORES_CLASIFICACION):
+            idx = 5 + len(COLORES_CLASIFICACION) + i
+            if idx < combo.count():
+                combo.setItemText(idx, f"Segmento: {texto_color(clave, self._ruta_config)}")
+        # restaurar índice por data (por si el orden textual cambió)
+        if data_actual is not None:
+            idx = combo.findData(data_actual)
+            if idx >= 0:
+                combo.setCurrentIndex(idx)
+        combo.blockSignals(False)
+
+    def _al_cambiar_filtro_catalogo(self, _indice):
+        if getattr(self, "_bloqueo_filtro", False):
+            return
+        filtro = self.combo_filtro.currentData()
+        if not isinstance(filtro, str):
+            filtro = "todos"
+        if filtro == self._filtro_catalogo:
+            return
+        self._filtro_catalogo = filtro
+        self._orden_generacion += 1
+        self._pagina_pendiente = False
+        self.tarea_pagina = None
+        self._recarga_catalogo_pendiente = False
+        self.tarea_recarga_catalogo = None
+        self._cola_resumen.clear()
+        self._resumen_ids_en_vuelo.clear()
+        self.area.verticalScrollBar().setValue(0)
+        self._reordenamiento_pendiente = True
+        self._actualizar_botones_carpeta()
+        self._procesar_reordenamiento()
+
+    def _programar_recarga_por_filtro(self):
+        """Recarga controlada si un marcador/segmento mutó bajo filtro activo (B6.5).
+
+        Si el filtro es Todos no hay recarga. Si el gestor principal está ocupado,
+        deja pendiente el reordenamiento para ejecutarse en `_al_tarea_finalizada`.
+        No accede a SQLite ni hace polling.
+        """
+        if getattr(self, "_filtro_catalogo", "todos") == "todos":
+            return
+        if self.gestor.activo:
+            self._reordenamiento_pendiente = True
+            return
+        self._orden_generacion += 1
+        self._pagina_pendiente = False
+        self.tarea_pagina = None
+        self._recarga_catalogo_pendiente = False
+        self.tarea_recarga_catalogo = None
+        self._cola_resumen.clear()
+        self._resumen_ids_en_vuelo.clear()
+        self.area.verticalScrollBar().setValue(0)
+        self._reordenamiento_pendiente = True
+        self._actualizar_botones_carpeta()
+        self._procesar_reordenamiento()
+
     def _crear_tarea_lectura(self, desplazamiento=0):
         clave_orden, direccion_orden = self._orden_catalogo
+        filtro = getattr(self, "_filtro_catalogo", "todos")
+        filtro_param = None if filtro == "todos" else filtro
         return TareaLecturaCatalogoPaginada(
             TAMANIO_PAGINA_INICIAL,
             desplazamiento,
@@ -2353,6 +2473,7 @@ class VisorVideos(QMainWindow):
             self._ruta_db,
             orden_clave=clave_orden,
             orden_direccion=direccion_orden,
+            filtro=filtro_param,
         )
 
     def _lectura_obsoleta(self):
@@ -2760,6 +2881,12 @@ class VisorVideos(QMainWindow):
                         "nombre": op["nombre"],
                     }
                 )
+            else:
+                self._programar_recarga_por_filtro()
+        elif tipo == "eliminar":
+            self._programar_recarga_por_filtro()
+        elif tipo == "color":
+            self._programar_recarga_por_filtro()
 
     def _al_error_marcadores(self, mensaje):
         op = self._marcador_op_actual
@@ -3052,8 +3179,10 @@ class VisorVideos(QMainWindow):
                         "nombre": op["nombre"],
                     }
                 )
+            else:
+                self._programar_recarga_por_filtro()
         elif tipo == "eliminar":
-            pass
+            self._programar_recarga_por_filtro()
         elif tipo == "actualizar":
             # El registro local ya refleja el nuevo intervalo de forma
             # optimista; se reordena y se reaplica. Si el segmento ya no
@@ -3086,6 +3215,8 @@ class VisorVideos(QMainWindow):
                 )
                 tarjeta._franja.set_segmentos(tarjeta._segmentos)
                 tarjeta._sincronizar_barra_colapsada()
+        elif tipo == "color":
+            self._programar_recarga_por_filtro()
 
     def _al_error_segmentos(self, mensaje):
         op = self._segmento_op_actual

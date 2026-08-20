@@ -33,6 +33,12 @@ _COLOR_SEGMENTO = QColor(33, 150, 243, 120)
 _COLOR_SEGMENTO_BORDE = QColor(33, 150, 243, 230)
 _COLOR_SEGMENTO_PROVISIONAL = QColor(33, 150, 243, 170)
 _COLOR_EXTREMO = QColor(76, 175, 80)
+# B6.5 UX: Sin clasificar (color NULL) usa apariencia neutra gris,
+# claramente distinta de los seis colores de clasificación y de los
+# históricos rojo (marcador) y azul (segmento).
+_COLOR_MARCA_SIN = QColor(158, 158, 158)
+_COLOR_SEGMENTO_SIN = QColor(158, 158, 158, 120)
+_COLOR_SEGMENTO_SIN_BORDE = QColor(158, 158, 158, 230)
 
 _MARGEN = 6
 _ALTO_PISTA = 10
@@ -53,19 +59,27 @@ def _color_paleta(clave, por_defecto):
 
 
 def _color_fondo_segmento(seg):
-    """Fondo de una banda según su color; NULL conserva el azul histórico."""
+    """Fondo de una banda según su color; NULL usa gris neutro (B6.5)."""
     if isinstance(seg, dict):
-        fondo = _color_paleta(seg.get("color"), _COLOR_SEGMENTO)
-        return QColor(fondo.red(), fondo.green(), fondo.blue(), _COLOR_SEGMENTO.alpha())
-    return _COLOR_SEGMENTO
+        fondo = _color_paleta(seg.get("color"), _COLOR_SEGMENTO_SIN)
+        # Preservar alfa del fondo neutro o del color si existe; si es color
+        # paleta el alpha se normaliza al del segmento.
+        alpha = _COLOR_SEGMENTO_SIN.alpha() if seg.get("color") is None else _COLOR_SEGMENTO.alpha()
+        # Si el fondo proviene de paleta, usar alfa estándar de segmento.
+        if seg.get("color") is not None:
+            return QColor(fondo.red(), fondo.green(), fondo.blue(), _COLOR_SEGMENTO.alpha())
+        return QColor(fondo.red(), fondo.green(), fondo.blue(), alpha)
+    return _COLOR_SEGMENTO_SIN
 
 
 def _color_borde_segmento(seg):
-    """Borde de una banda según su color; NULL conserva el azul histórico."""
+    """Borde de una banda según su color; NULL usa gris neutro (B6.5)."""
     if isinstance(seg, dict):
-        borde = _color_paleta(seg.get("color"), _COLOR_SEGMENTO_BORDE)
-        return QColor(borde.red(), borde.green(), borde.blue(), _COLOR_SEGMENTO_BORDE.alpha())
-    return _COLOR_SEGMENTO_BORDE
+        borde = _color_paleta(seg.get("color"), _COLOR_SEGMENTO_SIN_BORDE)
+        if seg.get("color") is not None:
+            return QColor(borde.red(), borde.green(), borde.blue(), _COLOR_SEGMENTO_BORDE.alpha())
+        return QColor(borde.red(), borde.green(), borde.blue(), _COLOR_SEGMENTO_SIN_BORDE.alpha())
+    return _COLOR_SEGMENTO_SIN_BORDE
 
 
 class MiniaturaMarcador(QLabel):
@@ -225,7 +239,7 @@ class FranjaExploracion(QWidget):
         clave = None
         if getattr(self, "_marcador_colores", None):
             clave = self._marcador_colores.get(float(tiempo))
-        return _color_paleta(clave, _COLOR_MARCA)
+        return _color_paleta(clave, _COLOR_MARCA_SIN)
 
     def set_texto_tiempo(self, texto):
         self._texto_tiempo = texto if isinstance(texto, str) else ""
@@ -843,7 +857,7 @@ class BarraResumenColapsada(QWidget):
         return list(self._segmentos)
 
     def _color_marca_para_barra(self, clave):
-        return _color_paleta(clave, _COLOR_MARCA)
+        return _color_paleta(clave, _COLOR_MARCA_SIN)
 
     def paintEvent(self, event):
         pintor = QPainter(self)

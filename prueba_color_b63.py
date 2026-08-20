@@ -596,23 +596,33 @@ def _pixel_banda(franja, inicio, fin):
 
 
 def test_13():
-    """Render marcador: color de paleta vs NULL (rojo histórico)."""
+    """Render marcador: color de paleta vs NULL (gris neutro B6.5)."""
+    from scrubber import _COLOR_MARCA_SIN
+    from escanear_videos import COLORES_CLASIFICACION
+    from PySide6.QtGui import QColor
     with _franja_mostrada() as franja:
         franja.set_marcadores([50.0], {50.0: "verde"})
         verde = _pixel_marca(franja, 50.0)
         ok_verde = verde.green() > verde.red() and verde.green() > verde.blue()
         franja.set_marcadores([60.0])
-        rojo = _pixel_marca(franja, 60.0)
-        ok_rojo = rojo.red() > rojo.green() and rojo.red() > rojo.blue()
-        ok = ok_verde and ok_rojo
+        gris_null = _pixel_marca(franja, 60.0)
+        gris = _COLOR_MARCA_SIN
+        ok_gris = gris_null.name() == gris.name() or (abs(gris_null.red()-gris.red())<8 and abs(gris_null.green()-gris.green())<8 and abs(gris_null.blue()-gris.blue())<8)
+        ok_no_rojo = not (gris_null.red() > gris_null.green() and gris_null.red() > gris_null.blue())
+        paleta = [QColor(r,g,b) for _,r,g,b in COLORES_CLASIFICACION]
+        ok_no_paleta = all(gris_null.name()!=c.name() for c in paleta)
+        ok = ok_verde and ok_gris and ok_no_rojo and ok_no_paleta
         return (
             ok,
-            f"verde={verde.name()} rojo_null={rojo.name()}",
+            f"verde={verde.name()} gris_null={gris_null.name()} gris_esperado={gris.name()}",
         )
 
 
 def test_14():
-    """Render segmento: color de paleta vs NULL (azul histórico)."""
+    """Render segmento: color de paleta vs NULL (gris neutro B6.5)."""
+    from scrubber import _COLOR_SEGMENTO_SIN, _COLOR_SEGMENTO_SIN_BORDE
+    from escanear_videos import COLORES_CLASIFICACION
+    from PySide6.QtGui import QColor
     with _franja_mostrada() as franja:
         franja.set_segmentos(
             [{"id": 1, "inicio": 20.0, "fin": 80.0, "color": "verde"}]
@@ -620,12 +630,18 @@ def test_14():
         verde = _pixel_banda(franja, 20.0, 80.0)
         ok_verde = verde.green() > verde.blue() and verde.green() > verde.red()
         franja.set_segmentos([{"id": 2, "inicio": 20.0, "fin": 80.0}])
-        azul = _pixel_banda(franja, 20.0, 80.0)
-        ok_azul = azul.blue() > azul.red() and azul.blue() > azul.green()
-        ok = ok_verde and ok_azul
+        gris_null = _pixel_banda(franja, 20.0, 80.0)
+        gris = _COLOR_SEGMENTO_SIN
+        # fondo gris con alfa 120 puede mezclar con pista, tolerancia
+        ok_gris = gris_null.blue() == gris_null.red() == gris_null.green() or (abs(gris_null.red()-gris.red())<30 and gris_null.red()==gris_null.green())
+        ok_no_azul = not (gris_null.blue() > gris_null.red() and gris_null.blue() > gris_null.green())
+        paleta = [QColor(r,g,b) for _,r,g,b in COLORES_CLASIFICACION]
+        # segmento gris no debe ser ningún color de paleta saturado
+        ok_no_paleta = gris_null.red()==gris_null.green()==gris_null.blue()
+        ok = ok_verde and ok_gris and ok_no_azul and ok_no_paleta
         return (
             ok,
-            f"verde={verde.name()} azul_null={azul.name()}",
+            f"verde={verde.name()} gris_null={gris_null.name()} gris_esperado={gris.name()}",
         )
 
 

@@ -1004,6 +1004,99 @@ def fragmento_orden_sql(clave, direccion):
     )
 
 
+# Filtros estructurados del catálogo (B6.5) – whitelist cerrada.
+# La UI solo puede expresar filtros mediante estas claves; nunca SQL libre.
+FILTRO_TODOS = "todos"
+FILTRO_CON_MARCADORES = "con_marcadores"
+FILTRO_CON_SEGMENTOS = "con_segmentos"
+FILTRO_PREFIJO_MARCADOR = "marcador:"
+FILTRO_PREFIJO_SEGMENTO = "segmento:"
+FILTRO_MARCADOR_SIN_CLASIFICAR = "marcador:sin_clasificar"
+FILTRO_SEGMENTO_SIN_CLASIFICAR = "segmento:sin_clasificar"
+
+
+def _validar_filtro_catalogo(filtro):
+    """Valida un filtro estructurado del catálogo (B6.5).
+
+    Acepta `None` o `"todos"` (sin filtro), `"con_marcadores"`,
+    `"con_segmentos"`, `"marcador:<color>"` y `"segmento:<color>"` donde
+    `<color>` es una clave estable de `COLORES_CLASIFICACION`, y
+    `"marcador:sin_clasificar"` / `"segmento:sin_clasificar"` para color
+    `IS NULL` (B6.5 UX). Normaliza `"todos"` a `None`. Lanza `TypeError` si
+    no es texto/None y `ValueError` si la clave o el color no pertenece a la
+    whitelist.
+    """
+    if filtro is None:
+        return None
+    if not isinstance(filtro, str):
+        raise TypeError("filtro debe ser texto o None")
+    if filtro == FILTRO_TODOS or filtro == "":
+        return None
+    if filtro in (
+        FILTRO_CON_MARCADORES,
+        FILTRO_CON_SEGMENTOS,
+        FILTRO_MARCADOR_SIN_CLASIFICAR,
+        FILTRO_SEGMENTO_SIN_CLASIFICAR,
+    ):
+        return filtro
+    if filtro.startswith(FILTRO_PREFIJO_MARCADOR):
+        clave = filtro[len(FILTRO_PREFIJO_MARCADOR):]
+        if clave not in CLAVES_COLOR_CLASIFICACION:
+            raise ValueError(f"color de filtro no reconocido: {clave!r}")
+        return filtro
+    if filtro.startswith(FILTRO_PREFIJO_SEGMENTO):
+        clave = filtro[len(FILTRO_PREFIJO_SEGMENTO):]
+        if clave not in CLAVES_COLOR_CLASIFICACION:
+            raise ValueError(f"color de filtro no reconocido: {clave!r}")
+        return filtro
+    raise ValueError(f"filtro no reconocido: {filtro!r}")
+
+
+def _filtro_catalogo_exists(filtro):
+    """Devuelve (fragmento EXISTS, params) para un filtro ya validado (B6.5).
+
+    El fragmento es una condición EXISTS parametrizada (sin interpolación de
+    valores libres). Para filtros por color el color se pasa como parámetro
+    `?`; para Sin clasificar se usa `color IS NULL` sin parámetro.
+    Devuelve `("", [])` para `None` (todos).
+    """
+    if filtro is None:
+        return ("", [])
+    if filtro == FILTRO_CON_MARCADORES:
+        return (
+            "EXISTS (SELECT 1 FROM marcadores_video WHERE marcadores_video.video_id = videos.id)",
+            [],
+        )
+    if filtro == FILTRO_CON_SEGMENTOS:
+        return (
+            "EXISTS (SELECT 1 FROM segmentos_video WHERE segmentos_video.video_id = videos.id)",
+            [],
+        )
+    if filtro == FILTRO_MARCADOR_SIN_CLASIFICAR:
+        return (
+            "EXISTS (SELECT 1 FROM marcadores_video WHERE marcadores_video.video_id = videos.id AND color IS NULL)",
+            [],
+        )
+    if filtro == FILTRO_SEGMENTO_SIN_CLASIFICAR:
+        return (
+            "EXISTS (SELECT 1 FROM segmentos_video WHERE segmentos_video.video_id = videos.id AND color IS NULL)",
+            [],
+        )
+    if filtro.startswith(FILTRO_PREFIJO_MARCADOR):
+        color = filtro[len(FILTRO_PREFIJO_MARCADOR):]
+        return (
+            "EXISTS (SELECT 1 FROM marcadores_video WHERE marcadores_video.video_id = videos.id AND color = ?)",
+            [color],
+        )
+    if filtro.startswith(FILTRO_PREFIJO_SEGMENTO):
+        color = filtro[len(FILTRO_PREFIJO_SEGMENTO):]
+        return (
+            "EXISTS (SELECT 1 FROM segmentos_video WHERE segmentos_video.video_id = videos.id AND color = ?)",
+            [color],
+        )
+    return ("", [])
+
+
 def listar_videos_paginado(
     limite,
     desplazamiento=0,
@@ -1011,6 +1104,7 @@ def listar_videos_paginado(
     ruta_db=None,
     orden_clave=None,
     orden_direccion=None,
+    filtro=None,
 ):
     if isinstance(limite, bool) or not isinstance(limite, int):
         raise TypeError("limite debe ser un entero")
@@ -1026,6 +1120,8 @@ def listar_videos_paginado(
         raise TypeError("orden_clave debe ser None o texto")
     if orden_direccion is not None and not isinstance(orden_direccion, str):
         raise TypeError("orden_direccion debe ser None o texto")
+    # `filtro` validado por whitelist cerrada (B6.5) – nada de interpolar valores libres.
+    filtro = _validar_filtro_catalogo(filtro)
     if ruta_db is None:
         ruta_db = ruta_biblioteca()
     if not os.path.isfile(ruta_db):
@@ -1033,35 +1129,35 @@ def listar_videos_paginado(
     clave = ORDEN_CRITERIO_DEFAULT if orden_clave is None else orden_clave
     direccion = ORDEN_DIRECCION_DEFAULT if orden_direccion is None else orden_direccion
     orden = fragmento_orden_sql(clave, direccion)
+    # Construcción estructurada del WHERE: texto (LIKE ?) y filtro (EXISTS parametrizado) con AND.
+    condiciones = []
+    params_where = []
+    if texto is not None:
+        condiciones.append("nombre LIKE ?")
+        params_where.append(f"%{texto}%")
+    frag_filtro, params_filtro = _filtro_catalogo_exists(filtro)
+    if frag_filtro:
+        condiciones.append(frag_filtro)
+        params_where.extend(params_filtro)
+    where_sql = ""
+    if condiciones:
+        where_sql = "WHERE " + " AND ".join(condiciones)
     conn = sqlite3.connect(ruta_db)
     try:
-        if texto is None:
-            filas = conn.execute(
-                f"""
-                SELECT nombre, duracion_segundos, ancho, alto, codec_video, cantidad_miniaturas, tamano_bytes, ruta, id
-                FROM videos
-                ORDER BY {orden}
-                LIMIT ? OFFSET ?
-                """,
-                (limite, desplazamiento),
-            ).fetchall()
-            total = conn.execute("SELECT COUNT(*) FROM videos").fetchone()[0]
-        else:
-            patron = f"%{texto}%"
-            filas = conn.execute(
-                f"""
-                SELECT nombre, duracion_segundos, ancho, alto, codec_video, cantidad_miniaturas, tamano_bytes, ruta, id
-                FROM videos
-                WHERE nombre LIKE ?
-                ORDER BY {orden}
-                LIMIT ? OFFSET ?
-                """,
-                (patron, limite, desplazamiento),
-            ).fetchall()
-            total = conn.execute(
-                "SELECT COUNT(*) FROM videos WHERE nombre LIKE ?",
-                (patron,),
-            ).fetchone()[0]
+        filas = conn.execute(
+            f"""
+            SELECT nombre, duracion_segundos, ancho, alto, codec_video, cantidad_miniaturas, tamano_bytes, ruta, id
+            FROM videos
+            {where_sql}
+            ORDER BY {orden}
+            LIMIT ? OFFSET ?
+            """,
+            (*params_where, limite, desplazamiento),
+        ).fetchall()
+        total = conn.execute(
+            f"SELECT COUNT(*) FROM videos {where_sql}",
+            params_where,
+        ).fetchone()[0]
     finally:
         conn.close()
     return {

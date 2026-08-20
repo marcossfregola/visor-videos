@@ -5,6 +5,37 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 109. Cierre de B6.5 — Filtros y localización del material marcado
+
+- **Fecha:** 2026-08-20
+- **Tipo:** implementación técnica de **B6.5 completada y validada visualmente por Marcos, cerrada documentalmente en este commit** (commit de cierre en `beta6`; sin tag/merge/release; push fast-forward normal a `origin/beta6`).
+- **Rama:** `beta6`.
+- **Implementación verificada (resumen factual):**
+  - **Filtros estructurados del catálogo a nivel SQLite paginado/background (B6.5) — whitelist cerrada** — `escanear_videos.py`: constantes `FILTRO_TODOS`, `FILTRO_CON_MARCADORES`, `FILTRO_CON_SEGMENTOS`, `FILTRO_PREFIJO_MARCADOR/SEGMENTO`, `FILTRO_MARCADOR/SEGMENTO_SIN_CLASIFICAR`; `_validar_filtro_catalogo` (normaliza `todos`→`None`, valida tipo y color contra `CLAVES_COLOR_CLASIFICACION`, `TypeError`/`ValueError`); `_filtro_catalogo_exists` (fragmento `EXISTS` parametrizado con `?` para color y `IS NULL` para Sin clasificar); `listar_videos_paginado(..., filtro=None)` construye `WHERE` estructurado `texto LIKE ? AND EXISTS(...)` con `COUNT(*) {where_sql}` coherente con `SELECT` (verificado COUNT==SELECT, paginación y orden B6.2).
+  - **Tareas/background sin SQLite directo desde la UI** — `tareas_videos.py`: `TareaLecturaCatalogoPaginada` propaga `filtro`; validación temprana de color inválido; `filtro=="todos"` normalizado a `None`.
+  - **UI — combo compacto `Mostrar:` en la barra del catálogo** — `visor_videos.py`: `_filtro_catalogo="todos"`, `_bloqueo_filtro`, `_poblar_combo_filtro` (Todos, Con marcadores, Con segmentos, Marcador/Segmento: Sin clasificar y por color con `texto_color`), `_refrescar_textos_filtro` (preserva selección por `data`), `_al_cambiar_filtro_catalogo` y `_programar_recarga_por_filtro` (si filtro != todos, recarga controlada con generación+cola de resumen reseteadas; si gestor ocupado deja pendiente); `_crear_tarea_lectura` pasa `filtro_param`; recarga ante mutaciones de marcadores/segmentos/colores bajo filtro activo; integración con orden B6.2 y `Cargar más`.
+  - **Render y resumen B6.4 preservado** — `scrubber.py`: marcas/bandas/barra colapsada toleran `color IS NULL` (gris `#9e9e9e` para Sin clasificar).
+  - **Suites adaptadas** — `prueba_color_b63.py` y `prueba_ordenamiento_b62.py` verifican que orden+ filtro coexisten y que la propagación de `filtro` llega a `listar_videos_paginado` sin romper paginación/selección.
+  - **Suite nueva `prueba_filtro_b65.py` 24/24** — T01 py_compile; T02 Todos/none; T03/T04 Con marcadores/segmentos; T05 por color; T06 Sin clasificar; T07 whitelist/validación; T08 AND texto+filtro; T09 COUNT==SELECT; T10 paginación; T11 orden B6.2 + NULL al final + tie-break; T12/T13 Cargar más y cambio rápido (obsoleto); T14 UI sin sqlite/no N+1; T15 tareas/tarea obsoleta; T16 pixmap/segmentos bajo filtro; T17 combo Mostrar: 17 entradas/datas estables + nombres globales; T18 persistencia color NULL; T19-T22 filtros por Sin clasificar/color/combinados; T23 gris vs paleta; T24 ciclo completo filtrado.
+- **Verificación:** `prueba_filtro_b65.py` **24/24**; `prueba_color_b63.py` **21/21**; `prueba_ordenamiento_b62.py` **18/18**; `prueba_resumen_colapsado_b64.py` **8/8**; `py_compile` OK; `git diff --check` limpio; validación visual de Marcos OK.
+- **Beta 6 continúa abierta** y la siguiente etapa prevista es **B6.6 — Investigación y contrato del motor de exportación** (definida en `ROADMAP.md`).
+
+---
+
+## 108. Finalización técnica de B6.4 — Marcadores y segmentos visibles en tarjetas colapsadas
+
+- **Fecha:** 2026-08-20
+- **Tipo:** implementación técnica de **B6.4 committeada y publicada en `beta6`** (commit `74bb4590fa59c506fba2e00d070e530b0b8cf34f` en `origin/beta6`; sin tag/merge/release en esta etapa).
+- **Rama:** `beta6`.
+- **Implementación verificada (resumen factual):**
+  - **Resumen colapsado en la tarjeta** — `visor_videos.py` + `scrubber.py` + `escanear_videos.py` + `tareas_videos.py`: cada tarjeta colapsada expone posición proporcional del material marcado dentro de la duración completa, diferenciando marcadores (marca puntual) y segmentos (banda A–B) con los colores de B6.3 sin sobrecargar visualmente; mantiene la exploración visual como prioridad.
+  - **Carga del resumen** — tareas de resumen por video con `COUNT`/`LIMIT` y protección de lecturas obsoletas; integración con recarga paginada y orden B6.2.
+  - **Suite nueva `prueba_resumen_colapsado_b64.py` 8/8** y regresiones en verde.
+- **Verificación:** `prueba_resumen_colapsado_b64.py` **8/8**; regresiones y smoke en verde; `git diff --check` limpio.
+- **Beta 6 continúa abierta** y la siguiente etapa prevista era **B6.5** (ahora también completada, ver ##109).
+
+---
+
 ## 107. Finalización técnica de B6.3 — Clasificación visual de marcadores y segmentos
 
 - **Fecha:** 2026-08-20

@@ -525,8 +525,9 @@ def test_11():
         ok = (
             ok
             and capturado["args"] == (3, 1, None, ruta_db)
-            and capturado["kwargs"]
-            == {"orden_clave": "duracion", "orden_direccion": "desc"}
+            and capturado["kwargs"].get("orden_clave") == "duracion"
+            and capturado["kwargs"].get("orden_direccion") == "desc"
+            and capturado["kwargs"].get("filtro") is None
         )
         tarea_default = TareaLecturaCatalogoPaginada(3, 1, None, ruta_db)
         tv.listar_videos_paginado = _espia
@@ -534,7 +535,7 @@ def test_11():
             tarea_default._trabajo()
         finally:
             tv.listar_videos_paginado = original
-        ok = ok and capturado["kwargs"] == {"orden_clave": None, "orden_direccion": None}
+        ok = ok and capturado["kwargs"].get("orden_clave") is None and capturado["kwargs"].get("orden_direccion") is None and capturado["kwargs"].get("filtro") is None
         return ok, f"args={capturado['args']} kwargs={capturado['kwargs']}"
     finally:
         temp.cleanup()
@@ -646,7 +647,8 @@ def test_15():
         esperado = _nombres(_referencia(ruta_db, "duracion", "desc", limite=TAMANIO_PAGINA_INICIAL))
         kwargs_recarga = control.kwargs_vistos[1] if len(control.kwargs_vistos) > 1 else {}
         ok = (
-            primera_kwargs == {"orden_clave": "nombre", "orden_direccion": "asc"}
+            primera_kwargs.get("orden_clave") == "nombre"
+            and primera_kwargs.get("orden_direccion") == "asc"
             and len(nombres) == TAMANIO_PAGINA_INICIAL
             and nombres == esperado
             and kwargs_recarga.get("orden_clave") == "duracion"

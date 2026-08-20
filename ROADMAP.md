@@ -933,18 +933,8 @@ archivos.
    política de orfandad que B4.2/B5.1). Verificación de la etapa:
    `prueba_color_b63.py` **21/21**; regresiones y smoke en verde; `git diff
    --check` limpio. No cierra la Beta 6.
-4. **B6.4 — Marcadores y segmentos visibles en tarjetas colapsadas.**
-   **Planificar** la representación visual del material marcado aun cuando la
-   tarjeta no esté expandida: posición proporcional dentro de la duración
-   completa; diferenciación entre marcador y segmento; representación de los
-   colores de B6.3; **no sobrecargar visualmente** las tarjetas; mantener como
-   prioridad la exploración visual.
-5. **B6.5 — Filtros y localización del material marcado.** **Planificar** la
-   localización rápida de videos que contienen material relevante: videos con
-   marcadores; videos con segmentos; marcadores por color; segmentos por color
-   (p. ej. "segmentos verdes"). Incluir mejor navegación/localización de los
-   videos que contienen ese material. **No** convertirlo en un gestor multimedia
-   genérico.
+4. **B6.4 — Marcadores y segmentos visibles en tarjetas colapsadas.** **Completada y publicada en `beta6`** (2026-08-20; commit `74bb4590fa59c506fba2e00d070e530b0b8cf34f` en `origin/beta6`; suite `prueba_resumen_colapsado_b64.py` **8/8** y regresiones en verde). Implementa la representación resumida del material marcado en **tarjetas colapsadas** (posición proporcional dentro de la duración completa; diferenciación marcador/segmento; colores B6.3; sin sobrecargar visualmente) manteniendo la exploración visual como prioridad. No cierra la Beta 6.
+5. **B6.5 — Filtros y localización del material marcado.** **Completada y validada visualmente por Marcos; cerrada en este commit** (filtros estructurados del catálogo a nivel **SQLite paginado/background** con **whitelist cerrada**: `todos`, `con_marcadores`, `con_segmentos`, `marcador:<color>`, `segmento:<color>`, `marcador:sin_clasificar`, `segmento:sin_clasificar` — combinable con búsqueda por texto mediante `AND` y `COUNT==SELECT`, paginación, orden B6.2 y `Cargar más`; `EXISTS` parametrizado sin interpolación; combo compacto `Mostrar:` en la barra; recarga controlada ante mutaciones bajo filtro activo; suite `prueba_filtro_b65.py` **24/24** y regresiones `prueba_color_b63.py` **21/21**, `prueba_ordenamiento_b62.py` **18/18**, `prueba_resumen_colapsado_b64.py` **8/8** en verde). **No** convierte el visor en gestor multimedia genérico. No cierra la Beta 6.
 6. **B6.6 — Investigación y contrato del motor de exportación.** Antes de
    generar archivos reales, etapa técnica específica para **validar físicamente
    FFmpeg** sobre los casos reales y fijar contrato sobre: extracción sin

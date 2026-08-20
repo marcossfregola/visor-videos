@@ -21,17 +21,17 @@ Estado actual:
   publicados en `beta6`** y la publicación fue verificada con alineación
   local/remota.
 - **B6.3 — Clasificación visual de marcadores y segmentos.** **Técnicamente
-  completada, committeada y publicada en `beta6`** (2026-08-20; commit
-  `c28ccf6942fd0b52fc1c84090f0a6df083b26488` en `origin/beta6`): paleta cerrada de 6 colores; persistencia SQLite
-  aditiva e idempotente (`color TEXT NULL` en `marcadores_video` y
-  `segmentos_video`, `NULL` conserva los colores históricos: marcador rojo,
-  segmento azul); asignar/quitar color por menú contextual y selector por
-  tarjeta; nombres globales personalizables sin cambiar las claves; render
-  visual de marcas y bandas; suite `prueba_color_b63.py` **21/21** y
-  regresiones/smoke en verde (ver `HISTORIAL_PROYECTO.md` ##107 y `ROADMAP.md`).
-- **Beta 6 continúa abierta.** La siguiente etapa prevista es
-  **B6.4 — Marcadores y segmentos visibles en tarjetas colapsadas** (definida
-  en `ROADMAP.md`).
+   completada, committeada y publicada en `beta6`** (2026-08-20; commit
+   `c28ccf6942fd0b52fc1c84090f0a6df083b26488` en `origin/beta6`): paleta cerrada de 6 colores; persistencia SQLite
+   aditiva e idempotente (`color TEXT NULL` en `marcadores_video` y
+   `segmentos_video`, `NULL` conserva los colores históricos: marcador rojo,
+   segmento azul); asignar/quitar color por menú contextual y selector por
+   tarjeta; nombres globales personalizables sin cambiar las claves; render
+   visual de marcas y bandas; suite `prueba_color_b63.py` **21/21** y
+   regresiones/smoke en verde (ver `HISTORIAL_PROYECTO.md` ##107 y `ROADMAP.md`).
+- **B6.4 — Marcadores y segmentos visibles en tarjetas colapsadas.** **Completada y publicada en `beta6`** (2026-08-20; commit `74bb4590fa59c506fba2e00d070e530b0b8cf34f` en `origin/beta6`): representación resumida en tarjetas colapsadas con posición proporcional y colores B6.3; suite `prueba_resumen_colapsado_b64.py` **8/8** (ver `HISTORIAL_PROYECTO.md` ##108 y `ROADMAP.md`).
+- **B6.5 — Filtros y localización del material marcado.** **Completada y validada visualmente por Marcos; cerrada en este commit** (filtros estructurados del catálogo a nivel SQLite paginado/background con whitelist cerrada — `todos`, `con_marcadores`, `con_segmentos`, `marcador:<color>`, `segmento:<color>`, `Sin clasificar` — combinable con búsqueda por texto, paginación, orden B6.2 y `Cargar más`; combo `Mostrar:`; suite `prueba_filtro_b65.py` **24/24** y regresiones `prueba_color_b63` **21/21**, `prueba_ordenamiento_b62` **18/18**, `prueba_resumen_colapsado_b64` **8/8** en verde; ver `HISTORIAL_PROYECTO.md` ##109 y `ROADMAP.md`).
+- **Beta 6 continúa abierta.** La siguiente etapa prevista es **B6.6 — Investigación y contrato del motor de exportación** (definida en `ROADMAP.md`).
 - El **alcance completo** de Beta 6 (B6.1–B6.12) y su límite explícito (no se
   elimina ni reemplaza automáticamente el video original) están en
   `ROADMAP.md`. **Beta 7 — "Organización y operaciones de archivos"** queda
