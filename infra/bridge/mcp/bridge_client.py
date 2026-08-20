@@ -23,6 +23,12 @@ STATUS_BLOQUEADA = "AUTOEJECUCIÓN BLOQUEADA"
 STATUS_DECISION = "DECISIÓN DE USUARIO REQUERIDA"
 STATUS_ERROR = "ERROR"
 
+# CANCEL: estado de tarea cancelada (nunca se ejecutó). Diferenciado de
+# superseded / failed / done / resolved / decision.
+TASK_STATUS_CANCELLED = "cancelled"
+# límite del motivo de cancelación
+MAX_CANCEL_REASON_CHARS = 200
+
 # B4: solo desde SIN TAREA se encola una tarea independiente sin previous_task_id.
 # Desde TERMINADO / ERROR / AUTOEJECUCIÓN BLOQUEADA solo se encola una tarea
 # RELACIONADA (corrección / siguiente etapa) mediante previous_task_id exacto y
@@ -139,6 +145,14 @@ def _audit_history_dir(bridge_dir: str) -> str:
     return os.path.join(_audits_dir(bridge_dir), "history")
 
 
+def _cancellations_dir(bridge_dir: str) -> str:
+    return os.path.join(bridge_dir, "state", "cancellations")
+
+
+def _cancellations_history_dir(bridge_dir: str) -> str:
+    return os.path.join(_cancellations_dir(bridge_dir), "history")
+
+
 def _reports_dir(bridge_dir: str) -> str:
     return os.path.join(bridge_dir, "reports")
 
@@ -253,6 +267,10 @@ def read_pending_audit(bridge_dir: str, task_id: str):
             return json.load(fh)
     except (OSError, ValueError):
         return None
+
+
+def pending_cancel_has(bridge_dir: str, task_id: str) -> bool:
+    return os.path.exists(os.path.join(_cancellations_dir(bridge_dir), task_id + ".cancel.json"))
 
 
 # --- B4.2: contexto durable de auditoría -------------------------------
@@ -574,6 +592,111 @@ def queue_task(bridge_dir: str, task_id: str, prompt: str,
     base["execution_mode"] = execution_mode
     base["context_scope"] = context_scope
     base["stage_id"] = stage_id
+    base["reason"] = ""
+    return base
+
+
+# --- CANCEL: solicitud durable de cancelación de tarea pendiente -------------
+
+def validate_cancel_reason(reason) -> str:
+    """Valida el motivo de cancelación: obligatorio, con trim, no vacío, max 200."""
+    if not isinstance(reason, str):
+        raise BridgeError("reason debe ser texto")
+    trimmed = reason.strip()
+    if not trimmed:
+        raise BridgeError("reason vacio")
+    if len(trimmed) > MAX_CANCEL_REASON_CHARS:
+        raise BridgeError("reason demasiado grande: max {} caracteres".format(MAX_CANCEL_REASON_CHARS))
+    return trimmed
+
+
+def write_cancel_atomic(bridge_dir: str, task_id: str, reason: str) -> None:
+    """Escribe atómicamente la solicitud de cancelación en state/cancellations.
+
+    El MCP jamás escribe state.json; el executor es el único que aplica.
+    """
+    d = _cancellations_dir(bridge_dir)
+    os.makedirs(d, exist_ok=True)
+    payload = {
+        "task_id": task_id,
+        "reason": reason,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "source": "mcp",
+    }
+    tmp = os.path.join(d, ".tmp-" + uuid.uuid4().hex)
+    final = os.path.join(d, task_id + ".cancel.json")
+    with open(tmp, "w", encoding="utf-8", newline="") as fh:
+        json.dump(payload, fh, ensure_ascii=False)
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(tmp, final)
+
+
+def _cancel_incompatible_reason(state: dict, task_id: str) -> str:
+    """Motivo de rechazo si la tarea ya materializada no es cancelable (o "" si es cancelable)."""
+    tasks = state.get("tasks") or {}
+    t = tasks.get(task_id) or {}
+    tstatus = t.get("status")
+    if tstatus == TASK_STATUS_CANCELLED:
+        return "la tarea ya fue cancelada"
+    if tstatus == "running":
+        return "la tarea esta TRABAJANDO: no se puede cancelar"
+    if tstatus in ("done", "resolved", "failed", "decision", "superseded"):
+        return "estado incompatible de la tarea ({}): no se puede cancelar".format(tstatus)
+    if tstatus != "available":
+        return "estado incompatible de la tarea ({}): no se puede cancelar".format(tstatus)
+    if t.get("startedAt"):
+        return "la tarea ya comenzo (startedAt presente): no se puede cancelar"
+    if t.get("pid"):
+        return "la tarea tiene un proceso asociado (pid presente): no se puede cancelar"
+    if t.get("auditedAt"):
+        return "la tarea ya fue auditada: no se puede cancelar"
+    if t.get("supersedesTaskId"):
+        return "la tarea pertenece a una cadena de supersesion (supersedesTaskId)"
+    if t.get("supersededByTaskId"):
+        return "la tarea pertenece a una cadena de supersesion (supersededByTaskId)"
+    return ""
+
+
+def cancel_task(bridge_dir: str, task_id: str, reason: str) -> dict:
+    """Solicita durablemente la cancelación de una tarea pendiente.
+
+    NO ejecuta OpenCode, NO toca state.json. Solo registra la solicitud en
+    state/cancellations/<task_id>.cancel.json; el executor la aplica de forma
+    asíncrona (available -> cancelled) en su siguiente ciclo.
+
+    La respuesta inmediata solo informa que la SOLICITUD fue registrada, no que
+    la tarea quedó cancelada.
+    """
+    base = {"task_id": task_id, "accepted": False, "duplicate": False,
+            "resulting_state": None, "reason": ""}
+    if not valid_task_id(task_id):
+        base["reason"] = "task_id invalido: 1..128 caracteres alfanumericos, punto, guion o guion bajo"
+        return base
+    try:
+        clean_reason = validate_cancel_reason(reason)
+    except BridgeError as exc:
+        base["reason"] = str(exc)
+        return base
+    state = read_bridge_state(bridge_dir)
+    status = state.get("status", "SIN TAREA")
+    base["resulting_state"] = status
+    if pending_cancel_has(bridge_dir, task_id):
+        base["duplicate"] = True
+        base["reason"] = "solicitud de cancelación ya registrada (pendiente de aplicar)"
+        return base
+    if not pending_inbox_has(bridge_dir, task_id) and task_id not in (state.get("tasks") or {}):
+        base["reason"] = "tarea inexistente (no está en inbox ni en el estado)"
+        return base
+    # Prevalidación conservadora si la tarea ya está materializada. El executor
+    # re-valida como autoridad antes de aplicar; ante cualquier duda RECHAZA.
+    if task_id in (state.get("tasks") or {}):
+        incompat = _cancel_incompatible_reason(state, task_id)
+        if incompat:
+            base["reason"] = incompat
+            return base
+    write_cancel_atomic(bridge_dir, task_id, clean_reason)
+    base["accepted"] = True
     base["reason"] = ""
     return base
 
@@ -935,6 +1058,9 @@ def get_report(bridge_dir: str, task_id: str) -> dict:
         "context_scope": None,
         "stage_id": None,
         "audit_summary": None,
+        "cancelled_at": None,
+        "cancel_reason": None,
+        "cancel_source": None,
         "reason": "",
     }
     if not valid_task_id(task_id):
@@ -964,6 +1090,9 @@ def get_report(bridge_dir: str, task_id: str) -> dict:
     base["stage_id"] = t.get("stageId") or t.get("stage_id")
     # B4.2: audit_summary queda persistido en el estado (aplicado por el executor)
     base["audit_summary"] = t.get("auditSummary")
+    base["cancelled_at"] = t.get("cancelledAt")
+    base["cancel_reason"] = t.get("cancelReason")
+    base["cancel_source"] = t.get("cancelSource")
     base["exit_code"] = t.get("exitCode")
     base["started_at"] = t.get("startedAt")
     base["completed_at"] = t.get("completedAt")
@@ -1000,6 +1129,14 @@ def get_report(bridge_dir: str, task_id: str) -> dict:
         base["resultado"] = "PENDIENTE"
     elif tstatus == "failed":
         base["resultado"] = "ERROR"
+    elif tstatus == TASK_STATUS_CANCELLED:
+        base["resultado"] = "CANCELADA"
+
+    # CANCEL: una tarea cancelada nunca tuvo evidencia de ejecución.
+    if tstatus == TASK_STATUS_CANCELLED:
+        base["report_available"] = False
+        base["reason"] = ""
+        return base
 
     if t.get("reportOverflow"):
         base["overflow"] = True

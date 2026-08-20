@@ -1,6 +1,6 @@
 """Servidor MCP real del puente ChatGPT <-> OpenCode (INFRA 0.4 + B4 + B4.2).
 
-Expone seis herramientas:
+Expone siete herramientas:
   - get_status: lectura del estado del bridge (incluye campos de atención B4).
   - queue_task: encola una tarea en el bridge (TAREA DISPONIBLE). NO ejecuta OpenCode.
     Desde SIN TAREA encola tareas independientes; desde TERMINADO/ERROR/AUTOEJECUCIÓN
@@ -12,6 +12,9 @@ Expone seis herramientas:
     firma con audit_summary (obligatorio), beta_decisions, permanent_decisions,
     supersedes_decision_ids y metadatos de contexto.
   - resolve_decision: registra la resolucion humana de una decision pendiente y libera el state machine.
+  - cancel_task: registra una solicitud durable de cancelación de una tarea pendiente
+    (available o aun en inbox); la aplica el executor (available -> cancelled). NO
+    ejecuta OpenCode y nunca cancela una tarea TRABAJANDO.
   - get_report: recupera la evidencia local de una tarea (solo lectura).
   - get_audit_context: reconstruye el contexto durable de auditoría para una tarea o
     contexto (solo lectura, sin red/shell/git/GitHub).
@@ -32,7 +35,7 @@ from mcp.types import ToolAnnotations
 
 from bridge_client import (  # noqa: E402
     load_config, queue_task, get_status, get_report, resolve_decision, post_audit,
-    get_audit_context,
+    get_audit_context, cancel_task,
 )
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -168,6 +171,34 @@ def post_audit_tool(task_id: str, disposition: str, audit_summary: str,
 )
 def resolve_decision_tool(task_id: str, resolution: str) -> dict:
     return resolve_decision(_BRIDGE_DIR, task_id, resolution, _MAX_PROMPT_BYTES)
+
+
+@server.tool(
+    name="cancel_task",
+    title="Solicitar cancelación de tarea pendiente",
+    description=(
+        "Registra una solicitud durable de cancelación. La aplicación efectiva es asíncrona y "
+        "corresponde al executor. Solo aplica a tareas pendientes que todavía no comenzaron: "
+        "aún en inbox (state/inbox) o materializadas como 'available' en el estado. Solo tareas "
+        "independientes: se rechaza una tarea que pertenezca a una cadena de supersesión "
+        "(con supersedesTaskId / supersededByTaskId / supersedes_task_id) o que esté auditada. "
+        "Nunca cancela una tarea TRABAJANDO, nunca mata procesos y nunca ejecuta OpenCode.\n"
+        "task_id es obligatorio (sin comodines ni 'cancelar la actual'). reason es obligatorio, "
+        "con trim, no vacío y hasta 200 caracteres. Esta tool NUNCA escribe state.json: solo "
+        "escribe la solicitud atómica en state/cancellations/<task_id>.cancel.json y devuelve "
+        "que la SOLICITUD fue registrada. La respuesta inmediata no afirma que la tarea quedó "
+        "cancelada; el executor la aplica (available -> cancelled) en su siguiente ciclo y el "
+        "resultado se observa luego con get_status/get_report."
+    ),
+    annotations=ToolAnnotations(
+        readOnlyHint=False,
+        destructiveHint=True,
+        idempotentHint=True,
+        openWorldHint=False,
+    ),
+)
+def cancel_task_tool(task_id: str, reason: str) -> dict:
+    return cancel_task(_BRIDGE_DIR, task_id, reason)
 
 
 @server.tool(

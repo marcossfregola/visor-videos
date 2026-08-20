@@ -374,6 +374,10 @@ try {
             # para que el supersede de InboxPoll vea la auditoría ya aplicada.
             [void](Invoke-AuditPoll -State $script:State)
 
+            # CANCEL: aplica solicitudes de cancelación ANTES de materializar el inbox y de
+            # autoarrancar, para descartar tareas pendientes que todavía no comenzaron.
+            [void](Invoke-CancelPoll -State $script:State)
+
             [void](Invoke-InboxPoll -State $script:State)
 
             [void](Invoke-ResolutionPoll -State $script:State)

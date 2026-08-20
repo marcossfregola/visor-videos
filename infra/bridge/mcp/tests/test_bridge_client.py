@@ -26,6 +26,9 @@ from bridge_client import (  # noqa: E402
     post_audit,
     get_audit_context,
     pending_audit_has,
+    pending_inbox_has,
+    cancel_task,
+    pending_cancel_has,
     read_bridge_state,
     write_inbox_atomic,
 )
@@ -1393,6 +1396,158 @@ class BridgeClientTest(unittest.TestCase):
         self.assertEqual(len(ctx["active_beta_decisions"]), 1)
         decs = [x["audit_summary"] for x in ctx["recent_audit_summaries"]]
         self.assertEqual(decs, ["B6.2"])
+
+    # ---- CANCEL: cancel_task (solicitud durable; aplica el executor) ----
+
+    def _cancel_dir(self):
+        return os.path.join(self.tmp, "state", "cancellations")
+
+    def _cancel_files(self):
+        d = self._cancel_dir()
+        if not os.path.isdir(d):
+            return []
+        return [f for f in os.listdir(d) if f.endswith(".cancel.json")]
+
+    def _cancel_payload(self, task_id):
+        with open(os.path.join(self._cancel_dir(), task_id + ".cancel.json"), "r", encoding="utf-8") as fh:
+            return json.load(fh)
+
+    def test_cancel_available_independiente_registra_solicitud(self):
+        # tarea available e independiente: la solicitud durable se registra sin tocar state.json
+        self._state("TAREA DISPONIBLE", {"task-c": {"status": "available", "taskId": "task-c"}})
+        with open(os.path.join(self.tmp, "state", "state.json"), "rb") as fh:
+            before = fh.read()
+        r = cancel_task(self.tmp, "task-c", "reemplazada por tarea nueva")
+        self.assertTrue(r["accepted"])
+        self.assertFalse(r["duplicate"])
+        self.assertEqual(r["resulting_state"], "TAREA DISPONIBLE")
+        self.assertEqual(self._cancel_files(), ["task-c.cancel.json"])
+        p = self._cancel_payload("task-c")
+        self.assertEqual(p["task_id"], "task-c")
+        self.assertEqual(p["reason"], "reemplazada por tarea nueva")
+        self.assertEqual(p["source"], "mcp")
+        with open(os.path.join(self.tmp, "state", "state.json"), "rb") as fh:
+            after = fh.read()
+        self.assertEqual(after, before, "cancel_task NO debe modificar state.json")
+
+    def test_cancel_durante_ventana_inbox(self):
+        # tarea todavía solo en inbox: la cancelación puede solicitarse y se archiva
+        self._state("SIN TAREA", {})
+        write_inbox_atomic(self.tmp, "task-inb", "prompt pendiente")
+        self.assertTrue(pending_inbox_has(self.tmp, "task-inb"))
+        r = cancel_task(self.tmp, "task-inb", "obsoleta en inbox")
+        self.assertTrue(r["accepted"])
+        self.assertEqual(self._cancel_files(), ["task-inb.cancel.json"])
+
+    def test_cancel_reason_vacio_rechazado(self):
+        self._state("TAREA DISPONIBLE", {"task-c": {"status": "available", "taskId": "task-c"}})
+        r = cancel_task(self.tmp, "task-c", "   ")
+        self.assertFalse(r["accepted"])
+        self.assertEqual(self._cancel_files(), [])
+        r2 = cancel_task(self.tmp, "task-c", "")
+        self.assertFalse(r2["accepted"])
+
+    def test_cancel_reason_demasiado_largo_rechazado(self):
+        self._state("TAREA DISPONIBLE", {"task-c": {"status": "available", "taskId": "task-c"}})
+        r = cancel_task(self.tmp, "task-c", "x" * 201)
+        self.assertFalse(r["accepted"])
+        self.assertEqual(self._cancel_files(), [])
+        # 200 exactos es aceptado
+        r2 = cancel_task(self.tmp, "task-c", "y" * 200)
+        self.assertTrue(r2["accepted"])
+
+    def test_cancel_task_id_invalido_rechazado(self):
+        self._state("SIN TAREA", {})
+        r = cancel_task(self.tmp, "comodín!*", "motivo")
+        self.assertFalse(r["accepted"])
+        self.assertEqual(self._cancel_files(), [])
+
+    def test_cancel_duplicado_pendiente(self):
+        # una segunda solicitud para la misma tarea no debe duplicar el archivo
+        self._state("TAREA DISPONIBLE", {"task-c": {"status": "available", "taskId": "task-c"}})
+        r1 = cancel_task(self.tmp, "task-c", "primera")
+        r2 = cancel_task(self.tmp, "task-c", "segunda")
+        self.assertTrue(r1["accepted"])
+        self.assertFalse(r2["accepted"])
+        self.assertTrue(r2["duplicate"])
+        self.assertEqual(self._cancel_files(), ["task-c.cancel.json"])
+        self.assertEqual(self._cancel_payload("task-c")["reason"], "primera")
+
+    def test_cancel_tarea_inexistente(self):
+        self._state("SIN TAREA", {})
+        r = cancel_task(self.tmp, "task-noexiste", "motivo")
+        self.assertFalse(r["accepted"])
+        self.assertEqual(r["reason"], "tarea inexistente (no está en inbox ni en el estado)")
+        self.assertEqual(self._cancel_files(), [])
+
+    def test_cancel_trabajando_rechazado(self):
+        # CANCEL nunca debe solicitarse/rechazarse para la tarea TRABAJANDO
+        self._state("TRABAJANDO", {"task-run": {"status": "running", "taskId": "task-run"}})
+        r = cancel_task(self.tmp, "task-run", "motivo")
+        self.assertFalse(r["accepted"])
+        self.assertEqual(self._cancel_files(), [])
+
+    def test_cancel_done_failed_resolved_decision_rechazado(self):
+        for st in ("done", "failed", "resolved", "decision"):
+            self._state("SIN TAREA", {"t": {"status": st, "taskId": "t"}})
+            r = cancel_task(self.tmp, "t", "motivo")
+            self.assertFalse(r["accepted"], "estado {} debe rechazar".format(st))
+            self.assertEqual(self._cancel_files(), [], "estado {} no debe escribir solicitud".format(st))
+
+    def test_cancel_auditada_rechazado(self):
+        self._state("SIN TAREA",
+                    {"t-aud": {"status": "available", "taskId": "t-aud",
+                               "auditedAt": "2026-08-16T10:00:00Z"}})
+        r = cancel_task(self.tmp, "t-aud", "motivo")
+        self.assertFalse(r["accepted"])
+        self.assertEqual(self._cancel_files(), [])
+
+    def test_cancel_superseded_y_cadena_rechazado(self):
+        chain_cases = [
+            {"status": "available", "supersededByTaskId": "t-nueva"},  # superseded
+            {"status": "available", "supersedesTaskId": "t-anterior"},  # pertenece a cadena
+            {"status": "available", "supersededByTaskId": "t-x"},
+        ]
+        for i, fields in enumerate(chain_cases):
+            tid = "t-chain-{}".format(i)
+            t = dict(fields)
+            t["status"] = "available"
+            t["taskId"] = tid
+            self._state("TAREA DISPONIBLE", {tid: t})
+            r = cancel_task(self.tmp, tid, "motivo")
+            self.assertFalse(r["accepted"], "cadena {} debe rechazar".format(i))
+            self.assertEqual(self._cancel_files(), [], "cadena {} no debe escribir solicitud".format(i))
+
+    def test_cancel_solicitud_persiste_tras_reinicio(self):
+        # la solicitud dura sobrevive: un "reinicio" la sigue viendo pendiente
+        self._state("TAREA DISPONIBLE", {"task-c": {"status": "available", "taskId": "task-c"}})
+        cancel_task(self.tmp, "task-c", "reemplazada")
+        self.assertTrue(pending_cancel_has(self.tmp, "task-c"))
+        self.assertEqual(self._cancel_files(), ["task-c.cancel.json"])
+
+    def test_cancel_no_ejecuta_opencode(self):
+        # solo debe existir el archivo de cancelación; sin logs ni salidas de opencode
+        self._state("TAREA DISPONIBLE", {"task-c": {"status": "available", "taskId": "task-c"}})
+        cancel_task(self.tmp, "task-c", "motivo")
+        self.assertEqual(self._cancel_files(), ["task-c.cancel.json"])
+        logs = os.path.join(self.tmp, "logs")
+        self.assertFalse(os.path.isdir(logs))
+
+    def test_get_report_tarea_cancelada(self):
+        # get_report de una tarea materializada cancelled expone trazabilidad y sin reporte
+        self._state("TAREA DISPONIBLE",
+                    {"t-cancel": {"status": "cancelled", "taskId": "t-cancel",
+                                  "cancelledAt": "2026-08-18T12:00:00Z",
+                                  "cancelReason": "obsoleta", "cancelSource": "mcp"}})
+        r = get_report(self.tmp, "t-cancel")
+        self.assertEqual(r["status"], "cancelled")
+        self.assertEqual(r["resultado"], "CANCELADA")
+        self.assertEqual(r["cancelled_at"], "2026-08-18T12:00:00Z")
+        self.assertEqual(r["cancel_reason"], "obsoleta")
+        self.assertEqual(r["cancel_source"], "mcp")
+        self.assertFalse(r["report_available"])
+        self.assertIsNone(r["started_at"])
+        self.assertIsNone(r["exit_code"])
 
     def test_load_config_expande_localappdata(self):
         # load_config debe expandir %LOCALAPPDATA% para resolver el LocalAppData real

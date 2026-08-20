@@ -1,4 +1,4 @@
-"""Verifica tools/list y annotations de las seis herramientas MCP (INFRA 0.4.2 + B4.2)."""
+"""Verifica tools/list y annotations de las siete herramientas MCP (INFRA 0.4.2 + B4.2 + CANCEL)."""
 
 import asyncio
 import importlib.util
@@ -25,9 +25,9 @@ class McpToolsTest(unittest.TestCase):
         tools = asyncio.run(cls.mod.server.list_tools())
         cls.tools = {t.name: t for t in tools}
 
-    def test_tools_list_exactamente_seis(self):
+    def test_tools_list_exactamente_siete(self):
         names = sorted(self.tools.keys())
-        self.assertEqual(names, ["get_audit_context", "get_report", "get_status", "post_audit", "queue_task", "resolve_decision"])
+        self.assertEqual(names, ["cancel_task", "get_audit_context", "get_report", "get_status", "post_audit", "queue_task", "resolve_decision"])
 
     def test_get_status_annotations(self):
         a = self.tools["get_status"].annotations
@@ -59,6 +59,29 @@ class McpToolsTest(unittest.TestCase):
         self.assertFalse(a.destructive_hint)
         self.assertFalse(a.idempotent_hint)
         self.assertFalse(a.open_world_hint)
+
+    def test_cancel_task_annotations(self):
+        a = self.tools["cancel_task"].annotations
+        self.assertFalse(a.read_only_hint)
+        self.assertTrue(a.destructive_hint)
+        self.assertTrue(a.idempotent_hint)
+        self.assertFalse(a.open_world_hint)
+
+    def test_cancel_task_descripcion_honesta(self):
+        desc = self.tools["cancel_task"].description
+        self.assertIn("Registra una solicitud durable de cancelación", desc)
+        self.assertIn("aplicación efectiva es asíncrona", desc)
+        self.assertIn("executor", desc)
+        self.assertIn("TRABAJANDO", desc)
+
+    def test_schema_cancel_task(self):
+        schema = self.tools["cancel_task"].input_schema
+        props = schema.get("properties") or {}
+        required = schema.get("required") or []
+        self.assertIn("task_id", props)
+        self.assertIn("reason", props)
+        self.assertIn("task_id", required)
+        self.assertIn("reason", required)
 
     def test_get_report_annotations(self):
         a = self.tools["get_report"].annotations

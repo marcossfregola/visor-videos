@@ -8,6 +8,8 @@ $script:InboxDir = Join-Path $script:StateDir 'inbox'
 $script:ResolutionsDir = Join-Path $script:StateDir 'resolutions'
 $script:AuditsDir = Join-Path $script:StateDir 'audits'
 $script:AuditsHistoryDir = Join-Path $script:AuditsDir 'history'
+$script:CancellationsDir = Join-Path $script:StateDir 'cancellations'
+$script:CancellationsHistoryDir = Join-Path $script:CancellationsDir 'history'
 $script:SecretsDir = Join-Path $script:BaseDir 'secrets'
 $script:ReportsDir = Join-Path $script:BaseDir 'reports'
 $script:ConfigFile = Join-Path $script:BaseDir 'config.json'
@@ -425,6 +427,168 @@ function Invoke-InboxPoll {
             $State.taskId = $firstAvail.taskId
             $State.commentId = $firstAvail.commentId
         }
+        Save-State -State $State
+    }
+    return $changed
+}
+
+function Test-CancellableInboxTask {
+    # CANCEL: valida que el payload de inbox no pertenezca a una cadena de supersesión.
+    # Rechaza conservadoramente si trae supersedes_task_id o metadata equivalente.
+    param([hashtable]$Payload)
+    if ($null -eq $Payload) { return $false }
+    if ($Payload.ContainsKey('supersedes_task_id') -and $Payload.supersedes_task_id) { return $false }
+    if ($Payload.ContainsKey('superseded_by_task_id') -and $Payload.superseded_by_task_id) { return $false }
+    if ($Payload.ContainsKey('previous_task_id') -and $Payload.previous_task_id) { return $false }
+    # metadata equivalente de cadena (B4: context_scope/stage_id no implican cadena)
+    return $true
+}
+
+function Invoke-CancelPoll {
+    # CANCEL: aplica solicitudes durables de cancelación (state/cancellations/*.cancel.json).
+    # El MCP jamás escribe state.json; el executor es el único escritor. Debe ejecutarse
+    # ANTES de Invoke-InboxPoll (para descartar tareas todavía en inbox) y de Invoke-AutoStart.
+    param([hashtable]$State)
+    New-Item -ItemType Directory -Path $script:CancellationsDir, $script:CancellationsHistoryDir -Force | Out-Null
+    $changed = $false
+    foreach ($f in @(Get-ChildItem -LiteralPath $script:CancellationsDir -Filter '*.cancel.json' -File)) {
+        $payload = $null
+        $tid = $null
+        $reason = $null
+        try {
+            $payload = Get-Content -LiteralPath $f.FullName -Raw | ConvertFrom-Json -AsHashtable
+            $tid = [string]$payload.task_id
+            $reason = [string]$payload.reason
+        }
+        catch {
+            Write-BridgeLog 'WARN' ('cancel invalido, se elimina: ' + $f.Name)
+            Remove-Item -LiteralPath $f.FullName -Force -ErrorAction SilentlyContinue
+            continue
+        }
+        if ([string]::IsNullOrWhiteSpace($tid)) {
+            Write-BridgeLog 'WARN' ('cancel sin task_id, se elimina: ' + $f.Name)
+            Remove-Item -LiteralPath $f.FullName -Force -ErrorAction SilentlyContinue
+            continue
+        }
+        $historyPayload = $payload
+        $historyPayload.cancelledAt = (Get-Date).ToUniversalTime().ToString('o')
+        $historyPayload.cancelledBy = 'executor'
+
+        if ($State.status -eq 'TRABAJANDO' -and $State.taskId -eq $tid) {
+            # Nunca cancelar la tarea que está trabajando.
+            $historyPayload.outcome = 'rejected-working'
+            Write-BridgeLog 'WARN' ('cancel rechazada (TRABAJANDO) task=' + $tid)
+        }
+        elseif ($State.tasks.ContainsKey($tid)) {
+            $t = $State.tasks[$tid]
+            if ($t.status -eq 'cancelled') {
+                # idempotencia: ya cancelada.
+                $historyPayload.outcome = 'already-cancelled'
+                Write-BridgeLog 'INFO' ('cancel duplicada (ya cancelada) task=' + $tid)
+            }
+            elseif ($t.status -ne 'available') {
+                $historyPayload.outcome = 'rejected-state'
+                Write-BridgeLog 'WARN' ('cancel rechazada (estado ' + $t.status + ') task=' + $tid)
+            }
+            elseif ($t.startedAt -or $t.pid) {
+                # nunca afirmar cancelación si pudo haber comenzado.
+                $historyPayload.outcome = 'rejected-started'
+                Write-BridgeLog 'WARN' ('cancel rechazada (posible inicio) task=' + $tid)
+            }
+            elseif ($t.auditedAt) {
+                $historyPayload.outcome = 'rejected-audited'
+                Write-BridgeLog 'WARN' ('cancel rechazada (auditada) task=' + $tid)
+            }
+            elseif ($t.supersedesTaskId -or $t.supersededByTaskId) {
+                $historyPayload.outcome = 'rejected-chain'
+                Write-BridgeLog 'WARN' ('cancel rechazada (cadena de supersesion) task=' + $tid)
+            }
+            else {
+                # CANCEL aplicada: available -> cancelled
+                $t.status = 'cancelled'
+                $t.cancelledAt = (Get-Date).ToUniversalTime().ToString('o')
+                $t.cancelReason = $reason
+                $t.cancelSource = 'mcp'
+                $historyPayload.outcome = 'applied'
+                Write-BridgeLog 'INFO' ('CANCEL TASK task=' + $tid + ' reason=' + $reason)
+                # Estado global tras cancelar una tarea materializada.
+                # No generamos notificación de atención para una cancelación normal.
+                $firstAvail = Get-OldestAvailableTask -State $State
+                if ($null -ne $firstAvail) {
+                    if ($State.status -ne 'TRABAJANDO') {
+                        $State.status = 'TAREA DISPONIBLE'
+                        $State.statusDetail = 'Tarea pendiente: ' + $firstAvail.taskId
+                        $State.taskId = $firstAvail.taskId
+                        $State.commentId = $firstAvail.commentId
+                    }
+                }
+                else {
+                    $State.status = 'SIN TAREA'
+                    $State.statusDetail = ''
+                    $State.taskId = $null
+                    $State.commentId = $null
+                }
+                $changed = $true
+            }
+        }
+        else {
+            # Tarea todavía únicamente en inbox: impedir materialización y archivar payload completo.
+            $inboxFile = Join-Path $script:InboxDir ($tid + '.task.json')
+            if (Test-Path -LiteralPath $inboxFile) {
+                try {
+                    $inboxPayload = Get-Content -LiteralPath $inboxFile -Raw | ConvertFrom-Json -AsHashtable
+                }
+                catch {
+                    $inboxPayload = $null
+                }
+                if (-not (Test-CancellableInboxTask -Payload $inboxPayload)) {
+                    # pertenece a una cadena de supersesión: rechazar.
+                    $historyPayload.outcome = 'rejected-chain'
+                    Write-BridgeLog 'WARN' ('cancel rechazada (inbox con supersede) task=' + $tid)
+                }
+                else {
+                    # 1) conservar el .task.json COMPLETO en cancellations/history
+                    New-Item -ItemType Directory -Path $script:CancellationsHistoryDir -Force | Out-Null
+                    $origName = Join-Path $script:CancellationsHistoryDir ('inbox-' + $tid + '.task.json')
+                    Copy-Item -LiteralPath $inboxFile -Destination $origName -Force
+                    # 2) eliminar la tarea del inbox para impedir su materialización
+                    Remove-Item -LiteralPath $inboxFile -Force -ErrorAction SilentlyContinue
+                    # 3) no crear tarea en state.json; nunca ejecutar OpenCode
+                    $historyPayload.inboxTaskPreserved = $true
+                    $historyPayload.outcome = 'applied-inbox'
+                    Write-BridgeLog 'INFO' ('CANCEL TASK (inbox) task=' + $tid + ' reason=' + $reason)
+                    # la tarea nunca entró a state.tasks, así que el estado global no cambia salvo
+                    # que el taskId apuntara a ella (no debería ocurrir; se conserva por seguridad).
+                    if ($State.taskId -eq $tid) {
+                        $firstAvail = Get-OldestAvailableTask -State $State
+                        if ($null -ne $firstAvail) {
+                            $State.status = 'TAREA DISPONIBLE'
+                            $State.statusDetail = 'Tarea pendiente: ' + $firstAvail.taskId
+                            $State.taskId = $firstAvail.taskId
+                            $State.commentId = $firstAvail.commentId
+                        }
+                        else {
+                            $State.status = 'SIN TAREA'
+                            $State.statusDetail = ''
+                            $State.taskId = $null
+                            $State.commentId = $null
+                        }
+                    }
+                    $changed = $true
+                }
+            }
+            else {
+                $historyPayload.outcome = 'rejected-notfound'
+                Write-BridgeLog 'WARN' ('cancel rechazada (tarea inexistente) task=' + $tid)
+            }
+        }
+
+        # archivo durable con outcome (trazabilidad; nunca desaparece el registro)
+        $histFile = Join-Path $script:CancellationsHistoryDir ('cancel-' + $tid + '.json')
+        $historyPayload | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $histFile -Encoding utf8
+        Remove-Item -LiteralPath $f.FullName -Force -ErrorAction SilentlyContinue
+    }
+    if ($changed) {
         Save-State -State $State
     }
     return $changed
