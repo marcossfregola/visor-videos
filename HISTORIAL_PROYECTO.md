@@ -8,10 +8,8 @@ Orden cronológico inverso (más reciente primero).
 ## 107. Finalización técnica de B6.3 — Clasificación visual de marcadores y segmentos
 
 - **Fecha:** 2026-08-20
-- **Tipo:** etapa **exclusivamente documental** para la **finalización técnica
-  de B6.3** (la aprobación técnica ya fue otorgada con anterioridad). **Sin
-  commit, push, tag, merge ni release**: los 18 archivos técnicos modificados
-  permanecen sin confirmar en el working tree de `beta6`.
+- **Tipo:** implementación técnica de **B6.3 committeada y publicada en `beta6`**
+  (commit `c28ccf6942fd0b52fc1c84090f0a6df083b26488` en `origin/beta6`; sin tag/merge/release en esta etapa).
 - **Rama:** `beta6`.
 - **Implementación verificada (resumen factual):**
   - **Paleta cerrada de 6 colores** — `COLORES_CLASIFICACION` en

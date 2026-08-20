@@ -21,14 +21,14 @@ Estado actual:
   publicados en `beta6`** y la publicación fue verificada con alineación
   local/remota.
 - **B6.3 — Clasificación visual de marcadores y segmentos.** **Técnicamente
-  completada** (2026-08-20): paleta cerrada de 6 colores; persistencia SQLite
+  completada, committeada y publicada en `beta6`** (2026-08-20; commit
+  `c28ccf6942fd0b52fc1c84090f0a6df083b26488` en `origin/beta6`): paleta cerrada de 6 colores; persistencia SQLite
   aditiva e idempotente (`color TEXT NULL` en `marcadores_video` y
   `segmentos_video`, `NULL` conserva los colores históricos: marcador rojo,
   segmento azul); asignar/quitar color por menú contextual y selector por
   tarjeta; nombres globales personalizables sin cambiar las claves; render
   visual de marcas y bandas; suite `prueba_color_b63.py` **21/21** y
-  regresiones/smoke en verde. **Sin commit ni push en esta etapa** (registro
-  documental; ver `HISTORIAL_PROYECTO.md` ##107 y `ROADMAP.md`).
+  regresiones/smoke en verde (ver `HISTORIAL_PROYECTO.md` ##107 y `ROADMAP.md`).
 - **Beta 6 continúa abierta.** La siguiente etapa prevista es
   **B6.4 — Marcadores y segmentos visibles en tarjetas colapsadas** (definida
   en `ROADMAP.md`).

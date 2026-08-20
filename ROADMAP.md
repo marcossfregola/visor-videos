@@ -918,8 +918,8 @@ archivos.
    whitelists cerradas y fragmento SQL único autorizado (desempate estable por
    `id ASC`, NULLs siempre al final). No cierra la Beta 6.
 3. **B6.3 — Clasificación visual de marcadores y segmentos.** **Técnicamente
-   completada** (2026-08-20). Sin commit ni push en esta etapa (registro
-   exclusivamente documental; ver `HISTORIAL_PROYECTO.md` ##107). Implementa:
+   completada, committeada y publicada en `beta6`** (2026-08-20; commit
+   `c28ccf6942fd0b52fc1c84090f0a6df083b26488` en `origin/beta6`; ver `HISTORIAL_PROYECTO.md` ##107). Implementa:
    **paleta cerrada de 6 colores** (`COLORES_CLASIFICACION`: rojo, naranja,
    amarillo, verde, azul, violeta; única fuente de verdad, misma paleta para
    marcadores y segmentos); persistencia SQLite **aditiva e idempotente**
