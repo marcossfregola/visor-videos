@@ -1,4 +1,4 @@
-"""Servidor MCP real del puente ChatGPT <-> OpenCode (INFRA 0.4 + B4 + B4.2).
+"""Servidor MCP real del puente ChatGPT <-> OpenCode (INFRA 0.4.2 + B4.2 + CANCEL + ABANDON).
 
 Expone ocho herramientas:
   - get_status: lectura del estado del bridge (incluye campos de atención B4).
@@ -293,7 +293,7 @@ def get_audit_context_tool(task_id: str = None,
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="MCP server del bridge (INFRA 0.4)")
+    parser = argparse.ArgumentParser(description="MCP server del bridge (INFRA 0.4.2 + B4.2 + CANCEL + ABANDON)")
     parser.add_argument("--transport", choices=["stdio", "streamable-http"], default="stdio")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8788)

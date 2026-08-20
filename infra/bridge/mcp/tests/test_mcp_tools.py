@@ -25,7 +25,7 @@ class McpToolsTest(unittest.TestCase):
         tools = asyncio.run(cls.mod.server.list_tools())
         cls.tools = {t.name: t for t in tools}
 
-    def test_tools_list_exactamente_siete(self):
+    def test_tools_list_exactamente_ocho(self):
         names = sorted(self.tools.keys())
         self.assertEqual(names, ["abandon_task", "cancel_task", "get_audit_context", "get_report", "get_status", "post_audit", "queue_task", "resolve_decision"])
 
