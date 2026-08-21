@@ -332,6 +332,60 @@ def _asegurar_columnas_videos(conn):
             conn.execute(f"ALTER TABLE videos ADD COLUMN {nombre_col} {tipo}")
 
 
+def _asegurar_tablas_derivados(conn):
+    """Migración aditiva e idempotente para trazabilidad B6.11 (videos derivados).
+
+    Tablas:
+      - videos_derivados: relación original→derivado (uno a uno, un derivado proviene
+        de un único original). Sin CASCADE destructivo: la fila persiste aunque el
+        original o el derivado desaparezcan físicamente o de `videos` (orfandad
+        histórica). `derivado_video_id UNIQUE` previene duplicados; el bloqueo de
+        derivado-de-derivado se valida en capa de servicio.
+      - videos_derivados_segmentos: segmentos fuente en orden explícito (para
+        B6.7/B6.9 un registro, para B6.10 N registros con `orden`).
+    Idempotente: CREATE IF NOT EXISTS + índices IF NOT EXISTS.
+    """
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS videos_derivados (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            derivado_video_id INTEGER NOT NULL UNIQUE,
+            original_video_id INTEGER NOT NULL,
+            tipo TEXT NOT NULL,
+            fecha_creacion TEXT NOT NULL,
+            derivado_nombre TEXT NOT NULL,
+            derivado_ruta TEXT NOT NULL,
+            original_nombre TEXT NOT NULL,
+            original_ruta TEXT NOT NULL
+        )
+    """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_videos_derivados_original
+        ON videos_derivados(original_video_id)
+    """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_videos_derivados_derivado
+        ON videos_derivados(derivado_video_id)
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS videos_derivados_segmentos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            derivacion_id INTEGER NOT NULL,
+            segmento_id INTEGER NOT NULL,
+            orden INTEGER NOT NULL,
+            inicio REAL NOT NULL,
+            fin REAL NOT NULL
+        )
+    """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_videos_derivados_segmentos_derivacion
+        ON videos_derivados_segmentos(derivacion_id)
+    """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_videos_derivados_segmentos_orden
+        ON videos_derivados_segmentos(derivacion_id, orden)
+    """)
+
+
 def conectar_bd(ruta_db=None):
     if ruta_db is None:
         ruta_db = ruta_biblioteca()
@@ -348,6 +402,7 @@ def conectar_bd(ruta_db=None):
     _asegurar_columnas_videos(conn)
     _asegurar_tabla_marcadores(conn)
     _asegurar_tabla_segmentos(conn)
+    _asegurar_tablas_derivados(conn)
     return conn
 
 
@@ -1764,6 +1819,355 @@ def listar_videos_por_ids(video_ids, ruta_db=None):
         return resultado
     finally:
         conn.close()
+
+
+# === B6.11 Incorporación al catálogo y trazabilidad de derivados ===
+
+_TIPOS_DERIVADO = frozenset(("individual", "lote", "secuencia"))
+
+
+def _validar_tipo_derivado(tipo):
+    if not isinstance(tipo, str):
+        raise TypeError("tipo debe ser texto")
+    if tipo not in _TIPOS_DERIVADO:
+        raise ValueError(f"tipo de derivado no reconocido: {tipo!r}")
+    return tipo
+
+
+def _conectar_derivados(ruta_db=None):
+    if ruta_db is None:
+        ruta_db = ruta_biblioteca()
+    if not os.path.isfile(ruta_db):
+        raise FileNotFoundError(f"Base de datos no encontrada: {ruta_db}")
+    conn = sqlite3.connect(ruta_db)
+    _asegurar_tablas_derivados(conn)
+    # también asegurar columnas/videos para consistencia
+    try:
+        _asegurar_columnas_videos(conn)
+    except Exception:
+        pass
+    return conn
+
+
+def es_video_derivado(video_id, ruta_db=None):
+    """Indica si `video_id` corresponde a un video derivado (B6.11)."""
+    _validar_video_id(video_id)
+    conn = _conectar_derivados(ruta_db)
+    try:
+        fila = conn.execute(
+            "SELECT 1 FROM videos_derivados WHERE derivado_video_id = ?",
+            (video_id,),
+        ).fetchone()
+        return fila is not None
+    finally:
+        conn.close()
+
+
+def obtener_derivacion_por_derivado(derivado_video_id, ruta_db=None):
+    """Trazabilidad de un derivado: dict con claves `derivacion`, `segmentos` o None (B6.11).
+
+    `derivacion` contiene columnas de `videos_derivados`; `segmentos` es lista
+    ordenada por `orden` con `(id, derivacion_id, segmento_id, orden, inicio, fin)`.
+    Sin CASCADE: si el original o el derivado ya no existen en `videos`, la fila
+    persiste (orfandad histórica).
+    """
+    _validar_video_id(derivado_video_id)
+    conn = _conectar_derivados(ruta_db)
+    try:
+        fila = conn.execute(
+            """
+            SELECT id, derivado_video_id, original_video_id, tipo, fecha_creacion,
+                   derivado_nombre, derivado_ruta, original_nombre, original_ruta
+            FROM videos_derivados
+            WHERE derivado_video_id = ?
+            """,
+            (derivado_video_id,),
+        ).fetchone()
+        if fila is None:
+            return None
+        derivacion = {
+            "id": fila[0],
+            "derivado_video_id": fila[1],
+            "original_video_id": fila[2],
+            "tipo": fila[3],
+            "fecha_creacion": fila[4],
+            "derivado_nombre": fila[5],
+            "derivado_ruta": fila[6],
+            "original_nombre": fila[7],
+            "original_ruta": fila[8],
+        }
+        segmentos = conn.execute(
+            """
+            SELECT id, derivacion_id, segmento_id, orden, inicio, fin
+            FROM videos_derivados_segmentos
+            WHERE derivacion_id = ?
+            ORDER BY orden ASC, id ASC
+            """,
+            (derivacion["id"],),
+        ).fetchall()
+        return {"derivacion": derivacion, "segmentos": segmentos}
+    finally:
+        conn.close()
+
+
+def listar_derivaciones_por_original(original_video_id, ruta_db=None):
+    """Todas las derivaciones cuyo `original_video_id` coincide (B6.11)."""
+    _validar_video_id(original_video_id)
+    conn = _conectar_derivados(ruta_db)
+    try:
+        filas = conn.execute(
+            """
+            SELECT id, derivado_video_id, original_video_id, tipo, fecha_creacion,
+                   derivado_nombre, derivado_ruta, original_nombre, original_ruta
+            FROM videos_derivados
+            WHERE original_video_id = ?
+            ORDER BY id ASC
+            """,
+            (original_video_id,),
+        ).fetchall()
+        resultado = []
+        for fila in filas:
+            resultado.append({
+                "id": fila[0],
+                "derivado_video_id": fila[1],
+                "original_video_id": fila[2],
+                "tipo": fila[3],
+                "fecha_creacion": fila[4],
+                "derivado_nombre": fila[5],
+                "derivado_ruta": fila[6],
+                "original_nombre": fila[7],
+                "original_ruta": fila[8],
+            })
+        return resultado
+    finally:
+        conn.close()
+
+
+def _validar_segmentos_trazabilidad(segmentos):
+    if not isinstance(segmentos, (list, tuple)):
+        raise TypeError("segmentos debe ser lista")
+    if not segmentos:
+        raise ValueError("segmentos no puede estar vacía")
+    validados = []
+    for idx, seg in enumerate(segmentos):
+        if not isinstance(seg, dict):
+            raise TypeError(f"segmento {idx} debe ser dict")
+        sid = seg.get("segmento_id")
+        ini = seg.get("inicio")
+        fin = seg.get("fin")
+        if isinstance(sid, bool) or not isinstance(sid, int) or sid <= 0:
+            raise ValueError(f"segmento {idx} segmento_id inválido")
+        if not isinstance(ini, (int, float)) or isinstance(ini, bool):
+            raise TypeError(f"segmento {idx} inicio debe ser numérico")
+        if not isinstance(fin, (int, float)) or isinstance(fin, bool):
+            raise TypeError(f"segmento {idx} fin debe ser numérico")
+        if not (fin > ini and ini >= 0):
+            raise ValueError(f"segmento {idx} rango inválido")
+        validados.append({"segmento_id": int(sid), "inicio": float(ini), "fin": float(fin)})
+    return validados
+
+
+def incorporar_video_derivado_al_catalogo(derivado_ruta, original_video_id, segmentos_orden, tipo="individual", ruta_db=None):
+    """Alta incremental de un video derivado al catálogo con trazabilidad (B6.11).
+
+    Flujo mínimo seguro:
+      - valida archivo existente y no vacío
+      - valida tipo y segmentos en orden explícito
+      - bloquea derivado-de-derivado (original no puede ser derivado)
+      - previene duplicados (nombre UNIQUE y derivado_video_id UNIQUE)
+      - obtiene metadata FFprobe del derivado y stats (tamaño/mtime)
+      - inserta registro en `videos` (upsert controlado) y relación en
+        `videos_derivados` + `videos_derivados_segmentos` en una transacción
+      - si falla el alta, conserva el archivo y reporta error de catalogación
+
+    `segmentos_orden`: lista de dicts `{segmento_id, inicio, fin}` en orden explícito
+    (para B6.7/B6.9 un elemento; para B6.10 N en orden). Se persiste orden tal cual.
+
+    Devuelve dict `{ok, derivado_video_id, derivacion_id, error, catalog_error}`:
+      - ok True → alta exitosa
+      - ok False + error → fallo (catalog_error True indica fallo de alta al catálogo
+        con archivo conservado; False indica validación previa sin tocar catálogo)
+    """
+    _validar_tipo_derivado(tipo)
+    if not isinstance(derivado_ruta, str) or not derivado_ruta.strip():
+        return {"ok": False, "derivado_video_id": None, "derivacion_id": None, "error": "ruta derivada inválida", "catalog_error": False}
+    if not os.path.isfile(derivado_ruta):
+        return {"ok": False, "derivado_video_id": None, "derivacion_id": None, "error": "archivo derivado no encontrado", "catalog_error": False}
+    try:
+        if os.path.getsize(derivado_ruta) == 0:
+            return {"ok": False, "derivado_video_id": None, "derivacion_id": None, "error": "archivo derivado vacío", "catalog_error": False}
+    except OSError as exc:
+        return {"ok": False, "derivado_video_id": None, "derivacion_id": None, "error": f"no se pudo leer derivado: {exc}", "catalog_error": False}
+    _validar_video_id(original_video_id)
+    try:
+        segmentos_val = _validar_segmentos_trazabilidad(segmentos_orden)
+    except Exception as exc:
+        return {"ok": False, "derivado_video_id": None, "derivacion_id": None, "error": f"segmentos inválidos: {exc}", "catalog_error": False}
+    # extensión controlada (solo .mp4/.mkv como en B6.7/10)
+    ext = os.path.splitext(derivado_ruta)[1].lower()
+    if ext not in (".mp4", ".mkv"):
+        return {"ok": False, "derivado_video_id": None, "derivacion_id": None, "error": f"extensión no soportada para derivado: {ext!r}", "catalog_error": False}
+    if ruta_db is None:
+        ruta_db = ruta_biblioteca()
+    if not os.path.isfile(ruta_db):
+        return {"ok": False, "derivado_video_id": None, "derivacion_id": None, "error": f"Base de datos no encontrada: {ruta_db}", "catalog_error": True}
+    # Corrección mínima B6.11: gestión segura de conexiones sin múltiples close manuales
+    # dispersos; un único finally por fase evita doble cierre y fugas.
+    conn = None
+    derivado_nombre = os.path.basename(derivado_ruta)
+    derivado_ruta_abs = os.path.abspath(derivado_ruta)
+    orig_nombre = None
+    orig_ruta = None
+    try:
+        conn = _conectar_derivados(ruta_db)
+        try:
+            conn.execute("SELECT 1 FROM videos LIMIT 1")
+        except sqlite3.OperationalError:
+            return {"ok": False, "derivado_video_id": None, "derivacion_id": None, "error": "tabla videos no disponible", "catalog_error": True}
+        # Validaciones previas sin modificar BD
+        fila_orig = conn.execute(
+            "SELECT id, nombre, ruta FROM videos WHERE id = ?",
+            (original_video_id,),
+        ).fetchone()
+        if fila_orig is None:
+            return {"ok": False, "derivado_video_id": None, "derivacion_id": None, "error": f"original_video_id {original_video_id} no existe en catálogo", "catalog_error": False}
+        orig_id, orig_nombre, orig_ruta = fila_orig
+        fila_es_der = conn.execute(
+            "SELECT 1 FROM videos_derivados WHERE derivado_video_id = ?",
+            (original_video_id,),
+        ).fetchone()
+        if fila_es_der is not None:
+            return {"ok": False, "derivado_video_id": None, "derivacion_id": None, "error": "bloqueado: el original es a su vez un derivado (derivado-de-derivado no permitido en B6.11)", "catalog_error": False}
+        fila_dup_nombre = conn.execute(
+            "SELECT id, ruta FROM videos WHERE nombre = ?",
+            (derivado_nombre,),
+        ).fetchone()
+        if fila_dup_nombre is not None:
+            dup_id, dup_ruta = fila_dup_nombre
+            if os.path.normcase(os.path.normpath(os.path.abspath(dup_ruta))) == os.path.normcase(os.path.normpath(derivado_ruta_abs)):
+                return {"ok": False, "derivado_video_id": dup_id, "derivacion_id": None, "error": "derivado ya existe en catálogo (nombre duplicado)", "catalog_error": True}
+            return {"ok": False, "derivado_video_id": None, "derivacion_id": None, "error": f"nombre duplicado en catálogo: {derivado_nombre!r} ya existe", "catalog_error": True}
+        if os.path.normcase(os.path.normpath(os.path.abspath(orig_ruta))) == os.path.normcase(os.path.normpath(derivado_ruta_abs)):
+            return {"ok": False, "derivado_video_id": None, "derivacion_id": None, "error": "derivado no puede ser el mismo archivo que el original", "catalog_error": False}
+        for seg in segmentos_val:
+            sid = seg["segmento_id"]
+            fila_seg = conn.execute(
+                "SELECT video_id, inicio, fin FROM segmentos_video WHERE id = ?",
+                (sid,),
+            ).fetchone()
+            if fila_seg is None:
+                return {"ok": False, "derivado_video_id": None, "derivacion_id": None, "error": f"segmento_id {sid} no existe", "catalog_error": False}
+            vid_seg, ini_seg, fin_seg = fila_seg
+            if vid_seg != original_video_id:
+                return {"ok": False, "derivado_video_id": None, "derivacion_id": None, "error": f"segmento_id {sid} no pertenece al original {original_video_id}", "catalog_error": False}
+    except Exception as exc:
+        return {"ok": False, "derivado_video_id": None, "derivacion_id": None, "error": f"error inesperado en validación: {exc}", "catalog_error": True}
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+            conn = None
+    # obtener ffprobe fuera de transacción larga (costoso) - archivo se conserva si falla
+    datos_ff = obtener_datos_ffprobe(derivado_ruta)
+    if datos_ff is None:
+        return {"ok": False, "derivado_video_id": None, "derivacion_id": None, "error": "no se pudo obtener metadata FFprobe del derivado", "catalog_error": True}
+    dur = datos_ff.get("duracion_segundos")
+    ancho = datos_ff.get("ancho")
+    alto = datos_ff.get("alto")
+    codec = datos_ff.get("codec_video")
+    if not isinstance(dur, (int, float)) or not math.isfinite(float(dur)) or float(dur) <= 0:
+        return {"ok": False, "derivado_video_id": None, "derivacion_id": None, "error": "duración del derivado inválida", "catalog_error": True}
+    try:
+        st = os.stat(derivado_ruta)
+        tamano = st.st_size
+        mtime_ns = st.st_mtime_ns
+    except OSError as exc:
+        return {"ok": False, "derivado_video_id": None, "derivacion_id": None, "error": f"no se pudo stat derivado: {exc}", "catalog_error": True}
+    # Transacción de alta atómica: video + derivación + segmentos
+    conn2 = None
+    try:
+        conn2 = _conectar_derivados(ruta_db)
+        conn2.execute("BEGIN")
+        fila_dup2 = conn2.execute(
+            "SELECT id FROM videos WHERE nombre = ?",
+            (derivado_nombre,),
+        ).fetchone()
+        if fila_dup2 is not None:
+            conn2.rollback()
+            return {"ok": False, "derivado_video_id": fila_dup2[0], "derivacion_id": None, "error": "nombre duplicado (carrera)", "catalog_error": True}
+        fecha_imp = datetime.now().isoformat()
+        datos_video = {
+            "nombre": derivado_nombre,
+            "ruta": derivado_ruta_abs,
+            "extension": ext,
+            "fecha_importacion": fecha_imp,
+            "duracion_segundos": float(dur),
+            "ancho": int(ancho) if isinstance(ancho, int) and ancho > 0 else None,
+            "alto": int(alto) if isinstance(alto, int) and alto > 0 else None,
+            "codec_video": str(codec) if isinstance(codec, str) and codec.strip() else None,
+            "cantidad_miniaturas": 0,
+            "tamano_bytes": int(tamano),
+            "mtime_ns": int(mtime_ns),
+        }
+        _asegurar_columnas_videos(conn2)
+        _upsert_video(conn2, datos_video)
+        fila_new = conn2.execute(
+            "SELECT id FROM videos WHERE nombre = ?",
+            (derivado_nombre,),
+        ).fetchone()
+        if fila_new is None:
+            conn2.rollback()
+            return {"ok": False, "derivado_video_id": None, "derivacion_id": None, "error": "no se pudo obtener id del derivado tras insertar", "catalog_error": True}
+        derivado_vid = fila_new[0]
+        fila_traza = conn2.execute(
+            "SELECT id FROM videos_derivados WHERE derivado_video_id = ?",
+            (derivado_vid,),
+        ).fetchone()
+        if fila_traza is not None:
+            conn2.rollback()
+            return {"ok": False, "derivado_video_id": derivado_vid, "derivacion_id": fila_traza[0], "error": "trazabilidad ya existe para este derivado", "catalog_error": True}
+        cur = conn2.execute(
+            """
+            INSERT INTO videos_derivados
+            (derivado_video_id, original_video_id, tipo, fecha_creacion, derivado_nombre, derivado_ruta, original_nombre, original_ruta)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (derivado_vid, original_video_id, tipo, fecha_imp, derivado_nombre, derivado_ruta_abs, orig_nombre, orig_ruta),
+        )
+        derivacion_id = cur.lastrowid
+        for orden, seg in enumerate(segmentos_val):
+            conn2.execute(
+                """
+                INSERT INTO videos_derivados_segmentos
+                (derivacion_id, segmento_id, orden, inicio, fin)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (derivacion_id, seg["segmento_id"], orden, seg["inicio"], seg["fin"]),
+            )
+        conn2.commit()
+        return {"ok": True, "derivado_video_id": derivado_vid, "derivacion_id": derivacion_id, "error": None, "catalog_error": False}
+    except sqlite3.IntegrityError as exc:
+        try:
+            if conn2 is not None:
+                conn2.rollback()
+        except Exception:
+            pass
+        return {"ok": False, "derivado_video_id": None, "derivacion_id": None, "error": f"integridad de catálogo: {exc}", "catalog_error": True}
+    except Exception as exc:
+        try:
+            if conn2 is not None:
+                conn2.rollback()
+        except Exception:
+            pass
+        return {"ok": False, "derivado_video_id": None, "derivacion_id": None, "error": f"error al dar de alta derivado: {exc}", "catalog_error": True}
+    finally:
+        if conn2 is not None:
+            try:
+                conn2.close()
+            except Exception:
+                pass
 
 
 def main():

@@ -3851,7 +3851,17 @@ class VisorVideos(QMainWindow):
                 self, "Exportar segmento", "El destino no puede ser el mismo archivo que el origen."
             )
             return
-        tarea = TareaExportarSegmento(ruta_fuente, float(inicio), float(fin), ruta_dest)
+        segmento_id = segmento.get("id")
+        # B6.11 alta incremental: pasar trazabilidad al task (fuera del hilo UI)
+        try:
+            tarea = TareaExportarSegmento(
+                ruta_fuente, float(inicio), float(fin), ruta_dest,
+                original_video_id=int(video_id) if isinstance(video_id, int) else None,
+                segmento_id=int(segmento_id) if isinstance(segmento_id, int) and not isinstance(segmento_id, bool) else None,
+                ruta_db=self._ruta_db,
+            )
+        except Exception:
+            tarea = TareaExportarSegmento(ruta_fuente, float(inicio), float(fin), ruta_dest)
         if not self.gestor_export.iniciar(tarea):
             QMessageBox.warning(self, "Exportar segmento", f"No se pudo iniciar: {self.gestor_export.ultimo_rechazo}")
             return
@@ -4151,8 +4161,10 @@ class VisorVideos(QMainWindow):
             if hasattr(self, "boton_exportar_secuencia"):
                 self.boton_exportar_secuencia.setEnabled(True)
             total = resultado.get("total", 0)
-            exitos = len(resultado.get("exitos", []))
-            fallos = len(resultado.get("fallos", []))
+            exitos_lista = resultado.get("exitos", []) or []
+            fallos_lista = resultado.get("fallos", []) or []
+            exitos = len(exitos_lista)
+            fallos = len(fallos_lista)
             omitidos = len(resultado.get("omitidos", []))
             cancelados = len(resultado.get("cancelados", []))
             omitidos_total = omitidos + cancelados
@@ -4171,13 +4183,30 @@ class VisorVideos(QMainWindow):
                     f"Cancelado: {exitos} ok / {fallos} fallidos / {omitidos_total} omitidos"
                 )
                 return
+            # B6.11 detalle de altas al catálogo por cada exitoso (solo exitosos, sin reescaneo)
+            altas_ok = sum(1 for e in exitos_lista if isinstance(e, dict) and isinstance(e.get("alta_catalogo"), dict) and e.get("alta_catalogo", {}).get("ok"))
+            altas_fail = sum(1 for e in exitos_lista if isinstance(e, dict) and isinstance(e.get("alta_catalogo"), dict) and not e.get("alta_catalogo", {}).get("ok"))
+            # Mensaje informativo: si hubo fallos de catalogación, conservar archivos y reportar claramente
+            detalle_catalogo = ""
+            if altas_ok or altas_fail:
+                detalle_catalogo = f"\nCatálogo: {altas_ok} incorporados / {altas_fail} fallos de catalogación (archivos conservados)."
+            if altas_fail:
+                # Reportar detalle de primer fallo si existe
+                for e in exitos_lista:
+                    if not isinstance(e, dict):
+                        continue
+                    ac = e.get("alta_catalogo")
+                    if isinstance(ac, dict) and not ac.get("ok"):
+                        detalle_catalogo += f"\nEj. {os.path.basename(e.get('destino',''))}: {ac.get('error')}"
+                        break
             QMessageBox.information(
                 self,
                 "Exportar segmentos",
-                f"Exportación completada: {exitos} exitosos / {fallos} fallidos / {omitidos_total} omitidos o cancelados (total {total}).",
+                f"Exportación completada: {exitos} exitosos / {fallos} fallidos / {omitidos_total} omitidos o cancelados (total {total}).{detalle_catalogo}",
             )
+            estado_extra = f" | catálogo {altas_ok} ok / {altas_fail} fallos" if (altas_ok or altas_fail) else ""
             self.estado_escaneo.setText(
-                f"Exportado lote: {exitos} ok / {fallos} fallidos / {omitidos_total} omitidos"
+                f"Exportado lote: {exitos} ok / {fallos} fallidos / {omitidos_total} omitidos{estado_extra}"
             )
             return
         # Individual / secuencia: no inferir por filename; usar _export_tipo explícito
@@ -4201,14 +4230,25 @@ class VisorVideos(QMainWindow):
             dur = resultado.get("duracion")
             dur_txt = f"{dur:.2f}s" if isinstance(dur, (int, float)) else "desconocida"
             titulo = "Secuencia exportada" if es_secuencia else "Segmento exportado"
+            # B6.11 alta incremental: informar si hubo fallo de catalogación conservando archivo
+            alta = resultado.get("alta_catalogo")
+            extra_catalogo = ""
+            estado_catalogo = ""
+            if isinstance(alta, dict):
+                if alta.get("ok"):
+                    extra_catalogo = f"\nIncorporado al catálogo (id {alta.get('derivado_video_id')})."
+                    estado_catalogo = " + catálogo"
+                else:
+                    extra_catalogo = f"\nArchivo conservado pero fallo al incorporar al catálogo:\n{alta.get('error')}"
+                    estado_catalogo = " (fallo catálogo, archivo conservado)"
             QMessageBox.information(
-                self, titulo, f"{titulo} correctamente:\n{salida}\nDuración: {dur_txt}"
+                self, titulo, f"{titulo} correctamente:\n{salida}\nDuración: {dur_txt}{extra_catalogo}"
             )
             try:
                 nombre_salida = os.path.basename(salida) if isinstance(salida, str) else str(salida)
             except Exception:
                 nombre_salida = str(salida)
-            self.estado_escaneo.setText(f"Exportado: {nombre_salida} ({dur_txt})")
+            self.estado_escaneo.setText(f"Exportado: {nombre_salida} ({dur_txt}){estado_catalogo}")
             return
         error = resultado.get("error") or "error desconocido"
         titulo_error = "Unir segmentos" if es_secuencia else "Exportar segmento"
@@ -4399,6 +4439,7 @@ class VisorVideos(QMainWindow):
             except Exception:
                 continue
         segmentos_orden = []
+        segmentos_info_orden = []
         for sid in ids_orden:
             seg = seg_por_id.get(sid)
             if seg is None:
@@ -4410,6 +4451,7 @@ class VisorVideos(QMainWindow):
             if vid != vid_sel:
                 continue
             segmentos_orden.append((float(inicio), float(fin)))
+            segmentos_info_orden.append({"segmento_id": int(_id), "inicio": float(inicio), "fin": float(fin)})
         if len(segmentos_orden) < 2:
             QMessageBox.warning(self, "Unir segmentos", "No se obtuvieron 2 segmentos válidos del mismo video.")
             return
@@ -4454,10 +4496,15 @@ class VisorVideos(QMainWindow):
         if os.path.normcase(os.path.normpath(os.path.abspath(ruta_dest))) == os.path.normcase(os.path.normpath(os.path.abspath(ruta_fuente))):
             QMessageBox.warning(self, "Unir segmentos", "El destino no puede ser el mismo archivo que el origen.")
             return
-        # Lanzar tarea B6.10 fuera del hilo UI
+        # Lanzar tarea B6.10 fuera del hilo UI con alta incremental B6.11
         try:
             from tareas_videos import TareaExportarSecuencia
-            tarea = TareaExportarSecuencia(ruta_fuente, segmentos_orden, ruta_dest)
+            tarea = TareaExportarSecuencia(
+                ruta_fuente, segmentos_orden, ruta_dest,
+                original_video_id=int(vid_sel),
+                segmentos_info_orden=segmentos_info_orden,
+                ruta_db=self._ruta_db,
+            )
         except Exception as exc:
             QMessageBox.warning(self, "Unir segmentos", f"No se pudo preparar secuencia: {exc}")
             return

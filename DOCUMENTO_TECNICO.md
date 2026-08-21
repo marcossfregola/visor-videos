@@ -178,11 +178,12 @@ prueba/
   `None` si no. **Validación previa**: `marcador_id` entero positivo y clave con
   `_validar_color_clasificacion`.
 - **Segmentos con color (B6.3).** Las funciones del repositorio de segmentos
-  (`listar_segmentos`, `listar_segmentos_de`, `guardar_segmento`) siguen el mismo esquema que
-  sus equivalentes de marcadores: `color` como último campo de la tupla (B6.3) y parámetro
-  opcional de creación en el mismo `INSERT`, con `None` que conserva el color histórico azul.
-  `asignar_color_segmento(segmento_id, clave, ruta_db=None)` es el análogo de
-  `asignar_color_marcador` (devuelve la fila `(id, inicio, fin, color)` o `None`).
+   (`listar_segmentos`, `listar_segmentos_de`, `guardar_segmento`) siguen el mismo esquema que
+   sus equivalentes de marcadores: `color` como último campo de la tupla (B6.3) y parámetro
+   opcional de creación en el mismo `INSERT`, con `None` que conserva el color histórico azul.
+   `asignar_color_segmento(segmento_id, clave, ruta_db=None)` es el análogo de
+   `asignar_color_marcador` (devuelve la fila `(id, inicio, fin, color)` o `None`).
+- **Videos derivados y trazabilidad (B6.11).** Migración aditiva idempotente `_asegurar_tablas_derivados(conn)` — `CREATE TABLE IF NOT EXISTS videos_derivados (id PK, derivado_video_id UNIQUE, original_video_id, tipo TEXT CHECK individual/lote/secuencia, fecha_creacion, derivado_nombre/ruta, original_nombre/ruta — snapshot histórico sin `FOREIGN KEY CASCADE`) e índices `idx_videos_derivados_original/derivado`; `CREATE TABLE videos_derivados_segmentos (id PK, derivacion_id, segmento_id, orden, inicio, fin)` e índices `idx_videos_derivados_segmentos_derivacion/orden`; invocada desde `conectar_bd`. Alta incremental `incorporar_video_derivado_al_catalogo(derivado_ruta, original_video_id, segmentos_orden=[{segmento_id,inicio,fin}], tipo, ruta_db)` — valida archivo existente/no vacío, extensión `.mp4/.mkv`, `tipo` en `individual/lote/secuencia`, `segmentos` no vacía con `segmento_id>0` y `fin>ini`, `original_video_id` existe en `videos`, bloqueo derivado-de-derivado (`original_video_id` no está en `videos_derivados.derivado_video_id`), duplicado `UNIQUE(nombre)` con `normcase/normpath` sin reutilización silenciosa, `segmento_id` existe y pertenece a `original_video_id`, `ruta` fuera de raíz permitida, FFprobe+`stat` fuera de transacción, transacción atómica `BEGIN`→`_upsert_video`→`INSERT videos_derivados`→N `INSERT videos_derivados_segmentos`→`COMMIT` (rollback ante `IntegrityError`/`Exception`); devuelve `{ok, derivado_video_id, derivacion_id, error, catalog_error}` y conserva archivo si `catalog_error`. Lectura: `es_video_derivado(video_id)`, `obtener_derivacion_por_derivado(derivado_video_id)→{derivacion, segmentos ORDER BY orden}` (persiste tras borrar original/derivado de `videos`), `listar_derivaciones_por_original(original_video_id)→[... ORDER BY id ASC]`. Validación estricta de secuencia en `TareaExportarSecuencia`: longitud y correspondencia exacta `segmentos` vs `segmentos_info_orden` (mismatch → archivo conservado, `alta_catalogo ok False`, sin trazabilidad falsa).
 - `main()` — CLI: sincroniza el catálogo contra `videos_prueba/` (ruta resuelta por `rutas.py`).
 
 ### `rutas.py` — capa centralizada de resolución de rutas

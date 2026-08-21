@@ -912,15 +912,24 @@ class TareaExportarSegmento(TareaBase):
     Qt). La tarea corre fuera del hilo principal (GestorTareas), sin FFmpeg ni
     SQLite directos desde la UI. Soporta cancelación real: `cancelar()` marca
     el flag y el servicio termina FFmpeg y limpia el temporal.
+
+    B6.11: si se provee `original_video_id` + `segmento_id` + `ruta_db`, tras
+    verificación exitosa intenta alta incremental en catálogo con trazabilidad
+    (sin reescaneo completo, fuera del hilo UI, sin borrar archivo si falla
+    catalogación). El resultado añade `alta_catalogo` con el dict de
+    `incorporar_video_derivado_al_catalogo` sin romper el contrato previo.
     """
 
-    def __init__(self, fuente, inicio, fin, destino, parent=None):
+    def __init__(self, fuente, inicio, fin, destino, parent=None, original_video_id=None, segmento_id=None, ruta_db=None):
         super().__init__(parent)
         self._fuente = fuente
         self._inicio = inicio
         self._fin = fin
         self._destino = destino
         self._cancelada = False
+        self._original_video_id = original_video_id
+        self._segmento_id = segmento_id
+        self._ruta_db = ruta_db
 
     @property
     def fuente(self):
@@ -938,19 +947,58 @@ class TareaExportarSegmento(TareaBase):
     def destino(self):
         return self._destino
 
+    @property
+    def original_video_id(self):
+        return self._original_video_id
+
+    @property
+    def segmento_id(self):
+        return self._segmento_id
+
+    @property
+    def ruta_db(self):
+        return self._ruta_db
+
     def cancelar(self):
         self._cancelada = True
 
     def _trabajo(self):
         import exportar_segmento as exp
+        import escanear_videos as escanear_mod
 
-        return exp.exportar_segmento(
+        resultado = exp.exportar_segmento(
             self._fuente,
             self._inicio,
             self._fin,
             self._destino,
             cancel_check=lambda: self._cancelada,
         )
+        # B6.11 alta incremental si corresponde (solo si exportación ok y no cancelada)
+        if (
+            resultado.get("ok")
+            and not resultado.get("cancelado")
+            and self._original_video_id is not None
+            and self._segmento_id is not None
+            and self._ruta_db is not None
+        ):
+            # Evitar trabajo si fue cancelado entre tanto
+            if not self._cancelada:
+                try:
+                    alta = escanear_mod.incorporar_video_derivado_al_catalogo(
+                        resultado.get("salida"),
+                        self._original_video_id,
+                        [{"segmento_id": int(self._segmento_id), "inicio": float(self._inicio), "fin": float(self._fin)}],
+                        tipo="individual",
+                        ruta_db=self._ruta_db,
+                    )
+                except Exception as exc:
+                    alta = {"ok": False, "derivado_video_id": None, "derivacion_id": None, "error": f"excepción en alta: {exc}", "catalog_error": True}
+                resultado = dict(resultado)
+                resultado["alta_catalogo"] = alta
+                # Si alta falla, conservar archivo y exponer error claramente (no revertir exportación)
+                if not alta.get("ok"):
+                    resultado["alta_catalogo_error"] = alta.get("error")
+        return resultado
 
 
 class TareaResumenColapsado(TareaBase):
@@ -1060,6 +1108,7 @@ class TareaExportarLoteSegmentos(TareaBase):
     def _trabajo(self):
         import exportar_segmento as exp
         import nombres as nom
+        import escanear_videos as escanear_mod
 
         carpeta = self._carpeta_destino
         # Validar destino base (no escribible se reportará por item, pero lote vacío y destino inválido se maneja)
@@ -1366,7 +1415,25 @@ class TareaExportarLoteSegmentos(TareaBase):
                 self.reportar_progreso(idx + 1, total)
                 break
             if res.get("ok"):
-                exitos.append({"item": it, "destino": dest, "resultado": res})
+                entry = {"item": it, "destino": dest, "resultado": res}
+                # B6.11 alta incremental por cada salida exitosa (si ruta_db disponible y no cancelado)
+                if self._ruta_db is not None and not self._cancelada and it.get("segmento_id") is not None and it.get("video_id") is not None:
+                    try:
+                        import escanear_videos as escanear_mod
+                        alta = escanear_mod.incorporar_video_derivado_al_catalogo(
+                            dest,
+                            int(it["video_id"]),
+                            [{"segmento_id": int(it["segmento_id"]), "inicio": float(ini), "fin": float(fin)}],
+                            tipo="lote",
+                            ruta_db=self._ruta_db,
+                        )
+                        entry["alta_catalogo"] = alta
+                        if not alta.get("ok"):
+                            entry["alta_catalogo_error"] = alta.get("error")
+                    except Exception as exc:
+                        entry["alta_catalogo"] = {"ok": False, "error": f"excepción en alta: {exc}", "catalog_error": True}
+                        entry["alta_catalogo_error"] = str(exc)
+                exitos.append(entry)
             else:
                 fallos.append({"item": it, "destino": dest, "error": res.get("error"), "resultado": res})
             self.reportar_progreso(idx + 1, total)
@@ -1394,9 +1461,14 @@ class TareaExportarSecuencia(TareaBase):
     Corre fuera del hilo UI (GestorTareas), sin FFmpeg/SQLite directos desde UI.
     Soporta cancelación real: `cancelar()` marca flag y el servicio termina FFmpeg y limpia temporales.
     Usa vía principal trim/atrim+concat recodificado o fallback por extracción precisa si hay subs compatibles.
+
+    B6.11: si se provee `original_video_id` + `segmentos_info_orden` + `ruta_db`,
+    tras verificación exitosa intenta alta incremental con trazabilidad ordenada.
+    `segmentos_info_orden` es lista de dicts `{segmento_id, inicio, fin}` en orden
+    explícito (preservado tal cual). Mantiene compatibilidad con callers B6.10.
     """
 
-    def __init__(self, fuente, segmentos, destino, parent=None):
+    def __init__(self, fuente, segmentos, destino, parent=None, original_video_id=None, segmentos_info_orden=None, ruta_db=None):
         super().__init__(parent)
         self._fuente = fuente
         # segmentos: lista de (inicio, fin) en orden explícito
@@ -1406,6 +1478,9 @@ class TareaExportarSecuencia(TareaBase):
             raise TypeError(f"segmentos inválidos: {exc}") from None
         self._destino = destino
         self._cancelada = False
+        self._original_video_id = original_video_id
+        self._segmentos_info_orden = list(segmentos_info_orden) if segmentos_info_orden is not None else None
+        self._ruta_db = ruta_db
 
     @property
     def fuente(self):
@@ -1419,15 +1494,82 @@ class TareaExportarSecuencia(TareaBase):
     def destino(self):
         return self._destino
 
+    @property
+    def original_video_id(self):
+        return self._original_video_id
+
+    @property
+    def segmentos_info_orden(self):
+        return list(self._segmentos_info_orden) if self._segmentos_info_orden is not None else None
+
+    @property
+    def ruta_db(self):
+        return self._ruta_db
+
     def cancelar(self):
         self._cancelada = True
 
     def _trabajo(self):
         import exportar_secuencia as seq
+        import escanear_videos as escanear_mod
 
-        return seq.exportar_secuencia(
+        resultado = seq.exportar_secuencia(
             self._fuente,
             self._segmentos,
             self._destino,
             cancel_check=lambda: self._cancelada,
         )
+        if (
+            resultado.get("ok")
+            and not resultado.get("cancelado")
+            and self._original_video_id is not None
+            and self._segmentos_info_orden is not None
+            and self._ruta_db is not None
+            and not self._cancelada
+        ):
+            try:
+                # B6.11 validación estricta: longitud y correspondencia inicio/fin en mismo orden.
+                # Ante mismatch, conservar archivo exportado pero fallar alta sin relación falsa.
+                segmentos_info = self._segmentos_info_orden
+                segmentos_exportados = self._segmentos
+                mismatch = None
+                if not isinstance(segmentos_info, (list, tuple)):
+                    mismatch = "segmentos_info_orden no es lista"
+                elif len(segmentos_info) != len(segmentos_exportados):
+                    mismatch = f"mismatch longitud: info {len(segmentos_info)} vs exportados {len(segmentos_exportados)}"
+                else:
+                    for idx, (seg_info, seg_exp) in enumerate(zip(segmentos_info, segmentos_exportados)):
+                        if not isinstance(seg_info, dict):
+                            mismatch = f"segmento_info {idx} no es dict"
+                            break
+                        try:
+                            ini_info = float(seg_info.get("inicio"))
+                            fin_info = float(seg_info.get("fin"))
+                        except Exception:
+                            mismatch = f"segmento_info {idx} inicio/fin no numéricos"
+                            break
+                        ini_exp, fin_exp = seg_exp
+                        if abs(ini_info - float(ini_exp)) > 1e-6 or abs(fin_info - float(fin_exp)) > 1e-6:
+                            mismatch = f"mismatch correspondencia en orden {idx}: info ({ini_info},{fin_info}) vs exportado ({ini_exp},{fin_exp})"
+                            break
+                if mismatch is not None:
+                    resultado = dict(resultado)
+                    resultado["alta_catalogo"] = {"ok": False, "derivado_video_id": None, "derivacion_id": None, "error": f"validación secuencia falló: {mismatch}", "catalog_error": False}
+                    resultado["alta_catalogo_error"] = mismatch
+                    return resultado
+                alta = escanear_mod.incorporar_video_derivado_al_catalogo(
+                    resultado.get("salida"),
+                    int(self._original_video_id),
+                    segmentos_info,
+                    tipo="secuencia",
+                    ruta_db=self._ruta_db,
+                )
+                resultado = dict(resultado)
+                resultado["alta_catalogo"] = alta
+                if not alta.get("ok"):
+                    resultado["alta_catalogo_error"] = alta.get("error")
+            except Exception as exc:
+                resultado = dict(resultado)
+                resultado["alta_catalogo"] = {"ok": False, "derivado_video_id": None, "derivacion_id": None, "error": f"excepción en alta: {exc}", "catalog_error": True}
+                resultado["alta_catalogo_error"] = str(exc)
+        return resultado
