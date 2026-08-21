@@ -107,6 +107,7 @@ from tareas_videos import (
     TareaAsignarColorSegmento,
     TareaCopiarVideo,
     TareaCrearCarpeta,
+    TareaEliminarVideo,
     TareaEscaneo,
     TareaExportarSecuencia,
     TareaExportarSegmento,
@@ -2758,6 +2759,18 @@ class VisorVideos(QMainWindow):
         self._copiar_error_sincronizacion = None
         self._crear_ruta_inconsistente = None
         self._crear_error_refresco = None
+
+        # B7.5 eliminación individual segura a Papelera (sin SQLite/FS directo desde UI)
+        self.gestor_eliminar = GestorTareas(self)
+        self.gestor_eliminar.tarea_resultado.connect(self._al_resultado_eliminar_video)
+        self.gestor_eliminar.tarea_error.connect(self._al_error_eliminar_video)
+        self.gestor_eliminar.tarea_finalizada.connect(self._al_eliminar_video_finalizada)
+        self.gestor_eliminar.actividad_cambiada.connect(self._al_actividad_eliminar_video)
+        self._eliminar_en_curso = False
+        self._eliminar_video_id = None
+        self._eliminar_nombre = None
+        self._eliminar_ruta_inconsistente = None
+        self._eliminar_error_sincronizacion = None
 
         self._timer_previews = QTimer(self)
         self._timer_previews.setSingleShot(True)
@@ -5614,9 +5627,11 @@ class VisorVideos(QMainWindow):
 
     def _actualizar_boton_eliminar(self):
         gestor_op = getattr(self, "gestor_operaciones", None)
+        gestor_elim = getattr(self, "gestor_eliminar", None)
         habilitado = (
             bool(self._nombres_seleccionados)
             and (gestor_op is None or not gestor_op.activo)
+            and (gestor_elim is None or not gestor_elim.activo)
             and not self.gestor.activo
             and self.carpeta_seleccionada is not None
             and os.path.isdir(self.carpeta_seleccionada)
@@ -5669,6 +5684,176 @@ class VisorVideos(QMainWindow):
     def _al_error_eliminar(self, mensaje):
         self._ocultar_progreso()
         self.estado_escaneo.setText(f"Error al eliminar: {mensaje}")
+        self._actualizar_boton_eliminar()
+
+    # B7.5 eliminación individual a Papelera vía video_id
+    def _iniciar_eliminar_video(self, nombre):
+        """Inicia eliminación individual segura a Papelera (B7.5).
+
+        Flujo: resuelve video_id via tarjeta, confirma con QMessageBox
+        (Eliminar/Cancelar, default Cancelar), delega a TareaEliminarVideo
+        en segundo plano sin acceso directo a disco ni base y sin
+        recodificación. Cancelación solo antes del punto de no retorno.
+        """
+        if getattr(self, "gestor_eliminar", None) is None:
+            self.mensaje_carpeta.setText("Gestor de eliminación no disponible")
+            return
+        if self.gestor_eliminar.activo or self.gestor.activo or getattr(self, "_eliminar_en_curso", False):
+            self.mensaje_carpeta.setText("Hay una operación en curso")
+            return
+        if getattr(self, "gestor_renombrado", None) and self.gestor_renombrado.activo:
+            self.mensaje_carpeta.setText("Hay una operación en curso")
+            return
+        if getattr(self, "gestor_mover", None) and self.gestor_mover.activo:
+            self.mensaje_carpeta.setText("Hay una operación en curso")
+            return
+        if getattr(self, "gestor_copiar", None) and self.gestor_copiar.activo:
+            self.mensaje_carpeta.setText("Hay una operación en curso")
+            return
+        tarjeta = self._tarjeta_por_nombre(nombre)
+        if tarjeta is None:
+            self.mensaje_carpeta.setText("No se pudo identificar el video")
+            return
+        video_id = getattr(tarjeta, "_video_id", None)
+        if video_id is None:
+            self.mensaje_carpeta.setText("No se pudo identificar el video")
+            return
+        caja = QMessageBox(self)
+        caja.setIcon(QMessageBox.Question)
+        caja.setWindowTitle("Eliminar")
+        caja.setText(
+            f"¿Eliminar '{nombre}'?\n\n"
+            "Será enviado a la Papelera de reciclaje y podrá "
+            "restaurarse desde allí."
+        )
+        boton_eliminar = caja.addButton("Eliminar", QMessageBox.AcceptRole)
+        boton_cancelar = caja.addButton("Cancelar", QMessageBox.RejectRole)
+        caja.setDefaultButton(boton_cancelar)
+        caja.exec()
+        if caja.clickedButton() != boton_eliminar:
+            return
+        self._eliminar_video_id = video_id
+        self._eliminar_nombre = nombre
+        self._eliminar_ruta_inconsistente = None
+        self._eliminar_error_sincronizacion = None
+        tarea = TareaEliminarVideo(video_id, self._ruta_db)
+        if not self.gestor_eliminar.iniciar(tarea):
+            self.mensaje_carpeta.setText("No se pudo iniciar la eliminación")
+            return
+        self._eliminar_en_curso = True
+        self.barra_progreso.setVisible(True)
+        self.barra_progreso.setRange(0, 0)
+        self.mensaje_carpeta.setText(f"Eliminando {nombre}…")
+        self._texto_progreso = f"Eliminando {nombre}…"
+        self._actualizar_boton_eliminar()
+
+    def _al_resultado_eliminar_video(self, resultado):
+        if not isinstance(resultado, dict) or not resultado.get("ok"):
+            return
+        if resultado.get("cancelado"):
+            self.mensaje_carpeta.setText("Eliminación cancelada")
+            self._eliminar_video_id = None
+            self._eliminar_nombre = None
+            return
+        video_id = resultado.get("video_id") or self._eliminar_video_id
+        nombre = resultado.get("nombre") or self._eliminar_nombre
+        ruta = resultado.get("ruta")
+        # Validación mínima de resultado sin FS
+        if not isinstance(nombre, str) or not nombre.strip():
+            self._eliminar_ruta_inconsistente = ruta
+            self._eliminar_error_sincronizacion = "nombre no válido en resultado"
+            self.mensaje_carpeta.setText(f"Eliminación completada pero UI inconsistente: nombre no válido — evidencia {ruta!r}")
+            self._eliminar_video_id = None
+            self._eliminar_nombre = None
+            return
+        # Remover tarjeta localmente sin reescaneo
+        tarjeta_objetivo = None
+        for nom, tarjeta in list(self.tarjetas):
+            if nom == nombre and getattr(tarjeta, "_video_id", None) == video_id:
+                tarjeta_objetivo = tarjeta
+                break
+        if tarjeta_objetivo is None:
+            # fallback por nombre solo
+            for nom, tarjeta in list(self.tarjetas):
+                if nom == nombre:
+                    tarjeta_objetivo = tarjeta
+                    break
+        if tarjeta_objetivo is None:
+            self._eliminar_ruta_inconsistente = ruta
+            self._eliminar_error_sincronizacion = "tarjeta no encontrada"
+            self.mensaje_carpeta.setText(f"Eliminado {nombre} (archivo en Papelera) — tarjeta ya no estaba en vista")
+            # actualizar contadores igualmente
+            self._eliminar_video_id = None
+            self._eliminar_nombre = None
+            self.filtrar(self.busqueda.text())
+            self.actualizar_contador()
+            self._actualizar_resumen_seleccion()
+            return
+        try:
+            self.cuadricula.removeWidget(tarjeta_objetivo)
+        except Exception:
+            pass
+        try:
+            tarjeta_objetivo.hide()
+            tarjeta_objetivo.setParent(None)
+            tarjeta_objetivo.deleteLater()
+        except Exception:
+            pass
+        # quitar de estructuras
+        for idx, (nom, t) in enumerate(list(self.tarjetas)):
+            if t is tarjeta_objetivo:
+                try:
+                    del self.tarjetas[idx]
+                except Exception:
+                    pass
+                break
+        try:
+            if nombre in self.visibles:
+                self.visibles.remove(nombre)
+        except Exception:
+            pass
+        try:
+            self._nombres_seleccionados.discard(nombre)
+            if getattr(self, "_ancla_seleccion", None) == nombre:
+                self._ancla_seleccion = None
+        except Exception:
+            pass
+        # actualizar total paginado
+        try:
+            if isinstance(getattr(self, "_total_catalogo", None), int) and self._total_catalogo is not None:
+                self._total_catalogo = max(0, self._total_catalogo - 1)
+        except Exception:
+            pass
+        self._eliminar_video_id = None
+        self._eliminar_nombre = None
+        self._eliminar_ruta_inconsistente = None
+        self._eliminar_error_sincronizacion = None
+        # Reaplicar filtro/orden sin escaneo
+        try:
+            self.filtrar(self.busqueda.text())
+        except Exception:
+            pass
+        self.actualizar_contador()
+        self._actualizar_resumen_seleccion()
+        self._actualizar_boton_eliminar()
+        self.mensaje_carpeta.setText(f"Eliminado: {nombre}")
+        self.estado_escaneo.setText(f"Eliminado: {nombre}")
+
+    def _al_error_eliminar_video(self, mensaje):
+        # Si es inconsistencia post-Papelera, mensaje ya contiene ruta conservada
+        self.mensaje_carpeta.setText(f"No se pudo eliminar: {mensaje}")
+        self._eliminar_video_id = None
+        self._eliminar_nombre = None
+        self._al_actividad_eliminar_video(False)
+
+    def _al_eliminar_video_finalizada(self):
+        self._eliminar_en_curso = False
+        self.barra_progreso.setVisible(False)
+        self.barra_progreso.setRange(0, 100)
+        self._al_actividad_eliminar_video(False)
+        self._actualizar_boton_eliminar()
+
+    def _al_actividad_eliminar_video(self, activa):
         self._actualizar_boton_eliminar()
 
     def _procesar_archivos_eliminados(self):
@@ -6594,6 +6779,8 @@ class VisorVideos(QMainWindow):
         accion_mover.triggered.connect(lambda: self._iniciar_mover(nombre))
         accion_copiar = menu.addAction("Copiar a…")
         accion_copiar.triggered.connect(lambda: self._iniciar_copiar(nombre))
+        accion_eliminar_ind = menu.addAction("Eliminar…")
+        accion_eliminar_ind.triggered.connect(lambda: self._iniciar_eliminar_video(nombre))
         accion_reproducir_marcadores.setEnabled(bool(self._nombres_seleccionados))
         accion_reproducir_marcadores.triggered.connect(
             self._reproducir_marcadores_en_vlc
@@ -7198,6 +7385,13 @@ class VisorVideos(QMainWindow):
             self._copiar_video_id = None
             self._copiar_ruta_inconsistente = None
             self._copiar_error_sincronizacion = None
+        if getattr(self, "gestor_eliminar", None) is not None:
+            self.gestor_eliminar.cerrar()
+            self._eliminar_en_curso = False
+            self._eliminar_video_id = None
+            self._eliminar_nombre = None
+            self._eliminar_ruta_inconsistente = None
+            self._eliminar_error_sincronizacion = None
         super().closeEvent(event)
 
 

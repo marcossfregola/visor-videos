@@ -1708,3 +1708,42 @@ class TareaCopiarVideo(TareaBase):
     def _trabajo(self):
         import copiar_video as svc
         return svc.copiar_video(self._video_id, self._carpeta_destino, self._ruta_db)
+
+
+class TareaEliminarVideo(TareaBase):
+    """Elimina un video enviándolo a la Papelera (B7.5).
+
+    Corre fuera del hilo UI. Delega exclusivamente en
+    `eliminar_video.eliminar_video` (sin SQLite/FS directo desde UI,
+    sin os.remove, sin FFmpeg). Soporta cancelación cooperativa
+    solo antes del punto de no retorno (antes de Papelera).
+    """
+
+    def __init__(self, video_id, ruta_db=None, parent=None):
+        super().__init__(parent)
+        self._video_id = video_id
+        self._ruta_db = ruta_db
+        self._cancelada = False
+
+    @property
+    def video_id(self):
+        return self._video_id
+
+    @property
+    def ruta_db(self):
+        return self._ruta_db
+
+    def cancelar(self):
+        self._cancelada = True
+
+    def _trabajo(self):
+        if self._cancelada:
+            return {"ok": False, "cancelado": True, "video_id": self._video_id}
+        import eliminar_video as svc
+        # Punto de no retorno: después de Papelera no hay cancelación
+        resultado = svc.eliminar_video(self._video_id, self._ruta_db)
+        if self._cancelada:
+            # Si se canceló inmediatamente después, el servicio ya ejecutó
+            # Papelera+DB; no revertir, informar que no fue cancelable
+            resultado["cancelado_tardio"] = True
+        return resultado
