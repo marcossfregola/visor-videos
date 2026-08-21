@@ -5,6 +5,23 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 114. Cierre técnico B6.12 — Integración, robustez y cierre funcional
+
+- **Fecha:** 2026-08-21
+- **Tipo:** cierre técnico funcional de **B6.12 completada y verificada; cerrada documental y técnica en este commit local de `beta6` (sin tag/merge/release/push; sin cierre final de Beta 6).**
+- **Rama:** `beta6` (HEAD previo `cc71224079fc69991099aa29d5dc349e72469213`).
+- **Alcance verificado (resumen factual):**
+  - **Integración B6.12 — `prueba_integracion_b612.py` 14/14** — validación cruzada con DB/video/fixture aislados bajo `C:\prueba\_tmp_b612_integracion` (eliminado en `finally`; no toca datos reales) y **FFmpeg 8.1.1/FFprobe 8.1.1 reales** (`testsrc`/`anullsrc`): P01 filtro `marcador:rojo` + `orden duracion asc` + paginación 1/1 sin duplicados; P02 `segmento:sin_clasificar` (`color IS NULL`) + `orden nombre asc` + paginación; P03 resumen colapsado batch `TareaResumenColapsado` (6 marcadores + 6 segmentos con `NULL` preservados); P04 export individual real FFmpeg/FFprobe + naming `nombres.generar_sugerencia_exportacion` + `alta/trazabilidad` `incorporar_video_derivado_al_catalogo`/`obtener_derivacion_por_derivado` (duración `TOLERANCIA_DURACION_EXPORT`); P05 lote por color + colisiones FS (`_001`) e intra-lote + parciales 2 ok/1 fallo con `alta_catalogo` solo en exitosos; P06 secuencia ordenada con `TareaExportarSecuencia` + trazabilidad `ORDER BY orden` exacta; P07 cancelación `GestorTareas`+`TareaExportarSegmento` sin temporales ni trazabilidad falsa; P08 derivado fuera de raíz + FFprobe + alta incremental; P09 persistencia/snapshot histórico tras borrar original de `videos` (snapshot `original_nombre/ruta` preservado); P10 bloqueo derivado-de-derivado; P11 `UNIQUE(nombre)` misma/distinta ruta → `catalog_error` con archivo conservado; P12 migraciones idempotentes 3× + `PRAGMA integrity_check=ok`; P13 filtro texto+color `AND` + paginación determinista; P14 derivado eliminado físicamente histórica persiste. Limpieza `LIMPIEZA_TMP=OK`, `INTEGRITY_CHECK=ok`.
+  - **Reescaneo preserva metadatos — `prueba_reescaneo_preserva_metadatos_b612.py` 3/3** — regresión sobre APIs productivas exactas (`conectar_bd`, `preparar_registros_basicos`, `combinar_registros_con_ffprobe/_miniaturas/_tamanos`, `guardar_videos`, `guardar_marcador/segmento`, `listar_*`, `detectar_diferencias`, `preparar_plan_sincronizacion`, `aplicar_incorporaciones`, `eliminar_candidatos`, `PRAGMA integrity_check`) bajo `C:\prueba\_tmp_b612_reescaneo`: base con A/B/C + marcadores `rojo/azul/verde` y segmentos `amarillo/violeta` repartidos, guarda D y verifica IDs preservados + marcadores/segmentos idénticos + `integrity_check=ok` + idempotencia; modificado (A cambia `tamano 4096/mtime/duracion 120.5` y se re-guardasincroniza) conserva IDs/marcadores/segmentos y actualiza metadata; plan completo (E nuevo + B modificado `hevc`) misma preservación. **No reproduce** incidente aislado anterior: **3/3 PASS** en base/modificado/plan completo.
+  - **Control B6.11 — `prueba_derivados_b611.py` 15/15** — regresión de control en verde en esta entrega (ver detalle en ##113).
+- **Verificación de esta entrega:** `prueba_integracion_b612.py` **14/14**; `prueba_reescaneo_preserva_metadatos_b612.py` **3/3**; `prueba_derivados_b611.py` **15/15** en verde; `FFMPEG=OK`/`FFPROBE=OK` 8.1.1; `INTEGRITY_CHECK=ok`; `py_compile` ambas suites OK; `git diff --check` limpio; artefacto humano `videos_prueba/output_video_MMH3Tools_2_chunks_prueba_00001__segmento_0.33-1.25.mp4` preservado sin stagear/versionar.
+- **Observación no bloqueante:** incidente aislado anterior no reproducido (reescaneo preserva metadatos — 3/3 — sin fallo; se registra como observación, no bloquea cierre funcional B6.12).
+- **Validación humana:** persistencia tras reinicio+reescaneo validada por Marcos (artefacto humano preservado).
+- **Beta 6 permanece abierta:** B6.12 es cierre funcional; **falta cierre FINAL de Beta 6** (identidad/documentación final/tag/push según autorización separada; no se cierra la beta ni se publica en este commit).
+- **Archivos versionados en este commit:** `prueba_integracion_b612.py`, `prueba_reescaneo_preserva_metadatos_b612.py`, `ESTADO_PROYECTO.md`, `ROADMAP.md`, `HISTORIAL_PROYECTO.md`.
+
+---
+
 ## 113. Cierre de B6.11 — Incorporación al catálogo y trazabilidad de videos derivados
 
 - **Fecha:** 2026-08-21
