@@ -1747,3 +1747,58 @@ class TareaEliminarVideo(TareaBase):
             # Papelera+DB; no revertir, informar que no fue cancelable
             resultado["cancelado_tardio"] = True
         return resultado
+
+
+class TareaLoteOperaciones(TareaBase):
+    """Orquestador lote B7.6 — mueve/copia/elimina en lote secuencial (sin Qt, sin FFmpeg).
+
+    Delega exclusivamente en lote_operaciones.lote_operaciones (puro, sin Qt).
+    Soporta cancelación cooperativa antes de cada ítem y reporta progreso por ítem (actual/total).
+    No hace pre-vuelo global; cada servicio resuelve colisiones/destino inválido.
+    No revierte ítems completados. Un fallo parcial no cancela el lote.
+    """
+
+    def __init__(self, operacion, video_ids, ruta_db, carpeta_destino=None, parent=None):
+        super().__init__(parent)
+        if operacion not in ("mover", "copiar", "eliminar"):
+            raise ValueError(f"operacion debe ser mover|copiar|eliminar, got {operacion!r}")
+        if isinstance(video_ids, (str, bytes, bytearray)):
+            raise TypeError("video_ids debe ser colección, no texto")
+        try:
+            self._video_ids = list(video_ids)
+        except TypeError:
+            raise TypeError("video_ids debe ser iterable") from None
+        self._operacion = operacion
+        self._ruta_db = ruta_db
+        self._carpeta_destino = carpeta_destino
+        self._cancelada = False
+
+    @property
+    def operacion(self):
+        return self._operacion
+
+    @property
+    def video_ids(self):
+        return list(self._video_ids)
+
+    @property
+    def ruta_db(self):
+        return self._ruta_db
+
+    @property
+    def carpeta_destino(self):
+        return self._carpeta_destino
+
+    def cancelar(self):
+        self._cancelada = True
+
+    def _trabajo(self):
+        import lote_operaciones as lote
+        return lote.lote_operaciones(
+            self._operacion,
+            self._video_ids,
+            self._ruta_db,
+            carpeta_destino=self._carpeta_destino,
+            cancel_check=lambda: self._cancelada,
+            progreso_callback=self.reportar_progreso,
+        )

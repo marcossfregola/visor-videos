@@ -124,6 +124,7 @@ from tareas_videos import (
     TareaListarMarcadoresVarios,
     TareaListarSegmentos,
     TareaListarSegmentosVarios,
+    TareaLoteOperaciones,
     TareaMiniaturas,
     TareaMoverVideo,
     TareaPreviewsProgresivas,
@@ -2423,6 +2424,22 @@ class VisorVideos(QMainWindow):
         self.boton_eliminar.setEnabled(False)
         self.boton_eliminar.clicked.connect(self._iniciar_eliminar)
 
+        self.boton_mover_seleccionados = QPushButton("Mover seleccionados…")
+        self.boton_mover_seleccionados.setEnabled(False)
+        self.boton_mover_seleccionados.clicked.connect(self._iniciar_lote_mover)
+
+        self.boton_copiar_seleccionados = QPushButton("Copiar seleccionados…")
+        self.boton_copiar_seleccionados.setEnabled(False)
+        self.boton_copiar_seleccionados.clicked.connect(self._iniciar_lote_copiar)
+
+        self.boton_eliminar_seleccionados = QPushButton("Enviar seleccionados a Papelera…")
+        self.boton_eliminar_seleccionados.setEnabled(False)
+        self.boton_eliminar_seleccionados.clicked.connect(self._iniciar_lote_eliminar)
+
+        self.boton_cancelar_lote = QPushButton("Cancelar lote")
+        self.boton_cancelar_lote.setVisible(False)
+        self.boton_cancelar_lote.clicked.connect(self._cancelar_lote)
+
         self.boton_cargar_mas = QPushButton("Cargar más")
         self.boton_cargar_mas.setEnabled(False)
         self.boton_cargar_mas.clicked.connect(self.cargar_mas)
@@ -2478,6 +2495,10 @@ class VisorVideos(QMainWindow):
         fila_carpeta.addWidget(self.boton_copiar)
         fila_carpeta.addWidget(self.boton_pegar)
         fila_carpeta.addWidget(self.boton_eliminar)
+        fila_carpeta.addWidget(self.boton_mover_seleccionados)
+        fila_carpeta.addWidget(self.boton_copiar_seleccionados)
+        fila_carpeta.addWidget(self.boton_eliminar_seleccionados)
+        fila_carpeta.addWidget(self.boton_cancelar_lote)
         fila_carpeta.addWidget(self.etiqueta_carpeta, 1)
         fila_carpeta.addWidget(self.estado_escaneo)
         fila_carpeta.addWidget(self.mensaje_carpeta)
@@ -2771,6 +2792,20 @@ class VisorVideos(QMainWindow):
         self._eliminar_nombre = None
         self._eliminar_ruta_inconsistente = None
         self._eliminar_error_sincronizacion = None
+
+        # B7.6 operaciones masivas seguras sobre seleccionados (sin SQLite/FS directo desde UI)
+        self.gestor_lote = GestorTareas(self)
+        self.gestor_lote.tarea_resultado.connect(self._al_resultado_lote)
+        self.gestor_lote.tarea_error.connect(self._al_error_lote)
+        self.gestor_lote.tarea_finalizada.connect(self._al_lote_finalizada)
+        self.gestor_lote.tarea_progreso.connect(self._al_progreso_lote)
+        self.gestor_lote.actividad_cambiada.connect(self._al_actividad_lote)
+        self._lote_en_curso = False
+        self._lote_operacion = None
+        self._lote_video_ids = None
+        self._lote_carpeta_destino = None
+        self._lote_resultado_pendiente = None
+        self._lote_ultimo_error_completo = None
 
         self._timer_previews = QTimer(self)
         self._timer_previews.setSingleShot(True)
@@ -5856,6 +5891,389 @@ class VisorVideos(QMainWindow):
     def _al_actividad_eliminar_video(self, activa):
         self._actualizar_boton_eliminar()
 
+    # B7.6 lote masivo seguro (sin FS/SQLite directo desde UI, un solo selector, una sola confirmación)
+    def _video_ids_seleccionados_ordenados(self):
+        ids = []
+        for nombre in self.tarjetas_visibles():
+            if nombre not in self._nombres_seleccionados:
+                continue
+            tarjeta = self._tarjeta_por_nombre(nombre)
+            if tarjeta is None:
+                continue
+            vid = getattr(tarjeta, "_video_id", None)
+            if isinstance(vid, int) and not isinstance(vid, bool) and vid > 0:
+                ids.append(vid)
+        return ids
+
+    def _lote_esta_ocupado(self):
+        if getattr(self, "gestor_lote", None) is not None and self.gestor_lote.activo:
+            return True
+        if getattr(self, "gestor_renombrado", None) is not None and self.gestor_renombrado.activo:
+            return True
+        if getattr(self, "gestor_mover", None) is not None and self.gestor_mover.activo:
+            return True
+        if getattr(self, "gestor_copiar", None) is not None and self.gestor_copiar.activo:
+            return True
+        if getattr(self, "gestor_eliminar", None) is not None and self.gestor_eliminar.activo:
+            return True
+        if getattr(self, "gestor", None) is not None and self.gestor.activo:
+            return True
+        return False
+
+    def _actualizar_botones_lote(self):
+        ocupado = self._lote_esta_ocupado()
+        tiene_sel = bool(self._nombres_seleccionados)
+        if hasattr(self, "boton_mover_seleccionados"):
+            self.boton_mover_seleccionados.setEnabled(tiene_sel and not ocupado)
+        if hasattr(self, "boton_copiar_seleccionados"):
+            self.boton_copiar_seleccionados.setEnabled(tiene_sel and not ocupado)
+        if hasattr(self, "boton_eliminar_seleccionados"):
+            self.boton_eliminar_seleccionados.setEnabled(tiene_sel and not ocupado)
+        if hasattr(self, "boton_cancelar_lote"):
+            self.boton_cancelar_lote.setVisible(bool(getattr(self, "_lote_en_curso", False)))
+            self.boton_cancelar_lote.setEnabled(bool(getattr(self, "_lote_en_curso", False)))
+
+    def _iniciar_lote_mover(self):
+        if self._lote_esta_ocupado():
+            self.mensaje_carpeta.setText("Hay una operación en curso")
+            return
+        video_ids = self._video_ids_seleccionados_ordenados()
+        if not video_ids:
+            return
+        carpeta_destino = QFileDialog.getExistingDirectory(self, "Mover seleccionados a…", "")
+        if not carpeta_destino:
+            return
+        tarea = TareaLoteOperaciones("mover", video_ids, self._ruta_db, carpeta_destino=carpeta_destino)
+        if not self.gestor_lote.iniciar(tarea):
+            self.mensaje_carpeta.setText("No se pudo iniciar lote mover")
+            return
+        self._lote_en_curso = True
+        self._lote_operacion = "mover"
+        self._lote_video_ids = list(video_ids)
+        self._lote_carpeta_destino = carpeta_destino
+        self.barra_progreso.setVisible(True)
+        self.barra_progreso.setRange(0, len(video_ids))
+        self.barra_progreso.setValue(0)
+        self.mensaje_carpeta.setText(f"Moviendo {len(video_ids)} videos…")
+        self._actualizar_botones_lote()
+
+    def _iniciar_lote_copiar(self):
+        if self._lote_esta_ocupado():
+            self.mensaje_carpeta.setText("Hay una operación en curso")
+            return
+        video_ids = self._video_ids_seleccionados_ordenados()
+        if not video_ids:
+            return
+        carpeta_destino = QFileDialog.getExistingDirectory(self, "Copiar seleccionados a…", "")
+        if not carpeta_destino:
+            return
+        tarea = TareaLoteOperaciones("copiar", video_ids, self._ruta_db, carpeta_destino=carpeta_destino)
+        if not self.gestor_lote.iniciar(tarea):
+            self.mensaje_carpeta.setText("No se pudo iniciar lote copiar")
+            return
+        self._lote_en_curso = True
+        self._lote_operacion = "copiar"
+        self._lote_video_ids = list(video_ids)
+        self._lote_carpeta_destino = carpeta_destino
+        self.barra_progreso.setVisible(True)
+        self.barra_progreso.setRange(0, len(video_ids))
+        self.barra_progreso.setValue(0)
+        self.mensaje_carpeta.setText(f"Copiando {len(video_ids)} videos…")
+        self._actualizar_botones_lote()
+
+    def _iniciar_lote_eliminar(self):
+        if self._lote_esta_ocupado():
+            self.mensaje_carpeta.setText("Hay una operación en curso")
+            return
+        video_ids = self._video_ids_seleccionados_ordenados()
+        if not video_ids:
+            return
+        caja = QMessageBox(self)
+        caja.setIcon(QMessageBox.Question)
+        caja.setWindowTitle("Eliminar")
+        caja.setText(
+            f"¿Eliminar los {len(video_ids)} videos seleccionados?\n\n"
+            "Serán enviados a la Papelera de reciclaje y podrán "
+            "restaurarse desde allí."
+        )
+        boton_eliminar = caja.addButton("Eliminar", QMessageBox.AcceptRole)
+        boton_cancelar = caja.addButton("Cancelar", QMessageBox.RejectRole)
+        caja.setDefaultButton(boton_cancelar)
+        caja.exec()
+        if caja.clickedButton() != boton_eliminar:
+            return
+        tarea = TareaLoteOperaciones("eliminar", video_ids, self._ruta_db)
+        if not self.gestor_lote.iniciar(tarea):
+            self.mensaje_carpeta.setText("No se pudo iniciar lote eliminar")
+            return
+        self._lote_en_curso = True
+        self._lote_operacion = "eliminar"
+        self._lote_video_ids = list(video_ids)
+        self._lote_carpeta_destino = None
+        self.barra_progreso.setVisible(True)
+        self.barra_progreso.setRange(0, len(video_ids))
+        self.barra_progreso.setValue(0)
+        self.mensaje_carpeta.setText(f"Eliminando {len(video_ids)} videos…")
+        self._actualizar_botones_lote()
+
+    def _cancelar_lote(self):
+        # Manejo explícito sin ocultamiento: caso esperado vs error inesperado visible
+        gestor = getattr(self, "gestor_lote", None)
+        tarea = getattr(gestor, "tarea", None) if gestor is not None else None
+        if tarea is None or not hasattr(tarea, "cancelar"):
+            self.mensaje_carpeta.setText("No hay lote en curso para cancelar")
+            self.estado_escaneo.setText("Cancelación lote: sin tarea activa")
+            if hasattr(self, "boton_cancelar_lote"):
+                self.boton_cancelar_lote.setEnabled(False)
+            return
+        try:
+            tarea.cancelar()
+        except RuntimeError as exc:
+            self.mensaje_carpeta.setText(f"No se pudo cancelar lote (estado): {exc}")
+            self.estado_escaneo.setText(f"Error cancelación lote RuntimeError: {exc}")
+            if hasattr(self, "boton_cancelar_lote"):
+                self.boton_cancelar_lote.setEnabled(False)
+            return
+        except AttributeError as exc:
+            self.mensaje_carpeta.setText(f"No se pudo cancelar lote (interfaz): {exc}")
+            self.estado_escaneo.setText(f"Error cancelación lote AttributeError: {exc}")
+            if hasattr(self, "boton_cancelar_lote"):
+                self.boton_cancelar_lote.setEnabled(False)
+            return
+        except Exception as exc:
+            self.mensaje_carpeta.setText(f"Error inesperado al cancelar lote: {type(exc).__name__}: {exc}")
+            self.estado_escaneo.setText(f"Error inesperado cancelación lote: {type(exc).__name__}: {exc}")
+            if hasattr(self, "boton_cancelar_lote"):
+                self.boton_cancelar_lote.setEnabled(False)
+            return
+        self.mensaje_carpeta.setText("Cancelando lote…")
+        self.estado_escaneo.setText("Cancelando lote…")
+        if hasattr(self, "boton_cancelar_lote"):
+            self.boton_cancelar_lote.setEnabled(False)
+
+    def _al_progreso_lote(self, actual, total):
+        if not getattr(self, "_lote_en_curso", False):
+            return
+        self.barra_progreso.setRange(0, total)
+        self.barra_progreso.setValue(actual)
+        self.barra_progreso.setVisible(True)
+
+    def _al_resultado_lote(self, resultado):
+        # Corrección auditoría B7.6: sin except pass genérico; inconsistencia UI visible y recarga paginada segura
+        if not isinstance(resultado, dict):
+            self.mensaje_carpeta.setText("Resultado de lote no válido — inconsistencia de sincronización: recarga necesaria")
+            self.estado_escaneo.setText("Resultado de lote no válido — recarga programada")
+            try:
+                self._programar_recarga_por_carpeta()
+            except (RuntimeError, AttributeError, ValueError) as exc:
+                self.mensaje_carpeta.setText(f"Resultado inválido y fallo recarga: {exc} — operación física/DB preservada, UI desincronizada")
+                self.estado_escaneo.setText(f"Fallo recarga tras lote inválido: {exc}")
+            except Exception as exc:
+                self.mensaje_carpeta.setText(f"Error inesperado tras lote inválido: {type(exc).__name__}: {exc} — UI desincronizada, DB preservada")
+                self.estado_escaneo.setText(f"Error inesperado recarga: {type(exc).__name__}: {exc}")
+            hasattr(self.mensaje_carpeta, "setToolTip") and self.mensaje_carpeta.setToolTip(self.mensaje_carpeta.text())
+            hasattr(self.estado_escaneo, "setToolTip") and self.estado_escaneo.setToolTip(self.estado_escaneo.text())
+            self._actualizar_botones_lote()
+            return
+        self._lote_resultado_pendiente = resultado
+        oper = resultado.get("operacion") or getattr(self, "_lote_operacion", None)
+        exitosos = resultado.get("exitosos", []) or []
+        fallidos = resultado.get("fallidos", []) or []
+        cancelados = resultado.get("cancelados", []) or []
+        total = resultado.get("total", 0)
+        # Validación de tipos específica sin ocultamiento
+        if not isinstance(exitosos, list):
+            self.mensaje_carpeta.setText("Lote inconsistente: exitosos no es lista — recarga programada, DB preservada")
+            self.estado_escaneo.setText("Inconsistencia UI: exitosos no lista — recarga paginada")
+            try:
+                self._programar_recarga_por_carpeta()
+            except (RuntimeError, AttributeError, ValueError) as exc:
+                self.mensaje_carpeta.setText(f"Inconsistencia UI y fallo recarga: {exc} — DB preservada")
+                self.estado_escaneo.setText(f"Fallo recarga: {exc}")
+            except Exception as exc:
+                self.mensaje_carpeta.setText(f"Error inesperado recarga: {type(exc).__name__}: {exc} — DB preservada")
+                self.estado_escaneo.setText(f"Error inesperado recarga: {type(exc).__name__}: {exc}")
+            hasattr(self.mensaje_carpeta, "setToolTip") and self.mensaje_carpeta.setToolTip(self.mensaje_carpeta.text())
+            hasattr(self.estado_escaneo, "setToolTip") and self.estado_escaneo.setToolTip(self.estado_escaneo.text())
+            self._actualizar_botones_lote()
+            return
+        if not isinstance(fallidos, list):
+            self.mensaje_carpeta.setText("Lote inconsistente: fallidos no es lista — recarga programada, DB preservada")
+            self.estado_escaneo.setText("Inconsistencia UI: fallidos no lista")
+            try:
+                self._programar_recarga_por_carpeta()
+            except (RuntimeError, AttributeError, ValueError) as exc:
+                self.mensaje_carpeta.setText(f"Inconsistencia UI y fallo recarga: {exc} — DB preservada")
+            except Exception as exc:
+                self.mensaje_carpeta.setText(f"Error inesperado recarga: {type(exc).__name__}: {exc} — DB preservada")
+            hasattr(self.mensaje_carpeta, "setToolTip") and self.mensaje_carpeta.setToolTip(self.mensaje_carpeta.text())
+            hasattr(self.estado_escaneo, "setToolTip") and self.estado_escaneo.setToolTip(self.estado_escaneo.text())
+            return
+        if not isinstance(cancelados, list):
+            self.mensaje_carpeta.setText("Lote inconsistente: cancelados no es lista — recarga programada, DB preservada")
+            self.estado_escaneo.setText("Inconsistencia UI: cancelados no lista")
+            try:
+                self._programar_recarga_por_carpeta()
+            except (RuntimeError, AttributeError, ValueError) as exc:
+                self.mensaje_carpeta.setText(f"Inconsistencia UI y fallo recarga: {exc} — DB preservada")
+            except Exception as exc:
+                self.mensaje_carpeta.setText(f"Error inesperado recarga: {type(exc).__name__}: {exc} — DB preservada")
+            hasattr(self.mensaje_carpeta, "setToolTip") and self.mensaje_carpeta.setToolTip(self.mensaje_carpeta.text())
+            hasattr(self.estado_escaneo, "setToolTip") and self.estado_escaneo.setToolTip(self.estado_escaneo.text())
+            return
+        inconsistencias = []
+        recarga_necesaria = False
+        destino = getattr(self, "_lote_carpeta_destino", None)
+        # Simplificación B7.6 auditoría: preferir recarga paginada/background desde catálogo en lugar de manipulación manual frágil de tarjetas
+        if oper in ("mover", "eliminar") and exitosos:
+            recarga_necesaria = True
+        elif oper == "copiar" and exitosos and isinstance(destino, str) and destino.strip():
+            try:
+                from rutas import carpetas_iguales
+                if isinstance(self.carpeta_seleccionada, str) and carpetas_iguales(self.carpeta_seleccionada, destino):
+                    recarga_necesaria = True
+            except (TypeError, ValueError, AttributeError) as exc:
+                inconsistencias.append(f"verificación destino falló: {exc}")
+                recarga_necesaria = True
+            except Exception as exc:
+                inconsistencias.append(f"error inesperado verificando destino: {type(exc).__name__}: {exc}")
+                recarga_necesaria = True
+        # Si hubo exitosos y fallo posterior de refresco UI, no revertir DB: recarga es recuperación segura sin Escanear carpeta y sin tocar FS
+        if recarga_necesaria:
+            try:
+                self._programar_recarga_por_carpeta()
+            except (RuntimeError, AttributeError, ValueError) as exc:
+                inconsistencias.append(f"fallo recarga paginada: {exc}")
+            except Exception as exc:
+                inconsistencias.append(f"error inesperado recarga: {type(exc).__name__}: {exc}")
+        # Preservar filtros/orden/paginación: _programar_recarga_por_carpeta usa orden/filtro actuales, no Escanear carpeta
+        # Mensaje usuario: resultado parcial e inconsistencia visible; operación física/DB no revertida por fallo visual
+        if inconsistencias:
+            base = f"Lote {oper}: {len(exitosos)} ok / {len(fallidos)} fallidos / {len(cancelados)} cancelados (total {total}) — INCONSISTENCIA SINCRONIZACIÓN: {'; '.join(inconsistencias)} — DB preservada, recarga intentada"
+            self.mensaje_carpeta.setText(base)
+            self.estado_escaneo.setText(base)
+        elif fallidos or cancelados:
+            detalle = f"Lote {oper}: {len(exitosos)} ok / {len(fallidos)} fallidos / {len(cancelados)} cancelados (total {total})"
+            if fallidos:
+                try:
+                    ej = fallidos[0].get("error", "")
+                    if isinstance(ej, str) and ej:
+                        detalle += f" — ej. {ej[:80]}"
+                except (AttributeError, TypeError, IndexError) as exc:
+                    detalle += f" — (error al extraer ejemplo: {exc})"
+                except Exception as exc:
+                    detalle += f" — (error inesperado ejemplo: {type(exc).__name__}: {exc})"
+            self.mensaje_carpeta.setText(detalle)
+            self.estado_escaneo.setText(detalle)
+        else:
+            self.mensaje_carpeta.setText(f"Lote {oper} completado: {len(exitosos)}/{total}")
+            self.estado_escaneo.setText(f"Lote {oper} completado")
+        # UX fix-040: tooltip con mensaje completo (aunque detalle recortado a 80, tooltip con error completo si hay fallidos)
+        try:
+            # si hay fallido, tooltip con error completo sin recortar
+            if fallidos:
+                try:
+                    err_completo = fallidos[0].get("error", "")
+                    if isinstance(err_completo, str) and err_completo:
+                        tt = f"Lote {oper}: {len(exitosos)} ok / {len(fallidos)} fallidos / {len(cancelados)} cancelados (total {total}) — ej. {err_completo}"
+                        hasattr(self.mensaje_carpeta, "setToolTip") and self.mensaje_carpeta.setToolTip(tt)
+                        hasattr(self.estado_escaneo, "setToolTip") and self.estado_escaneo.setToolTip(tt)
+                    else:
+                        hasattr(self.mensaje_carpeta, "setToolTip") and self.mensaje_carpeta.setToolTip(self.mensaje_carpeta.text())
+                        hasattr(self.estado_escaneo, "setToolTip") and self.estado_escaneo.setToolTip(self.estado_escaneo.text())
+                except Exception as exc_tt:
+                    hasattr(self.mensaje_carpeta, "setToolTip") and self.mensaje_carpeta.setToolTip(self.mensaje_carpeta.text())
+                    hasattr(self.estado_escaneo, "setToolTip") and self.estado_escaneo.setToolTip(self.estado_escaneo.text())
+            else:
+                hasattr(self.mensaje_carpeta, "setToolTip") and self.mensaje_carpeta.setToolTip(self.mensaje_carpeta.text())
+                hasattr(self.estado_escaneo, "setToolTip") and self.estado_escaneo.setToolTip(self.estado_escaneo.text())
+        except Exception as exc_tt2:
+            hasattr(self.mensaje_carpeta, "setToolTip") and self.mensaje_carpeta.setToolTip(self.mensaje_carpeta.text())
+            hasattr(self.estado_escaneo, "setToolTip") and self.estado_escaneo.setToolTip(self.estado_escaneo.text())
+        # Reaplicar filtro/orden local sin reescaneo; no propaga FS. Errores visibles, no silencio.
+        try:
+            self.filtrar(self.busqueda.text())
+        except (AttributeError, TypeError, RuntimeError) as exc:
+            self.mensaje_carpeta.setText(self.mensaje_carpeta.text() + f" — fallo filtrar: {exc}")
+            self.estado_escaneo.setText(self.estado_escaneo.text() + f" — fallo filtrar: {exc}")
+            try:
+                self._programar_recarga_por_carpeta()
+            except Exception as exc2:
+                self.mensaje_carpeta.setText(self.mensaje_carpeta.text() + f" — fallo recarga tras filtrar: {type(exc2).__name__}: {exc2}")
+        except Exception as exc:
+            self.mensaje_carpeta.setText(self.mensaje_carpeta.text() + f" — error inesperado filtrar: {type(exc).__name__}: {exc}")
+            self.estado_escaneo.setText(self.estado_escaneo.text() + f" — error inesperado filtrar: {type(exc).__name__}: {exc}")
+            try:
+                self._programar_recarga_por_carpeta()
+            except Exception as exc2:
+                self.mensaje_carpeta.setText(self.mensaje_carpeta.text() + f" — fallo recarga: {type(exc2).__name__}: {exc2}")
+        try:
+            self.actualizar_contador()
+        except (AttributeError, RuntimeError, TypeError) as exc:
+            self.estado_escaneo.setText(self.estado_escaneo.text() + f" — fallo contador: {exc}")
+        except Exception as exc:
+            self.estado_escaneo.setText(self.estado_escaneo.text() + f" — error inesperado contador: {type(exc).__name__}: {exc}")
+        try:
+            self._actualizar_resumen_seleccion()
+        except (AttributeError, RuntimeError) as exc:
+            self.estado_escaneo.setText(self.estado_escaneo.text() + f" — fallo resumen: {exc}")
+        except Exception as exc:
+            self.estado_escaneo.setText(self.estado_escaneo.text() + f" — error inesperado resumen: {type(exc).__name__}: {exc}")
+        # Tooltip final: si hay fallidos con error largo, asegurar que tooltip contiene completo (no recortado 80)
+        try:
+            if fallidos:
+                try:
+                    err_full = fallidos[0].get("error", "")
+                    if isinstance(err_full, str) and err_full and len(err_full) > 80:
+                        full_tt = f"Lote {oper}: {len(exitosos)} ok / {len(fallidos)} fallidos / {len(cancelados)} cancelados (total {total}) — ej. {err_full}"
+                        # append any appended suffix from filtrar/contador if present
+                        cur = self.mensaje_carpeta.text()
+                        if cur != full_tt and " — fallo" in cur:
+                            # preservar sufijo adicional pero tooltip sigue con error completo
+                            suffix = cur[cur.find(" — fallo"):]
+                            full_tt = full_tt + suffix
+                        hasattr(self.mensaje_carpeta, "setToolTip") and self.mensaje_carpeta.setToolTip(full_tt)
+                        hasattr(self.estado_escaneo, "setToolTip") and self.estado_escaneo.setToolTip(full_tt)
+                    else:
+                        hasattr(self.mensaje_carpeta, "setToolTip") and self.mensaje_carpeta.setToolTip(self.mensaje_carpeta.text())
+                        hasattr(self.estado_escaneo, "setToolTip") and self.estado_escaneo.setToolTip(self.estado_escaneo.text())
+                except Exception as exc_tt3:
+                    hasattr(self.mensaje_carpeta, "setToolTip") and self.mensaje_carpeta.setToolTip(self.mensaje_carpeta.text())
+                    hasattr(self.estado_escaneo, "setToolTip") and self.estado_escaneo.setToolTip(self.estado_escaneo.text())
+            else:
+                hasattr(self.mensaje_carpeta, "setToolTip") and self.mensaje_carpeta.setToolTip(self.mensaje_carpeta.text())
+                hasattr(self.estado_escaneo, "setToolTip") and self.estado_escaneo.setToolTip(self.estado_escaneo.text())
+        except Exception as exc_tt4:
+            hasattr(self.mensaje_carpeta, "setToolTip") and self.mensaje_carpeta.setToolTip(self.mensaje_carpeta.text())
+            hasattr(self.estado_escaneo, "setToolTip") and self.estado_escaneo.setToolTip(self.estado_escaneo.text())
+        self._actualizar_botones_lote()
+
+    def _al_error_lote(self, mensaje):
+        texto_carpeta = f"No se pudo completar lote: {mensaje}"
+        texto_estado = f"Error lote: {mensaje}"
+        self.mensaje_carpeta.setText(texto_carpeta)
+        self.estado_escaneo.setText(texto_estado)
+        # UX B7.6 fix-040: mensaje completo accesible aunque QLabel esté truncada (elide)
+        hasattr(self.mensaje_carpeta, "setToolTip") and self.mensaje_carpeta.setToolTip(texto_carpeta)
+        hasattr(self.estado_escaneo, "setToolTip") and self.estado_escaneo.setToolTip(texto_estado)
+        # Guardar detalle completo para inspección/tests y para fallback QMessageBox si se desea
+        self._lote_ultimo_error_completo = texto_estado
+        # Si el error es global (excepción no capturada por lote), exponer detalle en tooltip ya cubre
+        # el requisito sin bloquear UI; QMessageBox opcional no modal no se usa aquí para no bloquear tests
+
+    def _al_lote_finalizada(self):
+        self._lote_en_curso = False
+        self.barra_progreso.setVisible(False)
+        self.barra_progreso.setRange(0, 100)
+        self._lote_operacion = None
+        self._lote_video_ids = None
+        self._lote_carpeta_destino = None
+        self._al_actividad_lote(False)
+
+    def _al_actividad_lote(self, activa):
+        self._actualizar_botones_lote()
+        self._actualizar_botones_carpeta()
+
     def _procesar_archivos_eliminados(self):
         if self.gestor.activo:
             return
@@ -5889,6 +6307,7 @@ class VisorVideos(QMainWindow):
         self._actualizar_boton_copiar()
         self._actualizar_boton_pegar()
         self._actualizar_boton_eliminar()
+        self._actualizar_botones_lote()
 
     @property
     def nombres_seleccionados(self):
@@ -6781,6 +7200,12 @@ class VisorVideos(QMainWindow):
         accion_copiar.triggered.connect(lambda: self._iniciar_copiar(nombre))
         accion_eliminar_ind = menu.addAction("Eliminar…")
         accion_eliminar_ind.triggered.connect(lambda: self._iniciar_eliminar_video(nombre))
+        accion_mover_sel = menu.addAction("Mover seleccionados…")
+        accion_mover_sel.triggered.connect(self._iniciar_lote_mover)
+        accion_copiar_sel = menu.addAction("Copiar seleccionados…")
+        accion_copiar_sel.triggered.connect(self._iniciar_lote_copiar)
+        accion_eliminar_sel = menu.addAction("Enviar seleccionados a Papelera…")
+        accion_eliminar_sel.triggered.connect(self._iniciar_lote_eliminar)
         accion_reproducir_marcadores.setEnabled(bool(self._nombres_seleccionados))
         accion_reproducir_marcadores.triggered.connect(
             self._reproducir_marcadores_en_vlc
@@ -7392,6 +7817,14 @@ class VisorVideos(QMainWindow):
             self._eliminar_nombre = None
             self._eliminar_ruta_inconsistente = None
             self._eliminar_error_sincronizacion = None
+        if getattr(self, "gestor_lote", None) is not None:
+            self.gestor_lote.cerrar()
+            self._lote_en_curso = False
+            self._lote_operacion = None
+            self._lote_video_ids = None
+            self._lote_carpeta_destino = None
+            self._lote_resultado_pendiente = None
+            self._lote_ultimo_error_completo = None
         super().closeEvent(event)
 
 
