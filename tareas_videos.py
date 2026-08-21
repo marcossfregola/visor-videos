@@ -993,3 +993,395 @@ class TareaResumenColapsado(TareaBase):
             "marcadores": marcadores,
             "segmentos": segmentos,
         }
+
+
+class TareaExportarLoteSegmentos(TareaBase):
+    """Exportación múltiple de segmentos separados (B6.9).
+
+    Procesa un lote secuencialmente (un solo FFmpeg activo), planificando
+    nombres mediante el motor B6.8 y delegando cada item a B6.7
+    `exportar_segmento`. Recibe items ya resueltos (desacoplados de widgets)
+    o bien `video_ids` + `filtro_color` para resolverlos en background sin
+    SQLite/FFmpeg desde la UI. Emite progreso `actual/total` vía
+    `reportar_progreso` y devuelve resultado estructurado
+    `{exitos, fallos, omitidos, cancelados, total, cancelado}`.
+    Arquitectura preparada para recibir lista explícita de IDs (items).
+    """
+
+    def __init__(
+        self,
+        carpeta_destino,
+        video_ids=None,
+        filtro_color=escanear_mod._SIN_FILTRO_LOTE,
+        items=None,
+        extension=".mp4",
+        ruta_db=None,
+        parent=None,
+    ):
+        super().__init__(parent)
+        self._carpeta_destino = carpeta_destino
+        self._video_ids = list(video_ids) if video_ids is not None else None
+        self._filtro_color = filtro_color
+        self._items_input = None
+        if items is not None:
+            if isinstance(items, (str, bytes, bytearray)):
+                raise TypeError("items debe ser una colección, no texto")
+            try:
+                self._items_input = [dict(it) for it in list(items)]
+            except Exception as exc:
+                raise TypeError(f"items inválidos: {exc}") from None
+        self._extension = extension if isinstance(extension, str) and extension else ".mp4"
+        self._ruta_db = ruta_db
+        self._cancelada = False
+
+    @property
+    def carpeta_destino(self):
+        return self._carpeta_destino
+
+    @property
+    def video_ids(self):
+        return list(self._video_ids) if self._video_ids is not None else None
+
+    @property
+    def filtro_color(self):
+        return self._filtro_color
+
+    @property
+    def extension(self):
+        return self._extension
+
+    @property
+    def ruta_db(self):
+        return self._ruta_db
+
+    def cancelar(self):
+        self._cancelada = True
+
+    def _trabajo(self):
+        import exportar_segmento as exp
+        import nombres as nom
+
+        carpeta = self._carpeta_destino
+        # Validar destino base (no escribible se reportará por item, pero lote vacío y destino inválido se maneja)
+        if not isinstance(carpeta, str) or not carpeta.strip():
+            return {
+                "exitos": [],
+                "fallos": [{"error": "carpeta destino inválida"}],
+                "omitidos": [],
+                "cancelados": [],
+                "total": 0,
+                "cancelado": False,
+                "procesados": 0,
+            }
+        if not os.path.isdir(carpeta):
+            return {
+                "exitos": [],
+                "fallos": [{"error": f"carpeta destino no existe: {carpeta}"}],
+                "omitidos": [],
+                "cancelados": [],
+                "total": 1 if self._items_input or self._video_ids else 0,
+                "cancelado": False,
+                "procesados": 0,
+            }
+
+        # Resolver items si no vienen explícitos
+        items = self._items_input
+        if items is None:
+            if self._video_ids is None or not self._video_ids:
+                # lote vacío: sin video_ids ni items
+                return {
+                    "exitos": [],
+                    "fallos": [],
+                    "omitidos": [],
+                    "cancelados": [],
+                    "total": 0,
+                    "cancelado": False,
+                    "procesados": 0,
+                }
+            # Validar filtro color
+            try:
+                escanear_mod._validar_filtro_color_lote(self._filtro_color)
+            except Exception as exc:
+                return {
+                    "exitos": [],
+                    "fallos": [{"error": f"filtro color inválido: {exc}"}],
+                    "omitidos": [],
+                    "cancelados": [],
+                    "total": 0,
+                    "cancelado": False,
+                    "procesados": 0,
+                }
+            # Obtener segmentos filtrados en batch (sin SQLite desde UI, aquí en worker)
+            try:
+                segmentos = escanear_mod.listar_segmentos_por_videos(
+                    self._video_ids, color=self._filtro_color, ruta_db=self._ruta_db
+                )
+            except Exception as exc:
+                return {
+                    "exitos": [],
+                    "fallos": [{"error": f"no se pudieron listar segmentos: {exc}"}],
+                    "omitidos": [],
+                    "cancelados": [],
+                    "total": 0,
+                    "cancelado": False,
+                    "procesados": 0,
+                }
+            if not segmentos:
+                return {
+                    "exitos": [],
+                    "fallos": [],
+                    "omitidos": [],
+                    "cancelados": [],
+                    "total": 0,
+                    "cancelado": False,
+                    "procesados": 0,
+                }
+            # Mapear video_id -> nombre/ruta
+            try:
+                vmap = escanear_mod.listar_videos_por_ids(self._video_ids, self._ruta_db)
+            except Exception as exc:
+                return {
+                    "exitos": [],
+                    "fallos": [{"error": f"no se pudieron listar videos: {exc}"}],
+                    "omitidos": [],
+                    "cancelados": [],
+                    "total": len(segmentos),
+                    "cancelado": False,
+                    "procesados": 0,
+                }
+            items = []
+            for seg_id, vid, inicio, fin, color in segmentos:
+                info = vmap.get(vid)
+                if info is None:
+                    continue
+                # Validar inicio/fin básicos
+                try:
+                    ini_f = float(inicio)
+                    fin_f = float(fin)
+                except Exception:
+                    continue
+                if not (fin_f > ini_f and ini_f >= 0):
+                    continue
+                items.append(
+                    {
+                        "segmento_id": seg_id,
+                        "video_id": vid,
+                        "ruta_fuente": info["ruta"],
+                        "nombre_original": info["nombre"],
+                        "inicio": ini_f,
+                        "fin": fin_f,
+                        "color": color,
+                    }
+                )
+        else:
+            # Items explícitos ya desacoplados: validar mínimo
+            validados = []
+            for it in items:
+                if not isinstance(it, dict):
+                    continue
+                seg_id = it.get("segmento_id")
+                vid = it.get("video_id")
+                ruta = it.get("ruta_fuente")
+                nombre = it.get("nombre_original")
+                ini = it.get("inicio")
+                fin = it.get("fin")
+                if ruta is None and nombre is None:
+                    continue
+                if ruta is None:
+                    ruta = nombre
+                if nombre is None:
+                    nombre = os.path.basename(ruta) if isinstance(ruta, str) else "video.mp4"
+                try:
+                    ini_f = float(ini)
+                    fin_f = float(fin)
+                except Exception:
+                    continue
+                validados.append(
+                    {
+                        "segmento_id": seg_id,
+                        "video_id": vid,
+                        "ruta_fuente": ruta,
+                        "nombre_original": nombre,
+                        "inicio": ini_f,
+                        "fin": fin_f,
+                        "color": it.get("color"),
+                    }
+                )
+            items = validados
+
+        total = len(items)
+        if total == 0:
+            return {
+                "exitos": [],
+                "fallos": [],
+                "omitidos": [],
+                "cancelados": [],
+                "total": 0,
+                "cancelado": False,
+                "procesados": 0,
+            }
+
+        # Validar extensión
+        try:
+            ext_norm = nom.validar_extension(self._extension)
+        except Exception as exc:
+            return {
+                "exitos": [],
+                "fallos": [{"error": f"extensión inválida: {exc}", "items": items}],
+                "omitidos": [],
+                "cancelados": [],
+                "total": total,
+                "cancelado": False,
+                "procesados": 0,
+            }
+        # Verificar escritura en carpeta destino (intento de crear archivo temporal de prueba no, solo check de permiso)
+        if not os.access(carpeta, os.W_OK):
+            return {
+                "exitos": [],
+                "fallos": [{"error": "carpeta destino no escribible", "items": items}],
+                "omitidos": [],
+                "cancelados": [],
+                "total": total,
+                "cancelado": False,
+                "procesados": 0,
+            }
+
+        # Planificación de nombres determinista mediante B6.8 (sin crear archivos)
+        # Usamos existe_fn que mira FS + lote_set
+        lote_set = set()
+
+        def existe_fn(nombre_completo):
+            return os.path.exists(os.path.join(carpeta, nombre_completo))
+
+        destinos = []
+        fallos_plan = []
+        for it in items:
+            if self._cancelada:
+                # cancelación antes de planificar resto -> omitidos
+                break
+            try:
+                ctx = {
+                    "original": it["nombre_original"],
+                    "inicio": it["inicio"],
+                    "fin": it["fin"],
+                }
+                # generar nombre único con motor B6.8
+                nombre = nom.generar_nombre_unico(
+                    nom.PLANTILLA_DEFAULT_B67,
+                    ctx,
+                    ext_norm,
+                    existe_fn=existe_fn,
+                    nombres_en_lote=lote_set,
+                )
+                dest = os.path.join(carpeta, nombre)
+                # Validar que no sea el mismo que fuente (no sobrescribir original)
+                # Solo errores de normalización se silencian; coincidencia real es fallo de planificación
+                norm_dest = None
+                norm_src = None
+                try:
+                    norm_dest = os.path.normcase(os.path.normpath(os.path.abspath(dest)))
+                except Exception:
+                    norm_dest = None
+                try:
+                    norm_src = os.path.normcase(os.path.normpath(os.path.abspath(it["ruta_fuente"])))
+                except Exception:
+                    norm_src = None
+                if norm_dest is not None and norm_src is not None and norm_dest == norm_src:
+                    raise ValueError("destino coincide con fuente")
+                destinos.append(dest)
+                lote_set.add(nombre.lower())
+            except Exception as exc:
+                # nombre inválido -> fallo de ese item, continuar con resto
+                fallos_plan.append({"item": it, "error": str(exc)})
+                destinos.append(None)
+
+        # Si cancelación durante planificación
+        if self._cancelada:
+            omitidos_rest = total - len(destinos)
+            return {
+                "exitos": [],
+                "fallos": fallos_plan,
+                "omitidos": [{"item": items[i]} for i in range(len(destinos), total)],
+                "cancelados": [],
+                "total": total,
+                "cancelado": True,
+                "procesados": 0,
+            }
+
+        exitos = []
+        fallos = list(fallos_plan)
+        omitidos = []
+        cancelados = []
+        # Conteo de plan fallidos ya en fallos
+        # Procesar secuencialmente
+        for idx, it in enumerate(items):
+            dest = destinos[idx] if idx < len(destinos) else None
+            if dest is None:
+                # ya contabilizado como fallo de planificación
+                self.reportar_progreso(idx + 1, total)
+                continue
+            if self._cancelada:
+                # no iniciar restantes -> omitidos
+                omitidos.extend([{"item": items[j], "destino": destinos[j]} for j in range(idx, total) if destinos[j] is not None])
+                # los fallos de plan que quedan ya están
+                break
+            # Validar origen existe y no vacío
+            ruta_fuente = it["ruta_fuente"]
+            if not isinstance(ruta_fuente, str) or not os.path.isfile(ruta_fuente):
+                fallos.append({"item": it, "destino": dest, "error": "origen faltante"})
+                self.reportar_progreso(idx + 1, total)
+                continue
+            try:
+                if os.path.getsize(ruta_fuente) == 0:
+                    fallos.append({"item": it, "destino": dest, "error": "origen vacío"})
+                    self.reportar_progreso(idx + 1, total)
+                    continue
+            except OSError as exc:
+                fallos.append({"item": it, "destino": dest, "error": str(exc)})
+                self.reportar_progreso(idx + 1, total)
+                continue
+            # Validar inicio/fin
+            ini = it["inicio"]
+            fin = it["fin"]
+            if not (isinstance(ini, (int, float)) and isinstance(fin, (int, float)) and fin > ini and ini >= 0):
+                fallos.append({"item": it, "destino": dest, "error": "segmento inválido"})
+                self.reportar_progreso(idx + 1, total)
+                continue
+            # Segunda comprobación de colisión justo antes de FFmpeg (no sobrescribir)
+            if os.path.exists(dest):
+                fallos.append({"item": it, "destino": dest, "error": "destino ya existe, no se sobrescribirá"})
+                self.reportar_progreso(idx + 1, total)
+                continue
+            # Ejecutar exportar_segmento secuencialmente con cancel_check
+            res = exp.exportar_segmento(
+                ruta_fuente, float(ini), float(fin), dest, cancel_check=lambda: self._cancelada
+            )
+            if res.get("cancelado"):
+                # limpiar item en curso ya lo hace exportar_segmento; contar como cancelado y omitir resto
+                cancelados.append({"item": it, "destino": dest, "resultado": res})
+                # restantes como omitidos
+                for j in range(idx + 1, total):
+                    if destinos[j] is not None:
+                        omitidos.append({"item": items[j], "destino": destinos[j]})
+                self.reportar_progreso(idx + 1, total)
+                break
+            if res.get("ok"):
+                exitos.append({"item": it, "destino": dest, "resultado": res})
+            else:
+                fallos.append({"item": it, "destino": dest, "error": res.get("error"), "resultado": res})
+            self.reportar_progreso(idx + 1, total)
+
+        cancelado_flag = bool(self._cancelada or cancelados)
+        return {
+            "exitos": exitos,
+            "fallos": fallos,
+            "omitidos": omitidos,
+            "cancelados": cancelados,
+            "total": total,
+            "cancelado": cancelado_flag,
+            "procesados": len(exitos) + len(fallos) + len(cancelados),
+            "exitosos": len(exitos),
+            "fallidos": len(fallos),
+            "omitidos_count": len(omitidos),
+            "cancelados_count": len(cancelados),
+        }

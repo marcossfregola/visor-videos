@@ -1653,6 +1653,119 @@ def actualizar_segmento(segmento_id, inicio, fin, ruta_db=None):
         conn.close()
 
 
+# === B6.9 Exportación múltiple de segmentos separados ===
+# Sentinel explícito para distinguir “sin filtro” de “Sin clasificar (None)”
+
+_SIN_FILTRO_LOTE = object()
+
+
+def _validar_filtro_color_lote(color):
+    """Valida filtro de color para lote (B6.9).
+
+    Acepta sentinel `_SIN_FILTRO_LOTE` (sin filtro), `None` (Sin clasificar =
+    color IS NULL) o clave estable de `CLAVES_COLOR_CLASIFICACION`.
+    """
+    if color is _SIN_FILTRO_LOTE:
+        return color
+    if color is None:
+        return None
+    if not isinstance(color, str):
+        raise TypeError("color debe ser texto, None o sentinel sin filtro")
+    if color not in CLAVES_COLOR_CLASIFICACION:
+        raise ValueError(f"color no reconocido para lote: {color!r}")
+    return color
+
+
+def listar_segmentos_por_videos(video_ids, color=_SIN_FILTRO_LOTE, ruta_db=None):
+    """Segmentos de un conjunto de video_ids con filtro opcional por color (B6.9).
+
+    `color` distingue explícitamente tres casos mediante sentinel:
+      - `_SIN_FILTRO_LOTE` (default): sin filtro, todos los segmentos de los videos.
+      - `None`: solo Sin clasificar (color IS NULL).
+      - clave estable: solo ese color.
+
+    Devuelve lista de tuplas `(id, video_id, inicio, fin, color)` con orden
+    determinista `ORDER BY video_id ASC, inicio ASC, fin ASC, id ASC` en una
+    sola consulta batch (sin consultas por video). No carga pixmaps.
+    """
+    if isinstance(video_ids, (str, bytes, bytearray)):
+        raise TypeError("video_ids debe ser una colección de enteros")
+    try:
+        lista = list(video_ids)
+    except TypeError:
+        raise TypeError("video_ids debe ser una colección de enteros")
+    for video_id in lista:
+        _validar_video_id(video_id)
+    _validar_filtro_color_lote(color)
+    if not lista:
+        return []
+    ids_unicos = list(dict.fromkeys(lista))
+    conn = _conectar_repositorio_segmentos(ruta_db)
+    try:
+        if color is _SIN_FILTRO_LOTE:
+            where_color = ""
+            params_color = []
+        elif color is None:
+            where_color = "AND color IS NULL"
+            params_color = []
+        else:
+            where_color = "AND color = ?"
+            params_color = [color]
+        filas = conn.execute(
+            f"""
+            SELECT id, video_id, inicio, fin, color
+            FROM segmentos_video
+            WHERE video_id IN ({",".join("?" for _ in ids_unicos)})
+            {where_color}
+            ORDER BY video_id ASC, inicio ASC, fin ASC, id ASC
+            """,
+            ids_unicos + params_color,
+        ).fetchall()
+        return filas
+    finally:
+        conn.close()
+
+
+def listar_videos_por_ids(video_ids, ruta_db=None):
+    """Registros de videos por `id` en batch (B6.9, sin SQLite desde UI).
+
+    Devuelve dict `{video_id: {id, nombre, ruta}}`. Orden no relevante;
+    la responsabilidad de orden la tiene el caller del lote. Usa una sola
+    consulta `WHERE id IN (...)`.
+    """
+    if isinstance(video_ids, (str, bytes, bytearray)):
+        raise TypeError("video_ids debe ser una colección de enteros")
+    try:
+        lista = list(video_ids)
+    except TypeError:
+        raise TypeError("video_ids debe ser una colección de enteros")
+    for video_id in lista:
+        _validar_video_id(video_id)
+    if not lista:
+        return {}
+    ids_unicos = list(dict.fromkeys(lista))
+    if ruta_db is None:
+        ruta_db = ruta_biblioteca()
+    if not os.path.isfile(ruta_db):
+        raise FileNotFoundError(f"Base de datos no encontrada: {ruta_db}")
+    conn = conectar_bd(ruta_db)
+    try:
+        filas = conn.execute(
+            f"""
+            SELECT id, nombre, ruta
+            FROM videos
+            WHERE id IN ({",".join("?" for _ in ids_unicos)})
+            """,
+            ids_unicos,
+        ).fetchall()
+        resultado = {}
+        for vid, nombre, ruta in filas:
+            resultado[vid] = {"id": vid, "nombre": nombre, "ruta": ruta}
+        return resultado
+    finally:
+        conn.close()
+
+
 def main():
     conn = conectar_bd()
     sincronizar_bd(conn, ruta_carpeta_videos())

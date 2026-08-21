@@ -17,6 +17,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QApplication,
+    QButtonGroup,
     QCheckBox,
     QComboBox,
     QDialog,
@@ -32,6 +33,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QRadioButton,
     QScrollArea,
     QSplitter,
     QVBoxLayout,
@@ -595,6 +597,179 @@ class PreferenciasDialog(QDialog):
         if 0 <= indice < len(FACTORES_VISTA_AMPLIADA):
             return FACTORES_VISTA_AMPLIADA[indice]
         return 1.6
+
+
+class DialogoExportarLote(QDialog):
+    """Diálogo mínimo de alcance para B6.9.
+
+    Ofrece:
+      1) Todos los segmentos de los videos visibles
+      2) Segmentos por color (6 colores + Sin clasificar)
+      3) Segmentos seleccionados - lista ligera dentro del dialogo con
+         checkboxes solo aqui. Texto por fila: video + inicio-fin + color
+         si aporta claridad. Sin imagenes. Orden determinista.
+         La lista se alimenta sin acceso directo a BD desde UI: el caller resuelve
+         via tarea antes de construir el dialogo y pasa `segmentos`.
+    """
+
+    def __init__(self, filtro_actual, ruta_config=None, parent=None, video_ids=None, ruta_db=None, segmentos=None, nombres_por_id=None):
+        super().__init__(parent)
+        self.setWindowTitle("Exportar segmentos")
+        layout = QVBoxLayout(self)
+        layout.addWidget(QLabel("Seleccione el alcance del lote:"))
+        self.radio_todos = QRadioButton("Todos los segmentos de los videos visibles")
+        self.radio_color = QRadioButton("Segmentos por color:")
+        self.radio_seleccion = QRadioButton("Segmentos seleccionados...")
+        self.combo_color = QComboBox()
+        self.combo_color.addItem("Sin clasificar", None)
+        for clave, *_resto in COLORES_CLASIFICACION:
+            self.combo_color.addItem(texto_color(clave, ruta_config), clave)
+        # Resolver segmentos para la lista explícita (puramente presentacional)
+        # El caller (Visor) resuelve vía GestorTareas en background y pasa `segmentos` ya listos.
+        # Si no hay datos, se deshabilita la opción explícita; nunca se consulta repositorio desde el hilo UI.
+        self._segmentos = []
+        self._nombres_por_id = dict(nombres_por_id) if isinstance(nombres_por_id, dict) else {}
+        self._ruta_config_dialog = ruta_config
+        if segmentos is not None:
+            try:
+                tmp = list(segmentos)
+                self._segmentos = tmp
+            except Exception:
+                self._segmentos = []
+        else:
+            self._segmentos = []
+        # Orden determinista para la lista (video_id ASC, inicio ASC, fin ASC, id ASC)
+        try:
+            self._segmentos = sorted(self._segmentos, key=lambda x: (x[1] if len(x) > 1 else 0, x[2] if len(x) > 2 else 0, x[3] if len(x) > 3 else 0, x[0] if len(x) > 0 else 0))
+        except Exception:
+            pass
+        # Preselección coherente con filtro actual sin cambiar filtro
+        filtro = filtro_actual if isinstance(filtro_actual, str) else "todos"
+        is_segmento = isinstance(filtro, str) and filtro.startswith("segmento:")
+        preselect = None
+        if is_segmento:
+            val = filtro[len("segmento:") :]
+            if val == "sin_clasificar":
+                preselect = None
+            elif val in CLAVES_COLOR_CLASIFICACION:
+                preselect = val
+            else:
+                is_segmento = False
+        if is_segmento:
+            self.radio_color.setChecked(True)
+            idx = self.combo_color.findData(preselect)
+            if idx >= 0:
+                self.combo_color.setCurrentIndex(idx)
+        else:
+            self.radio_todos.setChecked(True)
+        # Grupo exclusivo
+        grupo = QButtonGroup(self)
+        grupo.addButton(self.radio_todos)
+        grupo.addButton(self.radio_color)
+        grupo.addButton(self.radio_seleccion)
+        grupo.setExclusive(True)
+        # Lista ligera de segmentos con checkboxes (solo dentro del diálogo)
+        from PySide6.QtWidgets import QListWidget, QListWidgetItem
+        self._lista_widget = QListWidget()
+        self._lista_widget.setMaximumHeight(180)
+        self._checkboxes = []  # lista de (QCheckBox, segmento)
+        # Construir items sin pixmaps
+        for seg in self._segmentos:
+            try:
+                seg_id, vid, inicio, fin, color = seg[0], seg[1], seg[2], seg[3], seg[4] if len(seg) > 4 else None
+            except Exception:
+                continue
+            nombre_video = self._nombres_por_id.get(vid, f"video {vid}")
+            # Texto identificable: video + inicio-fin + color si aporta
+            t_ini = formatear_tiempo(inicio) if formatear_tiempo(inicio) is not None else f"{inicio:.2f}"
+            t_fin = formatear_tiempo(fin) if formatear_tiempo(fin) is not None else f"{fin:.2f}"
+            color_txt = ""
+            if color in CLAVES_COLOR_CLASIFICACION:
+                color_txt = f" [{texto_color(color, ruta_config)}]"
+            elif color is None:
+                color_txt = " [Sin clasificar]"
+            texto = f"{nombre_video}  {t_ini}-{t_fin}{color_txt}"
+            item = QListWidgetItem(self._lista_widget)
+            # Usar checkbox nativo del item (sin pixmap)
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+            item.setCheckState(Qt.Unchecked)
+            item.setText(texto)
+            # Guardar seg_id en data
+            item.setData(Qt.UserRole, seg_id)
+            self._checkboxes.append(item)
+        # Controles Todos/Ninguno para la lista
+        fila_sel_btns = QHBoxLayout()
+        self.boton_sel_todos = QPushButton("Seleccionar todos")
+        self.boton_sel_ninguno = QPushButton("Ninguno")
+        fila_sel_btns.addWidget(self.boton_sel_todos)
+        fila_sel_btns.addWidget(self.boton_sel_ninguno)
+        fila_sel_btns.addStretch()
+        self.boton_sel_todos.clicked.connect(self._seleccionar_todos_explicitos)
+        self.boton_sel_ninguno.clicked.connect(self._deseleccionar_todos_explicitos)
+        # Habilitación según radio
+        self.combo_color.setEnabled(self.radio_color.isChecked())
+        self._lista_widget.setEnabled(self.radio_seleccion.isChecked())
+        self.boton_sel_todos.setEnabled(self.radio_seleccion.isChecked())
+        self.boton_sel_ninguno.setEnabled(self.radio_seleccion.isChecked())
+        self.radio_todos.toggled.connect(lambda checked: self.combo_color.setEnabled(self.radio_color.isChecked()))
+        self.radio_color.toggled.connect(lambda checked: self.combo_color.setEnabled(checked))
+        self.radio_seleccion.toggled.connect(lambda checked: self._actualizar_habilitacion_seleccion(checked))
+        # Si no hay segmentos, deshabilitar opción explícita
+        if not self._segmentos:
+            self.radio_seleccion.setEnabled(False)
+            self._lista_widget.setEnabled(False)
+            self.boton_sel_todos.setEnabled(False)
+            self.boton_sel_ninguno.setEnabled(False)
+        layout.addWidget(self.radio_todos)
+        fila_color = QHBoxLayout()
+        fila_color.addWidget(self.radio_color)
+        fila_color.addWidget(self.combo_color, 1)
+        layout.addLayout(fila_color)
+        layout.addWidget(self.radio_seleccion)
+        layout.addWidget(self._lista_widget)
+        layout.addLayout(fila_sel_btns)
+        botones = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        botones.accepted.connect(self.accept)
+        botones.rejected.connect(self.reject)
+        layout.addWidget(botones)
+
+    def _actualizar_habilitacion_seleccion(self, checked):
+        self._lista_widget.setEnabled(checked and bool(self._segmentos))
+        self.boton_sel_todos.setEnabled(checked and bool(self._segmentos))
+        self.boton_sel_ninguno.setEnabled(checked and bool(self._segmentos))
+        self.combo_color.setEnabled(self.radio_color.isChecked())
+
+    def _seleccionar_todos_explicitos(self):
+        for i in range(self._lista_widget.count()):
+            self._lista_widget.item(i).setCheckState(Qt.Checked)
+
+    def _deseleccionar_todos_explicitos(self):
+        for i in range(self._lista_widget.count()):
+            self._lista_widget.item(i).setCheckState(Qt.Unchecked)
+
+    def alcance_seleccionado(self):
+        """Devuelve (tipo, dato) donde tipo es 'todos' | 'color' | 'seleccion'.
+        Para 'seleccion', dato es lista de segmento ids orden determinista.
+        """
+        if self.radio_seleccion.isChecked():
+            ids = []
+            for i in range(self._lista_widget.count()):
+                item = self._lista_widget.item(i)
+                if item.checkState() == Qt.Checked:
+                    ids.append(item.data(Qt.UserRole))
+            # Orden determinista ya es el de la lista (sorted); asegurar sin duplicados y ordenado
+            # Mantener orden de aparición (que es determinista)
+            return ("seleccion", ids)
+        if self.radio_color.isChecked():
+            return ("color", self.combo_color.currentData())
+        return ("todos", None)
+
+    def ids_seleccionados(self):
+        """Compatibilidad: devuelve ids explícitos seleccionados."""
+        _, dato = self.alcance_seleccionado()
+        if isinstance(dato, list):
+            return dato
+        return []
 
 
 class TareaCopiarArchivos(TareaBase):
@@ -1970,9 +2145,13 @@ class VisorVideos(QMainWindow):
         self.mensaje_carpeta = QLabel()
         self.mensaje_carpeta.setStyleSheet("color: #b00020;")
 
+        self.boton_exportar_lote = QPushButton("Exportar segmentos…")
+        self.boton_exportar_lote.clicked.connect(self._al_exportar_lote_solicitado)
+
         fila_carpeta = QHBoxLayout()
         fila_carpeta.addWidget(self.boton_seleccionar_carpeta)
         fila_carpeta.addWidget(self.boton_escanear)
+        fila_carpeta.addWidget(self.boton_exportar_lote)
         fila_carpeta.addWidget(self.combo_modo_alcance)
         fila_carpeta.addWidget(self.escaneo_automatico)
         fila_carpeta.addWidget(self.etiqueta_cantidad_previews)
@@ -2181,8 +2360,25 @@ class VisorVideos(QMainWindow):
         self.gestor_export.tarea_error.connect(self._al_error_export)
         self.gestor_export.tarea_finalizada.connect(self._al_export_finalizada)
         self.gestor_export.actividad_cambiada.connect(self._al_actividad_export)
+        self.gestor_export.tarea_progreso.connect(self._al_progreso_lote)
         self._export_segmento_actual = None
         self._export_destino_actual = None
+        self._export_lote_activo = False
+
+        # B6.9 preparación asíncrona de segmentos para diálogo de lote (sin SQLite/FFmpeg en hilo UI)
+        # Patrón reutilizado: GestorTareas + TareaListarSegmentosVarios + señales resultado/error/finalizada,
+        # idéntico a gestor_marcadores/gestor_segmentos/gestor_resumen. La UI inicia tarea breve,
+        # recibe datos en callback y recién entonces abre DialogoExportarLote (puramente presentacional).
+        self.gestor_preparacion_lote = GestorTareas(self)
+        self.gestor_preparacion_lote.tarea_resultado.connect(self._al_preparacion_lote_resultado)
+        self.gestor_preparacion_lote.tarea_error.connect(self._al_preparacion_lote_error)
+        self.gestor_preparacion_lote.tarea_finalizada.connect(self._al_preparacion_lote_finalizada)
+        self._preparacion_lote_en_curso = False
+        self._preparacion_lote_video_ids = None
+        self._preparacion_lote_nombres = None
+        self._preparacion_lote_rutas = None
+        self._preparacion_lote_segmentos = None
+        self._preparacion_lote_error = None
 
         self._timer_previews = QTimer(self)
         self._timer_previews.setSingleShot(True)
@@ -3503,7 +3699,303 @@ class VisorVideos(QMainWindow):
         self.estado_escaneo.setText("Cancelando exportación…")
         self.boton_cancelar_export.setEnabled(False)
 
+    # === B6.9 Exportación múltiple de segmentos separados ===
+    def _video_ids_visibles(self):
+        """Video_ids de los videos visibles (tarjetas filtradas por búsqueda y filtro)."""
+        # Construir mapa nombre->tarjeta en una sola pasada O(N) para evitar O(V*T) por cada llamada
+        mapa = {nombre: tarjeta for nombre, tarjeta in getattr(self, "tarjetas", [])}
+        ids = []
+        for nombre in getattr(self, "visibles", []):
+            tarjeta = mapa.get(nombre)
+            if tarjeta is None:
+                continue
+            vid = getattr(tarjeta, "_video_id", None)
+            if isinstance(vid, int) and not isinstance(vid, bool) and vid > 0:
+                ids.append(vid)
+        return ids
+
+    def _al_exportar_lote_solicitado(self):
+        """Acción global Exportar segmentos… — preparación asíncrona + diálogo + lote secuencial B6.9.
+
+        Flujo real asíncrono (sin SQLite/FFmpeg en hilo UI):
+        1) UI construye mapas nombres/rutas en una sola pasada O(N) sobre `tarjetas` (sin O(N²)).
+        2) Inicia `TareaListarSegmentosVarios` vía `gestor_preparacion_lote` (fuera del hilo principal).
+        3) Mientras carga, bloquea doble disparo del botón y muestra progreso ligero.
+        4) Al finalizar (resultado/error/finalizada) restaura UI y, si éxito, abre `DialogoExportarLote`
+           puramente presentacional con `segmentos` y `nombres_por_id` ya resueltos.
+        5) Tras el diálogo, mantiene exactamente Todos / Por color / Segmentos seleccionados,
+           carpeta única, items deterministas y un FFmpeg secuencial.
+        """
+        if self.gestor_export.activo or getattr(self, "_preparacion_lote_en_curso", False) or getattr(self, "gestor_preparacion_lote", None) is not None and self.gestor_preparacion_lote.activo:
+            QMessageBox.information(
+                self, "Exportar segmentos", "Ya hay una exportación en curso."
+            )
+            return
+        video_ids = self._video_ids_visibles()
+        if not video_ids:
+            QMessageBox.information(
+                self, "Exportar segmentos", "No hay videos visibles con segmentos para exportar."
+            )
+            return
+        # Construir mapas nombres/rutas en una sola pasada O(N) (evitar O(videos*tarjetas))
+        mapa_por_id = {}
+        for _nombre, tarjeta in getattr(self, "tarjetas", []):
+            vid = getattr(tarjeta, "_video_id", None)
+            if isinstance(vid, int) and not isinstance(vid, bool) and vid > 0:
+                mapa_por_id[vid] = tarjeta
+        nombres_por_id = {}
+        rutas_por_id = {}
+        for vid in video_ids:
+            tarjeta = mapa_por_id.get(vid)
+            if tarjeta is not None:
+                nombres_por_id[vid] = getattr(tarjeta, "_nombre", f"video {vid}")
+                ruta_v = self._ruta_video_de(tarjeta)
+                if ruta_v:
+                    rutas_por_id[vid] = ruta_v
+                else:
+                    rutas_por_id[vid] = getattr(tarjeta, "_carpeta_video", "") or nombres_por_id[vid]
+            else:
+                nombres_por_id[vid] = f"video {vid}"
+                rutas_por_id[vid] = f"video {vid}"
+        # Bloquear UI mientras carga en background
+        self._preparacion_lote_en_curso = True
+        self._preparacion_lote_video_ids = list(video_ids)
+        self._preparacion_lote_nombres = dict(nombres_por_id)
+        self._preparacion_lote_rutas = dict(rutas_por_id)
+        self._preparacion_lote_segmentos = None
+        self._preparacion_lote_error = None
+        self.boton_exportar_lote.setEnabled(False)
+        self.estado_escaneo.setText("Cargando segmentos…")
+        self._mostrar_progreso("Cargando segmentos…")
+        self.barra_progreso.setRange(0, 0)
+        self.barra_progreso.setFormat("Cargando segmentos…")
+        self.barra_progreso.setVisible(True)
+        # Tarea breve en background (sin SQLite directo en UI thread)
+        try:
+            from tareas_videos import TareaListarSegmentosVarios
+            tarea_carga = TareaListarSegmentosVarios(list(video_ids), self._ruta_db)
+        except Exception as exc:
+            self._preparacion_lote_en_curso = False
+            self.boton_exportar_lote.setEnabled(True)
+            self._ocultar_progreso()
+            self.estado_escaneo.setText(f"No se pudo preparar: {exc}")
+            QMessageBox.warning(self, "Exportar segmentos", f"No se pudo preparar: {exc}")
+            return
+        if not self.gestor_preparacion_lote.iniciar(tarea_carga):
+            self._preparacion_lote_en_curso = False
+            self.boton_exportar_lote.setEnabled(True)
+            self._ocultar_progreso()
+            motivo = getattr(self.gestor_preparacion_lote, "ultimo_rechazo", "desconocido")
+            self.estado_escaneo.setText(f"No se pudo iniciar carga: {motivo}")
+            QMessageBox.warning(self, "Exportar segmentos", f"No se pudo iniciar carga: {motivo}")
+            return
+
+    def _al_preparacion_lote_resultado(self, resultado):
+        """Callback de éxito de la tarea breve: guarda segmentos ordenados determinista."""
+        if not getattr(self, "_preparacion_lote_en_curso", False):
+            return
+        try:
+            if isinstance(resultado, list):
+                self._preparacion_lote_segmentos = sorted(
+                    resultado, key=lambda x: (x[1] if len(x) > 1 else 0, x[2] if len(x) > 2 else 0, x[3] if len(x) > 3 else 0, x[0] if len(x) > 0 else 0)
+                )
+            else:
+                self._preparacion_lote_segmentos = []
+        except Exception:
+            try:
+                self._preparacion_lote_segmentos = list(resultado) if isinstance(resultado, list) else []
+            except Exception:
+                self._preparacion_lote_segmentos = []
+
+    def _al_preparacion_lote_error(self, mensaje):
+        """Callback de error de la tarea breve: registra error y prepara restauración."""
+        if not getattr(self, "_preparacion_lote_en_curso", False):
+            return
+        self._preparacion_lote_error = mensaje
+        self._preparacion_lote_segmentos = []
+
+    def _al_preparacion_lote_finalizada(self):
+        """Restaura UI tras carga y abre diálogo puramente presentacional (o informa error)."""
+        if not getattr(self, "_preparacion_lote_en_curso", False):
+            return
+        video_ids = list(getattr(self, "_preparacion_lote_video_ids", []) or [])
+        nombres_por_id = dict(getattr(self, "_preparacion_lote_nombres", {}) or {})
+        rutas_por_id = dict(getattr(self, "_preparacion_lote_rutas", {}) or {})
+        segmentos = getattr(self, "_preparacion_lote_segmentos", None)
+        error_msg = getattr(self, "_preparacion_lote_error", None)
+        # Limpiar estado antes de restaurar UI (evita referencias colgadas en cierre/cancelación)
+        self._preparacion_lote_en_curso = False
+        self._preparacion_lote_video_ids = None
+        self._preparacion_lote_nombres = None
+        self._preparacion_lote_rutas = None
+        self._preparacion_lote_segmentos = None
+        self._preparacion_lote_error = None
+        self.boton_exportar_lote.setEnabled(True)
+        self._ocultar_progreso()
+        self.estado_escaneo.clear()
+        if error_msg is not None:
+            QMessageBox.warning(self, "Exportar segmentos", f"No se pudieron cargar los segmentos: {error_msg}")
+            self.estado_escaneo.setText(f"Error al cargar segmentos: {error_msg}")
+            return
+        if segmentos is None:
+            segmentos = []
+        # Abrir diálogo con datos ya resueltos (sin SQLite/FFmpeg/subprocess en UI)
+        self._abrir_dialogo_lote_con_datos(video_ids, segmentos, nombres_por_id, rutas_por_id)
+
+    def _abrir_dialogo_lote_con_datos(self, video_ids, segmentos_para_dialogo, nombres_por_id, rutas_por_id):
+        """Construye DialogoExportarLote presentacional y lanza TareaExportarLoteSegmentos si el usuario acepta."""
+        dialogo = DialogoExportarLote(
+            self._filtro_catalogo, self._ruta_config, self,
+            segmentos=segmentos_para_dialogo, nombres_por_id=nombres_por_id
+        )
+        if dialogo.exec() != QDialog.Accepted:
+            return
+        tipo, dato = dialogo.alcance_seleccionado()
+        items_explicitos = None
+        filtro_color = escanear_videos._SIN_FILTRO_LOTE
+        if tipo == "seleccion":
+            ids_sel = dato if isinstance(dato, list) else []
+            if not ids_sel:
+                QMessageBox.information(self, "Exportar segmentos", "No se seleccionó ningún segmento.")
+                return
+            seg_por_id = {}
+            for seg in segmentos_para_dialogo:
+                try:
+                    seg_por_id[seg[0]] = seg
+                except Exception:
+                    continue
+            items = []
+            for seg_id in ids_sel:
+                seg = seg_por_id.get(seg_id)
+                if seg is None:
+                    continue
+                try:
+                    _id, vid, inicio, fin, color = seg[0], seg[1], seg[2], seg[3], seg[4] if len(seg) > 4 else None
+                except Exception:
+                    continue
+                ruta_fuente = rutas_por_id.get(vid)
+                nombre_original = nombres_por_id.get(vid, f"video_{vid}.mp4")
+                if not ruta_fuente:
+                    ruta_fuente = nombre_original
+                try:
+                    ini_f = float(inicio)
+                    fin_f = float(fin)
+                except Exception:
+                    continue
+                items.append({
+                    "segmento_id": _id,
+                    "video_id": vid,
+                    "ruta_fuente": ruta_fuente,
+                    "nombre_original": nombre_original,
+                    "inicio": ini_f,
+                    "fin": fin_f,
+                    "color": color,
+                })
+            try:
+                items = sorted(items, key=lambda it: (it["video_id"], it["inicio"], it["fin"], it["segmento_id"] if it["segmento_id"] is not None else 0))
+            except Exception:
+                pass
+            if not items:
+                QMessageBox.information(self, "Exportar segmentos", "No se seleccionó ningún segmento válido.")
+                return
+            items_explicitos = items
+            filtro_color = None
+        elif tipo == "todos":
+            filtro_color = escanear_videos._SIN_FILTRO_LOTE
+        else:
+            filtro_color = dato
+        carpeta_dest = QFileDialog.getExistingDirectory(
+            self, "Carpeta de destino para segmentos", ""
+        )
+        if not carpeta_dest:
+            return
+        if not os.path.isdir(carpeta_dest):
+            QMessageBox.warning(self, "Exportar segmentos", "Carpeta de destino no válida.")
+            return
+        task = None
+        try:
+            from tareas_videos import TareaExportarLoteSegmentos
+            if items_explicitos is not None:
+                task = TareaExportarLoteSegmentos(
+                    carpeta_dest,
+                    items=items_explicitos,
+                    extension=".mp4",
+                    ruta_db=self._ruta_db,
+                )
+            else:
+                task = TareaExportarLoteSegmentos(
+                    carpeta_dest,
+                    video_ids=video_ids,
+                    filtro_color=filtro_color,
+                    extension=".mp4",
+                    ruta_db=self._ruta_db,
+                )
+        except Exception as exc:
+            QMessageBox.warning(self, "Exportar segmentos", f"No se pudo preparar el lote: {exc}")
+            return
+        if not self.gestor_export.iniciar(task):
+            QMessageBox.warning(
+                self, "Exportar segmentos", f"No se pudo iniciar: {self.gestor_export.ultimo_rechazo}"
+            )
+            return
+        self._export_lote_activo = True
+        self._mostrar_progreso("Exportando segmentos 0/N…")
+        total_inicial = len(items_explicitos) if items_explicitos is not None else (len(video_ids) or 1)
+        self.barra_progreso.setRange(0, total_inicial)
+        self.barra_progreso.setValue(0)
+        self.boton_cancelar_export.setVisible(True)
+        self.boton_cancelar_export.setEnabled(True)
+        self.boton_exportar_lote.setEnabled(False)
+
+    def _al_progreso_lote(self, procesado, total):
+        if not getattr(self, "_export_lote_activo", False):
+            return
+        if total > 0:
+            self.barra_progreso.setRange(0, total)
+            self.barra_progreso.setValue(procesado)
+            self.barra_progreso.setFormat(f"Exportando segmentos {procesado}/{total}…")
+            self.barra_progreso.setVisible(True)
+            self._texto_progreso = f"Exportando segmentos {procesado}/{total}…"
+            self._progreso_detallado = True
+
     def _al_resultado_export(self, resultado):
+        # Distinguir lote vs individual por claves estructuradas
+        is_lote = isinstance(resultado, dict) and "total" in resultado and "exitos" in resultado
+        if is_lote:
+            self._export_lote_activo = False
+            self._ocultar_progreso()
+            self.boton_cancelar_export.setVisible(False)
+            self.boton_exportar_lote.setEnabled(True)
+            total = resultado.get("total", 0)
+            exitos = len(resultado.get("exitos", []))
+            fallos = len(resultado.get("fallos", []))
+            omitidos = len(resultado.get("omitidos", []))
+            cancelados = len(resultado.get("cancelados", []))
+            omitidos_total = omitidos + cancelados
+            cancelado = resultado.get("cancelado", False)
+            if total == 0:
+                QMessageBox.information(self, "Exportar segmentos", "No se encontraron segmentos para el alcance elegido.")
+                self.estado_escaneo.setText("Sin segmentos para exportar")
+                return
+            if cancelado:
+                QMessageBox.information(
+                    self,
+                    "Exportar segmentos",
+                    f"Exportación cancelada: {exitos} exitosos / {fallos} fallidos / {omitidos_total} omitidos o cancelados (total {total}).",
+                )
+                self.estado_escaneo.setText(
+                    f"Cancelado: {exitos} ok / {fallos} fallidos / {omitidos_total} omitidos"
+                )
+                return
+            QMessageBox.information(
+                self,
+                "Exportar segmentos",
+                f"Exportación completada: {exitos} exitosos / {fallos} fallidos / {omitidos_total} omitidos o cancelados (total {total}).",
+            )
+            self.estado_escaneo.setText(
+                f"Exportado lote: {exitos} ok / {fallos} fallidos / {omitidos_total} omitidos"
+            )
+            return
         self._ocultar_progreso()
         self.boton_cancelar_export.setVisible(False)
         if not isinstance(resultado, dict):
@@ -3527,8 +4019,11 @@ class VisorVideos(QMainWindow):
         self.estado_escaneo.setText(f"Error al exportar: {error}")
 
     def _al_error_export(self, mensaje):
+        self._export_lote_activo = False
         self._ocultar_progreso()
         self.boton_cancelar_export.setVisible(False)
+        if hasattr(self, "boton_exportar_lote"):
+            self.boton_exportar_lote.setEnabled(True)
         QMessageBox.warning(self, "Exportar segmento", f"Error en exportación:\n{mensaje}")
         self.estado_escaneo.setText(f"Error al exportar: {mensaje}")
 
@@ -3536,6 +4031,9 @@ class VisorVideos(QMainWindow):
         self.boton_cancelar_export.setVisible(False)
         self._export_segmento_actual = None
         self._export_destino_actual = None
+        self._export_lote_activo = False
+        if hasattr(self, "boton_exportar_lote"):
+            self.boton_exportar_lote.setEnabled(True)
         # Si no hay otro progreso activo, ocultar barra
         if not self._pipeline_activo and not self.gestor_export.activo and not self.gestor.activo:
             self._ocultar_progreso()
@@ -5390,6 +5888,17 @@ class VisorVideos(QMainWindow):
             self.gestor_resumen.cerrar()
         if getattr(self, "gestor_exploracion", None) is not None:
             self.gestor_exploracion.cerrar()
+        if getattr(self, "gestor_export", None) is not None:
+            self.gestor_export.cerrar()
+        if getattr(self, "gestor_preparacion_lote", None) is not None:
+            self.gestor_preparacion_lote.cerrar()
+            # limpiar referencias colgadas
+            self._preparacion_lote_en_curso = False
+            self._preparacion_lote_video_ids = None
+            self._preparacion_lote_nombres = None
+            self._preparacion_lote_rutas = None
+            self._preparacion_lote_segmentos = None
+            self._preparacion_lote_error = None
         super().closeEvent(event)
 
 

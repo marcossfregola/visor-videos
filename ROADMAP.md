@@ -969,6 +969,8 @@ archivos.
     Después seguirán las etapas normales de identidad, empaquetado,
     documentación final, commit de cierre, tag y distribución según autorización.
 
+> **Backlog UX (post-B6.9, no implementado en B6.9):** permitir seleccionar/definir segmentos directamente desde el video expandido. Mejora futura de usabilidad sin impacto en el cierre de B6.9.
+
 ---
 
 # Beta 7
