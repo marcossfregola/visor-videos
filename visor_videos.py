@@ -1,5 +1,6 @@
 import escanear_videos
 import exploracion_cache
+import nombres
 import operaciones
 import os
 import sys
@@ -3447,12 +3448,14 @@ class VisorVideos(QMainWindow):
                 self, "Exportar segmento", "El video de origen ya no está disponible."
             )
             return
-        # Sugerir nombre: base + _segmento_inicio-fin
-        base = os.path.splitext(tarjeta.nombre)[0]
-        sugerido = f"{base}_segmento_{inicio:.2f}-{fin:.2f}.mp4".replace(":", "-")
-        # Sanitizar caracteres inválidos de Windows
-        for ch in '<>:"/\\|?*':
-            sugerido = sugerido.replace(ch, "_")
+        # Sugerir nombre delegando al motor puro B6.8 (sin duplicar reglas)
+        try:
+            sugerido = nombres.generar_sugerencia_exportacion(
+                tarjeta.nombre, float(inicio), float(fin), extension=".mp4"
+            )
+        except nombres.NombresError as exc:
+            QMessageBox.warning(self, "Exportar segmento", f"Nombre sugerido inválido: {exc}")
+            return
         ruta_dest, filtro = QFileDialog.getSaveFileName(
             self,
             "Exportar segmento",
@@ -3461,11 +3464,12 @@ class VisorVideos(QMainWindow):
         )
         if not ruta_dest:
             return
-        # Asegurar extensión
-        ext = os.path.splitext(ruta_dest)[1].lower()
-        if ext not in (".mp4", ".mkv"):
-            # Si el usuario no puso extensión, agregar .mp4
-            ruta_dest += ".mp4"
+        # Asegurar extensión mediante helper puro del motor (no duplicar lógica)
+        try:
+            ruta_dest = nombres.asegurar_extension(ruta_dest, extensiones_validas={".mp4", ".mkv"}, default=".mp4")
+        except nombres.NombresError as exc:
+            QMessageBox.warning(self, "Exportar segmento", f"Extensión inválida: {exc}")
+            return
         if os.path.exists(ruta_dest):
             QMessageBox.warning(
                 self, "Exportar segmento", "El archivo de destino ya existe. Elija otro nombre."
