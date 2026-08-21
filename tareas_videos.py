@@ -1653,3 +1653,28 @@ class TareaMoverVideo(TareaBase):
     def _trabajo(self):
         import mover_video as svc
         return svc.mover_video(self._video_id, self._carpeta_destino, self._ruta_db, forzar_cross_volume=self._forzar_cross)
+
+
+class TareaCrearCarpeta(TareaBase):
+    """Crea una carpeta hija directa de forma segura (B7.3).
+
+    Corre fuera del hilo UI. Delega exclusivamente en
+    `crear_carpeta.crear_carpeta` (sin SQLite/FS directo desde UI).
+    """
+
+    def __init__(self, carpeta_padre, nombre, parent=None):
+        super().__init__(parent)
+        self._carpeta_padre = carpeta_padre
+        self._nombre = nombre
+
+    @property
+    def carpeta_padre(self):
+        return self._carpeta_padre
+
+    @property
+    def nombre(self):
+        return self._nombre
+
+    def _trabajo(self):
+        import crear_carpeta as svc
+        return svc.crear_carpeta(self._carpeta_padre, self._nombre)

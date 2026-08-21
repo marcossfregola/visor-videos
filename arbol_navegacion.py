@@ -83,6 +83,7 @@ class ArbolNavegacion(QTreeWidget):
     """
 
     ruta_seleccionada = Signal(str)
+    nueva_carpeta_solicitada = Signal(str)
 
     def __init__(self, parent=None, seleccion=None):
         super().__init__(parent)
@@ -448,31 +449,92 @@ class ArbolNavegacion(QTreeWidget):
         self._refrescar_checks(nodos)
 
     def _al_menu_contextual(self, pos):
-        if not self._modo_seleccion:
-            return
         item = self.itemAt(pos)
-        if item is None or self._ruta_valida(item) is None:
+        ruta = self._ruta_valida(item)
+        if ruta is None:
             return
         menu = QMenu(self)
-        accion_seleccionar_hasta = menu.addAction("Seleccionar hasta aquí")
-        accion_seleccionar_desde = menu.addAction(
-            "Seleccionar desde aquí hasta el final"
-        )
-        accion_deseleccionar_hasta = menu.addAction(
-            "Deseleccionar hasta aquí"
-        )
-        accion_deseleccionar_desde = menu.addAction(
-            "Deseleccionar desde aquí hasta el final"
-        )
+        accion_nueva_carpeta = menu.addAction("Nueva carpeta…")
+        # Acciones existentes solo en modo selección
+        accion_seleccionar_hasta = None
+        accion_seleccionar_desde = None
+        accion_deseleccionar_hasta = None
+        accion_deseleccionar_desde = None
+        if self._modo_seleccion:
+            menu.addSeparator()
+            accion_seleccionar_hasta = menu.addAction("Seleccionar hasta aquí")
+            accion_seleccionar_desde = menu.addAction(
+                "Seleccionar desde aquí hasta el final"
+            )
+            accion_deseleccionar_hasta = menu.addAction(
+                "Deseleccionar hasta aquí"
+            )
+            accion_deseleccionar_desde = menu.addAction(
+                "Deseleccionar desde aquí hasta el final"
+            )
         elegida = menu.exec(QCursor.pos())
-        if elegida == accion_seleccionar_hasta:
-            self.seleccionar_hasta(item)
-        elif elegida == accion_seleccionar_desde:
-            self.seleccionar_desde(item)
-        elif elegida == accion_deseleccionar_hasta:
-            self.deseleccionar_hasta(item)
-        elif elegida == accion_deseleccionar_desde:
-            self.deseleccionar_desde(item)
+        if elegida == accion_nueva_carpeta:
+            self.nueva_carpeta_solicitada.emit(ruta)
+            return
+        if self._modo_seleccion:
+            if elegida == accion_seleccionar_hasta:
+                self.seleccionar_hasta(item)
+            elif elegida == accion_seleccionar_desde:
+                self.seleccionar_desde(item)
+            elif elegida == accion_deseleccionar_hasta:
+                self.deseleccionar_hasta(item)
+            elif elegida == accion_deseleccionar_desde:
+                self.deseleccionar_desde(item)
+
+    def refrescar_carpeta(self, ruta_padre):
+        """Refresca únicamente la rama de ruta_padre tras crear carpeta (B7.3).
+
+        Si el nodo padre está cargado, limpia hijos y recarga desde FS
+        (orden alfabético via carpetas_de). Si no está cargado, expande
+        para disparar carga diferida. Retorna True si el padre fue hallado.
+        No hace reescaneo de videos. No borra nada.
+        """
+        if not isinstance(ruta_padre, str) or not ruta_padre:
+            return False
+        raiz = self.topLevelItem(0)
+        nodo = self._buscar_ruta(raiz, ruta_padre)
+        if nodo is None:
+            # Intentar revelar incrementalmente
+            try:
+                if not self.revelar_ruta(ruta_padre):
+                    return False
+                nodo = self._buscar_ruta(raiz, ruta_padre)
+                if nodo is None:
+                    return False
+            except Exception:
+                return False
+        # Si no está cargado, expandir para cargar
+        if not nodo.data(0, ROL_CARGADO):
+            if not nodo.isExpanded():
+                self.expandItem(nodo)
+            else:
+                # Ya expandido pero no cargado (raro): forzar carga
+                self._cargar(nodo, ruta_padre)
+            return True
+        # Ya cargado: limpiar hijos y recargar
+        self._sincronizando_checks = True
+        try:
+            while nodo.childCount() > 0:
+                child = nodo.child(0)
+                nodo.removeChild(child)
+            # Recargar desde FS
+            try:
+                nombres = carpetas_de(ruta_padre)
+            except OSError:
+                nombres = []
+            for nombre in nombres:
+                self._crear_nodo_carpeta(nodo, os.path.join(ruta_padre, nombre))
+            nodo.setData(0, ROL_CARGADO, True)
+            if not nodo.isExpanded():
+                nodo.setExpanded(True)
+        finally:
+            self._sincronizando_checks = False
+        return True
 
     def _crear_nodo_disco(self, padre, disco):
         self._sincronizando_checks = True

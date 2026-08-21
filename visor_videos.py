@@ -105,6 +105,7 @@ from tareas_videos import (
     TareaActualizarSegmento,
     TareaAsignarColorMarcador,
     TareaAsignarColorSegmento,
+    TareaCrearCarpeta,
     TareaEscaneo,
     TareaExportarSecuencia,
     TareaExportarSegmento,
@@ -957,6 +958,48 @@ class DialogoRenombrar(QDialog):
             self._label_error.setText("El nombre no puede estar vacío")
             return
         # Validación rápida local (extensión se valida en servicio, aquí solo vacío)
+        self.accept()
+
+    def texto(self):
+        return self._campo.text()
+
+
+class DialogoCrearCarpeta(QDialog):
+    """Diálogo simple B7.3 — crear carpeta hija directa."""
+
+    def __init__(self, carpeta_padre, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Nueva carpeta")
+        layout = QVBoxLayout(self)
+        layout.addWidget(QLabel(f"Carpeta padre: {carpeta_padre}"))
+        layout.addWidget(QLabel("Nombre de la nueva carpeta:"))
+        self._campo = QLineEdit()
+        self._campo.setPlaceholderText("Nombre sin separadores, sin punto/espacio final")
+        self._campo.selectAll()
+        layout.addWidget(self._campo)
+        self._label_error = QLabel("")
+        self._label_error.setStyleSheet("color: #b00020;")
+        layout.addWidget(self._label_error)
+        botones = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        botones.accepted.connect(self._al_aceptar)
+        botones.rejected.connect(self.reject)
+        layout.addWidget(botones)
+
+    def _al_aceptar(self):
+        texto = self._campo.text()
+        if not texto.strip():
+            self._label_error.setText("El nombre no puede estar vacío")
+            return
+        # Validación rápida local mínima; servicio valida resto
+        if "/" in texto or "\\" in texto:
+            self._label_error.setText("No se permiten separadores de ruta")
+            return
+        if texto.strip() in (".", ".."):
+            self._label_error.setText("Nombre no puede ser '.' o '..'")
+            return
+        if texto.endswith(" ") or texto.endswith("."):
+            self._label_error.setText("No puede terminar en punto o espacio")
+            return
         self.accept()
 
     def texto(self):
@@ -2514,6 +2557,9 @@ class VisorVideos(QMainWindow):
         self.arbol_navegacion.ruta_seleccionada.connect(
             self._al_carpeta_actual_arbol
         )
+        self.arbol_navegacion.nueva_carpeta_solicitada.connect(
+            self._iniciar_crear_carpeta
+        )
         self.boton_seleccionar_todas.clicked.connect(
             self.arbol_navegacion.seleccionar_todas_nivel
         )
@@ -2681,6 +2727,18 @@ class VisorVideos(QMainWindow):
         self._mover_video_id = None
         self._mover_ruta_inconsistente = None
         self._mover_error_sincronizacion = None
+
+        # B7.3 creación segura de carpeta (sin SQLite/FS directo desde UI)
+        self.gestor_crear_carpeta = GestorTareas(self)
+        self.gestor_crear_carpeta.tarea_resultado.connect(self._al_resultado_crear_carpeta)
+        self.gestor_crear_carpeta.tarea_error.connect(self._al_error_crear_carpeta)
+        self.gestor_crear_carpeta.tarea_finalizada.connect(self._al_crear_carpeta_finalizada)
+        self.gestor_crear_carpeta.actividad_cambiada.connect(self._al_actividad_crear_carpeta)
+        self._crear_en_curso = False
+        self._crear_padre_en_curso = None
+        self._crear_nombre_en_curso = None
+        self._crear_ruta_inconsistente = None
+        self._crear_error_refresco = None
 
         self._timer_previews = QTimer(self)
         self._timer_previews.setSingleShot(True)
@@ -5146,6 +5204,132 @@ class VisorVideos(QMainWindow):
     def _al_actividad_mover(self, activa):
         pass
 
+    # B7.3 creación segura de carpeta
+    def _iniciar_crear_carpeta(self, carpeta_padre):
+        """Inicia creación B7.3 — diálogo + tarea background."""
+        if getattr(self, "gestor_crear_carpeta", None) is None or self.gestor_crear_carpeta.activo or self.gestor.activo or self.gestor_renombrado.activo or self.gestor_mover.activo:
+            self.mensaje_carpeta.setText("Hay una operación en curso")
+            return
+        if not isinstance(carpeta_padre, str) or not carpeta_padre.strip() or not os.path.isdir(carpeta_padre):
+            self.mensaje_carpeta.setText("Carpeta padre no válida")
+            return
+        dialogo = DialogoCrearCarpeta(carpeta_padre, self)
+        if dialogo.exec() != QDialog.Accepted:
+            return
+        nombre = dialogo.texto()
+        if not isinstance(nombre, str) or not nombre.strip():
+            self.mensaje_carpeta.setText("El nombre no puede estar vacío")
+            return
+        self._crear_padre_en_curso = carpeta_padre
+        self._crear_nombre_en_curso = nombre
+        self._crear_ruta_inconsistente = None
+        self._crear_error_refresco = None
+        tarea = TareaCrearCarpeta(carpeta_padre, nombre)
+        if not self.gestor_crear_carpeta.iniciar(tarea):
+            self.mensaje_carpeta.setText("No se pudo iniciar creación")
+            return
+        self._crear_en_curso = True
+        self.barra_progreso.setVisible(True)
+        self.barra_progreso.setRange(0, 0)
+        self.mensaje_carpeta.setText(f"Creando carpeta {nombre}…")
+        self._texto_progreso = f"Creando carpeta {nombre}…"
+
+    def _al_resultado_crear_carpeta(self, resultado):
+        if not isinstance(resultado, dict) or not resultado.get("ok"):
+            return
+        nueva_ruta = resultado.get("ruta")
+        padre = resultado.get("padre") or self._crear_padre_en_curso
+        if not isinstance(nueva_ruta, str) or not nueva_ruta.strip():
+            self._crear_ruta_inconsistente = nueva_ruta
+            self._crear_error_refresco = "ruta no válida"
+            self.mensaje_carpeta.setText("Creación inconsistente: ruta no válida")
+            return
+        try:
+            base = os.path.basename(nueva_ruta)
+            carpeta = os.path.dirname(nueva_ruta)
+            if base != resultado.get("nombre") or not carpeta:
+                self._crear_ruta_inconsistente = nueva_ruta
+                self._crear_error_refresco = "basename mismatch"
+                self.mensaje_carpeta.setText("Creación inconsistente: ruta no coincide con nombre")
+                return
+            if not os.path.isdir(nueva_ruta):
+                self._crear_ruta_inconsistente = nueva_ruta
+                self._crear_error_refresco = "ruta no es directorio tras mkdir"
+                self.mensaje_carpeta.setText(f"Carpeta creada pero no verificable en FS: {nueva_ruta!r}")
+                return
+        except Exception as exc:
+            self._crear_ruta_inconsistente = nueva_ruta
+            self._crear_error_refresco = str(exc)
+            self.mensaje_carpeta.setText(f"Creación inconsistente: error en ruta ({exc})")
+            return
+        # Refrescar únicamente la rama necesaria sin reescaneo de videos
+        try:
+            # Buscar padre, revelar si es necesario
+            nodo_padre = None
+            try:
+                nodo_padre = self.arbol_navegacion._buscar_ruta(self.arbol_navegacion.topLevelItem(0), padre)
+            except Exception:
+                nodo_padre = None
+            if nodo_padre is None:
+                try:
+                    self.arbol_navegacion.revelar_ruta(padre)
+                    nodo_padre = self.arbol_navegacion._buscar_ruta(self.arbol_navegacion.topLevelItem(0), padre)
+                except Exception:
+                    pass
+            if nodo_padre is not None:
+                try:
+                    ok = self.arbol_navegacion.refrescar_carpeta(padre)
+                    if not ok:
+                        self._crear_ruta_inconsistente = nueva_ruta
+                        self._crear_error_refresco = "refrescar_carpeta retornó False"
+                        self.mensaje_carpeta.setText(f"Carpeta creada en {nueva_ruta} pero fallo refresco árbol: padre no hallado")
+                        return
+                except Exception as exc:
+                    self._crear_ruta_inconsistente = nueva_ruta
+                    self._crear_error_refresco = str(exc)
+                    self.mensaje_carpeta.setText(f"Carpeta creada en {nueva_ruta} pero fallo refresco árbol: {exc}")
+                    return
+                # Seleccionar / hacer visible nueva carpeta
+                try:
+                    if not self.arbol_navegacion.seleccionar_ruta(nueva_ruta):
+                        # fallback revelar
+                        self.arbol_navegacion.revelar_ruta(nueva_ruta)
+                    self.mensaje_carpeta.setText(f"Carpeta creada: {os.path.basename(nueva_ruta)}")
+                except Exception as exc2:
+                    self._crear_ruta_inconsistente = nueva_ruta
+                    self._crear_error_refresco = str(exc2)
+                    self.mensaje_carpeta.setText(f"Carpeta creada en {nueva_ruta} pero fallo selección árbol: {exc2}")
+                    return
+            else:
+                self.mensaje_carpeta.setText(f"Carpeta creada en {nueva_ruta} (fuera de vista actual del árbol)")
+        except Exception as exc:
+            self._crear_ruta_inconsistente = nueva_ruta
+            self._crear_error_refresco = str(exc)
+            self.mensaje_carpeta.setText(f"Carpeta creada en {nueva_ruta} pero error UI: {exc}")
+            return
+        finally:
+            # No borrar carpeta creada aunque UI falle (spec)
+            pass
+        self._crear_padre_en_curso = None
+        self._crear_nombre_en_curso = None
+        self._crear_ruta_inconsistente = None
+        self._crear_error_refresco = None
+
+    def _al_error_crear_carpeta(self, mensaje):
+        self.mensaje_carpeta.setText(f"No se pudo crear carpeta: {mensaje}")
+        self._crear_padre_en_curso = None
+        self._crear_nombre_en_curso = None
+        # No borrar nada: si error fue tras mkdir, el servicio ya no borraría; UI tampoco
+
+    def _al_crear_carpeta_finalizada(self):
+        self._crear_en_curso = False
+        self.barra_progreso.setVisible(False)
+        self.barra_progreso.setRange(0, 100)
+        self._al_actividad_crear_carpeta(False)
+
+    def _al_actividad_crear_carpeta(self, activa):
+        pass
+
     def _actualizar_boton_copiar(self):
         gestor_op = getattr(self, "gestor_operaciones", None)
         habilitado = (
@@ -6875,6 +7059,17 @@ class VisorVideos(QMainWindow):
             self._preparacion_secuencia_rutas = None
             self._preparacion_secuencia_segmentos = None
             self._preparacion_secuencia_error = None
+        if getattr(self, "gestor_crear_carpeta", None) is not None:
+            self.gestor_crear_carpeta.cerrar()
+            self._crear_en_curso = False
+            self._crear_padre_en_curso = None
+            self._crear_nombre_en_curso = None
+            self._crear_ruta_inconsistente = None
+            self._crear_error_refresco = None
+        if getattr(self, "gestor_renombrado", None) is not None:
+            self.gestor_renombrado.cerrar()
+        if getattr(self, "gestor_mover", None) is not None:
+            self.gestor_mover.cerrar()
         super().closeEvent(event)
 
 
