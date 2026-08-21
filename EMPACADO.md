@@ -56,28 +56,32 @@ requerirían su propia etapa si fueran necesarios.
 
 ## 1. Generar el ejecutable portable (PyInstaller)
 
-Desde la raíz del proyecto:
+Desde la raíz del proyecto (checkout limpio, sin `VisorVideos.spec` requerido):
 
 ```
 python -m PyInstaller --onedir --windowed --name VisorVideos visor_videos.py
 ```
 
-- Entrada: `visor_videos.py` (punto de entrada de producción, `main()`).
+- Entrada: `visor_videos.py` (punto de entrada de producción, `main()`). No depende de `VisorVideos.spec` (archivo ignorado y regenerable; `VisorVideos.spec` no es requisito del pipeline).
 - Resultado: `dist\VisorVideos\VisorVideos.exe` + `dist\VisorVideos\_internal\`.
-- No se incluyen datos: `biblioteca.db`, `miniaturas/`, `configuracion.json` se crean en
-  tiempo de ejecución junto al ejecutable (modo `sys.frozen` de `rutas.py`).
+- No se incluyen datos: `biblioteca.db`, `miniaturas/`, `configuracion.json` se crean en tiempo de ejecución junto al ejecutable (modo `sys.frozen` de `rutas.py`).
 - No se incluyen FFmpeg/FFprobe (por PATH).
+- No se usa monkey-patch de internals de PyInstaller ni `datas` con la `biblioteca.db` local.
 
 ## 2. Preparar la base de datos vacía para el instalador
 
 El instalador incluye una `biblioteca.db` **vacía con el esquema vigente** (sin datos de
-desarrollo). Generarla en la salida del build:
+desarrollo). Generarla en la salida del build mediante el script versionado:
 
 ```
-python -c "import escanear_videos as e; c=e.conectar_bd(r'dist\VisorVideos\biblioteca.db'); c.commit(); c.close()"
+python preparar_empaquetado.py
 ```
 
-Verificación: el archivo existe y no contiene videos.
+El script crea `dist\VisorVideos\biblioteca.db` **nueva y vacía** usando la capa productiva `escanear_videos.conectar_bd` (esquema y migraciones vigentes), sin copiar la `biblioteca.db` local ignorada. Verifica `PRAGMA integrity_check=ok`, conteo `videos=0` (y `marcadores_video=0`, `segmentos_video=0`, derivadas vacías) y esquema vigente; falla con exit 1 si falta el directorio, la creación falla o la verificación no pasa.
+
+Alternativa equivalente (sin script, mismo contrato): `python -c "import escanear_videos as e; c=e.conectar_bd(r'dist\VisorVideos\biblioteca.db'); c.commit(); c.close()"` y verificar manualmente.
+
+Verificación: `dist\VisorVideos\biblioteca.db` existe tras el script, `PRAGMA integrity_check=ok` y no contiene videos (DB vacía ~60 KB, no 184320 bytes de la DB de desarrollo).
 
 ## 3. Generar el instalador (Inno Setup)
 
@@ -100,12 +104,16 @@ Compilar el script oficial con la versión y la etiqueta correspondientes:
   catálogo creado y desinstalación que **elimina los binarios de la aplicación y
   conserva los datos del usuario** (`biblioteca.db`, `configuracion.json`, `miniaturas/`).
 
+### Validación real Beta 6 (resumen)
+
+Packaging reproducible validado en esta entrega (ver `HISTORIAL_PROYECTO.md` ##115): `python -m PyInstaller --onedir --windowed --name VisorVideos visor_videos.py` + `python preparar_empaquetado.py` (DB seed vacía ~60 KB, `PRAGMA integrity_check=ok`, `videos/marcadores/segmentos/derivados=0`) + `ISCC.exe instalador.iss` (Inno Setup 6.7.3). Instalación/desinstalación/reinstalación **aislada validada** preservando `biblioteca.db`/`configuracion.json`/`miniaturas` (B6.1 `uninsneveruninstall` sin `[UninstallDelete]` destructivo). Sin tag `v6.0-beta`, sin push/Release.
+
 ## Repetir para una versión futura
 
 1. Cambiar la versión:
    `ISCC.exe /DAplicacionVersion=X.Y /DBetaEtiqueta=BetaN instalador.iss` (o editar los
    `#define AplicacionVersion` y `#define BetaEtiqueta` del script).
-2. Repetir los pasos 1-4 con el mismo comando de PyInstaller.
+2. Repetir los pasos 1-4 con los mismos comandos (`python -m PyInstaller --onedir --windowed --name VisorVideos visor_videos.py` + `python preparar_empaquetado.py`).
 3. Al adaptar el script para una versión futura, **conservar la regla de B6.1**:
    la desinstalación no debe eliminar los datos persistentes del usuario.
 

@@ -5,6 +5,17 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 115. Cerrar Beta 6 — cierre local documental y de packaging
+
+- **Fecha:** 2026-08-21
+- **Tipo:** cierre **LOCAL** de **Beta 6 — B6.12** (B6.1–B6.12 completas; identidad vigente `Beta 6 - B6.12`; packaging reproducible y validación real del instalador aprobada; sin tag `v6.0-beta`, sin push/Release).
+- **Rama:** `beta6` (HEAD previo `4251c1969c362975c55fdafd97baeb433d1a7f4f`).
+- **Alcance:** Beta 6 cerrada LOCALMENTE; instalación/desinstalación/reinstalación aislada validada preservando `biblioteca.db`/`configuracion.json`/`miniaturas` (B6.1 `uninsneveruninstall`); `preparar_empaquetado.py` genera DB seed vacía con `escanear_videos.conectar_bd`, `PRAGMA integrity_check=ok` y conteos cero.
+- **Verificación de esta entrega:** `py_compile` OK; `prueba_version_build.py` 3/3 (`Beta 6 - B6.12`); `prueba_instalador.py` 8/8; `prueba_reescaneo_preserva_metadatos_b612.py` 3/3 y `prueba_integracion_b612.py` 14/14 y `prueba_derivados_b611.py` 15/15 ya aprobadas en tarea anterior (no repetidas aquí); `git diff --check` limpio; `v6.0-beta` no creado; push/Release pendientes.
+- **Archivos versionados en este commit:** `configuracion.py`, `prueba_version_build.py`, `preparar_empaquetado.py`, `EMPACADO.md`, `ESTADO_PROYECTO.md`, `README.md`, `ROADMAP.md`, `HISTORIAL_PROYECTO.md`, `DOCUMENTO_TECNICO.md`.
+
+---
+
 ## 114. Cierre técnico B6.12 — Integración, robustez y cierre funcional
 
 - **Fecha:** 2026-08-21

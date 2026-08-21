@@ -51,8 +51,8 @@ prueba/
 ├── prueba_escaneo_subcarpetas.py  Pruebas automatizadas del escaneo recursivo con subcarpetas (12)
 ├── prueba_persistencia_subcarpetas.py  Pruebas automatizadas de la persistencia de "Incluir subcarpetas" (10)
 ├── prueba_cantidad_previews.py  Pruebas automatizadas de la cantidad configurable de previews (11)
-├── prueba_version_build.py  Pruebas automatizadas de la identificación visible de versión/build (B4.12, 3): constantes, texto exacto `Beta 4 — B4.12` y etiqueta visible en la status bar
-├── configuracion.py       Servicio de persistencia de configuración (última carpeta seleccionada en `configuracion.json`) + constantes centrales de versión/build (`VERSION_PRODUCTO`, `BUILD_IDENTIFICADOR`, `TEXTO_VERSION_BUILD` → `Beta 4 — B4.12`)
+├── prueba_version_build.py  Pruebas automatizadas de la identificación visible de versión/build (B6.12, 3): constantes, texto exacto `Beta 6 — B6.12` y etiqueta visible en la status bar
+├── configuracion.py       Servicio de persistencia de configuración (última carpeta seleccionada en `configuracion.json`) + constantes centrales de versión/build (`VERSION_PRODUCTO`, `BUILD_IDENTIFICADOR`, `TEXTO_VERSION_BUILD` → `Beta 6 — B6.12`)
 ├── prueba_persistencia_carpeta.py  Pruebas automatizadas de la persistencia de la última carpeta seleccionada (20)
 ├── arbol_navegacion.py  Árbol de navegación del panel izquierdo (nodo raíz "Este equipo", discos y carpetas con carga diferida, selección funcional, sincronización y persistencia/restauración de la carpeta activa); Etapa 2.5 del bloque de trabajo 2, desacoplado del catálogo. Bloque 4: modo de selección de carpetas con checkboxes + herramientas de selección rápida (Etapas 2-3)
 ├── prueba_arbol_navegacion.py  Pruebas automatizadas del árbol de navegación del panel izquierdo (Etapa 2.1)

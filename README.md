@@ -21,11 +21,7 @@ Explorar de forma visual y eficiente grandes colecciones de videos, facilitando 
 
 ## Estado actual
 
-Desarrollo actual en **Beta 6 — "De marcar a conservar"** (rama `beta6`). La
-**Beta 5** quedó cerrada internamente y la **Beta 6 continúa abierta**, con
-**B6.1–B6.8** completadas (B6.3 commit `c28ccf6`, B6.4 commit `74bb459` en `origin/beta6`, B6.5 cerrada en `a837fd2`, B6.6/B6.7 cerradas en `bec5e83`, **B6.8 motor general y reutilizable de nombres implementado, probado y validado manualmente en este commit**; suites `prueba_nombres_b68` 25/25, `prueba_exportacion_b67` 21/21, `prueba_filtro_b65` 24/24, `prueba_color_b63` 21/21, `prueba_ordenamiento_b62` 18/18, `prueba_resumen_colapsado_b64` 8/8); la próxima
-etapa funcional prevista es **B6.9 — exportación múltiple de segmentos separados**. Para el detalle del alcance completo y el
-estado vigente ver `ROADMAP.md` y `ESTADO_PROYECTO.md`.
+Desarrollo actual en **Beta 6 — "De marcar a conservar"** (rama `beta6`) **cerrada LOCALMENTE** (commit local `Cerrar Beta 6`; **B6.1–B6.12 completas**; **identidad vigente `Beta 6 - B6.12`**; **packaging reproducible y validación real del instalador aprobada** —instalación/desinstalación/reinstalación aislada preservando `biblioteca.db`/`configuracion.json`/`miniaturas`—; **sin tag `v6.0-beta`, sin push/Release**). Suites `prueba_integracion_b612` 14/14, `prueba_reescaneo_preserva_metadatos_b612` 3/3 y `prueba_derivados_b611` 15/15 de control en verde. Para el detalle del alcance completo y el estado vigente ver `ROADMAP.md` y `ESTADO_PROYECTO.md`.
 
 ## Distribución
 
