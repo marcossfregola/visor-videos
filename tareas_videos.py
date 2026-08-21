@@ -1678,3 +1678,33 @@ class TareaCrearCarpeta(TareaBase):
     def _trabajo(self):
         import crear_carpeta as svc
         return svc.crear_carpeta(self._carpeta_padre, self._nombre)
+
+
+class TareaCopiarVideo(TareaBase):
+    """Copia un video catalogado a carpeta existente (B7.4).
+
+    Corre fuera del hilo UI. Delega exclusivamente en
+    `copiar_video.copiar_video` (sin SQLite/FS directo desde UI).
+    """
+
+    def __init__(self, video_id, carpeta_destino, ruta_db=None, parent=None):
+        super().__init__(parent)
+        self._video_id = video_id
+        self._carpeta_destino = carpeta_destino
+        self._ruta_db = ruta_db
+
+    @property
+    def video_id(self):
+        return self._video_id
+
+    @property
+    def carpeta_destino(self):
+        return self._carpeta_destino
+
+    @property
+    def ruta_db(self):
+        return self._ruta_db
+
+    def _trabajo(self):
+        import copiar_video as svc
+        return svc.copiar_video(self._video_id, self._carpeta_destino, self._ruta_db)

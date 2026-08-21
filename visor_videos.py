@@ -80,7 +80,7 @@ from escanear_videos import (
     configurar_cantidad_previews,
     configurar_escaneo_recursivo,
 )
-from rutas import ruta_carpeta_miniaturas, ruta_configuracion, ruta_video_existente
+from rutas import carpetas_iguales, ruta_carpeta_miniaturas, ruta_configuracion, ruta_video_existente
 from exploracion_temporal import (
     agregar_marcador_ordenado,
     preview_mas_cercana,
@@ -105,6 +105,7 @@ from tareas_videos import (
     TareaActualizarSegmento,
     TareaAsignarColorMarcador,
     TareaAsignarColorSegmento,
+    TareaCopiarVideo,
     TareaCrearCarpeta,
     TareaEscaneo,
     TareaExportarSecuencia,
@@ -351,12 +352,18 @@ def miniatura_principal(nombre):
     carpeta = ruta_carpeta_miniaturas()
     if os.path.isdir(carpeta):
         for archivo in sorted(os.listdir(carpeta)):
-            if (
-                os.path.splitext(archivo)[0].startswith(prefijo)
-                and not _es_archivo_preview(archivo, nombre)
-            ):
-                ruta = os.path.join(carpeta, archivo)
-                return ruta
+            base = os.path.splitext(archivo)[0]
+            if not base.startswith(prefijo + "_"):
+                continue
+            if _es_archivo_preview(archivo, nombre):
+                continue
+            suffix = base[len(prefijo):]
+            if not suffix.startswith("_"):
+                continue
+            if not suffix[1:].isdigit():
+                continue
+            ruta = os.path.join(carpeta, archivo)
+            return ruta
     return None
 
 
@@ -2737,6 +2744,18 @@ class VisorVideos(QMainWindow):
         self._crear_en_curso = False
         self._crear_padre_en_curso = None
         self._crear_nombre_en_curso = None
+
+        # B7.4 copia individual segura (sin SQLite/FS directo desde UI)
+        self.gestor_copiar = GestorTareas(self)
+        self.gestor_copiar.tarea_resultado.connect(self._al_resultado_copiar)
+        self.gestor_copiar.tarea_error.connect(self._al_error_copiar)
+        self.gestor_copiar.tarea_finalizada.connect(self._al_copiar_finalizada)
+        self.gestor_copiar.actividad_cambiada.connect(self._al_actividad_copiar)
+        self._copiar_en_curso = False
+        self._copiar_nombre_origen = None
+        self._copiar_video_id = None
+        self._copiar_ruta_inconsistente = None
+        self._copiar_error_sincronizacion = None
         self._crear_ruta_inconsistente = None
         self._crear_error_refresco = None
 
@@ -5330,6 +5349,106 @@ class VisorVideos(QMainWindow):
     def _al_actividad_crear_carpeta(self, activa):
         pass
 
+    # B7.4 copia individual segura
+    def _iniciar_copiar(self, nombre):
+        """Inicia copia B7.4 — selector de carpeta existente y tarea background."""
+        # Bloqueo si hay operación en curso (mover/renombrar/crear/copiar/escaneo)
+        if self.gestor_copiar.activo or self.gestor_mover.activo or self.gestor_renombrado.activo or self.gestor.activo or (getattr(self, "gestor_crear_carpeta", None) and self.gestor_crear_carpeta.activo):
+            self.mensaje_carpeta.setText("Hay una operación en curso")
+            return
+        tarjeta = self._tarjeta_por_nombre(nombre)
+        if tarjeta is None:
+            return
+        video_id = getattr(tarjeta, "_video_id", None)
+        if video_id is None:
+            self.mensaje_carpeta.setText("No se pudo identificar el video")
+            return
+        carpeta_destino = QFileDialog.getExistingDirectory(self, "Copiar a…", "")
+        if not carpeta_destino:
+            return
+        if not isinstance(carpeta_destino, str) or not carpeta_destino.strip():
+            self.mensaje_carpeta.setText("Carpeta destino no válida")
+            return
+        # Validación FS delegada al servicio/tarea; UI solo consume la cadena del selector
+        carpeta_destino = carpeta_destino.strip()
+        self._copiar_nombre_origen = nombre
+        self._copiar_video_id = video_id
+        self._copiar_ruta_inconsistente = None
+        self._copiar_error_sincronizacion = None
+        tarea = TareaCopiarVideo(video_id, carpeta_destino, self._ruta_db)
+        if not self.gestor_copiar.iniciar(tarea):
+            self.mensaje_carpeta.setText("No se pudo iniciar la copia")
+            return
+        self._copiar_en_curso = True
+        self.barra_progreso.setVisible(True)
+        self.barra_progreso.setRange(0, 0)
+        self.mensaje_carpeta.setText(f"Copiando {nombre}…")
+        self._texto_progreso = f"Copiando {nombre}…"
+
+    def _al_resultado_copiar(self, resultado):
+        if not isinstance(resultado, dict) or not resultado.get("ok"):
+            return
+        nombre = resultado.get("nombre")
+        nueva_ruta = resultado.get("ruta")
+        carpeta_destino = resultado.get("carpeta_destino")
+        if carpeta_destino is None:
+            carpeta_destino = resultado.get("carpeta_destino_normalizada")
+        # Validación mínima sin FS: solo contrato de strings, el servicio ya validó/normalizó FS y existencia
+        if not isinstance(nueva_ruta, str) or not nueva_ruta.strip():
+            self._copiar_ruta_inconsistente = nueva_ruta
+            self._copiar_error_sincronizacion = "ruta no válida"
+            self.mensaje_carpeta.setText(f"Copia completada pero UI inconsistente: ruta no válida ({nueva_ruta!r}) — evidencia conservada")
+            self._copiar_nombre_origen = None
+            self._copiar_video_id = None
+            return
+        if not isinstance(nombre, str) or not nombre.strip():
+            self._copiar_ruta_inconsistente = nueva_ruta
+            self._copiar_error_sincronizacion = "nombre no válido"
+            self.mensaje_carpeta.setText(f"Copia completada pero UI inconsistente: nombre no válido — evidencia {nueva_ruta!r}")
+            self._copiar_nombre_origen = None
+            self._copiar_video_id = None
+            return
+        # El servicio garantiza coherencia de nombre/ruta y archivo existente; UI no consulta FS
+        # Determinar si la vista actual es la carpeta destino usando helper puro de rutas
+        vista_es_destino = False
+        try:
+            if isinstance(carpeta_destino, str) and carpeta_destino.strip() and isinstance(self.carpeta_seleccionada, str) and self.carpeta_seleccionada.strip():
+                vista_es_destino = carpetas_iguales(self.carpeta_seleccionada, carpeta_destino)
+        except Exception:
+            vista_es_destino = False
+        self._copiar_nombre_origen = None
+        self._copiar_video_id = None
+        self._copiar_ruta_inconsistente = None
+        self._copiar_error_sincronizacion = None
+        try:
+            carpeta_msg = carpeta_destino if isinstance(carpeta_destino, str) and carpeta_destino.strip() else nueva_ruta
+            self.mensaje_carpeta.setText(f"Copiado a {carpeta_msg} como {nombre}")
+        except Exception:
+            self.mensaje_carpeta.setText(f"Copiado como {nombre}")
+        if vista_es_destino:
+            try:
+                if self.gestor.activo:
+                    self._reordenamiento_pendiente = True
+                else:
+                    self._programar_recarga_por_carpeta()
+            except Exception:
+                pass
+
+    def _al_error_copiar(self, mensaje):
+        # Si es inconsistencia post-publicación, mensaje ya indica archivo conservado
+        self.mensaje_carpeta.setText(f"No se pudo copiar: {mensaje}")
+        self._copiar_nombre_origen = None
+        self._copiar_video_id = None
+
+    def _al_copiar_finalizada(self):
+        self._copiar_en_curso = False
+        self.barra_progreso.setVisible(False)
+        self.barra_progreso.setRange(0, 100)
+        self._al_actividad_copiar(False)
+
+    def _al_actividad_copiar(self, activa):
+        pass
+
     def _actualizar_boton_copiar(self):
         gestor_op = getattr(self, "gestor_operaciones", None)
         habilitado = (
@@ -6473,6 +6592,8 @@ class VisorVideos(QMainWindow):
         accion_abrir_seleccionados.triggered.connect(self._abrir_carpetas_seleccionados)
         accion_renombrar.triggered.connect(lambda: self._iniciar_renombrar(nombre))
         accion_mover.triggered.connect(lambda: self._iniciar_mover(nombre))
+        accion_copiar = menu.addAction("Copiar a…")
+        accion_copiar.triggered.connect(lambda: self._iniciar_copiar(nombre))
         accion_reproducir_marcadores.setEnabled(bool(self._nombres_seleccionados))
         accion_reproducir_marcadores.triggered.connect(
             self._reproducir_marcadores_en_vlc
@@ -7070,6 +7191,13 @@ class VisorVideos(QMainWindow):
             self.gestor_renombrado.cerrar()
         if getattr(self, "gestor_mover", None) is not None:
             self.gestor_mover.cerrar()
+        if getattr(self, "gestor_copiar", None) is not None:
+            self.gestor_copiar.cerrar()
+            self._copiar_en_curso = False
+            self._copiar_nombre_origen = None
+            self._copiar_video_id = None
+            self._copiar_ruta_inconsistente = None
+            self._copiar_error_sincronizacion = None
         super().closeEvent(event)
 
 

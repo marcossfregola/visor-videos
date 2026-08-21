@@ -591,13 +591,21 @@ def miniatura_reutilizable(video, ruta_video):
     if not os.path.isdir(carpeta):
         return None
     for nombre in sorted(os.listdir(carpeta)):
-        if (
-            os.path.splitext(nombre)[0].startswith(prefijo)
-            and not _es_archivo_preview(nombre, video)
-        ):
-            ruta = os.path.join(carpeta, nombre)
-            if miniatura_vigente(ruta_video, ruta):
-                return ruta
+        base = os.path.splitext(nombre)[0]
+        # B7.4 fix-027: match preciso _<digitos> para evitar colisión entre video y video_001
+        if not base.startswith(prefijo + "_"):
+            continue
+        if _es_archivo_preview(nombre, video):
+            continue
+        suffix = base[len(prefijo):]  # _NN
+        if not suffix.startswith("_"):
+            continue
+        rest = suffix[1:]
+        if not rest.isdigit():
+            continue
+        ruta = os.path.join(carpeta, nombre)
+        if miniatura_vigente(ruta_video, ruta):
+            return ruta
     return None
 
 def asegurar_miniatura(video, ruta_video, duracion_segundos=None):
@@ -659,13 +667,17 @@ def contar_miniaturas(video):
     carpeta = ruta_carpeta_miniaturas()
     if not os.path.isdir(carpeta):
         return 0
-    return sum(
-        1 for nombre in os.listdir(carpeta)
-        if (
-            os.path.splitext(nombre)[0].startswith(prefijo)
-            and not _es_archivo_preview(nombre, video)
-        )
-    )
+    def _es_miniatura(nombre):
+        base = os.path.splitext(nombre)[0]
+        if not base.startswith(prefijo + "_"):
+            return False
+        if _es_archivo_preview(nombre, video):
+            return False
+        suffix = base[len(prefijo):]
+        if not suffix.startswith("_"):
+            return False
+        return suffix[1:].isdigit()
+    return sum(1 for nombre in os.listdir(carpeta) if _es_miniatura(nombre))
 
 def previews_existentes(video):
     carpeta = ruta_carpeta_miniaturas()

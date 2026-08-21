@@ -50,3 +50,32 @@ def ruta_video_existente(carpeta, nombre):
     if not os.path.isdir(carpeta) or not os.path.isfile(ruta):
         return None
     return ruta
+
+
+def normalizar_carpeta(carpeta):
+    """Normaliza una carpeta a forma canónica (abspath + normpath + normcase).
+
+    Helper puro de rutas, arquitectónicamente aceptado para que la UI
+    compare carpetas sin acceder directamente a os.path. No toca FS
+    (no verifica existencia), solo normaliza la cadena.
+    """
+    if not isinstance(carpeta, str) or not carpeta.strip():
+        return None
+    try:
+        return os.path.normcase(os.path.normpath(os.path.abspath(carpeta.strip())))
+    except Exception:
+        return None
+
+
+def carpetas_iguales(a, b):
+    """True si dos carpetas normalizadas coinciden (comparación pura, sin FS).
+
+    Usa normalizar_carpeta internamente; no verifica existencia en disco.
+    Reemplaza el uso directo de os.path.* en la UI para decidir si la vista
+    actual coincide con la carpeta destino de una operación.
+    """
+    na = normalizar_carpeta(a)
+    nb = normalizar_carpeta(b)
+    if na is None or nb is None:
+        return False
+    return na == nb
