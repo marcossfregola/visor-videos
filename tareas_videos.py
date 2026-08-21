@@ -1573,3 +1573,33 @@ class TareaExportarSecuencia(TareaBase):
                 resultado["alta_catalogo"] = {"ok": False, "derivado_video_id": None, "derivacion_id": None, "error": f"excepción en alta: {exc}", "catalog_error": True}
                 resultado["alta_catalogo_error"] = str(exc)
         return resultado
+
+
+class TareaRenombrarVideo(TareaBase):
+    """Renombra un video preservando video_id (B7.1).
+
+    Corre fuera del hilo UI. Delega exclusivamente en
+    `renombrar_video.renombrar_video` (sin SQLite/FS directo desde UI).
+    """
+
+    def __init__(self, video_id, nuevo_nombre, ruta_db=None, parent=None):
+        super().__init__(parent)
+        self._video_id = video_id
+        self._nuevo_nombre = nuevo_nombre
+        self._ruta_db = ruta_db
+
+    @property
+    def video_id(self):
+        return self._video_id
+
+    @property
+    def nuevo_nombre(self):
+        return self._nuevo_nombre
+
+    @property
+    def ruta_db(self):
+        return self._ruta_db
+
+    def _trabajo(self):
+        import renombrar_video as svc
+        return svc.renombrar_video(self._video_id, self._nuevo_nombre, self._ruta_db)

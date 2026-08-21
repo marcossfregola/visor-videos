@@ -123,6 +123,7 @@ from tareas_videos import (
     TareaListarSegmentosVarios,
     TareaMiniaturas,
     TareaPreviewsProgresivas,
+    TareaRenombrarVideo,
     TareaResumenColapsado,
     TareaSincronizacionCatalogo,
     TareaTamanosArchivos,
@@ -928,6 +929,39 @@ class DialogoExportarSecuencia(QDialog):
         return None
 
 
+class DialogoRenombrar(QDialog):
+    """Diálogo simple B7.1 — renombrado individual (preserva extensión)."""
+
+    def __init__(self, nombre_actual, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Renombrar")
+        layout = QVBoxLayout(self)
+        layout.addWidget(QLabel(f"Nombre actual: {nombre_actual}"))
+        layout.addWidget(QLabel("Nuevo nombre (extensión preservada):"))
+        self._campo = QLineEdit()
+        self._campo.setText(nombre_actual)
+        self._campo.selectAll()
+        layout.addWidget(self._campo)
+        self._label_error = QLabel("")
+        self._label_error.setStyleSheet("color: #b00020;")
+        layout.addWidget(self._label_error)
+        botones = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        botones.accepted.connect(self._al_aceptar)
+        botones.rejected.connect(self.reject)
+        layout.addWidget(botones)
+
+    def _al_aceptar(self):
+        texto = self._campo.text()
+        if not texto.strip():
+            self._label_error.setText("El nombre no puede estar vacío")
+            return
+        # Validación rápida local (extensión se valida en servicio, aquí solo vacío)
+        self.accept()
+
+    def texto(self):
+        return self._campo.text()
+
+
 class TareaCopiarArchivos(TareaBase):
     def __init__(self, origen, archivos, destino, parent=None):
         super().__init__(parent)
@@ -1144,6 +1178,41 @@ class Tarjeta(QFrame):
         self._barra_colapsada.setVisible(not self._expandida)
         layout.addWidget(self._barra_colapsada)
         layout.addWidget(self._contenedor_exploracion)
+
+    def actualizar_nombre(self, nuevo_nombre, nueva_ruta=None):
+        """Actualiza el nombre y la carpeta del video tras renombrado (B7.1).
+
+        Sincroniza identidad del archivo usando nuevo_nombre y nueva_ruta,
+        actualizando _nombre y _carpeta_video desde dirname(nueva_ruta).
+        Mantiene el label. Si nueva_ruta no es válida, no altera _carpeta_video
+        pero sí sincroniza _nombre (el caller valida inconsistencia).
+        """
+        if isinstance(nuevo_nombre, str) and nuevo_nombre:
+            self._nombre = nuevo_nombre
+        if isinstance(nueva_ruta, str) and nueva_ruta.strip():
+            try:
+                carpeta = os.path.dirname(nueva_ruta)
+                if carpeta:
+                    # Normalizar sin trailing sep, preservar raíz/drive
+                    carpeta_norm = carpeta.rstrip(os.sep) or carpeta
+                    self._carpeta_video = carpeta_norm
+                else:
+                    # Fallback: derivar desde abspath si dirname vacío
+                    ab = os.path.abspath(nueva_ruta)
+                    d = os.path.dirname(ab)
+                    if d:
+                        self._carpeta_video = d.rstrip(os.sep) or d
+            except Exception:
+                pass
+        # Actualizar QLabel de Nombre si existe (primer campo)
+        try:
+            for lbl in self.findChildren(QLabel):
+                txt = lbl.text()
+                if txt.startswith("<b>Nombre:</b>"):
+                    lbl.setText(f"<b>Nombre:</b> {self._nombre}")
+                    break
+        except Exception:
+            pass
 
     @property
     def nombre(self):
@@ -2356,6 +2425,10 @@ class VisorVideos(QMainWindow):
         self._atajo_eliminar = QShortcut(QKeySequence("Del"), self)
         self._atajo_eliminar.activated.connect(self._atajo_operacion_eliminar)
 
+        # B7.1 F2 renombrar (sin conflicto: no colisiona con Ctrl+A/Esc/Del)
+        self._atajo_f2_renombrar = QShortcut(QKeySequence("F2"), self)
+        self._atajo_f2_renombrar.activated.connect(self._atajo_renombrar)
+
         self.area = QScrollArea()
         self.area.setWidgetResizable(True)
         self.area.setWidget(self.contenedor)
@@ -2551,6 +2624,15 @@ class VisorVideos(QMainWindow):
         self._preparacion_secuencia_rutas = None
         self._preparacion_secuencia_segmentos = None
         self._preparacion_secuencia_error = None
+
+        # B7.1 renombrado individual seguro (sin SQLite/FS directo desde UI)
+        self.gestor_renombrado = GestorTareas(self)
+        self.gestor_renombrado.tarea_resultado.connect(self._al_resultado_renombrado)
+        self.gestor_renombrado.tarea_error.connect(self._al_error_renombrado)
+        self.gestor_renombrado.tarea_finalizada.connect(self._al_renombrado_finalizada)
+        self.gestor_renombrado.actividad_cambiada.connect(self._al_actividad_renombrado)
+        self._renombrado_en_curso = False
+        self._renombrado_nombre_anterior = None
 
         self._timer_previews = QTimer(self)
         self._timer_previews.setSingleShot(True)
@@ -4658,6 +4740,126 @@ class VisorVideos(QMainWindow):
             return
         self._iniciar_eliminar()
 
+    def _atajo_renombrar(self):
+        if self.busqueda.hasFocus():
+            return
+        if len(self._nombres_seleccionados) != 1:
+            return
+        nombre = next(iter(self._nombres_seleccionados))
+        self._iniciar_renombrar(nombre)
+
+    def _iniciar_renombrar(self, nombre):
+        if self.gestor_renombrado.activo or self.gestor.activo:
+            self.mensaje_carpeta.setText("Hay una operación en curso")
+            return
+        tarjeta = self._tarjeta_por_nombre(nombre)
+        if tarjeta is None:
+            return
+        video_id = getattr(tarjeta, "_video_id", None)
+        if video_id is None:
+            self.mensaje_carpeta.setText("No se pudo identificar el video")
+            return
+        dialogo = DialogoRenombrar(nombre, self)
+        if dialogo.exec() != QDialog.Accepted:
+            return
+        nuevo = dialogo.texto()
+        if not nuevo.strip():
+            self.mensaje_carpeta.setText("El nombre no puede estar vacío")
+            return
+        self._renombrado_nombre_anterior = nombre
+        tarea = TareaRenombrarVideo(video_id, nuevo, self._ruta_db)
+        if not self.gestor_renombrado.iniciar(tarea):
+            self.mensaje_carpeta.setText("No se pudo iniciar el renombrado")
+            return
+        self._renombrado_en_curso = True
+        self.barra_progreso.setVisible(True)
+        self.barra_progreso.setRange(0, 0)
+        self.mensaje_carpeta.setText(f"Renombrando {nombre}…")
+        self._texto_progreso = f"Renombrando {nombre}…"
+
+    def _al_resultado_renombrado(self, resultado):
+        # Éxito: actualizar UI sin reescaneo — sincronizando Tarjeta con nueva_ruta (B7.1 fix)
+        if not isinstance(resultado, dict) or not resultado.get("ok"):
+            return
+        video_id = resultado.get("video_id")
+        nuevo_nombre = resultado.get("nombre")
+        nueva_ruta = resultado.get("ruta")
+        anterior = resultado.get("nombre_anterior") or self._renombrado_nombre_anterior
+        if not nuevo_nombre or video_id is None:
+            return
+        # Validación conservadora de nueva_ruta: si falta o no es válida, no declarar éxito silencioso
+        if not isinstance(nueva_ruta, str) or not nueva_ruta.strip():
+            self.mensaje_carpeta.setText("Renombrado inconsistente: ruta no válida")
+            self._renombrado_nombre_anterior = None
+            return
+        try:
+            base = os.path.basename(nueva_ruta)
+            carpeta = os.path.dirname(nueva_ruta)
+            if base != nuevo_nombre or not carpeta:
+                self.mensaje_carpeta.setText("Renombrado inconsistente: ruta no coincide con nombre")
+                self._renombrado_nombre_anterior = None
+                return
+        except Exception:
+            self.mensaje_carpeta.setText("Renombrado inconsistente: error en ruta")
+            self._renombrado_nombre_anterior = None
+            return
+        # Actualizar estructuras internas
+        # tarjetas: lista de (nombre, tarjeta)
+        for idx, (nom, tarjeta) in enumerate(self.tarjetas):
+            if nom == anterior:
+                self.tarjetas[idx] = (nuevo_nombre, tarjeta)
+                try:
+                    tarjeta.actualizar_nombre(nuevo_nombre, nueva_ruta)
+                except TypeError:
+                    # Compatibilidad si la firma aún es antigua (un solo arg)
+                    try:
+                        tarjeta.actualizar_nombre(nuevo_nombre)
+                        # Fallback manual de carpeta
+                        try:
+                            c = os.path.dirname(nueva_ruta)
+                            if c:
+                                tarjeta._carpeta_video = c.rstrip(os.sep) or c
+                        except Exception:
+                            pass
+                    except Exception:
+                        try:
+                            tarjeta._nombre = nuevo_nombre
+                        except Exception:
+                            pass
+                except Exception:
+                    try:
+                        tarjeta._nombre = nuevo_nombre
+                    except Exception:
+                        pass
+                break
+        # visibles
+        self.visibles = [nuevo_nombre if n == anterior else n for n in self.visibles]
+        # selección
+        if anterior in self._nombres_seleccionados:
+            self._nombres_seleccionados.discard(anterior)
+            self._nombres_seleccionados.add(nuevo_nombre)
+            if self._ancla_seleccion == anterior:
+                self._ancla_seleccion = nuevo_nombre
+        self._renombrado_nombre_anterior = None
+        self.filtrar(self.busqueda.text())
+        self.actualizar_contador()
+        self._actualizar_resumen_seleccion()
+        self.mensaje_carpeta.setText(f"Renombrado a {nuevo_nombre}")
+
+    def _al_error_renombrado(self, mensaje):
+        self.mensaje_carpeta.setText(f"No se pudo renombrar: {mensaje}")
+        self._renombrado_nombre_anterior = None
+
+    def _al_renombrado_finalizada(self):
+        self._renombrado_en_curso = False
+        self.barra_progreso.setVisible(False)
+        self.barra_progreso.setRange(0, 100)
+        self._al_actividad_renombrado(False)
+
+    def _al_actividad_renombrado(self, activa):
+        # Deshabilitar botones durante renombrado si fuese necesario; por ahora solo barra
+        pass
+
     def _actualizar_boton_copiar(self):
         gestor_op = getattr(self, "gestor_operaciones", None)
         habilitado = (
@@ -5786,6 +5988,7 @@ class VisorVideos(QMainWindow):
         accion_copiar_ruta = menu.addAction("Copiar ruta")
         accion_copiar_seleccionados = menu.addAction("Copiar rutas de los seleccionados")
         accion_abrir_seleccionados = menu.addAction("Abrir carpetas de los seleccionados")
+        accion_renombrar = menu.addAction("Renombrar…")
         accion_reproducir_marcadores = menu.addAction(
             "Reproducir marcadores en VLC"
         )
@@ -5797,6 +6000,7 @@ class VisorVideos(QMainWindow):
         accion_copiar_ruta.triggered.connect(lambda: self._copiar_ruta(nombre))
         accion_copiar_seleccionados.triggered.connect(self._copiar_rutas_seleccionados)
         accion_abrir_seleccionados.triggered.connect(self._abrir_carpetas_seleccionados)
+        accion_renombrar.triggered.connect(lambda: self._iniciar_renombrar(nombre))
         accion_reproducir_marcadores.setEnabled(bool(self._nombres_seleccionados))
         accion_reproducir_marcadores.triggered.connect(
             self._reproducir_marcadores_en_vlc

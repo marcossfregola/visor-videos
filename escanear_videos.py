@@ -2170,6 +2170,66 @@ def incorporar_video_derivado_al_catalogo(derivado_ruta, original_video_id, segm
                 pass
 
 
+def actualizar_nombre_video(video_id, nuevo_nombre, nueva_ruta, ruta_db=None):
+    """Helper explícito B7.1 — actualiza nombre y ruta en transacción corta.
+
+    Valida video_id y persiste en una única transacción. No toca filesystem.
+    Lanza sqlite3.IntegrityError si viola UNIQUE(nombre).
+    """
+    _validar_video_id(video_id)
+    if not isinstance(nuevo_nombre, str) or not nuevo_nombre:
+        raise ValueError("nuevo_nombre debe ser texto no vacío")
+    if not isinstance(nueva_ruta, str) or not nueva_ruta:
+        raise ValueError("nueva_ruta debe ser texto no vacío")
+    if ruta_db is None:
+        ruta_db = ruta_biblioteca()
+    if not os.path.isfile(ruta_db):
+        raise FileNotFoundError(f"Base de datos no encontrada: {ruta_db}")
+    conn = sqlite3.connect(ruta_db)
+    try:
+        conn.execute("BEGIN")
+        cur = conn.execute(
+            "UPDATE videos SET nombre = ?, ruta = ? WHERE id = ?",
+            (nuevo_nombre, nueva_ruta, video_id),
+        )
+        if cur.rowcount == 0:
+            conn.rollback()
+            raise ValueError(f"video_id {video_id} no existe")
+        conn.commit()
+        return {"ok": True, "video_id": video_id, "nombre": nuevo_nombre, "ruta": nueva_ruta}
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        raise
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def obtener_video_por_id(video_id, ruta_db=None):
+    """Obtiene un video por id (B7.1)."""
+    _validar_video_id(video_id)
+    if ruta_db is None:
+        ruta_db = ruta_biblioteca()
+    if not os.path.isfile(ruta_db):
+        raise FileNotFoundError(f"Base de datos no encontrada: {ruta_db}")
+    conn = conectar_bd(ruta_db)
+    try:
+        fila = conn.execute(
+            "SELECT id, nombre, ruta, extension FROM videos WHERE id = ?",
+            (video_id,),
+        ).fetchone()
+        if fila is None:
+            return None
+        return {"id": fila[0], "nombre": fila[1], "ruta": fila[2], "extension": fila[3]}
+    finally:
+        conn.close()
+
+
 def main():
     conn = conectar_bd()
     sincronizar_bd(conn, ruta_carpeta_videos())
