@@ -5,13 +5,23 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 116. Apertura Beta 7 — B7.0 reconciliación documental y cambio de identidad (sin commit)
+
+- **Fecha:** 2026-08-21
+- **Tipo:** apertura controlada **B7.0** sin funcionalidad (rama local `beta7` creada exactamente desde `7d85e94bb8b617209a155e5b1086d1d38f4784f8`, cierre publicado de Beta 6).
+- **Rama:** `beta7` (HEAD `7d85e94bb8b617209a155e5b1086d1d38f4784f8`; base exacta verificada `beta6`/`origin/beta6`/`v6.0-beta^{commit}` alineados; sin commit/push/tag/Release en esta etapa).
+- **Alcance:** reconciliación documental de referencias obsoletas que describían Beta 6 como solo local/pendiente → reflejando realidad demostrada: **tag `v6.0-beta` anotado publicado sobre `7d85e94`, `origin/beta6` alineado y GitHub Release Beta 6 prerelease sin binarios**; actualización de identidad de desarrollo a `Beta 7 - B7.0` en `configuracion.py` y adaptación de `prueba_version_build.py`; sin modificar lógica/SQLite/UI/FFmpeg/caché/operaciones de archivos; sin B7.1.
+- **Archivos modificados en esta etapa (working tree, sin commit):** `README.md`, `ESTADO_PROYECTO.md`, `ROADMAP.md`, `HISTORIAL_PROYECTO.md`, `EMPACADO.md`, `configuracion.py`, `prueba_version_build.py` (modificados solo según autoridad documental).
+
+---
+
 ## 115. Cerrar Beta 6 — cierre local documental y de packaging
 
 - **Fecha:** 2026-08-21
-- **Tipo:** cierre **LOCAL** de **Beta 6 — B6.12** (B6.1–B6.12 completas; identidad vigente `Beta 6 - B6.12`; packaging reproducible y validación real del instalador aprobada; sin tag `v6.0-beta`, sin push/Release).
+- **Tipo:** cierre **LOCAL** de **Beta 6 — B6.12** (B6.1–B6.12 completas; identidad vigente `Beta 6 - B6.12`; packaging reproducible y validación real del instalador aprobada; sin tag `v6.0-beta`, sin push/Release al momento del commit).
 - **Rama:** `beta6` (HEAD previo `4251c1969c362975c55fdafd97baeb433d1a7f4f`).
-- **Alcance:** Beta 6 cerrada LOCALMENTE; instalación/desinstalación/reinstalación aislada validada preservando `biblioteca.db`/`configuracion.json`/`miniaturas` (B6.1 `uninsneveruninstall`); `preparar_empaquetado.py` genera DB seed vacía con `escanear_videos.conectar_bd`, `PRAGMA integrity_check=ok` y conteos cero.
-- **Verificación de esta entrega:** `py_compile` OK; `prueba_version_build.py` 3/3 (`Beta 6 - B6.12`); `prueba_instalador.py` 8/8; `prueba_reescaneo_preserva_metadatos_b612.py` 3/3 y `prueba_integracion_b612.py` 14/14 y `prueba_derivados_b611.py` 15/15 ya aprobadas en tarea anterior (no repetidas aquí); `git diff --check` limpio; `v6.0-beta` no creado; push/Release pendientes.
+- **Alcance:** Beta 6 cerrada LOCALMENTE al momento de este commit; instalación/desinstalación/reinstalación aislada validada preservando `biblioteca.db`/`configuracion.json`/`miniaturas` (B6.1 `uninsneveruninstall`); `preparar_empaquetado.py` genera DB seed vacía con `escanear_videos.conectar_bd`, `PRAGMA integrity_check=ok` y conteos cero. Publicación posterior (fuera de este commit): tag `v6.0-beta` anotado publicado sobre `7d85e94bb8b617209a155e5b1086d1d38f4784f8`, `origin/beta6` alineado y GitHub Release Beta 6 prerelease sin binarios (reconciliado en B7.0).
+- **Verificación de esta entrega:** `py_compile` OK; `prueba_version_build.py` 3/3 (`Beta 6 - B6.12`); `prueba_instalador.py` 8/8; `prueba_reescaneo_preserva_metadatos_b612.py` 3/3 y `prueba_integracion_b612.py` 14/14 y `prueba_derivados_b611.py` 15/15 ya aprobadas en tarea anterior (no repetidas aquí); `git diff --check` limpio; `v6.0-beta` no creado al momento del commit; push/Release pendientes entonces (publicados posteriormente, ver B7.0).
 - **Archivos versionados en este commit:** `configuracion.py`, `prueba_version_build.py`, `preparar_empaquetado.py`, `EMPACADO.md`, `ESTADO_PROYECTO.md`, `README.md`, `ROADMAP.md`, `HISTORIAL_PROYECTO.md`, `DOCUMENTO_TECNICO.md`.
 
 ---

@@ -1,18 +1,18 @@
 # VISOR DE VIDEOS
 
-## Fase actual — Beta 6 (cerrada LOCALMENTE)
+## Fase actual — Beta 6 (cerrada y publicada)
 
-La **Beta 6 — "De marcar a conservar"** está **cerrada LOCALMENTE** sobre la rama `beta6` (commit local `Cerrar Beta 6`; **B6.1–B6.12 completas**; **identidad vigente `Beta 6 - B6.12`**; **packaging reproducible y validación real del instalador aprobada**; **tag/push/Release aún pendientes**, sin `v6.0-beta` creado)
+La **Beta 6 — "De marcar a conservar"** está **cerrada y publicada** sobre la rama `beta6` (commit `7d85e94bb8b617209a155e5b1086d1d38f4784f8`; **B6.1–B6.12 completas**; **identidad `Beta 6 - B6.12`**; **packaging reproducible y validación real del instalador aprobada**; **tag `v6.0-beta` anotado publicado sobre `7d85e94`, `origin/beta6` alineado y GitHub Release Beta 6 prerelease sin binarios**)
 (punto de partida: cierre de la Beta 5). Objetivo de producto: **cerrar el ciclo
 iniciado en Beta 5** — localizar las partes útiles de los videos, clasificarlas y
 convertirlas en material definitivo, conservando calidad, trazabilidad e
 integridad de datos.
 
-> **Estado de cierre local:** **Beta 6 cerrada LOCALMENTE; B6.1–B6.12 completas; identidad Beta 6 - B6.12; packaging reproducible y validación real del instalador aprobada; tag/push/Release aún pendientes.**
+> **Estado de cierre publicado:** **Beta 6 cerrada y publicada; B6.1–B6.12 completas; identidad Beta 6 - B6.12; packaging reproducible y validación real del instalador aprobada; tag `v6.0-beta` anotado publicado sobre `7d85e94`, `origin/beta6` alineado y GitHub Release Beta 6 prerelease sin binarios.**
 
 Estado actual:
 
-- **Rama actual:** `beta6`.
+- **Rama actual:** `beta7` (base exacta `7d85e94bb8b617209a155e5b1086d1d38f4784f8`; Beta 6 cerrada y publicada en `beta6`, ver arriba).
 - **B6.1 — Preservación de datos del usuario al desinstalar.** **Completada.**
 - **Infraestructura y metodología del Bridge** ya **incorporadas** y versionadas
   (commits `dd17c72` y `7a0feae`).
@@ -39,11 +39,11 @@ Estado actual:
 - **B6.9 — Exportación múltiple de segmentos separados.** **Completada, implementada, probada y validada manualmente; cerrada en commit previo `1bfeda2` (2026-08-20).** Selección explícita y por clasificación con whitelist (`todos`/por color/`Sin clasificar`), motor B6.8, progreso por lote, resultados parciales seguros; servicio `exportar_lote_segmentos` + `TareaExportarLoteSegmentos` (un FFmpeg secuencial), diálogo `DialogoExportarLote` con preparación async (`TareaListarSegmentosVarios`) sin SQLite/FFmpeg en UI; suite `prueba_exportacion_lote_b69.py` **30/30** y regresiones B6.7 **21/21**, B6.8 **25/25** en verde; ver `HISTORIAL_PROYECTO.md` B6.9 y `ROADMAP.md` B6.9.
 - **B6.10 — Unión de varios segmentos del mismo original.** **Completada, implementada, probada y validada manualmente; cerrada en commit previo `a117611` (2026-08-21).** Servicio `exportar_secuencia.py` con **vía principal recodificada CPU `trim`/`atrim`/`setpts`+`concat` (`libx264 veryfast crf18 yuv420p` + `aac 128k`, `+faststart` en MP4) para precisión independiente de keyframes** y **fallback por extracción precisa de cada segmento + `concat` demuxer para subtítulos compatibles (`mov_text` MP4, `srt` MKV, mapeo explícito `0:v/0:a/0:s`)**; **rechazo claro de MKV/SubRip no validado**; `TareaExportarSecuencia` fuera de UI con cancelación real; UI `DialogoExportarSecuencia` reutilizando selección B6.9 con orden explícito, naming B6.8 y discriminación `_export_tipo`; suites `prueba_exportacion_secuencia_b610.py` **15/15**, `prueba_ui_export_fix_b610.py` **10/10** y regresiones B6.7 **21/21**, B6.8 **25/25**, B6.9 **30/30** en verde; **evidencia humana: Marcos validó el flujo completo — unión de 2 segmentos del mismo video con archivo derivado verificado y reproducido correctamente**; ver `HISTORIAL_PROYECTO.md` ##112 y `ROADMAP.md` B6.10.
 - **B6.11 — Incorporación al catálogo y trazabilidad de videos derivados.** **Completada, auditada y cerrada en commit previo `cc71224` (2026-08-21, rama `beta6`).** **Contrato demostrado:** alta incremental aun fuera de raíz sin reescaneo; trazabilidad original→derivado y segmentos ordenados (`videos_derivados` + `videos_derivados_segmentos`); snapshot histórico sin `CASCADE` destructivo (persiste tras borrar original/derivado de `videos`); bloqueo derivado-de-derivado; fallo de catalogación conserva archivo; validación estricta de secuencia (longitud y correspondencia `segmentos` vs `segmentos_info_orden`/`orden`); rechazo de nombre duplicado `UNIQUE(nombre)` sin reutilización silenciosa; tablas/APIs `incorporar_video_derivado_al_catalogo`/`obtener_derivacion_por_derivado`/`listar_derivaciones_por_original`/`es_video_derivado`; suite `prueba_derivados_b611.py` **15/15** y regresiones B6.7/B6.9/B6.10 en verde; ver `HISTORIAL_PROYECTO.md` ##113 y `ROADMAP.md` B6.11.
-- **B6.12 — Integración, robustez y cierre funcional.** **Cerrada LOCALMENTE en rama `beta6` (commit `Cerrar Beta 6`; B6.1–B6.12 completas; packaging reproducible y validación real del instalador aprobada —instalación/desinstalación/reinstalación aislada preservando `biblioteca.db`/`configuracion.json`/`miniaturas`—; sin tag `v6.0-beta`, sin push/Release).** **Validación integrada 14/14, reescaneo 3/3, B6.11 15/15 de control, FFmpeg 8.1.1/FFprobe 8.1.1 reales, `PRAGMA integrity_check=ok` y validación humana de persistencia tras reinicio+reescaneo.** Suites verificadas en esta entrega: `prueba_integracion_b612.py` **14/14** (filtro/orden/paginación + resumen + export/lote/secuencia + derivados + migraciones), `prueba_reescaneo_preserva_metadatos_b612.py` **3/3** (base/modificado/plan completo + `integrity_check=ok`) y `prueba_derivados_b611.py` **15/15** (control B6.11) en verde; `py_compile` OK; `git diff --check` limpio; artefacto humano `videos_prueba/output_video_MMH3Tools_2_chunks_prueba_00001__segmento_0.33-1.25.mp4` preservado durante la validación B6.12, no versionado y actualmente no presente en el working tree. **Observación no bloqueante:** incidente aislado anterior no reproducido (reescaneo preserva IDs/marcadores/segmentos y colores en los 3 escenarios; ver `HISTORIAL_PROYECTO.md` ##114). **Beta 6 cerrada LOCALMENTE; B6.1-B6.12 completas; identidad `Beta 6 - B6.12`; packaging reproducible y validación real del instalador aprobada; tag/push/Release aún pendientes.** Ver `HISTORIAL_PROYECTO.md` ##115 y `ROADMAP.md` B6.12.
+- **B6.12 — Integración, robustez y cierre funcional.** **Cerrada en rama `beta6` (commit `7d85e94bb8b617209a155e5b1086d1d38f4784f8`; B6.1–B6.12 completas; packaging reproducible y validación real del instalador aprobada —instalación/desinstalación/reinstalación aislada preservando `biblioteca.db`/`configuracion.json`/`miniaturas`—; tag `v6.0-beta` anotado publicado sobre `7d85e94`, `origin/beta6` alineado y GitHub Release Beta 6 prerelease sin binarios).** **Validación integrada 14/14, reescaneo 3/3, B6.11 15/15 de control, FFmpeg 8.1.1/FFprobe 8.1.1 reales, `PRAGMA integrity_check=ok` y validación humana de persistencia tras reinicio+reescaneo.** Suites verificadas en esta entrega: `prueba_integracion_b612.py` **14/14** (filtro/orden/paginación + resumen + export/lote/secuencia + derivados + migraciones), `prueba_reescaneo_preserva_metadatos_b612.py` **3/3** (base/modificado/plan completo + `integrity_check=ok`) y `prueba_derivados_b611.py` **15/15** (control B6.11) en verde; `py_compile` OK; `git diff --check` limpio; artefacto humano `videos_prueba/output_video_MMH3Tools_2_chunks_prueba_00001__segmento_0.33-1.25.mp4` preservado durante la validación B6.12, no versionado y actualmente no presente en el working tree. **Observación no bloqueante:** incidente aislado anterior no reproducido (reescaneo preserva IDs/marcadores/segmentos y colores en los 3 escenarios; ver `HISTORIAL_PROYECTO.md` ##114). **Beta 6 cerrada y publicada; B6.1-B6.12 completas; identidad `Beta 6 - B6.12`; packaging reproducible y validación real del instalador aprobada; tag `v6.0-beta` anotado publicado sobre `7d85e94`, `origin/beta6` alineado y GitHub Release Beta 6 prerelease sin binarios.** Ver `HISTORIAL_PROYECTO.md` ##115 y `ROADMAP.md` B6.12.
 - El **alcance completo** de Beta 6 (B6.1–B6.12) y su límite explícito (no se
   elimina ni reemplaza automáticamente el video original) están en
   `ROADMAP.md`. **Beta 7 — "Organización y operaciones de archivos"** queda
-  **diferida** y no se adelanta durante Beta 6 (ver `ROADMAP.md`).
+  **diferida** durante Beta 6 (ver `ROADMAP.md`) y su apertura técnica **B7.0** se registra como rama local `beta7` exactamente desde `7d85e94bb8b617209a155e5b1086d1d38f4784f8` (identidad de desarrollo `Beta 7 - B7.0`; sin B7.1).
 
 ## Estado general
 
@@ -998,14 +998,9 @@ Los problemas técnicos vigentes se detallan en `DOCUMENTO_TECNICO.md` §8.
 
 ## Próxima fase
 
-La **Beta 6** continúa **abierta** sobre la rama `beta6`; la etapa
-**B6.3 — Clasificación visual de marcadores y segmentos** quedó
-**técnicamente completada** (2026-08-20; ver `HISTORIAL_PROYECTO.md` ##107) y
-la siguiente etapa prevista es **B6.4 — Marcadores y segmentos visibles en
-tarjetas colapsadas** (definida en `ROADMAP.md`). Estado
+La **Beta 6** está **cerrada y publicada** sobre la rama `beta6` (commit `7d85e94bb8b617209a155e5b1086d1d38f4784f8`; tag `v6.0-beta` anotado publicado sobre `7d85e94`, `origin/beta6` alineado y GitHub Release Beta 6 prerelease sin binarios; identidad `Beta 6 - B6.12`). La **Beta 7 — "Organización y operaciones de archivos"** está **abierta en B7.0** sobre rama local `beta7` exactamente desde `7d85e94bb8b617209a155e5b1086d1d38f4784f8` (identidad de desarrollo `Beta 7 - B7.0`; sin B7.1; sin push/tag/Release). Estado
 detallado en "Fase actual — Beta 6"; el alcance completo **B6.1–B6.12**, el
-límite explícito de Beta 6 y la dirección de **Beta 7 — "Organización y
-operaciones de archivos"** (diferida, sin implementar durante Beta 6) están en
+límite explícito de Beta 6 y la dirección de **Beta 7** están en
 `ROADMAP.md`.
 
 ## Documentos del proyecto

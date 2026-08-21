@@ -106,7 +106,7 @@ Compilar el script oficial con la versión y la etiqueta correspondientes:
 
 ### Validación real Beta 6 (resumen)
 
-Packaging reproducible validado en esta entrega (ver `HISTORIAL_PROYECTO.md` ##115): `python -m PyInstaller --onedir --windowed --name VisorVideos visor_videos.py` + `python preparar_empaquetado.py` (DB seed vacía ~60 KB, `PRAGMA integrity_check=ok`, `videos/marcadores/segmentos/derivados=0`) + `ISCC.exe instalador.iss` (Inno Setup 6.7.3). Instalación/desinstalación/reinstalación **aislada validada** preservando `biblioteca.db`/`configuracion.json`/`miniaturas` (B6.1 `uninsneveruninstall` sin `[UninstallDelete]` destructivo). Sin tag `v6.0-beta`, sin push/Release.
+Packaging reproducible validado en entrega Beta 6 (ver `HISTORIAL_PROYECTO.md` ##115): `python -m PyInstaller --onedir --windowed --name VisorVideos visor_videos.py` + `python preparar_empaquetado.py` (DB seed vacía ~60 KB, `PRAGMA integrity_check=ok`, `videos/marcadores/segmentos/derivados=0`) + `ISCC.exe instalador.iss` (Inno Setup 6.7.3). Instalación/desinstalación/reinstalación **aislada validada** preservando `biblioteca.db`/`configuracion.json`/`miniaturas` (B6.1 `uninsneveruninstall` sin `[UninstallDelete]` destructivo). Beta 6 publicada: tag `v6.0-beta` anotado sobre `7d85e94bb8b617209a155e5b1086d1d38f4784f8`, `origin/beta6` alineado y GitHub Release Beta 6 prerelease sin binarios.
 
 ## Repetir para una versión futura
 
