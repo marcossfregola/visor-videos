@@ -1385,3 +1385,49 @@ class TareaExportarLoteSegmentos(TareaBase):
             "omitidos_count": len(omitidos),
             "cancelados_count": len(cancelados),
         }
+
+
+class TareaExportarSecuencia(TareaBase):
+    """Une N>=2 segmentos del mismo original en un único derivado (B6.10).
+
+    Delegación exclusiva en `exportar_secuencia.exportar_secuencia` (servicio sin Qt).
+    Corre fuera del hilo UI (GestorTareas), sin FFmpeg/SQLite directos desde UI.
+    Soporta cancelación real: `cancelar()` marca flag y el servicio termina FFmpeg y limpia temporales.
+    Usa vía principal trim/atrim+concat recodificado o fallback por extracción precisa si hay subs compatibles.
+    """
+
+    def __init__(self, fuente, segmentos, destino, parent=None):
+        super().__init__(parent)
+        self._fuente = fuente
+        # segmentos: lista de (inicio, fin) en orden explícito
+        try:
+            self._segmentos = [(float(a), float(b)) for a, b in list(segmentos)]
+        except Exception as exc:
+            raise TypeError(f"segmentos inválidos: {exc}") from None
+        self._destino = destino
+        self._cancelada = False
+
+    @property
+    def fuente(self):
+        return self._fuente
+
+    @property
+    def segmentos(self):
+        return list(self._segmentos)
+
+    @property
+    def destino(self):
+        return self._destino
+
+    def cancelar(self):
+        self._cancelada = True
+
+    def _trabajo(self):
+        import exportar_secuencia as seq
+
+        return seq.exportar_secuencia(
+            self._fuente,
+            self._segmentos,
+            self._destino,
+            cancel_check=lambda: self._cancelada,
+        )

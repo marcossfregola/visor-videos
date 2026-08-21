@@ -106,6 +106,7 @@ from tareas_videos import (
     TareaAsignarColorMarcador,
     TareaAsignarColorSegmento,
     TareaEscaneo,
+    TareaExportarSecuencia,
     TareaExportarSegmento,
     TareaFFprobe,
     TareaGuardarMarcador,
@@ -770,6 +771,161 @@ class DialogoExportarLote(QDialog):
         if isinstance(dato, list):
             return dato
         return []
+
+
+class DialogoExportarSecuencia(QDialog):
+    """Diálogo mínimo para B6.10 — unir varios segmentos del mismo original.
+
+    Reutiliza la selección B6.9 (lista ligera con checkboxes) y añade orden explícito
+    (botones Subir/Bajar). No toca base de datos ni procesos externos ni carga imágenes.
+    La lista se alimenta sin BD desde el hilo UI: el caller resuelve vía GestorTareas
+    en background y pasa `segmentos` y `nombres_por_id`.
+    Valida N>=2 y mismo video_id; el orden es el explícito elegido por el usuario
+    (el de la lista tras mover).
+    """
+
+    def __init__(self, segmentos=None, nombres_por_id=None, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Unir segmentos — secuencia")
+        layout = QVBoxLayout(self)
+        layout.addWidget(QLabel("Seleccione al menos 2 segmentos del MISMO video y ordene la secuencia:"))
+        self._segmentos = []
+        self._nombres_por_id = dict(nombres_por_id) if isinstance(nombres_por_id, dict) else {}
+        if segmentos is not None:
+            try:
+                self._segmentos = sorted(list(segmentos), key=lambda x: (x[1] if len(x) > 1 else 0, x[2] if len(x) > 2 else 0, x[3] if len(x) > 3 else 0, x[0] if len(x) > 0 else 0))
+            except Exception:
+                self._segmentos = list(segmentos) if isinstance(segmentos, list) else []
+        from PySide6.QtWidgets import QListWidget, QListWidgetItem
+        self._lista_widget = QListWidget()
+        self._lista_widget.setMaximumHeight(200)
+        for seg in self._segmentos:
+            try:
+                seg_id, vid, inicio, fin, color = seg[0], seg[1], seg[2], seg[3], seg[4] if len(seg) > 4 else None
+            except Exception:
+                continue
+            nombre_video = self._nombres_por_id.get(vid, f"video {vid}")
+            t_ini = formatear_tiempo(inicio) if formatear_tiempo(inicio) is not None else f"{inicio:.2f}"
+            t_fin = formatear_tiempo(fin) if formatear_tiempo(fin) is not None else f"{fin:.2f}"
+            color_txt = ""
+            if color in CLAVES_COLOR_CLASIFICACION:
+                color_txt = f" [{texto_color(color, None)}]"
+            elif color is None:
+                color_txt = " [Sin clasificar]"
+            texto = f"{nombre_video}  {t_ini}-{t_fin}{color_txt}  [#%s]" % seg_id
+            item = QListWidgetItem(self._lista_widget)
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+            item.setCheckState(Qt.Unchecked)
+            item.setText(texto)
+            item.setData(Qt.UserRole, seg_id)
+            # guardar vid para validación
+            item.setData(Qt.UserRole + 1, vid)
+        # Botones ordenar
+        fila_orden = QHBoxLayout()
+        self.boton_subir = QPushButton("Subir")
+        self.boton_bajar = QPushButton("Bajar")
+        self.boton_sel_todos = QPushButton("Seleccionar todos")
+        self.boton_sel_ninguno = QPushButton("Ninguno")
+        fila_orden.addWidget(self.boton_subir)
+        fila_orden.addWidget(self.boton_bajar)
+        fila_orden.addWidget(self.boton_sel_todos)
+        fila_orden.addWidget(self.boton_sel_ninguno)
+        fila_orden.addStretch()
+        self.boton_subir.clicked.connect(self._mover_arriba)
+        self.boton_bajar.clicked.connect(self._mover_abajo)
+        self.boton_sel_todos.clicked.connect(self._seleccionar_todos)
+        self.boton_sel_ninguno.clicked.connect(self._deseleccionar_todos)
+        # Info
+        self.label_info = QLabel("")
+        self.label_info.setStyleSheet("color: #666;")
+        layout.addWidget(self._lista_widget)
+        layout.addLayout(fila_orden)
+        layout.addWidget(self.label_info)
+        botones = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        botones.accepted.connect(self._al_aceptar)
+        botones.rejected.connect(self.reject)
+        layout.addWidget(botones)
+        self._botones = botones
+        self._update_info()
+        self._lista_widget.itemChanged.connect(lambda *_: self._update_info())
+
+    def _mover_arriba(self):
+        row = self._lista_widget.currentRow()
+        if row <= 0:
+            return
+        item = self._lista_widget.takeItem(row)
+        self._lista_widget.insertItem(row - 1, item)
+        self._lista_widget.setCurrentRow(row - 1)
+
+    def _mover_abajo(self):
+        row = self._lista_widget.currentRow()
+        if row < 0 or row >= self._lista_widget.count() - 1:
+            return
+        item = self._lista_widget.takeItem(row)
+        self._lista_widget.insertItem(row + 1, item)
+        self._lista_widget.setCurrentRow(row + 1)
+
+    def _seleccionar_todos(self):
+        for i in range(self._lista_widget.count()):
+            self._lista_widget.item(i).setCheckState(Qt.Checked)
+        self._update_info()
+
+    def _deseleccionar_todos(self):
+        for i in range(self._lista_widget.count()):
+            self._lista_widget.item(i).setCheckState(Qt.Unchecked)
+        self._update_info()
+
+    def _update_info(self):
+        ids = []
+        vids = set()
+        for i in range(self._lista_widget.count()):
+            item = self._lista_widget.item(i)
+            if item.checkState() == Qt.Checked:
+                ids.append(item.data(Qt.UserRole))
+                vids.add(item.data(Qt.UserRole + 1))
+        if not ids:
+            self.label_info.setText("Ningún segmento seleccionado")
+        elif len(ids) < 2:
+            self.label_info.setText(f"{len(ids)} seleccionado — se requieren al menos 2")
+        elif len(vids) > 1:
+            self.label_info.setText(f"{len(ids)} seleccionados de {len(vids)} videos — deben ser del mismo video")
+        else:
+            self.label_info.setText(f"{len(ids)} seleccionados — orden explícito {ids}")
+
+    def _al_aceptar(self):
+        ids = []
+        vids = set()
+        for i in range(self._lista_widget.count()):
+            item = self._lista_widget.item(i)
+            if item.checkState() == Qt.Checked:
+                ids.append(item.data(Qt.UserRole))
+                vids.add(item.data(Qt.UserRole + 1))
+        if len(ids) < 2:
+            QMessageBox.warning(self, "Unir segmentos", "Seleccione al menos 2 segmentos.")
+            return
+        if len(vids) > 1:
+            QMessageBox.warning(self, "Unir segmentos", "Los segmentos deben pertenecer al mismo video original.")
+            return
+        self.accept()
+
+    def segmentos_ordenados(self):
+        """Devuelve lista de ids en el orden explícito de la lista (solo checked, en orden visual)."""
+        ids = []
+        for i in range(self._lista_widget.count()):
+            item = self._lista_widget.item(i)
+            if item.checkState() == Qt.Checked:
+                ids.append(item.data(Qt.UserRole))
+        return ids
+
+    def video_id_seleccionado(self):
+        vids = set()
+        for i in range(self._lista_widget.count()):
+            item = self._lista_widget.item(i)
+            if item.checkState() == Qt.Checked:
+                vids.add(item.data(Qt.UserRole + 1))
+        if len(vids) == 1:
+            return next(iter(vids))
+        return None
 
 
 class TareaCopiarArchivos(TareaBase):
@@ -2147,11 +2303,14 @@ class VisorVideos(QMainWindow):
 
         self.boton_exportar_lote = QPushButton("Exportar segmentos…")
         self.boton_exportar_lote.clicked.connect(self._al_exportar_lote_solicitado)
+        self.boton_exportar_secuencia = QPushButton("Unir segmentos…")
+        self.boton_exportar_secuencia.clicked.connect(self._al_exportar_secuencia_solicitado)
 
         fila_carpeta = QHBoxLayout()
         fila_carpeta.addWidget(self.boton_seleccionar_carpeta)
         fila_carpeta.addWidget(self.boton_escanear)
         fila_carpeta.addWidget(self.boton_exportar_lote)
+        fila_carpeta.addWidget(self.boton_exportar_secuencia)
         fila_carpeta.addWidget(self.combo_modo_alcance)
         fila_carpeta.addWidget(self.escaneo_automatico)
         fila_carpeta.addWidget(self.etiqueta_cantidad_previews)
@@ -2364,6 +2523,7 @@ class VisorVideos(QMainWindow):
         self._export_segmento_actual = None
         self._export_destino_actual = None
         self._export_lote_activo = False
+        self._export_tipo = None  # B6.10 fix: "individual"|"lote"|"secuencia" - discriminación explícita sin inferir por filename
 
         # B6.9 preparación asíncrona de segmentos para diálogo de lote (sin SQLite/FFmpeg en hilo UI)
         # Patrón reutilizado: GestorTareas + TareaListarSegmentosVarios + señales resultado/error/finalizada,
@@ -2379,6 +2539,18 @@ class VisorVideos(QMainWindow):
         self._preparacion_lote_rutas = None
         self._preparacion_lote_segmentos = None
         self._preparacion_lote_error = None
+
+        # B6.10 preparación asíncrona para diálogo de secuencia (reutiliza misma infraestructura)
+        self.gestor_preparacion_secuencia = GestorTareas(self)
+        self.gestor_preparacion_secuencia.tarea_resultado.connect(self._al_preparacion_secuencia_resultado)
+        self.gestor_preparacion_secuencia.tarea_error.connect(self._al_preparacion_secuencia_error)
+        self.gestor_preparacion_secuencia.tarea_finalizada.connect(self._al_preparacion_secuencia_finalizada)
+        self._preparacion_secuencia_en_curso = False
+        self._preparacion_secuencia_video_ids = None
+        self._preparacion_secuencia_nombres = None
+        self._preparacion_secuencia_rutas = None
+        self._preparacion_secuencia_segmentos = None
+        self._preparacion_secuencia_error = None
 
         self._timer_previews = QTimer(self)
         self._timer_previews.setSingleShot(True)
@@ -3685,9 +3857,15 @@ class VisorVideos(QMainWindow):
             return
         self._export_segmento_actual = segmento
         self._export_destino_actual = ruta_dest
+        self._export_tipo = "individual"
+        self._export_lote_activo = False
         self._mostrar_progreso("Exportando segmento…")
         self.boton_cancelar_export.setVisible(True)
         self.boton_cancelar_export.setEnabled(True)
+        if hasattr(self, "boton_exportar_lote"):
+            self.boton_exportar_lote.setEnabled(False)
+        if hasattr(self, "boton_exportar_secuencia"):
+            self.boton_exportar_secuencia.setEnabled(False)
 
     def _cancelar_export(self):
         tarea = getattr(self.gestor_export, "tarea", None)
@@ -3939,6 +4117,7 @@ class VisorVideos(QMainWindow):
             )
             return
         self._export_lote_activo = True
+        self._export_tipo = "lote"
         self._mostrar_progreso("Exportando segmentos 0/N…")
         total_inicial = len(items_explicitos) if items_explicitos is not None else (len(video_ids) or 1)
         self.barra_progreso.setRange(0, total_inicial)
@@ -3946,6 +4125,8 @@ class VisorVideos(QMainWindow):
         self.boton_cancelar_export.setVisible(True)
         self.boton_cancelar_export.setEnabled(True)
         self.boton_exportar_lote.setEnabled(False)
+        if hasattr(self, "boton_exportar_secuencia"):
+            self.boton_exportar_secuencia.setEnabled(False)
 
     def _al_progreso_lote(self, procesado, total):
         if not getattr(self, "_export_lote_activo", False):
@@ -3959,13 +4140,16 @@ class VisorVideos(QMainWindow):
             self._progreso_detallado = True
 
     def _al_resultado_export(self, resultado):
-        # Distinguir lote vs individual por claves estructuradas
+        # Distinguir lote vs individual/secuencia: lote por claves, resto por _export_tipo explícito (sin inferir por filename)
         is_lote = isinstance(resultado, dict) and "total" in resultado and "exitos" in resultado
         if is_lote:
             self._export_lote_activo = False
             self._ocultar_progreso()
             self.boton_cancelar_export.setVisible(False)
-            self.boton_exportar_lote.setEnabled(True)
+            if hasattr(self, "boton_exportar_lote"):
+                self.boton_exportar_lote.setEnabled(True)
+            if hasattr(self, "boton_exportar_secuencia"):
+                self.boton_exportar_secuencia.setEnabled(True)
             total = resultado.get("total", 0)
             exitos = len(resultado.get("exitos", []))
             fallos = len(resultado.get("fallos", []))
@@ -3996,26 +4180,39 @@ class VisorVideos(QMainWindow):
                 f"Exportado lote: {exitos} ok / {fallos} fallidos / {omitidos_total} omitidos"
             )
             return
+        # Individual / secuencia: no inferir por filename; usar _export_tipo explícito
         self._ocultar_progreso()
         self.boton_cancelar_export.setVisible(False)
+        if hasattr(self, "boton_exportar_lote"):
+            self.boton_exportar_lote.setEnabled(True)
+        if hasattr(self, "boton_exportar_secuencia"):
+            self.boton_exportar_secuencia.setEnabled(True)
         if not isinstance(resultado, dict):
             QMessageBox.warning(self, "Exportar segmento", f"Resultado inesperado: {resultado}")
             return
+        es_secuencia = getattr(self, "_export_tipo", None) == "secuencia"
         if resultado.get("cancelado"):
-            QMessageBox.information(self, "Exportar segmento", "Exportación cancelada.")
+            titulo_cancel = "Unir segmentos" if es_secuencia else "Exportar segmento"
+            QMessageBox.information(self, titulo_cancel, "Exportación cancelada.")
             self.estado_escaneo.setText("Exportación cancelada")
             return
         if resultado.get("ok"):
             salida = resultado.get("salida")
             dur = resultado.get("duracion")
             dur_txt = f"{dur:.2f}s" if isinstance(dur, (int, float)) else "desconocida"
+            titulo = "Secuencia exportada" if es_secuencia else "Segmento exportado"
             QMessageBox.information(
-                self, "Exportar segmento", f"Segmento exportado correctamente:\n{salida}\nDuración: {dur_txt}"
+                self, titulo, f"{titulo} correctamente:\n{salida}\nDuración: {dur_txt}"
             )
-            self.estado_escaneo.setText(f"Exportado: {os.path.basename(salida)} ({dur_txt})")
+            try:
+                nombre_salida = os.path.basename(salida) if isinstance(salida, str) else str(salida)
+            except Exception:
+                nombre_salida = str(salida)
+            self.estado_escaneo.setText(f"Exportado: {nombre_salida} ({dur_txt})")
             return
         error = resultado.get("error") or "error desconocido"
-        QMessageBox.warning(self, "Exportar segmento", f"No se pudo exportar:\n{error}")
+        titulo_error = "Unir segmentos" if es_secuencia else "Exportar segmento"
+        QMessageBox.warning(self, titulo_error, f"No se pudo exportar:\n{error}")
         self.estado_escaneo.setText(f"Error al exportar: {error}")
 
     def _al_error_export(self, mensaje):
@@ -4024,7 +4221,16 @@ class VisorVideos(QMainWindow):
         self.boton_cancelar_export.setVisible(False)
         if hasattr(self, "boton_exportar_lote"):
             self.boton_exportar_lote.setEnabled(True)
-        QMessageBox.warning(self, "Exportar segmento", f"Error en exportación:\n{mensaje}")
+        if hasattr(self, "boton_exportar_secuencia"):
+            self.boton_exportar_secuencia.setEnabled(True)
+        tipo = getattr(self, "_export_tipo", None)
+        if tipo == "lote":
+            titulo = "Exportar segmentos"
+        elif tipo == "secuencia":
+            titulo = "Unir segmentos"
+        else:
+            titulo = "Exportar segmento"
+        QMessageBox.warning(self, titulo, f"Error en exportación:\n{mensaje}")
         self.estado_escaneo.setText(f"Error al exportar: {mensaje}")
 
     def _al_export_finalizada(self):
@@ -4032,8 +4238,12 @@ class VisorVideos(QMainWindow):
         self._export_segmento_actual = None
         self._export_destino_actual = None
         self._export_lote_activo = False
+        # limpiar tipo explícito aquí para evitar doble finalización y dejar estado consistente
+        self._export_tipo = None
         if hasattr(self, "boton_exportar_lote"):
             self.boton_exportar_lote.setEnabled(True)
+        if hasattr(self, "boton_exportar_secuencia"):
+            self.boton_exportar_secuencia.setEnabled(True)
         # Si no hay otro progreso activo, ocultar barra
         if not self._pipeline_activo and not self.gestor_export.activo and not self.gestor.activo:
             self._ocultar_progreso()
@@ -4045,6 +4255,225 @@ class VisorVideos(QMainWindow):
         else:
             # la visibilidad se maneja en resultado/error/finalizada
             pass
+
+    # === B6.10 Unión de varios segmentos del mismo original ===
+    def _al_exportar_secuencia_solicitado(self):
+        """Acción Unir segmentos — reutiliza selección B6.9 con orden explícito.
+
+        Flujo: preparación async de segmentos visibles -> diálogo secuencia con checkboxes + orden -> validación mismo original -> QFileDialog.getSaveFileName con naming B6.8 -> TareaExportarSecuencia en background.
+        """
+        if self.gestor_export.activo or getattr(self, "_preparacion_secuencia_en_curso", False) or getattr(self, "gestor_preparacion_secuencia", None) is not None and self.gestor_preparacion_secuencia.activo:
+            QMessageBox.information(self, "Unir segmentos", "Ya hay una exportación en curso.")
+            return
+        video_ids = self._video_ids_visibles()
+        if not video_ids:
+            QMessageBox.information(self, "Unir segmentos", "No hay videos visibles con segmentos para unir.")
+            return
+        # Mapas nombres/rutas en una pasada O(N)
+        mapa_por_id = {}
+        for _nombre, tarjeta in getattr(self, "tarjetas", []):
+            vid = getattr(tarjeta, "_video_id", None)
+            if isinstance(vid, int) and not isinstance(vid, bool) and vid > 0:
+                mapa_por_id[vid] = tarjeta
+        nombres_por_id = {}
+        rutas_por_id = {}
+        for vid in video_ids:
+            tarjeta = mapa_por_id.get(vid)
+            if tarjeta is not None:
+                nombres_por_id[vid] = getattr(tarjeta, "_nombre", f"video {vid}")
+                ruta_v = self._ruta_video_de(tarjeta)
+                if ruta_v:
+                    rutas_por_id[vid] = ruta_v
+                else:
+                    rutas_por_id[vid] = getattr(tarjeta, "_carpeta_video", "") or nombres_por_id[vid]
+            else:
+                nombres_por_id[vid] = f"video {vid}"
+                rutas_por_id[vid] = f"video {vid}"
+        self._preparacion_secuencia_en_curso = True
+        self._preparacion_secuencia_video_ids = list(video_ids)
+        self._preparacion_secuencia_nombres = dict(nombres_por_id)
+        self._preparacion_secuencia_rutas = dict(rutas_por_id)
+        self._preparacion_secuencia_segmentos = None
+        self._preparacion_secuencia_error = None
+        if hasattr(self, "boton_exportar_secuencia"):
+            self.boton_exportar_secuencia.setEnabled(False)
+        if hasattr(self, "boton_exportar_lote"):
+            self.boton_exportar_lote.setEnabled(False)
+        self.estado_escaneo.setText("Cargando segmentos para secuencia…")
+        self._mostrar_progreso("Cargando segmentos…")
+        self.barra_progreso.setRange(0, 0)
+        self.barra_progreso.setFormat("Cargando segmentos…")
+        self.barra_progreso.setVisible(True)
+        try:
+            from tareas_videos import TareaListarSegmentosVarios
+            tarea_carga = TareaListarSegmentosVarios(list(video_ids), self._ruta_db)
+        except Exception as exc:
+            self._preparacion_secuencia_en_curso = False
+            if hasattr(self, "boton_exportar_secuencia"):
+                self.boton_exportar_secuencia.setEnabled(True)
+            if hasattr(self, "boton_exportar_lote"):
+                self.boton_exportar_lote.setEnabled(True)
+            self._ocultar_progreso()
+            self.estado_escaneo.setText(f"No se pudo preparar secuencia: {exc}")
+            QMessageBox.warning(self, "Unir segmentos", f"No se pudo preparar: {exc}")
+            return
+        if not self.gestor_preparacion_secuencia.iniciar(tarea_carga):
+            self._preparacion_secuencia_en_curso = False
+            if hasattr(self, "boton_exportar_secuencia"):
+                self.boton_exportar_secuencia.setEnabled(True)
+            if hasattr(self, "boton_exportar_lote"):
+                self.boton_exportar_lote.setEnabled(True)
+            self._ocultar_progreso()
+            motivo = getattr(self.gestor_preparacion_secuencia, "ultimo_rechazo", "desconocido")
+            self.estado_escaneo.setText(f"No se pudo iniciar carga: {motivo}")
+            QMessageBox.warning(self, "Unir segmentos", f"No se pudo iniciar carga: {motivo}")
+            return
+
+    def _al_preparacion_secuencia_resultado(self, resultado):
+        if not getattr(self, "_preparacion_secuencia_en_curso", False):
+            return
+        try:
+            if isinstance(resultado, list):
+                self._preparacion_secuencia_segmentos = sorted(
+                    resultado, key=lambda x: (x[1] if len(x) > 1 else 0, x[2] if len(x) > 2 else 0, x[3] if len(x) > 3 else 0, x[0] if len(x) > 0 else 0)
+                )
+            else:
+                self._preparacion_secuencia_segmentos = []
+        except Exception:
+            try:
+                self._preparacion_secuencia_segmentos = list(resultado) if isinstance(resultado, list) else []
+            except Exception:
+                self._preparacion_secuencia_segmentos = []
+
+    def _al_preparacion_secuencia_error(self, mensaje):
+        if not getattr(self, "_preparacion_secuencia_en_curso", False):
+            return
+        self._preparacion_secuencia_error = mensaje
+        self._preparacion_secuencia_segmentos = []
+
+    def _al_preparacion_secuencia_finalizada(self):
+        if not getattr(self, "_preparacion_secuencia_en_curso", False):
+            return
+        video_ids = list(getattr(self, "_preparacion_secuencia_video_ids", []) or [])
+        nombres_por_id = dict(getattr(self, "_preparacion_secuencia_nombres", {}) or {})
+        rutas_por_id = dict(getattr(self, "_preparacion_secuencia_rutas", {}) or {})
+        segmentos = getattr(self, "_preparacion_secuencia_segmentos", None)
+        error_msg = getattr(self, "_preparacion_secuencia_error", None)
+        self._preparacion_secuencia_en_curso = False
+        self._preparacion_secuencia_video_ids = None
+        self._preparacion_secuencia_nombres = None
+        self._preparacion_secuencia_rutas = None
+        self._preparacion_secuencia_segmentos = None
+        self._preparacion_secuencia_error = None
+        if hasattr(self, "boton_exportar_secuencia"):
+            self.boton_exportar_secuencia.setEnabled(True)
+        if hasattr(self, "boton_exportar_lote"):
+            self.boton_exportar_lote.setEnabled(True)
+        self._ocultar_progreso()
+        self.estado_escaneo.clear()
+        if error_msg is not None:
+            QMessageBox.warning(self, "Unir segmentos", f"No se pudieron cargar los segmentos: {error_msg}")
+            self.estado_escaneo.setText(f"Error al cargar segmentos: {error_msg}")
+            return
+        if segmentos is None:
+            segmentos = []
+        self._abrir_dialogo_secuencia_con_datos(segmentos, nombres_por_id, rutas_por_id)
+
+    def _abrir_dialogo_secuencia_con_datos(self, segmentos_para_dialogo, nombres_por_id, rutas_por_id):
+        dialogo = DialogoExportarSecuencia(segmentos=segmentos_para_dialogo, nombres_por_id=nombres_por_id, parent=self)
+        if dialogo.exec() != QDialog.Accepted:
+            return
+        ids_orden = dialogo.segmentos_ordenados()
+        if len(ids_orden) < 2:
+            QMessageBox.warning(self, "Unir segmentos", "Seleccione al menos 2 segmentos.")
+            return
+        vid_sel = dialogo.video_id_seleccionado()
+        if vid_sel is None:
+            QMessageBox.warning(self, "Unir segmentos", "Los segmentos deben ser del mismo video.")
+            return
+        # Construir dict segmento por id
+        seg_por_id = {}
+        for seg in segmentos_para_dialogo:
+            try:
+                seg_por_id[seg[0]] = seg
+            except Exception:
+                continue
+        segmentos_orden = []
+        for sid in ids_orden:
+            seg = seg_por_id.get(sid)
+            if seg is None:
+                continue
+            try:
+                _id, vid, inicio, fin = seg[0], seg[1], seg[2], seg[3]
+            except Exception:
+                continue
+            if vid != vid_sel:
+                continue
+            segmentos_orden.append((float(inicio), float(fin)))
+        if len(segmentos_orden) < 2:
+            QMessageBox.warning(self, "Unir segmentos", "No se obtuvieron 2 segmentos válidos del mismo video.")
+            return
+        # Validar que no hayan segmentos con fin <= inicio
+        for ini, fin in segmentos_orden:
+            if not (fin > ini and ini >= 0):
+                QMessageBox.warning(self, "Unir segmentos", f"Segmento inválido {ini}-{fin}")
+                return
+        ruta_fuente = rutas_por_id.get(vid_sel)
+        nombre_original = nombres_por_id.get(vid_sel, f"video_{vid_sel}.mp4")
+        if not ruta_fuente or not os.path.isfile(ruta_fuente):
+            QMessageBox.warning(self, "Unir segmentos", "El video de origen ya no está disponible.")
+            return
+        # Sugerir nombre via motor B6.8: reutiliza generar_sugerencia_exportacion con primer segmento
+        # Para secuencia, sugerimos "{original}_secuencia_{cantidad}seg"
+        try:
+            sugerido_base = nombres.generar_sugerencia_exportacion(nombre_original, segmentos_orden[0][0], segmentos_orden[-1][1], extension=".mp4")
+            # Reemplazar sufijo para indicar secuencia
+            base_no_ext = os.path.splitext(sugerido_base)[0]
+            sugerido = f"{base_no_ext}_secuencia_{len(segmentos_orden)}seg.mp4"
+            # sanitizar ya hecho por motor, pero asegurar extensión
+            sugerido = nombres.asegurar_extension(sugerido, extensiones_validas={".mp4", ".mkv"}, default=".mp4")
+        except nombres.NombresError as exc:
+            QMessageBox.warning(self, "Unir segmentos", f"Nombre sugerido inválido: {exc}")
+            return
+        ruta_dest, filtro = QFileDialog.getSaveFileName(
+            self,
+            "Unir segmentos — guardar secuencia",
+            sugerido,
+            "Video MP4 (*.mp4);;Video MKV (*.mkv)",
+        )
+        if not ruta_dest:
+            return
+        try:
+            ruta_dest = nombres.asegurar_extension(ruta_dest, extensiones_validas={".mp4", ".mkv"}, default=".mp4")
+        except nombres.NombresError as exc:
+            QMessageBox.warning(self, "Unir segmentos", f"Extensión inválida: {exc}")
+            return
+        if os.path.exists(ruta_dest):
+            QMessageBox.warning(self, "Unir segmentos", "El archivo de destino ya existe. Elija otro nombre.")
+            return
+        if os.path.normcase(os.path.normpath(os.path.abspath(ruta_dest))) == os.path.normcase(os.path.normpath(os.path.abspath(ruta_fuente))):
+            QMessageBox.warning(self, "Unir segmentos", "El destino no puede ser el mismo archivo que el origen.")
+            return
+        # Lanzar tarea B6.10 fuera del hilo UI
+        try:
+            from tareas_videos import TareaExportarSecuencia
+            tarea = TareaExportarSecuencia(ruta_fuente, segmentos_orden, ruta_dest)
+        except Exception as exc:
+            QMessageBox.warning(self, "Unir segmentos", f"No se pudo preparar secuencia: {exc}")
+            return
+        if not self.gestor_export.iniciar(tarea):
+            QMessageBox.warning(self, "Unir segmentos", f"No se pudo iniciar: {self.gestor_export.ultimo_rechazo}")
+            return
+        self._export_tipo = "secuencia"
+        self._export_lote_activo = False
+        self._mostrar_progreso("Uniendo segmentos…")
+        if hasattr(self, "boton_cancelar_export"):
+            self.boton_cancelar_export.setVisible(True)
+            self.boton_cancelar_export.setEnabled(True)
+        if hasattr(self, "boton_exportar_secuencia"):
+            self.boton_exportar_secuencia.setEnabled(False)
+        if hasattr(self, "boton_exportar_lote"):
+            self.boton_exportar_lote.setEnabled(False)
 
     def _hay_carga_pendiente_segmentos(self, tarjeta):
         op = self._segmento_op_actual
@@ -5899,6 +6328,14 @@ class VisorVideos(QMainWindow):
             self._preparacion_lote_rutas = None
             self._preparacion_lote_segmentos = None
             self._preparacion_lote_error = None
+        if getattr(self, "gestor_preparacion_secuencia", None) is not None:
+            self.gestor_preparacion_secuencia.cerrar()
+            self._preparacion_secuencia_en_curso = False
+            self._preparacion_secuencia_video_ids = None
+            self._preparacion_secuencia_nombres = None
+            self._preparacion_secuencia_rutas = None
+            self._preparacion_secuencia_segmentos = None
+            self._preparacion_secuencia_error = None
         super().closeEvent(event)
 
 
