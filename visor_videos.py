@@ -122,6 +122,7 @@ from tareas_videos import (
     TareaListarSegmentos,
     TareaListarSegmentosVarios,
     TareaMiniaturas,
+    TareaMoverVideo,
     TareaPreviewsProgresivas,
     TareaRenombrarVideo,
     TareaResumenColapsado,
@@ -1213,6 +1214,41 @@ class Tarjeta(QFrame):
                     break
         except Exception:
             pass
+
+    def actualizar_ruta(self, nueva_ruta):
+        """Actualiza únicamente la ruta/carpeta tras mover (B7.2).
+
+        Contrato estricto:
+        - nueva_ruta debe ser str no vacío con dirname válido.
+        - basename(nueva_ruta) debe coincidir con self._nombre
+          (comparación case-insensitive en Windows via normcase);
+          si no coincide lanza ValueError.
+        - Calcula carpeta y actualiza _carpeta_video solo después de validar.
+        - No traga excepciones silenciosamente.
+        Mantiene mismo nombre y video_id.
+        """
+        if not isinstance(nueva_ruta, str) or not nueva_ruta.strip():
+            raise ValueError("nueva_ruta debe ser texto no vacío")
+        if not isinstance(self._nombre, str) or not self._nombre:
+            raise ValueError("nombre de tarjeta inválido para validar ruta")
+        base = os.path.basename(nueva_ruta)
+        if not base:
+            raise ValueError("nueva_ruta sin basename")
+        # Comparación apropiada Windows: case-insensitive via normcase
+        if os.path.normcase(base) != os.path.normcase(self._nombre):
+            raise ValueError(
+                f"basename {base!r} no coincide con nombre tarjeta {self._nombre!r}"
+            )
+        carpeta = os.path.dirname(nueva_ruta)
+        if not carpeta or not carpeta.strip():
+            # Derivar desde abspath si dirname vacío (ruta relativa)
+            ab = os.path.abspath(nueva_ruta)
+            carpeta = os.path.dirname(ab)
+        if not carpeta or not carpeta.strip():
+            raise ValueError("no se pudo derivar carpeta de nueva_ruta")
+        carpeta_norm = carpeta.rstrip(os.sep) or carpeta
+        # Solo después de validar se actualiza el estado
+        self._carpeta_video = carpeta_norm
 
     @property
     def nombre(self):
@@ -2634,6 +2670,18 @@ class VisorVideos(QMainWindow):
         self._renombrado_en_curso = False
         self._renombrado_nombre_anterior = None
 
+        # B7.2 mover individual seguro (sin SQLite/FS directo desde UI)
+        self.gestor_mover = GestorTareas(self)
+        self.gestor_mover.tarea_resultado.connect(self._al_resultado_mover)
+        self.gestor_mover.tarea_error.connect(self._al_error_mover)
+        self.gestor_mover.tarea_finalizada.connect(self._al_mover_finalizada)
+        self.gestor_mover.actividad_cambiada.connect(self._al_actividad_mover)
+        self._mover_en_curso = False
+        self._mover_nombre_anterior = None
+        self._mover_video_id = None
+        self._mover_ruta_inconsistente = None
+        self._mover_error_sincronizacion = None
+
         self._timer_previews = QTimer(self)
         self._timer_previews.setSingleShot(True)
         self._timer_previews.setInterval(300)
@@ -2727,6 +2775,9 @@ class VisorVideos(QMainWindow):
             and getattr(self, "toggle_modo_seleccion", None) is not None
         ):
             self.toggle_modo_seleccion.setChecked(True)
+        # B7.2 fix-017: modo recursivo cambia semántica de carpeta -> recargar paginado
+        # Diferir 200ms para no colisionar con iniciar_escaneo inmediato (tests de modo)
+        QTimer.singleShot(200, self._programar_recarga_por_carpeta)
 
     def _al_cambiar_subcarpetas(self, _estado):
         if self._sincronizando_alcance:
@@ -2738,6 +2789,7 @@ class VisorVideos(QMainWindow):
         )
         guardar_modo_alcance(self._modo_alcance, self._ruta_config)
         self._sincronizar_alcance_desde_modo()
+        QTimer.singleShot(200, self._programar_recarga_por_carpeta)
 
     def _al_cambiar_escaneo_automatico(self, _estado):
         guardar_preferencia_escaneo_automatico(
@@ -2942,6 +2994,41 @@ class VisorVideos(QMainWindow):
         clave_orden, direccion_orden = self._orden_catalogo
         filtro = getattr(self, "_filtro_catalogo", "todos")
         filtro_param = None if filtro == "todos" else filtro
+        # B7.2 fix-017: filtrar paginado por carpeta seleccionada (Windows-safe, inmediata)
+        # Si no hay carpeta seleccionada o no existe en disco, no filtrar (comportamiento global legacy)
+        carpeta_param = getattr(self, "carpeta_seleccionada", None)
+        # Determinar si la carpeta es válida en disco; si no, no filtrar para no vaciar catálogo por config obsoleta
+        # La validación ligera evita bloquear carga inicial cuando config apunta a carpeta eliminada
+        if isinstance(carpeta_param, str) and carpeta_param.strip():
+            try:
+                if not os.path.isdir(carpeta_param):
+                    carpeta_param = None
+            except Exception:
+                carpeta_param = None
+        else:
+            # Si es lista (selección personalizada) validar cada una
+            if isinstance(carpeta_param, (list, tuple, set)):
+                validas = [c for c in carpeta_param if isinstance(c, str) and os.path.isdir(c)]
+                carpeta_param = validas if validas else None
+            else:
+                carpeta_param = None
+        # Respetar modo alcance recursivo para paginación: si modo es con_subcarpetas o seleccion, incluir subcarpetas
+        incluir_sub = False
+        try:
+            incluir_sub = bool(self._recursivo_actual())
+        except Exception:
+            incluir_sub = False
+        # Si modo es seleccion_personalizada y carpeta es carpeta_seleccionada única, pero el alcance real es lista de carpetas seleccionadas
+        # Para coherencia, si _modo_alcance == seleccion y hay lista efectiva, usar esa lista
+        try:
+            if getattr(self, "_modo_alcance", None) == MODO_ALCANCE_SELECCION:
+                # En modo selección, la carpeta efectiva es la lista de selección, no solo la carpeta actual
+                # Pero para la vista principal (tarjetas) seguimos filtrando por carpeta_seleccionada si existe;
+                # la lista se usa en escaneo. Para navegación, si la lista existe y carpeta_seleccionada está dentro, recursivo ya cubre.
+                # No sobrescribir carpeta_param aquí para no cambiar semántica inmediata.
+                pass
+        except Exception:
+            pass
         return TareaLecturaCatalogoPaginada(
             TAMANIO_PAGINA_INICIAL,
             desplazamiento,
@@ -2950,6 +3037,8 @@ class VisorVideos(QMainWindow):
             orden_clave=clave_orden,
             orden_direccion=direccion_orden,
             filtro=filtro_param,
+            carpeta=carpeta_param,
+            incluir_subcarpetas=incluir_sub,
         )
 
     def _lectura_obsoleta(self):
@@ -2996,6 +3085,29 @@ class VisorVideos(QMainWindow):
         self._recarga_catalogo_pendiente = True
         self._iniciar_recarga_catalogo()
 
+    def _programar_recarga_por_carpeta(self):
+        """Recarga paginada por cambio de carpeta seleccionada (B7.2 fix-017).
+
+        Invalida paginación y reordena sin requerir escaneo: la nueva carpeta
+        filtra en SQL antes de LIMIT/OFFSET (no post-filtro). Si el gestor
+        está activo, deja pendiente el reordenamiento.
+        """
+        # Si la carga inicial aún no completó y gestor activo, postergar
+        if self.gestor.activo:
+            self._reordenamiento_pendiente = True
+            return
+        self._orden_generacion += 1
+        self._pagina_pendiente = False
+        self.tarea_pagina = None
+        self._recarga_catalogo_pendiente = False
+        self.tarea_recarga_catalogo = None
+        self._cola_resumen.clear()
+        self._resumen_ids_en_vuelo.clear()
+        self.area.verticalScrollBar().setValue(0)
+        self._reordenamiento_pendiente = True
+        self._actualizar_botones_carpeta()
+        self._procesar_reordenamiento()
+
     def seleccionar_carpeta(self):
         ruta = QFileDialog.getExistingDirectory(
             self, "Seleccionar carpeta de videos", ""
@@ -3014,6 +3126,9 @@ class VisorVideos(QMainWindow):
         guardar_ultima_carpeta(ruta_absoluta, self._ruta_config)
         self.arbol_navegacion.seleccionar_ruta(ruta_absoluta)
         self._actualizar_botones_carpeta()
+        # B7.2 fix-017: recargar solo si no hay escaneo automático (evita colisión gestor)
+        if not self.escaneo_automatico.isChecked():
+            self._programar_recarga_por_carpeta()
         self._disparar_escaneo_si_automatico()
 
     def _disparar_escaneo_si_automatico(self):
@@ -3036,6 +3151,8 @@ class VisorVideos(QMainWindow):
         self.mensaje_carpeta.clear()
         guardar_ultima_carpeta(ruta, self._ruta_config)
         self._actualizar_botones_carpeta()
+        if not self.escaneo_automatico.isChecked():
+            self._programar_recarga_por_carpeta()
         self._disparar_escaneo_si_automatico()
 
     def _actualizar_botones_carpeta(self):
@@ -4860,6 +4977,175 @@ class VisorVideos(QMainWindow):
         # Deshabilitar botones durante renombrado si fuese necesario; por ahora solo barra
         pass
 
+    def _iniciar_mover(self, nombre):
+        """Inicia movimiento B7.2 — selector de carpeta existente y tarea background."""
+        if self.gestor_mover.activo or self.gestor_renombrado.activo or self.gestor.activo:
+            self.mensaje_carpeta.setText("Hay una operación en curso")
+            return
+        tarjeta = self._tarjeta_por_nombre(nombre)
+        if tarjeta is None:
+            return
+        video_id = getattr(tarjeta, "_video_id", None)
+        if video_id is None:
+            self.mensaje_carpeta.setText("No se pudo identificar el video")
+            return
+        # Selector de carpeta existente
+        carpeta_destino = QFileDialog.getExistingDirectory(self, "Mover a…", "")
+        if not carpeta_destino:
+            return
+        carpeta_destino = os.path.abspath(carpeta_destino)
+        if not os.path.isdir(carpeta_destino):
+            self.mensaje_carpeta.setText("Carpeta destino no válida")
+            return
+        self._mover_nombre_anterior = nombre
+        self._mover_video_id = video_id
+        tarea = TareaMoverVideo(video_id, carpeta_destino, self._ruta_db)
+        if not self.gestor_mover.iniciar(tarea):
+            self.mensaje_carpeta.setText("No se pudo iniciar el movimiento")
+            return
+        self._mover_en_curso = True
+        self.barra_progreso.setVisible(True)
+        self.barra_progreso.setRange(0, 0)
+        self.mensaje_carpeta.setText(f"Moviendo {nombre}…")
+        self._texto_progreso = f"Moviendo {nombre}…"
+
+    def _al_resultado_mover(self, resultado):
+        if not isinstance(resultado, dict) or not resultado.get("ok"):
+            return
+        video_id = resultado.get("video_id")
+        nombre = resultado.get("nombre")
+        nueva_ruta = resultado.get("ruta")
+        anterior = self._mover_nombre_anterior
+        # Evidencia para diagnóstico si sincronización falla tras éxito FS/DB
+        self._mover_ruta_inconsistente = None
+        self._mover_error_sincronizacion = None
+        if not isinstance(nueva_ruta, str) or not nueva_ruta.strip():
+            self._mover_ruta_inconsistente = nueva_ruta
+            self._mover_error_sincronizacion = "ruta no válida"
+            self.mensaje_carpeta.setText(
+                f"Movimiento completado pero UI inconsistente: ruta no válida ({nueva_ruta!r}) — evidencia conservada {nueva_ruta!r}"
+            )
+            self._mover_nombre_anterior = None
+            self._mover_video_id = None
+            return
+        try:
+            base = os.path.basename(nueva_ruta)
+            carpeta = os.path.dirname(nueva_ruta)
+            # Validación case-insensitive en Windows
+            if not base or not carpeta or os.path.normcase(base) != os.path.normcase(nombre or ""):
+                self._mover_ruta_inconsistente = nueva_ruta
+                self._mover_error_sincronizacion = f"basename {base!r} != nombre {nombre!r}"
+                self.mensaje_carpeta.setText(
+                    f"Movimiento completado pero UI inconsistente: ruta {nueva_ruta!r} no coincide con nombre {nombre!r} — evidencia conservada"
+                )
+                self._mover_nombre_anterior = None
+                self._mover_video_id = None
+                return
+        except Exception as exc:
+            self._mover_ruta_inconsistente = nueva_ruta
+            self._mover_error_sincronizacion = str(exc)
+            self.mensaje_carpeta.setText(
+                f"Movimiento completado pero UI inconsistente: error en ruta ({exc}) — evidencia {nueva_ruta!r}"
+            )
+            self._mover_nombre_anterior = None
+            self._mover_video_id = None
+            return
+        # Buscar tarjeta objetivo (mismo nombre/video_id, sin reescaneo)
+        tarjeta_objetivo = None
+        for nom, tarjeta in self.tarjetas:
+            if nom == anterior and getattr(tarjeta, "_video_id", None) == video_id:
+                tarjeta_objetivo = tarjeta
+                break
+        if tarjeta_objetivo is None:
+            for nom, tarjeta in self.tarjetas:
+                if nom == nombre and getattr(tarjeta, "_video_id", None) == video_id:
+                    tarjeta_objetivo = tarjeta
+                    break
+        if tarjeta_objetivo is None:
+            self._mover_ruta_inconsistente = nueva_ruta
+            self._mover_error_sincronizacion = "tarjeta no encontrada"
+            self.mensaje_carpeta.setText(
+                f"Movimiento completado pero UI inconsistente: tarjeta {nombre!r} id={video_id} no encontrada — ruta destino {nueva_ruta!r} conservada"
+            )
+            self._mover_nombre_anterior = None
+            self._mover_video_id = None
+            return
+        # Sincronización UI estricta sin fallback silencioso
+        try:
+            tarjeta_objetivo.actualizar_ruta(nueva_ruta)
+        except Exception as exc:
+            self._mover_ruta_inconsistente = nueva_ruta
+            self._mover_error_sincronizacion = str(exc)
+            self.mensaje_carpeta.setText(
+                f"Movimiento completado pero UI inconsistente: fallo sincronización tarjeta ({exc}) — ruta destino {nueva_ruta!r} conservada para diagnóstico"
+            )
+            self._mover_nombre_anterior = None
+            self._mover_video_id = None
+            return
+        # Éxito: sincronización y —si la vista actual es la carpeta origen— remover de origen sin reescaneo
+        ruta_anterior = resultado.get("ruta_anterior")
+        carpeta_origen = None
+        vista_es_origen = False
+        try:
+            if isinstance(ruta_anterior, str) and ruta_anterior:
+                carpeta_origen = os.path.dirname(os.path.abspath(ruta_anterior))
+                if isinstance(self.carpeta_seleccionada, str) and self.carpeta_seleccionada:
+                    if os.path.normcase(os.path.normpath(os.path.abspath(self.carpeta_seleccionada))) == os.path.normcase(os.path.normpath(carpeta_origen)):
+                        vista_es_origen = True
+        except Exception:
+            vista_es_origen = False
+        if vista_es_origen:
+            try:
+                self.cuadricula.removeWidget(tarjeta_objetivo)
+            except Exception:
+                pass
+            try:
+                tarjeta_objetivo.hide()
+                tarjeta_objetivo.setParent(None)
+                tarjeta_objetivo.deleteLater()
+            except Exception:
+                pass
+            for idx, (nom, t) in enumerate(list(self.tarjetas)):
+                if t is tarjeta_objetivo:
+                    try:
+                        del self.tarjetas[idx]
+                    except Exception:
+                        pass
+                    break
+            try:
+                if nombre in self.visibles:
+                    self.visibles.remove(nombre)
+            except Exception:
+                pass
+            try:
+                self._nombres_seleccionados.discard(nombre)
+                if getattr(self, "_ancla_seleccion", None) == nombre:
+                    self._ancla_seleccion = None
+            except Exception:
+                pass
+        self._mover_nombre_anterior = None
+        self._mover_video_id = None
+        self._mover_ruta_inconsistente = None
+        self._mover_error_sincronizacion = None
+        self.filtrar(self.busqueda.text())
+        self.actualizar_contador()
+        self._actualizar_resumen_seleccion()
+        self.mensaje_carpeta.setText(f"Movido a {os.path.dirname(nueva_ruta)}")
+
+    def _al_error_mover(self, mensaje):
+        self.mensaje_carpeta.setText(f"No se pudo mover: {mensaje}")
+        self._mover_nombre_anterior = None
+        self._mover_video_id = None
+
+    def _al_mover_finalizada(self):
+        self._mover_en_curso = False
+        self.barra_progreso.setVisible(False)
+        self.barra_progreso.setRange(0, 100)
+        self._al_actividad_mover(False)
+
+    def _al_actividad_mover(self, activa):
+        pass
+
     def _actualizar_boton_copiar(self):
         gestor_op = getattr(self, "gestor_operaciones", None)
         habilitado = (
@@ -5989,6 +6275,7 @@ class VisorVideos(QMainWindow):
         accion_copiar_seleccionados = menu.addAction("Copiar rutas de los seleccionados")
         accion_abrir_seleccionados = menu.addAction("Abrir carpetas de los seleccionados")
         accion_renombrar = menu.addAction("Renombrar…")
+        accion_mover = menu.addAction("Mover a…")
         accion_reproducir_marcadores = menu.addAction(
             "Reproducir marcadores en VLC"
         )
@@ -6001,6 +6288,7 @@ class VisorVideos(QMainWindow):
         accion_copiar_seleccionados.triggered.connect(self._copiar_rutas_seleccionados)
         accion_abrir_seleccionados.triggered.connect(self._abrir_carpetas_seleccionados)
         accion_renombrar.triggered.connect(lambda: self._iniciar_renombrar(nombre))
+        accion_mover.triggered.connect(lambda: self._iniciar_mover(nombre))
         accion_reproducir_marcadores.setEnabled(bool(self._nombres_seleccionados))
         accion_reproducir_marcadores.triggered.connect(
             self._reproducir_marcadores_en_vlc

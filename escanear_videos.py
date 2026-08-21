@@ -1152,6 +1152,77 @@ def _filtro_catalogo_exists(filtro):
     return ("", [])
 
 
+def _normalizar_carpeta_para_filtro(carpeta):
+    """Normaliza carpeta para filtro SQL Windows-safe (B7.2 fix-017).
+
+    Devuelve carpeta normalizada sin trailing sep (salvo raíz vacía -> None) usando
+    normcase+normpath+abspath para case-insensitive en Windows y separadores
+    coherentes. Para raíz C:\\ -> 'C:' (luego se reconstruye C:\\ en SQL).
+    """
+    if not isinstance(carpeta, str) or not carpeta.strip():
+        return None
+    try:
+        abs_path = os.path.abspath(carpeta)
+        norm = os.path.normcase(os.path.normpath(abs_path))
+        # normpath ya quita trailing salvo raíz; uniformar quitando cualquier trailing restante
+        # para que SQL construya prefijo con + '\\' de forma consistente (evita C:\\ vs C:\\\\)
+        # Mantener 'C:' para raíz en lugar de 'C:\\'
+        if len(norm) > 0:
+            # quitar trailing / y \ (pero conservar 'C:' si resulta)
+            stripped = norm.rstrip("/\\")
+            if not stripped:
+                return None
+            # Si era raíz tipo 'C:\\' -> norm='C:\\' -> stripped='C:' -> devolver 'C:'
+            # Si era '/' (Linux root) -> stripped='' -> None
+            return stripped
+        return None
+    except Exception:
+        return None
+
+
+def _construir_filtro_carpeta_sql(carpeta, incluir_subcarpetas=False):
+    """Fragmento WHERE para filtrar por carpeta de forma Windows-safe (B7.2 fix-017).
+
+    - Usa lower(replace(...,'/','\\')) para case-insensitive y separadores.
+    - Evita LIKE 'A%' ingenuo que confunde C:\\Videos\\A con C:\\Videos\\AB
+      exigiendo separador tras carpeta.
+    - Inmediata (default): ruta bajo carpeta con exactamente un nivel
+      (prefix + filename sin separador extra).
+    - Recursiva: ruta normalizada empieza con carpeta + sep (instr ==1).
+    Devuelve (fragmento, params).
+    """
+    if carpeta is None:
+        return ("", [])
+    # Soportar lista de carpetas (selección personalizada)
+    if isinstance(carpeta, (list, tuple, set)):
+        fragmentos = []
+        params = []
+        for c in carpeta:
+            frag, p = _construir_filtro_carpeta_sql(c, incluir_subcarpetas)
+            if frag:
+                fragmentos.append(f"({frag})")
+                params.extend(p)
+        if not fragmentos:
+            return ("", [])
+        return ("(" + " OR ".join(fragmentos) + ")", params)
+    if not isinstance(carpeta, str):
+        return ("", [])
+    norm = _normalizar_carpeta_para_filtro(carpeta)
+    if norm is None:
+        return ("", [])
+    if incluir_subcarpetas:
+        # Recursiva: instr(lower(replace(ruta,'/','\\')), lower(replace(? || '\\','/','\\'))) =1
+        # ? es norm sin trailing; se añade '\\' en SQL para exigir separador
+        frag = "instr(lower(replace(ruta, '/', '\\')), lower(replace(? || '\\', '/', '\\'))) = 1"
+        return (frag, [norm])
+    else:
+        # Inmediata: ruta empieza con carpeta+sep y resto sin separador
+        # remainder = substr(ruta_normalizada, length(prefix)+1) debe no contener '\'
+        frag = "(instr(lower(replace(ruta, '/', '\\')), lower(replace(? || '\\', '/', '\\'))) = 1 AND instr(substr(lower(replace(ruta, '/', '\\')), length(replace(? || '\\', '/', '\\')) + 1), '\\') = 0)"
+        # Necesita norm dos veces (para instr y para length)
+        return (frag, [norm, norm])
+
+
 def listar_videos_paginado(
     limite,
     desplazamiento=0,
@@ -1160,6 +1231,8 @@ def listar_videos_paginado(
     orden_clave=None,
     orden_direccion=None,
     filtro=None,
+    carpeta=None,
+    incluir_subcarpetas=False,
 ):
     if isinstance(limite, bool) or not isinstance(limite, int):
         raise TypeError("limite debe ser un entero")
@@ -1185,6 +1258,11 @@ def listar_videos_paginado(
     direccion = ORDEN_DIRECCION_DEFAULT if orden_direccion is None else orden_direccion
     orden = fragmento_orden_sql(clave, direccion)
     # Construcción estructurada del WHERE: texto (LIKE ?) y filtro (EXISTS parametrizado) con AND.
+    # B7.2 fix-017: carpeta (Windows-safe, inmediata por defecto, no LIKE 'A%' sobre AB)
+    if carpeta is not None and not isinstance(carpeta, (str, list, tuple, set)):
+        raise TypeError("carpeta debe ser texto, lista o None")
+    if incluir_subcarpetas is not None and not isinstance(incluir_subcarpetas, bool):
+        raise TypeError("incluir_subcarpetas debe ser booleano")
     condiciones = []
     params_where = []
     if texto is not None:
@@ -1194,6 +1272,14 @@ def listar_videos_paginado(
     if frag_filtro:
         condiciones.append(frag_filtro)
         params_where.extend(params_filtro)
+    # Filtro por carpeta (si se provee) — se evalúa en SQL antes de LIMIT/OFFSET
+    if carpeta is not None:
+        # Si carpeta es lista/tupla/set vacía -> sin filtro (compatibilidad: lista vacía = sin videos? Tratamos como sin filtro para no romper carga inicial sin carpeta)
+        # Para evitar confusión, solo filtrar si hay al menos un elemento válido
+        frag_carpeta, params_carpeta = _construir_filtro_carpeta_sql(carpeta, incluir_subcarpetas=bool(incluir_subcarpetas))
+        if frag_carpeta:
+            condiciones.append(frag_carpeta)
+            params_where.extend(params_carpeta)
     where_sql = ""
     if condiciones:
         where_sql = "WHERE " + " AND ".join(condiciones)
@@ -2197,6 +2283,44 @@ def actualizar_nombre_video(video_id, nuevo_nombre, nueva_ruta, ruta_db=None):
             raise ValueError(f"video_id {video_id} no existe")
         conn.commit()
         return {"ok": True, "video_id": video_id, "nombre": nuevo_nombre, "ruta": nueva_ruta}
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        raise
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def actualizar_ruta_video(video_id, nueva_ruta, ruta_db=None):
+    """Helper corto B7.2 — actualiza únicamente ruta en transacción.
+
+    Valida video_id y persiste en una única transacción. No toca filesystem.
+    Lanza ValueError si video_id no existe.
+    """
+    _validar_video_id(video_id)
+    if not isinstance(nueva_ruta, str) or not nueva_ruta.strip():
+        raise ValueError("nueva_ruta debe ser texto no vacío")
+    if ruta_db is None:
+        ruta_db = ruta_biblioteca()
+    if not os.path.isfile(ruta_db):
+        raise FileNotFoundError(f"Base de datos no encontrada: {ruta_db}")
+    conn = sqlite3.connect(ruta_db)
+    try:
+        conn.execute("BEGIN")
+        cur = conn.execute(
+            "UPDATE videos SET ruta = ? WHERE id = ?",
+            (os.path.abspath(nueva_ruta), video_id),
+        )
+        if cur.rowcount == 0:
+            conn.rollback()
+            raise ValueError(f"video_id {video_id} no existe")
+        conn.commit()
+        return {"ok": True, "video_id": video_id, "ruta": os.path.abspath(nueva_ruta)}
     except Exception:
         try:
             conn.rollback()

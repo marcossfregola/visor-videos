@@ -281,6 +281,8 @@ class TareaLecturaCatalogoPaginada(TareaBase):
         orden_clave=None,
         orden_direccion=None,
         filtro=None,
+        carpeta=None,
+        incluir_subcarpetas=False,
         parent=None,
     ):
         super().__init__(parent)
@@ -291,6 +293,8 @@ class TareaLecturaCatalogoPaginada(TareaBase):
         self._orden_clave = orden_clave
         self._orden_direccion = orden_direccion
         self._filtro = filtro
+        self._carpeta = carpeta
+        self._incluir_subcarpetas = bool(incluir_subcarpetas) if isinstance(incluir_subcarpetas, bool) else False
 
     @property
     def limite(self):
@@ -320,6 +324,14 @@ class TareaLecturaCatalogoPaginada(TareaBase):
     def filtro(self):
         return self._filtro
 
+    @property
+    def carpeta(self):
+        return self._carpeta
+
+    @property
+    def incluir_subcarpetas(self):
+        return self._incluir_subcarpetas
+
     def _trabajo(self):
         return listar_videos_paginado(
             self._limite,
@@ -329,6 +341,8 @@ class TareaLecturaCatalogoPaginada(TareaBase):
             orden_clave=self._orden_clave,
             orden_direccion=self._orden_direccion,
             filtro=self._filtro,
+            carpeta=self._carpeta,
+            incluir_subcarpetas=self._incluir_subcarpetas,
         )
 
 
@@ -1603,3 +1617,39 @@ class TareaRenombrarVideo(TareaBase):
     def _trabajo(self):
         import renombrar_video as svc
         return svc.renombrar_video(self._video_id, self._nuevo_nombre, self._ruta_db)
+
+
+class TareaMoverVideo(TareaBase):
+    """Mueve un video a carpeta existente preservando video_id y nombre (B7.2).
+
+    Corre fuera del hilo UI. Delega exclusivamente en
+    `mover_video.mover_video` (sin SQLite/FS directo desde UI).
+    Soporta forzar cross-volume para pruebas sin dos discos.
+    """
+
+    def __init__(self, video_id, carpeta_destino, ruta_db=None, forzar_cross_volume=False, parent=None):
+        super().__init__(parent)
+        self._video_id = video_id
+        self._carpeta_destino = carpeta_destino
+        self._ruta_db = ruta_db
+        self._forzar_cross = bool(forzar_cross_volume)
+
+    @property
+    def video_id(self):
+        return self._video_id
+
+    @property
+    def carpeta_destino(self):
+        return self._carpeta_destino
+
+    @property
+    def ruta_db(self):
+        return self._ruta_db
+
+    @property
+    def forzar_cross_volume(self):
+        return self._forzar_cross
+
+    def _trabajo(self):
+        import mover_video as svc
+        return svc.mover_video(self._video_id, self._carpeta_destino, self._ruta_db, forzar_cross_volume=self._forzar_cross)
