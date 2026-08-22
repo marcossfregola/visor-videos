@@ -101,6 +101,7 @@ from playlist_vlc import (
     reproducir_segmento,
     reproducir_segmento_en_bucle,
 )
+from panel_organizacion import PanelOrganizacion
 from tareas_videos import (
     TareaActualizarSegmento,
     TareaAsignarColorMarcador,
@@ -2622,6 +2623,13 @@ class VisorVideos(QMainWindow):
         self.boton_exportar_secuencia = QPushButton("Unir segmentos…")
         self.boton_exportar_secuencia.clicked.connect(self._al_exportar_secuencia_solicitado)
 
+        # B7.9 modo Organización/Explorer base
+        self.boton_modo_organizacion = QPushButton("Modo Organización")
+        self.boton_modo_organizacion.setObjectName("boton_modo_organizacion")
+        self.boton_modo_organizacion.setCheckable(True)
+        self.boton_modo_organizacion.setChecked(False)
+        self.boton_modo_organizacion.toggled.connect(self._al_cambiar_modo_organizacion)
+
         fila_carpeta = QHBoxLayout()
         fila_carpeta.addWidget(self.boton_seleccionar_carpeta)
         fila_carpeta.addWidget(self.boton_escanear)
@@ -2635,6 +2643,7 @@ class VisorVideos(QMainWindow):
         fila_carpeta.addWidget(self.combo_tamano_miniaturas)
         fila_carpeta.addWidget(self.boton_preferencias)
         fila_carpeta.addWidget(self.boton_modo_seleccion)
+        fila_carpeta.addWidget(self.boton_modo_organizacion)
         fila_carpeta.addWidget(self.boton_copiar)
         fila_carpeta.addWidget(self.boton_pegar)
         fila_carpeta.addWidget(self.boton_eliminar)
@@ -2690,10 +2699,21 @@ class VisorVideos(QMainWindow):
         self.boton_cancelar_export.setVisible(False)
         self.boton_cancelar_export.clicked.connect(self._cancelar_export)
 
+        # B7.9 panel Organización compacto (no reemplaza biblioteca)
+        self._modo_organizacion = False
+        self._organizacion_destino = None
+        self.panel_organizacion = PanelOrganizacion(self)
+        self.panel_organizacion.setObjectName("panel_organizacion")
+        self.panel_organizacion.setVisible(False)
+        self.panel_organizacion.seleccionarDestinoSolicitado.connect(self._seleccionar_destino_organizacion)
+        self.panel_organizacion.moverSolicitado.connect(self._iniciar_lote_mover_organizacion)
+        self.panel_organizacion.copiarSolicitado.connect(self._iniciar_lote_copiar_organizacion)
+
         raiz = PanelPrincipal()
         layout = QVBoxLayout(raiz)
         layout.addLayout(fila_carpeta)
         layout.addLayout(barra)
+        layout.addWidget(self.panel_organizacion)
         layout.addWidget(self.barra_progreso)
         fila_export = QHBoxLayout()
         fila_export.addWidget(self.boton_cancelar_export)
@@ -6146,6 +6166,110 @@ class VisorVideos(QMainWindow):
         if hasattr(self, "boton_cancelar_renombrar_masivo"):
             self.boton_cancelar_renombrar_masivo.setVisible(bool(getattr(self, "_renombrar_masivo_en_curso", False)))
             self.boton_cancelar_renombrar_masivo.setEnabled(bool(getattr(self, "_renombrar_masivo_en_curso", False)))
+        # B7.9 reflejar en panel organización (sin ocultar excepciones)
+        self._actualizar_panel_organizacion()
+
+    def _al_cambiar_modo_organizacion(self, activo):
+        # Preservar selección, carpeta activa, filtros, orden y scroll sin efecto colateral
+        # Panel está fuera del QScrollArea (hermano en QVBoxLayout de raiz), por lo que
+        # mostrar/ocultarlo solo reduce altura del viewport, no el maximum del contenido.
+        # Se preserva valor vertical exacto; se reprograma diferido por si layout difiere.
+        scroll_previo = None
+        barra_previa = None
+        if hasattr(self, "area") and self.area is not None:
+            b = self.area.verticalScrollBar()
+            if b is not None:
+                scroll_previo = int(b.value())
+                barra_previa = b
+        self._modo_organizacion = bool(activo)
+        if hasattr(self, "panel_organizacion") and self.panel_organizacion is not None:
+            self.panel_organizacion.setVisible(self._modo_organizacion)
+            self._actualizar_panel_organizacion()
+        if scroll_previo is not None and barra_previa is not None:
+            barra_previa.setValue(scroll_previo)
+
+            def _restaurar():
+                # Restauración diferida para cuando layout recalcula geometría.
+                # Captura solo RuntimeError por destrucción Qt y registra diagnóstico visible.
+                b2 = None
+                if hasattr(self, "area") and self.area is not None:
+                    b2 = self.area.verticalScrollBar()
+                if b2 is None:
+                    return
+                try:
+                    b2.setValue(scroll_previo)
+                except RuntimeError as exc:
+                    print(f"[B7.9] _restaurar scroll RuntimeError: {exc}")
+                    if hasattr(self, "mensaje_carpeta") and self.mensaje_carpeta is not None:
+                        self.mensaje_carpeta.setText(f"Aviso: no se pudo restaurar scroll ({exc})")
+
+            QTimer.singleShot(0, _restaurar)
+
+    def _actualizar_panel_organizacion(self):
+        if not hasattr(self, "panel_organizacion") or self.panel_organizacion is None:
+            return
+        destino = getattr(self, "_organizacion_destino", None)
+        if not isinstance(destino, str) or not destino.strip():
+            destino = None
+        tiene = bool(getattr(self, "_nombres_seleccionados", set()))
+        ocupado = False
+        fn = getattr(self, "_lote_esta_ocupado", None)
+        if callable(fn):
+            ocupado = bool(fn())
+        gestor = getattr(self, "gestor", None)
+        if gestor is not None and bool(getattr(gestor, "activo", False)):
+            ocupado = True
+        self.panel_organizacion.actualizar(destino, tiene, ocupado)
+
+    def _seleccionar_destino_organizacion(self):
+        # Reutiliza QFileDialog existente; NO cambia carpeta origen ni recarga catálogo
+        carpeta = QFileDialog.getExistingDirectory(self, "Seleccionar destino…", "")
+        if not carpeta:
+            return
+        if isinstance(carpeta, str):
+            carpeta_str = carpeta.strip()
+        else:
+            carpeta_str = carpeta
+        if isinstance(carpeta_str, str) and carpeta_str:
+            self._organizacion_destino = carpeta_str
+        else:
+            return
+        self._actualizar_panel_organizacion()
+
+    def _ejecutar_lote_organizacion(self, operacion):
+        dest = getattr(self, "_organizacion_destino", None)
+        if not isinstance(dest, str) or not dest.strip():
+            self.mensaje_carpeta.setText("Seleccione destino primero")
+            return
+        if self._lote_esta_ocupado():
+            self.mensaje_carpeta.setText("Hay una operación en curso")
+            return
+        video_ids = self._video_ids_seleccionados_ordenados()
+        if not video_ids:
+            return
+        tarea = TareaLoteOperaciones(operacion, video_ids, self._ruta_db, carpeta_destino=dest)
+        if not self.gestor_lote.iniciar(tarea):
+            self.mensaje_carpeta.setText(f"No se pudo iniciar lote {operacion}")
+            return
+        self._lote_en_curso = True
+        self._lote_operacion = operacion
+        self._lote_video_ids = list(video_ids)
+        self._lote_carpeta_destino = dest
+        self.barra_progreso.setVisible(True)
+        self.barra_progreso.setRange(0, len(video_ids))
+        self.barra_progreso.setValue(0)
+        if operacion == "mover":
+            self.mensaje_carpeta.setText(f"Moviendo {len(video_ids)} videos…")
+        else:
+            self.mensaje_carpeta.setText(f"Copiando {len(video_ids)} videos…")
+        self._actualizar_botones_lote()
+        self._actualizar_panel_organizacion()
+
+    def _iniciar_lote_mover_organizacion(self):
+        self._ejecutar_lote_organizacion("mover")
+
+    def _iniciar_lote_copiar_organizacion(self):
+        self._ejecutar_lote_organizacion("copiar")
 
     def _iniciar_lote_mover(self):
         if self._lote_esta_ocupado():
