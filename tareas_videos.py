@@ -1802,3 +1802,98 @@ class TareaLoteOperaciones(TareaBase):
             cancel_check=lambda: self._cancelada,
             progreso_callback=self.reportar_progreso,
         )
+
+
+class TareaRenombrarMasivo(TareaBase):
+    """Renombrado masivo seguro B7.7 — plantilla cerrada, preview exacta, ciclos con temporales.
+
+    Corre fuera del hilo UI. Delega exclusivamente en `renombrar_masivo`
+    (sin SQLite/FS directo desde UI, sin FFmpeg). Soporta cancelación
+    cooperativa antes de cada ítem y reporta progreso por ítem (actual/total).
+    El plan es exactamente el mostrado en preview; no recalcula diferente.
+    """
+
+    def __init__(self, video_infos, plantilla, ruta_db=None, texto=None, fecha_hoy=None, parent=None):
+        super().__init__(parent)
+        if isinstance(video_infos, (str, bytes, bytearray)):
+            raise TypeError("video_infos debe ser colección, no texto")
+        try:
+            self._video_infos = [dict(v) for v in list(video_infos)]
+        except Exception as exc:
+            raise TypeError(f"video_infos inválidos: {exc}") from None
+        if not isinstance(plantilla, str) or not plantilla.strip():
+            raise ValueError("plantilla debe ser texto no vacío")
+        self._plantilla = plantilla
+        self._ruta_db = ruta_db
+        self._texto = texto
+        self._fecha_hoy = fecha_hoy
+        self._cancelada = False
+        # plan pre-construido para garantizar preview == ejecución (inyectado o construido en _trabajo)
+        self._plan_preconstruido = None
+
+    @property
+    def video_infos(self):
+        return [dict(v) for v in self._video_infos]
+
+    @property
+    def plantilla(self):
+        return self._plantilla
+
+    @property
+    def ruta_db(self):
+        return self._ruta_db
+
+    @property
+    def texto(self):
+        return self._texto
+
+    @property
+    def fecha_hoy(self):
+        return self._fecha_hoy
+
+    def set_plan(self, plan):
+        """Inyecta plan exacto de preview para que ejecución use mismo objeto (no recalcular)."""
+        if not isinstance(plan, list):
+            raise TypeError("plan debe ser lista")
+        self._plan_preconstruido = list(plan)
+
+    def cancelar(self):
+        self._cancelada = True
+
+    def _trabajo(self):
+        import renombrar_masivo as rm
+        # Si hay plan pre-construido (preview exacta), usarlo directamente sin recalcular
+        if self._plan_preconstruido is not None:
+            plan = self._plan_preconstruido
+            # validar que plan no contiene errores
+            for item in plan:
+                if item.get("error"):
+                    raise ValueError(f"plan contiene error en video_id {item.get('video_id')}: {item.get('error')}")
+            return rm.ejecutar_plan(
+                plan,
+                ruta_db=self._ruta_db,
+                cancel_check=lambda: self._cancelada,
+                progreso_callback=self.reportar_progreso,
+            )
+        # Sin plan inyectado: construir y ejecutar (fallback para tests directos)
+        construido = rm.construir_plan(
+            self._video_infos,
+            self._plantilla,
+            texto=self._texto,
+            fecha_hoy=self._fecha_hoy,
+            ruta_db=self._ruta_db,
+        )
+        if not construido.get("ok"):
+            errores = construido.get("errores") or []
+            # incluir errores por item
+            for p in construido.get("plan", []):
+                if p.get("error"):
+                    errores.append(f"video_id {p.get('video_id')}: {p.get('error')}")
+            raise ValueError(f"plan inválido: {'; '.join(errores) if errores else 'error desconocido'}")
+        plan = construido["plan"]
+        return rm.ejecutar_plan(
+            plan,
+            ruta_db=self._ruta_db,
+            cancel_check=lambda: self._cancelada,
+            progreso_callback=self.reportar_progreso,
+        )

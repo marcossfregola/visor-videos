@@ -128,6 +128,7 @@ from tareas_videos import (
     TareaMiniaturas,
     TareaMoverVideo,
     TareaPreviewsProgresivas,
+    TareaRenombrarMasivo,
     TareaRenombrarVideo,
     TareaResumenColapsado,
     TareaSincronizacionCatalogo,
@@ -1013,6 +1014,140 @@ class DialogoCrearCarpeta(QDialog):
 
     def texto(self):
         return self._campo.text()
+
+
+class DialogoRenombrarMasivo(QDialog):
+    """Diálogo B7.7 — renombrado masivo con plantilla cerrada y preview exacta.
+
+    - Plantilla reutiliza exclusivamente motores cerrados de nombres.py (sin eval).
+    - Preview muestra claramente nombre actual -> nombre final para TODOS los seleccionados.
+    - Preview es exactamente el plan que se ejecutará (no recalcula diferente al confirmar).
+    - Sanitización visible: nombres mostrados son finales exactos (incluye _ por reservados, reemplazo de inválidos).
+    - Errores no resolubles bloquean Aplicar con mensaje claro.
+    - Preserva extensión original (no cambia extensiones).
+    """
+
+    def __init__(self, video_infos, ruta_db=None, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Renombrado masivo")
+        self._video_infos = list(video_infos) if isinstance(video_infos, list) else []
+        self._ruta_db = ruta_db
+        self._plan = None
+        layout = QVBoxLayout(self)
+        layout.addWidget(QLabel("Plantilla (tokens cerrados: {original}, {numero}, {numero:03d}, {fecha}, {fecha:YYYY-MM-DD}, {texto}):"))
+        self._campo_plantilla = QLineEdit()
+        self._campo_plantilla.setPlaceholderText("{original}_{numero:03d}")
+        self._campo_plantilla.setText("{original}_{numero:03d}")
+        layout.addWidget(self._campo_plantilla)
+        layout.addWidget(QLabel("Texto personalizado para {texto} (si no usa {texto}, dejar vacío):"))
+        self._campo_texto = QLineEdit()
+        self._campo_texto.setPlaceholderText("texto para {texto}")
+        layout.addWidget(self._campo_texto)
+        layout.addWidget(QLabel("Previsualización (actual -> final):"))
+        from PySide6.QtWidgets import QTableWidget, QTableWidgetItem, QHeaderView
+        self._tabla = QTableWidget()
+        self._tabla.setColumnCount(2)
+        self._tabla.setHorizontalHeaderLabels(["Actual", "Final"])
+        header = self._tabla.horizontalHeader()
+        if header is not None:
+            header.setSectionResizeMode(0, QHeaderView.Stretch)
+            header.setSectionResizeMode(1, QHeaderView.Stretch)
+        self._tabla.setEditTriggers(QTableWidget.NoEditTriggers)
+        self._tabla.setSelectionBehavior(QTableWidget.SelectRows)
+        layout.addWidget(self._tabla)
+        self._label_error = QLabel("")
+        self._label_error.setStyleSheet("color: #b00020;")
+        self._label_error.setWordWrap(True)
+        layout.addWidget(self._label_error)
+        self._botones = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        self._botones.button(QDialogButtonBox.Ok).setText("Aplicar")
+        self._botones.button(QDialogButtonBox.Cancel).setText("Cancelar")
+        self._botones.accepted.connect(self._al_aceptar)
+        self._botones.rejected.connect(self.reject)
+        layout.addWidget(self._botones)
+        # Conectar cambios para preview en vivo
+        self._campo_plantilla.textChanged.connect(self._actualizar_preview)
+        self._campo_texto.textChanged.connect(self._actualizar_preview)
+        self._actualizar_preview()
+        self.resize(700, 420)
+
+    def _actualizar_preview(self):
+        plantilla = self._campo_plantilla.text()
+        texto = self._campo_texto.text()
+        # texto vacío -> None (si plantilla no usa {texto}, no afecta)
+        texto_val = texto if isinstance(texto, str) and texto.strip() else None
+        # Si plantilla vacía, mostrar error y bloquear
+        if not plantilla.strip():
+            self._label_error.setText("Plantilla vacía")
+            self._tabla.setRowCount(0)
+            self._plan = None
+            self._botones.button(QDialogButtonBox.Ok).setEnabled(False)
+            return
+        try:
+            import renombrar_masivo as rm
+            res = rm.construir_plan(self._video_infos, plantilla, texto=texto_val, ruta_db=self._ruta_db)
+        except Exception as exc:
+            self._label_error.setText(f"Error al construir plan: {type(exc).__name__}: {exc}")
+            self._tabla.setRowCount(0)
+            self._plan = None
+            self._botones.button(QDialogButtonBox.Ok).setEnabled(False)
+            return
+        # Poblar tabla con plan
+        plan = res.get("plan", [])
+        self._tabla.setRowCount(len(plan))
+        from PySide6.QtWidgets import QTableWidgetItem
+        for row, item in enumerate(plan):
+            actual = item.get("nombre_actual", "")
+            final = item.get("nombre_final")
+            error = item.get("error")
+            item_actual = QTableWidgetItem(str(actual))
+            if error:
+                final_text = f"ERROR: {error}"
+            else:
+                final_text = str(final) if final is not None else ""
+            item_final = QTableWidgetItem(final_text)
+            if error:
+                # resaltar error
+                item_final.setForeground(QColor("#b00020"))
+            self._tabla.setItem(row, 0, item_actual)
+            self._tabla.setItem(row, 1, item_final)
+        # Manejar errores globales y por item
+        if not res.get("ok"):
+            errores = res.get("errores") or []
+            item_errs = [f"{p.get('nombre_actual')}: {p.get('error')}" for p in plan if p.get("error")]
+            todos = errores + item_errs
+            msg = "; ".join(todos) if todos else "Plantilla o nombres inválidos"
+            # Truncar para label pero mantener completo en tooltip
+            self._label_error.setText(msg[:600])
+            self._label_error.setToolTip(msg)
+            self._plan = None
+            self._botones.button(QDialogButtonBox.Ok).setEnabled(False)
+        else:
+            self._label_error.setText("")
+            self._label_error.setToolTip("")
+            self._plan = plan
+            self._botones.button(QDialogButtonBox.Ok).setEnabled(True)
+
+    def _al_aceptar(self):
+        if self._plan is None:
+            self._label_error.setText("Corrija la plantilla antes de aplicar")
+            return
+        # Verificar que plan no contiene errores
+        for item in self._plan:
+            if item.get("error"):
+                self._label_error.setText(f"Plan contiene error en {item.get('nombre_actual')}: {item.get('error')}")
+                return
+        self.accept()
+
+    def plan(self):
+        return list(self._plan) if isinstance(self._plan, list) else None
+
+    def plantilla_text(self):
+        return self._campo_plantilla.text()
+
+    def texto_personalizado(self):
+        t = self._campo_texto.text()
+        return t if isinstance(t, str) and t.strip() else None
 
 
 class TareaCopiarArchivos(TareaBase):
@@ -2436,9 +2571,17 @@ class VisorVideos(QMainWindow):
         self.boton_eliminar_seleccionados.setEnabled(False)
         self.boton_eliminar_seleccionados.clicked.connect(self._iniciar_lote_eliminar)
 
+        self.boton_renombrar_masivo = QPushButton("Renombrar seleccionados…")
+        self.boton_renombrar_masivo.setEnabled(False)
+        self.boton_renombrar_masivo.clicked.connect(self._iniciar_renombrar_masivo)
+
         self.boton_cancelar_lote = QPushButton("Cancelar lote")
         self.boton_cancelar_lote.setVisible(False)
         self.boton_cancelar_lote.clicked.connect(self._cancelar_lote)
+
+        self.boton_cancelar_renombrar_masivo = QPushButton("Cancelar renombrado")
+        self.boton_cancelar_renombrar_masivo.setVisible(False)
+        self.boton_cancelar_renombrar_masivo.clicked.connect(self._cancelar_renombrar_masivo)
 
         self.boton_cargar_mas = QPushButton("Cargar más")
         self.boton_cargar_mas.setEnabled(False)
@@ -2498,7 +2641,9 @@ class VisorVideos(QMainWindow):
         fila_carpeta.addWidget(self.boton_mover_seleccionados)
         fila_carpeta.addWidget(self.boton_copiar_seleccionados)
         fila_carpeta.addWidget(self.boton_eliminar_seleccionados)
+        fila_carpeta.addWidget(self.boton_renombrar_masivo)
         fila_carpeta.addWidget(self.boton_cancelar_lote)
+        fila_carpeta.addWidget(self.boton_cancelar_renombrar_masivo)
         fila_carpeta.addWidget(self.etiqueta_carpeta, 1)
         fila_carpeta.addWidget(self.estado_escaneo)
         fila_carpeta.addWidget(self.mensaje_carpeta)
@@ -2806,6 +2951,22 @@ class VisorVideos(QMainWindow):
         self._lote_carpeta_destino = None
         self._lote_resultado_pendiente = None
         self._lote_ultimo_error_completo = None
+
+        # B7.7 renombrado masivo seguro (sin SQLite/FS directo desde UI, preview exacta, ciclos con temporales)
+        self.gestor_renombrar_masivo = GestorTareas(self)
+        self.gestor_renombrar_masivo.tarea_resultado.connect(self._al_resultado_renombrar_masivo)
+        self.gestor_renombrar_masivo.tarea_error.connect(self._al_error_renombrar_masivo)
+        self.gestor_renombrar_masivo.tarea_finalizada.connect(self._al_finalizada_renombrar_masivo)
+        self.gestor_renombrar_masivo.tarea_progreso.connect(self._al_progreso_renombrar_masivo)
+        self.gestor_renombrar_masivo.actividad_cambiada.connect(self._al_actividad_renombrar_masivo)
+        self._renombrar_masivo_en_curso = False
+        self._renombrar_masivo_plan = None
+        # B7.7 post-rename fix: preservación de selección por video_id (no por nombre)
+        self._renombrar_masivo_ids_origen = None
+        self._renombrar_masivo_ids_a_restaurar = None
+        # B7.7 UX final: preservación de contexto visual determinista (scroll/viewport)
+        self._renombrar_masivo_scroll_previo = None
+        self._renombrar_masivo_orden_previo = None
 
         self._timer_previews = QTimer(self)
         self._timer_previews.setSingleShot(True)
@@ -3228,7 +3389,15 @@ class VisorVideos(QMainWindow):
         self.tarea_recarga_catalogo = None
         self._cola_resumen.clear()
         self._resumen_ids_en_vuelo.clear()
-        self.area.verticalScrollBar().setValue(0)
+        # B7.7 UX final: preservar contexto visual tras renombrado masivo (no salto ciego a 0)
+        # Si hay recarga pendiente por renombrado masivo, conservar scroll previo y decidir después
+        es_recarga_renombrado = (
+            getattr(self, "_renombrar_masivo_ids_a_restaurar", None) is not None
+            or getattr(self, "_renombrar_masivo_en_curso", False)
+            or getattr(self, "_renombrar_masivo_scroll_previo", None) is not None
+        )
+        if not es_recarga_renombrado:
+            self.area.verticalScrollBar().setValue(0)
         self._reordenamiento_pendiente = True
         self._actualizar_botones_carpeta()
         self._procesar_reordenamiento()
@@ -3313,6 +3482,7 @@ class VisorVideos(QMainWindow):
 
     def _al_actividad(self, activo):
         self._actualizar_botones_carpeta()
+        self._actualizar_botones_lote()
 
     def _mostrar_progreso(self, texto):
         self._pipeline_activo = True
@@ -5916,6 +6086,8 @@ class VisorVideos(QMainWindow):
             return True
         if getattr(self, "gestor_eliminar", None) is not None and self.gestor_eliminar.activo:
             return True
+        if getattr(self, "gestor_renombrar_masivo", None) is not None and self.gestor_renombrar_masivo.activo:
+            return True
         if getattr(self, "gestor", None) is not None and self.gestor.activo:
             return True
         return False
@@ -5929,9 +6101,14 @@ class VisorVideos(QMainWindow):
             self.boton_copiar_seleccionados.setEnabled(tiene_sel and not ocupado)
         if hasattr(self, "boton_eliminar_seleccionados"):
             self.boton_eliminar_seleccionados.setEnabled(tiene_sel and not ocupado)
+        if hasattr(self, "boton_renombrar_masivo"):
+            self.boton_renombrar_masivo.setEnabled(tiene_sel and not ocupado)
         if hasattr(self, "boton_cancelar_lote"):
             self.boton_cancelar_lote.setVisible(bool(getattr(self, "_lote_en_curso", False)))
             self.boton_cancelar_lote.setEnabled(bool(getattr(self, "_lote_en_curso", False)))
+        if hasattr(self, "boton_cancelar_renombrar_masivo"):
+            self.boton_cancelar_renombrar_masivo.setVisible(bool(getattr(self, "_renombrar_masivo_en_curso", False)))
+            self.boton_cancelar_renombrar_masivo.setEnabled(bool(getattr(self, "_renombrar_masivo_en_curso", False)))
 
     def _iniciar_lote_mover(self):
         if self._lote_esta_ocupado():
@@ -6271,6 +6448,346 @@ class VisorVideos(QMainWindow):
         self._al_actividad_lote(False)
 
     def _al_actividad_lote(self, activa):
+        self._actualizar_botones_lote()
+        self._actualizar_botones_carpeta()
+
+    # B7.7 renombrado masivo seguro (sin FS/SQLite directo desde UI, preview exacta, ciclos con temporales)
+    def _iniciar_renombrar_masivo(self):
+        if self._lote_esta_ocupado() or getattr(self, "gestor_renombrar_masivo", None) is not None and self.gestor_renombrar_masivo.activo:
+            self.mensaje_carpeta.setText("Hay una operación en curso")
+            return
+        video_ids = self._video_ids_seleccionados_ordenados()
+        if not video_ids:
+            self.mensaje_carpeta.setText("Seleccione al menos un video para renombrar")
+            return
+        # Construir video_infos en orden visible estable
+        video_infos = []
+        for nombre in self.tarjetas_visibles():
+            if nombre not in self._nombres_seleccionados:
+                continue
+            tarjeta = self._tarjeta_por_nombre(nombre)
+            if tarjeta is None:
+                continue
+            vid = getattr(tarjeta, "_video_id", None)
+            if vid not in video_ids:
+                continue
+            carpeta = getattr(tarjeta, "_carpeta_video", None) or self.carpeta_seleccionada or ""
+            ruta = os.path.join(carpeta, nombre) if carpeta else nombre
+            # usar ruta existente si posible
+            r_existente = self._ruta_video_de(tarjeta)
+            if isinstance(r_existente, str) and r_existente:
+                ruta = r_existente
+            video_infos.append({"video_id": vid, "nombre": nombre, "ruta": ruta})
+        # asegurar orden según ids
+        # video_infos ya está en orden visibles, que coincide con ids
+        if not video_infos:
+            self.mensaje_carpeta.setText("No se pudieron resolver los videos seleccionados")
+            return
+        dialogo = DialogoRenombrarMasivo(video_infos, self._ruta_db, self)
+        if dialogo.exec() != QDialog.Accepted:
+            return
+        plan = dialogo.plan()
+        if not plan:
+            self.mensaje_carpeta.setText("Plan de renombrado no válido")
+            return
+        plantilla = dialogo.plantilla_text()
+        texto = dialogo.texto_personalizado()
+        try:
+            from tareas_videos import TareaRenombrarMasivo
+            tarea = TareaRenombrarMasivo(video_infos, plantilla, self._ruta_db, texto=texto)
+            tarea.set_plan(plan)
+        except Exception as exc:
+            self.mensaje_carpeta.setText(f"No se pudo preparar renombrado masivo: {exc}")
+            return
+        if not self.gestor_renombrar_masivo.iniciar(tarea):
+            self.mensaje_carpeta.setText(f"No se pudo iniciar renombrado masivo: {self.gestor_renombrar_masivo.ultimo_rechazo}")
+            return
+        self._renombrar_masivo_en_curso = True
+        self._renombrar_masivo_plan = plan
+        # Preservar selección lógica por video_id para restauración post-recarga (fix B7.7 post-rename)
+        # video_infos ya validado por construir_plan; validar tipos explícitamente sin captura genérica
+        ids_origen_validos = set()
+        diagnostico_ids = None
+        for idx_info, info_item in enumerate(video_infos):
+            if not isinstance(info_item, dict):
+                diagnostico_ids = f"video_infos[{idx_info}] no es dict: {type(info_item).__name__}"
+                break
+            vid_val = info_item.get("video_id")
+            if isinstance(vid_val, bool) or not isinstance(vid_val, int) or vid_val <= 0:
+                diagnostico_ids = f"video_id inválido en índice {idx_info}: {vid_val!r}"
+                break
+            ids_origen_validos.add(int(vid_val))
+        if diagnostico_ids is not None:
+            detalle_ids = f"Inconsistencia al preservar selección por video_id: {diagnostico_ids} — fallback a video_ids ordenados"
+            self.mensaje_carpeta.setText(detalle_ids)
+            self.estado_escaneo.setText(detalle_ids)
+            self.mensaje_carpeta.setToolTip(detalle_ids)
+            self.estado_escaneo.setToolTip(detalle_ids)
+            if isinstance(video_ids, list) and all(isinstance(x, int) and not isinstance(x, bool) and x > 0 for x in video_ids):
+                self._renombrar_masivo_ids_origen = set(video_ids)
+            else:
+                self._renombrar_masivo_ids_origen = None
+        else:
+            self._renombrar_masivo_ids_origen = ids_origen_validos
+        self._renombrar_masivo_ids_a_restaurar = None
+        # B7.7 UX final: guardar contexto visual mínimo previo (scroll + orden determinista por video_id)
+        try:
+            self._renombrar_masivo_scroll_previo = int(self.area.verticalScrollBar().value())
+        except (AttributeError, TypeError, ValueError, RuntimeError):
+            self._renombrar_masivo_scroll_previo = None
+        try:
+            self._renombrar_masivo_orden_previo = list(self._video_ids_seleccionados_ordenados())
+        except (AttributeError, TypeError, RuntimeError, ValueError):
+            self._renombrar_masivo_orden_previo = None
+        self.barra_progreso.setVisible(True)
+        self.barra_progreso.setRange(0, len(plan))
+        self.barra_progreso.setValue(0)
+        self.mensaje_carpeta.setText(f"Renombrando {len(plan)} videos…")
+        self._actualizar_botones_lote()
+        self._actualizar_botones_carpeta()
+
+    def _cancelar_renombrar_masivo(self):
+        gestor = getattr(self, "gestor_renombrar_masivo", None)
+        tarea = getattr(gestor, "tarea", None) if gestor is not None else None
+        if tarea is None or not hasattr(tarea, "cancelar"):
+            self.mensaje_carpeta.setText("No hay renombrado masivo en curso para cancelar")
+            self.estado_escaneo.setText("Cancelación renombrado: sin tarea activa")
+            if hasattr(self, "boton_cancelar_renombrar_masivo"):
+                self.boton_cancelar_renombrar_masivo.setEnabled(False)
+            return
+        try:
+            tarea.cancelar()
+        except (RuntimeError, AttributeError, ValueError) as exc:
+            self.mensaje_carpeta.setText(f"No se pudo cancelar renombrado masivo: {exc}")
+            self.estado_escaneo.setText(f"Error cancelación renombrado RuntimeError: {exc}")
+            if hasattr(self, "boton_cancelar_renombrar_masivo"):
+                self.boton_cancelar_renombrar_masivo.setEnabled(False)
+            return
+        except Exception as exc:
+            self.mensaje_carpeta.setText(f"Error inesperado al cancelar renombrado masivo: {type(exc).__name__}: {exc}")
+            self.estado_escaneo.setText(f"Error inesperado cancelación renombrado: {type(exc).__name__}: {exc}")
+            if hasattr(self, "boton_cancelar_renombrar_masivo"):
+                self.boton_cancelar_renombrar_masivo.setEnabled(False)
+            return
+        self.mensaje_carpeta.setText("Cancelando renombrado masivo…")
+        self.estado_escaneo.setText("Cancelando renombrado masivo…")
+        if hasattr(self, "boton_cancelar_renombrar_masivo"):
+            self.boton_cancelar_renombrar_masivo.setEnabled(False)
+
+    def _al_progreso_renombrar_masivo(self, actual, total):
+        if not getattr(self, "_renombrar_masivo_en_curso", False):
+            return
+        self.barra_progreso.setRange(0, total)
+        self.barra_progreso.setValue(actual)
+        self.barra_progreso.setVisible(True)
+
+    def _al_resultado_renombrar_masivo(self, resultado):
+        if not isinstance(resultado, dict):
+            self.mensaje_carpeta.setText("Resultado renombrado masivo no válido — inconsistencia: recarga necesaria")
+            self.estado_escaneo.setText("Resultado renombrado no válido — recarga programada")
+            try:
+                self._programar_recarga_por_carpeta()
+            except (RuntimeError, AttributeError, ValueError) as exc:
+                self.mensaje_carpeta.setText(f"Resultado inválido y fallo recarga: {exc} — DB preservada")
+            except Exception as exc:
+                self.mensaje_carpeta.setText(f"Error inesperado tras renombrado inválido: {type(exc).__name__}: {exc} — DB preservada")
+            hasattr(self.mensaje_carpeta, "setToolTip") and self.mensaje_carpeta.setToolTip(self.mensaje_carpeta.text())
+            hasattr(self.estado_escaneo, "setToolTip") and self.estado_escaneo.setToolTip(self.estado_escaneo.text())
+            self._actualizar_botones_lote()
+            self._actualizar_botones_carpeta()
+            return
+        exitosos = resultado.get("exitosos", []) or []
+        fallidos = resultado.get("fallidos", []) or []
+        cancelados = resultado.get("cancelados", []) or []
+        total = resultado.get("total", 0)
+        if not isinstance(exitosos, list) or not isinstance(fallidos, list):
+            self.mensaje_carpeta.setText("Renombrado masivo inconsistente: listas no válidas — recarga programada, DB preservada")
+            try:
+                self._programar_recarga_por_carpeta()
+            except Exception as exc:
+                self.mensaje_carpeta.setText(f"Inconsistencia y fallo recarga: {exc} — DB preservada")
+            return
+        # Recarga catálogo mediante mecanismos de lectura existentes, no Escanear carpeta
+        # FIX B7.7 post-rename: preservar selección por video_id (no por nombre) y no disparar Escanear/FFprobe
+        recarga_necesaria = bool(exitosos)
+        # Preparar restauración por video_id: conservar exactamente los mismos video_id (incluye parcial: los que sigan en carpeta/vista)
+        # Si el lote fue exitoso o parcial, restauraremos por video_id tras la recarga catalog SQLite
+        ids_a_restaurar = None
+        _diag_ids_restaurar = None
+        try:
+            # origen = ids enviados al servicio (preservación exacta)
+            origen = getattr(self, "_renombrar_masivo_ids_origen", None)
+            if isinstance(origen, set) and origen:
+                ids_a_restaurar = set(origen)
+            elif isinstance(origen, (list, tuple)):
+                ids_a_restaurar = {int(x) for x in origen if isinstance(x, int)}
+            # Si no hay origen (fallback), usar exitosos + fallidos que sigan en carpeta
+            if not ids_a_restaurar:
+                cand = []
+                for lst in (exitosos, fallidos, cancelados):
+                    for it in lst:
+                        vid = it.get("video_id") if isinstance(it, dict) else None
+                        if isinstance(vid, int) and vid > 0:
+                            cand.append(vid)
+                if cand:
+                    ids_a_restaurar = set(cand)
+        except Exception as exc:
+            ids_a_restaurar = None
+            _diag_ids_restaurar = f"Diagnostico ids_a_restaurar: {type(exc).__name__}: {exc}"
+            try:
+                self.mensaje_carpeta.setToolTip(_diag_ids_restaurar)
+                self.estado_escaneo.setToolTip(_diag_ids_restaurar)
+                if not self.mensaje_carpeta.text():
+                    self.mensaje_carpeta.setText(_diag_ids_restaurar[:200])
+            except Exception as _exc_diag_ids2:
+                _diag_ids_fallback = str(_exc_diag_ids2)
+        # Solo programar restauración si hay exitosos (hay recarga) y tenemos ids
+        if recarga_necesaria and ids_a_restaurar:
+            self._renombrar_masivo_ids_a_restaurar = set(ids_a_restaurar)
+        elif not recarga_necesaria:
+            # Sin recarga (todo falló o cancelado): liberar pendientes de restauración previa
+            self._renombrar_masivo_ids_a_restaurar = None
+        inconsistencias = []
+        if recarga_necesaria:
+            try:
+                self._programar_recarga_por_carpeta()
+            except (RuntimeError, AttributeError, ValueError) as exc:
+                inconsistencias.append(f"fallo recarga: {exc}")
+            except Exception as exc:
+                inconsistencias.append(f"error inesperado recarga: {type(exc).__name__}: {exc}")
+        if inconsistencias:
+            base = f"Renombrado masivo: {len(exitosos)} ok / {len(fallidos)} fallidos / {len(cancelados)} cancelados (total {total}) — INCONSISTENCIA: {'; '.join(inconsistencias)} — DB preservada"
+            self.mensaje_carpeta.setText(base)
+            self.estado_escaneo.setText(base)
+        elif fallidos or cancelados:
+            detalle = f"Renombrado masivo: {len(exitosos)} ok / {len(fallidos)} fallidos / {len(cancelados)} cancelados (total {total})"
+            if fallidos:
+                try:
+                    ej = fallidos[0].get("error", "")
+                    if isinstance(ej, str) and ej:
+                        detalle += f" — ej. {ej[:80]}"
+                except (AttributeError, TypeError, IndexError, KeyError) as exc:
+                    detalle += f" — error al extraer ejemplo: {exc}"
+                    self.mensaje_carpeta.setToolTip(detalle)
+                    self.estado_escaneo.setToolTip(detalle)
+                except Exception as exc:
+                    detalle += f" — error inesperado al extraer ejemplo: {type(exc).__name__}: {exc}"
+                    self.mensaje_carpeta.setToolTip(detalle)
+                    self.estado_escaneo.setToolTip(detalle)
+            self.mensaje_carpeta.setText(detalle)
+            self.estado_escaneo.setText(detalle)
+        else:
+            self.mensaje_carpeta.setText(f"Renombrado masivo completado: {len(exitosos)}/{total}")
+            self.estado_escaneo.setText("Renombrado masivo completado")
+        # Tooltip completo (auxiliar: no convierte éxito DB en fallo total)
+        try:
+            if fallidos:
+                err_full = fallidos[0].get("error", "")
+                if isinstance(err_full, str) and err_full:
+                    tt = f"Renombrado masivo: {len(exitosos)} ok / {len(fallidos)} fallidos / {len(cancelados)} cancelados (total {total}) — ej. {err_full}"
+                    hasattr(self.mensaje_carpeta, "setToolTip") and self.mensaje_carpeta.setToolTip(tt)
+                    hasattr(self.estado_escaneo, "setToolTip") and self.estado_escaneo.setToolTip(tt)
+                else:
+                    hasattr(self.mensaje_carpeta, "setToolTip") and self.mensaje_carpeta.setToolTip(self.mensaje_carpeta.text())
+                    hasattr(self.estado_escaneo, "setToolTip") and self.estado_escaneo.setToolTip(self.estado_escaneo.text())
+            else:
+                hasattr(self.mensaje_carpeta, "setToolTip") and self.mensaje_carpeta.setToolTip(self.mensaje_carpeta.text())
+                hasattr(self.estado_escaneo, "setToolTip") and self.estado_escaneo.setToolTip(self.estado_escaneo.text())
+        except (AttributeError, TypeError, RuntimeError) as exc:
+            self.mensaje_carpeta.setText(self.mensaje_carpeta.text() + f" — inconsistencia tooltip: {exc}")
+            self.estado_escaneo.setText(self.estado_escaneo.text() + f" — inconsistencia tooltip: {exc}")
+            try:
+                hasattr(self.mensaje_carpeta, "setToolTip") and self.mensaje_carpeta.setToolTip(self.mensaje_carpeta.text())
+                hasattr(self.estado_escaneo, "setToolTip") and self.estado_escaneo.setToolTip(self.estado_escaneo.text())
+            except Exception as exc2:
+                self.mensaje_carpeta.setText(self.mensaje_carpeta.text() + f" | tooltip falló: {type(exc2).__name__}: {exc2}")
+        except Exception as exc:
+            self.mensaje_carpeta.setText(self.mensaje_carpeta.text() + f" — error inesperado tooltip: {type(exc).__name__}: {exc}")
+            self.estado_escaneo.setText(self.estado_escaneo.text() + f" — error inesperado tooltip: {type(exc).__name__}: {exc}")
+            try:
+                hasattr(self.mensaje_carpeta, "setToolTip") and self.mensaje_carpeta.setToolTip(self.mensaje_carpeta.text())
+                hasattr(self.estado_escaneo, "setToolTip") and self.estado_escaneo.setToolTip(self.estado_escaneo.text())
+            except (AttributeError, TypeError, RuntimeError) as exc2:
+                self.mensaje_carpeta.setText(self.mensaje_carpeta.text() + f" — inconsistencia tooltip secundaria: {exc2}")
+                self.estado_escaneo.setToolTip(self.mensaje_carpeta.text())
+            except Exception as exc2:
+                self.mensaje_carpeta.setText(self.mensaje_carpeta.text() + f" — error inesperado tooltip secundaria: {type(exc2).__name__}: {exc2}")
+        # Actualizar filtros/contadores localmente; recarga ya programada (auxiliares: registrar inconsistencia visible sin falsa falla total)
+        try:
+            self.filtrar(self.busqueda.text())
+        except (AttributeError, TypeError, RuntimeError, ValueError) as exc:
+            self.mensaje_carpeta.setText(self.mensaje_carpeta.text() + f" — inconsistencia filtrar: {exc}")
+            self.estado_escaneo.setText(self.estado_escaneo.text() + f" — inconsistencia filtrar: {exc}")
+            try:
+                hasattr(self.mensaje_carpeta, "setToolTip") and self.mensaje_carpeta.setToolTip(self.mensaje_carpeta.text())
+                hasattr(self.estado_escaneo, "setToolTip") and self.estado_escaneo.setToolTip(self.estado_escaneo.text())
+            except (AttributeError, TypeError, RuntimeError) as exc2:
+                self.mensaje_carpeta.setText(self.mensaje_carpeta.text() + f" — fallo tooltip tras filtrar: {exc2}")
+            except Exception as exc2:
+                self.mensaje_carpeta.setText(self.mensaje_carpeta.text() + f" — error inesperado tooltip tras filtrar: {type(exc2).__name__}: {exc2}")
+        except Exception as exc:
+            self.mensaje_carpeta.setText(self.mensaje_carpeta.text() + f" — error inesperado filtrar: {type(exc).__name__}: {exc}")
+            self.estado_escaneo.setText(self.estado_escaneo.text() + f" — error inesperado filtrar: {type(exc).__name__}: {exc}")
+            try:
+                hasattr(self.mensaje_carpeta, "setToolTip") and self.mensaje_carpeta.setToolTip(self.mensaje_carpeta.text())
+                hasattr(self.estado_escaneo, "setToolTip") and self.estado_escaneo.setToolTip(self.estado_escaneo.text())
+            except (AttributeError, TypeError, RuntimeError) as exc2:
+                self.mensaje_carpeta.setText(self.mensaje_carpeta.text() + f" — fallo tooltip tras filtrar: {exc2}")
+            except Exception as exc2:
+                self.mensaje_carpeta.setText(self.mensaje_carpeta.text() + f" — error inesperado tooltip tras filtrar: {type(exc2).__name__}: {exc2}")
+        try:
+            self.actualizar_contador()
+        except (AttributeError, TypeError, RuntimeError, ValueError) as exc:
+            self.mensaje_carpeta.setText(self.mensaje_carpeta.text() + f" — inconsistencia contador: {exc}")
+            self.estado_escaneo.setText(self.estado_escaneo.text() + f" — inconsistencia contador: {exc}")
+            try:
+                hasattr(self.mensaje_carpeta, "setToolTip") and self.mensaje_carpeta.setToolTip(self.mensaje_carpeta.text())
+                hasattr(self.estado_escaneo, "setToolTip") and self.estado_escaneo.setToolTip(self.estado_escaneo.text())
+            except (AttributeError, TypeError, RuntimeError) as exc2:
+                self.mensaje_carpeta.setText(self.mensaje_carpeta.text() + f" — fallo tooltip tras contador: {exc2}")
+            except Exception as exc2:
+                self.mensaje_carpeta.setText(self.mensaje_carpeta.text() + f" — error inesperado tooltip tras contador: {type(exc2).__name__}: {exc2}")
+        except Exception as exc:
+            self.mensaje_carpeta.setText(self.mensaje_carpeta.text() + f" — error inesperado contador: {type(exc).__name__}: {exc}")
+            self.estado_escaneo.setText(self.estado_escaneo.text() + f" — error inesperado contador: {type(exc).__name__}: {exc}")
+        try:
+            self._actualizar_resumen_seleccion()
+        except (AttributeError, TypeError, RuntimeError, ValueError) as exc:
+            self.mensaje_carpeta.setText(self.mensaje_carpeta.text() + f" — inconsistencia resumen: {exc}")
+            self.estado_escaneo.setText(self.estado_escaneo.text() + f" — inconsistencia resumen: {exc}")
+            try:
+                hasattr(self.mensaje_carpeta, "setToolTip") and self.mensaje_carpeta.setToolTip(self.mensaje_carpeta.text())
+                hasattr(self.estado_escaneo, "setToolTip") and self.estado_escaneo.setToolTip(self.estado_escaneo.text())
+            except (AttributeError, TypeError, RuntimeError) as exc2:
+                self.mensaje_carpeta.setText(self.mensaje_carpeta.text() + f" — fallo tooltip tras resumen: {exc2}")
+            except Exception as exc2:
+                self.mensaje_carpeta.setText(self.mensaje_carpeta.text() + f" — error inesperado tooltip tras resumen: {type(exc2).__name__}: {exc2}")
+        except Exception as exc:
+            self.mensaje_carpeta.setText(self.mensaje_carpeta.text() + f" — error inesperado resumen: {type(exc).__name__}: {exc}")
+            self.estado_escaneo.setText(self.estado_escaneo.text() + f" — error inesperado resumen: {type(exc).__name__}: {exc}")
+        self._actualizar_botones_lote()
+        self._actualizar_botones_carpeta()
+
+    def _al_error_renombrar_masivo(self, mensaje):
+        texto = f"No se pudo completar renombrado masivo: {mensaje}"
+        self.mensaje_carpeta.setText(texto)
+        self.estado_escaneo.setText(texto)
+        hasattr(self.mensaje_carpeta, "setToolTip") and self.mensaje_carpeta.setToolTip(texto)
+        hasattr(self.estado_escaneo, "setToolTip") and self.estado_escaneo.setToolTip(texto)
+
+    def _al_finalizada_renombrar_masivo(self):
+        self._renombrar_masivo_en_curso = False
+        self.barra_progreso.setVisible(False)
+        self.barra_progreso.setRange(0, 100)
+        self._renombrar_masivo_plan = None
+        # No limpiar scroll/orden aquí si aún hay recarga pendiente (se limpia en _reemplazar_tarjetas)
+        # Pero si no hay recarga pendiente, limpiar para no quedar stale
+        if not getattr(self, "_recarga_catalogo_pendiente", False):
+            self._renombrar_masivo_scroll_previo = None
+            self._renombrar_masivo_orden_previo = None
+        self._al_actividad_renombrar_masivo(False)
+
+    def _al_actividad_renombrar_masivo(self, activa):
         self._actualizar_botones_lote()
         self._actualizar_botones_carpeta()
 
@@ -6697,17 +7214,31 @@ class VisorVideos(QMainWindow):
         if self._lectura_obsoleta():
             self._recarga_catalogo_pendiente = False
             self.tarea_recarga_catalogo = None
+            if getattr(self, "_renombrar_masivo_ids_a_restaurar", None) is not None:
+                self._renombrar_masivo_ids_a_restaurar = None
+                self._renombrar_masivo_ids_origen = None
+                self._renombrar_masivo_scroll_previo = None
+                self._renombrar_masivo_orden_previo = None
             return
         self._recarga_catalogo_pendiente = False
         self.tarea_recarga_catalogo = None
         self._total_catalogo = resultado.get("total", self._total_catalogo)
         filas_recarga = resultado.get("videos", [])
+        # B7.7 UX final: detectar si esta recarga corresponde a renombrado masivo para no saltar ciego a 0
+        es_recarga_renombrado = (
+            getattr(self, "_renombrar_masivo_ids_a_restaurar", None) is not None
+            or getattr(self, "_renombrar_masivo_scroll_previo", None) is not None
+            or getattr(self, "_renombrar_masivo_orden_previo", None) is not None
+        )
         self._reemplazar_tarjetas(filas_recarga)
         self.estado_carga.hide()
         self._carga_completada = True
         self._encolar_resumen_para_lote(filas_recarga)
         self._programar_previews()
-        self.area.verticalScrollBar().setValue(0)
+        if not es_recarga_renombrado:
+            self.area.verticalScrollBar().setValue(0)
+        # Si fue recarga por renombrado, el contexto visual ya fue asegurado dentro de _reemplazar_tarjetas
+        # de forma determinista (asegurar primer seleccionado según nuevo orden si corresponde)
         self._ocultar_progreso()
         self._actualizar_botones_carpeta()
 
@@ -6715,13 +7246,171 @@ class VisorVideos(QMainWindow):
         if self._lectura_obsoleta():
             self._recarga_catalogo_pendiente = False
             self.tarea_recarga_catalogo = None
+            # Si había pending por renombrar masivo, liberar para no quedar stale
+            if getattr(self, "_renombrar_masivo_ids_a_restaurar", None) is not None:
+                self._renombrar_masivo_ids_a_restaurar = None
+                self._renombrar_masivo_ids_origen = None
+                self._renombrar_masivo_scroll_previo = None
+                self._renombrar_masivo_orden_previo = None
             return
         self._limpiar_cadena()
+        # Liberar pending renombrar masivo si recarga falló (evitar stale)
+        if getattr(self, "_renombrar_masivo_ids_a_restaurar", None) is not None:
+            self._renombrar_masivo_ids_a_restaurar = None
+            self._renombrar_masivo_ids_origen = None
+            self._renombrar_masivo_scroll_previo = None
+            self._renombrar_masivo_orden_previo = None
         self.estado_escaneo.setText(MENSAJE_ERROR_RECARGA)
         self._actualizar_botones_carpeta()
 
     def _reemplazar_tarjetas(self, filas):
         self._ocultar_vista()
+        # FIX B7.7 post-rename: si hay ids pendientes por video_id (renombrado masivo), restaurar por identidad no por nombre
+        pending_ids = getattr(self, "_renombrar_masivo_ids_a_restaurar", None)
+        if isinstance(pending_ids, set) and pending_ids:
+            # Consumo pendiente: limpiar selección y reconstruir, luego restaurar por video_id
+            self._limpiar_seleccion()
+            self._ancla_seleccion = None
+            for nombre, tarjeta in self.tarjetas:
+                self.cuadricula.removeWidget(tarjeta)
+                tarjeta.deleteLater()
+            self.tarjetas = []
+            self.visibles = []
+            self._crear_tarjetas(filas)
+            ids_a_restaurar = set(pending_ids)
+            # Filtrar a los que sigan perteneciendo a la carpeta/vista actual (presentes en filas)
+            ids_presentes = {getattr(t, "_video_id", None) for _, t in self.tarjetas}
+            ids_a_restaurar = ids_a_restaurar.intersection(ids_presentes)
+            # Marcar por video_id: mapear video_id -> nombre actual (nuevo nombre tras rename)
+            vid_a_nombre = {}
+            for nombre, tarjeta in self.tarjetas:
+                vid = getattr(tarjeta, "_video_id", None)
+                if isinstance(vid, int) and vid in ids_a_restaurar:
+                    # Si hay duplicado improbable, conservar primero
+                    if vid not in vid_a_nombre:
+                        vid_a_nombre[vid] = nombre
+            for vid, nombre in vid_a_nombre.items():
+                self._nombres_seleccionados.add(nombre)
+                self._marcar_tarjeta(nombre, True)
+                if self._ancla_seleccion is None:
+                    self._ancla_seleccion = nombre
+            # Consumir pendientes y origen
+            self._renombrar_masivo_ids_a_restaurar = None
+            self._renombrar_masivo_ids_origen = None
+            # Asegurar resumen y botones coherentes (sin silenciamiento)
+            self._actualizar_resumen_seleccion()
+            # B7.7 UX final: preservación de contexto visual determinista tras renombrado masivo
+            # Regla: reordenar respetando orden/filtros vigentes (ya hecho via _crear_tarjetas),
+            # mantener seleccionados por video_id (hecho arriba), luego asegurar contexto visual:
+            # - si orden cambió (especialmente por nombre), llevar vista al PRIMERO según NUEVO orden visible
+            # - si posición no cambió y scroll previo deja visibles, evitar salto innecesario
+            # Determinista y no dependiente de nombre/ruta (usa video_id ordenado).
+            orden_previo = getattr(self, "_renombrar_masivo_orden_previo", None)
+            # Construir orden nuevo determinista por video_id según nuevo orden visible vigente
+            try:
+                orden_nuevo = list(self._video_ids_seleccionados_ordenados())
+            except (AttributeError, TypeError, RuntimeError, ValueError):
+                orden_nuevo = []
+            # Determinar nombres ordenados según nuevo orden visible (visibles ya filtrado)
+            nombres_orden_nuevo = []
+            try:
+                for nombre in list(self.visibles):
+                    if nombre in self._nombres_seleccionados:
+                        nombres_orden_nuevo.append(nombre)
+                if not nombres_orden_nuevo:
+                    nombres_orden_nuevo = [n for n, _ in self.tarjetas if n in self._nombres_seleccionados]
+            except (AttributeError, TypeError, RuntimeError):
+                nombres_orden_nuevo = []
+            # Solo aplicar regla a seleccionados disponibles en vista cargada (paginación/filtro)
+            if nombres_orden_nuevo:
+                cambiaron = False
+                if isinstance(orden_previo, list) and isinstance(orden_nuevo, list):
+                    if orden_previo != orden_nuevo:
+                        cambiaron = True
+                else:
+                    cambiaron = True
+                # Verificar si algún seleccionado ya está razonablemente visible en viewport
+                alguna_visible = False
+                _diag_activate = None
+                _diag_viewport = None
+                try:
+                    if self.contenedor.layout() is not None:
+                        try:
+                            self.contenedor.layout().activate()
+                        except (AttributeError, RuntimeError) as exc:
+                            _diag_activate = f"Diagnostico viewport activate fallo: {type(exc).__name__}: {exc}"
+                            try:
+                                self.mensaje_carpeta.setToolTip(_diag_activate)
+                                self.estado_escaneo.setToolTip(_diag_activate)
+                            except Exception as _exc_diag_act:
+                                _diag_activate_fallback = str(_exc_diag_act)
+                    vp = self.area.viewport()
+                    vp_h = int(vp.height()) if vp is not None else 0
+                    scroll_val = int(self.area.verticalScrollBar().value())
+                    if vp_h > 0:
+                        for n in nombres_orden_nuevo:
+                            t = self._tarjeta_por_nombre(n)
+                            if t is None:
+                                continue
+                            try:
+                                y = int(t.y())
+                                h = int(t.height())
+                            except (AttributeError, TypeError, RuntimeError, ValueError):
+                                continue
+                            if not (y + h < scroll_val or y > scroll_val + vp_h):
+                                alguna_visible = True
+                                break
+                    else:
+                        alguna_visible = False
+                except (AttributeError, RuntimeError, TypeError, ValueError) as exc:
+                    alguna_visible = False
+                    _diag_viewport = f"Diagnostico viewport visible fallo: {type(exc).__name__}: {exc}"
+                    try:
+                        self.mensaje_carpeta.setToolTip(_diag_viewport)
+                        self.estado_escaneo.setToolTip(_diag_viewport)
+                    except Exception as _exc_diag_vp:
+                        _diag_vp_fallback = str(_exc_diag_vp)
+                scroll_previo_vp = getattr(self, "_renombrar_masivo_scroll_previo", None)
+                if cambiaron:
+                    primero = nombres_orden_nuevo[0]
+                    t_prim = self._tarjeta_por_nombre(primero)
+                    if t_prim is not None:
+                        try:
+                            self.area.ensureWidgetVisible(t_prim, 0, 0)
+                        except (AttributeError, RuntimeError) as exc:
+                            _diag_ensure = f"Diagnostico viewport ensureWidgetVisible fallo (orden cambio): {type(exc).__name__}: {exc}"
+                            try:
+                                if isinstance(scroll_previo_vp, int) and scroll_previo_vp >= 0:
+                                    try:
+                                        self.area.verticalScrollBar().setValue(scroll_previo_vp)
+                                    except Exception as _exc_rest1:
+                                        _diag_rest1 = str(_exc_rest1)
+                                self.mensaje_carpeta.setToolTip(_diag_ensure)
+                                self.estado_escaneo.setToolTip(_diag_ensure)
+                            except Exception as _exc_diag_ens:
+                                _diag_ens_fallback = str(_exc_diag_ens)
+                elif not alguna_visible:
+                    primero = nombres_orden_nuevo[0]
+                    t_prim = self._tarjeta_por_nombre(primero)
+                    if t_prim is not None:
+                        try:
+                            self.area.ensureWidgetVisible(t_prim, 0, 0)
+                        except (AttributeError, RuntimeError) as exc:
+                            _diag_ensure2 = f"Diagnostico viewport ensureWidgetVisible fallo (orden estable): {type(exc).__name__}: {exc}"
+                            try:
+                                if isinstance(scroll_previo_vp, int) and scroll_previo_vp >= 0:
+                                    try:
+                                        self.area.verticalScrollBar().setValue(scroll_previo_vp)
+                                    except Exception as _exc_rest2:
+                                        _diag_rest2 = str(_exc_rest2)
+                                self.mensaje_carpeta.setToolTip(_diag_ensure2)
+                                self.estado_escaneo.setToolTip(_diag_ensure2)
+                            except Exception as _exc_diag_ens2:
+                                _diag_ens2_fallback = str(_exc_diag_ens2)
+            # Limpiar contexto visual guardado
+            self._renombrar_masivo_scroll_previo = None
+            self._renombrar_masivo_orden_previo = None
+            return
         seleccion_previa = set(self._nombres_seleccionados)
         self._limpiar_seleccion()
         self._ancla_seleccion = None
@@ -7206,6 +7895,10 @@ class VisorVideos(QMainWindow):
         accion_copiar_sel.triggered.connect(self._iniciar_lote_copiar)
         accion_eliminar_sel = menu.addAction("Enviar seleccionados a Papelera…")
         accion_eliminar_sel.triggered.connect(self._iniciar_lote_eliminar)
+        accion_renombrar_sel = menu.addAction("Renombrar seleccionados…")
+        accion_renombrar_sel.triggered.connect(self._iniciar_renombrar_masivo)
+        # Coherente con botones lote B7.6/B7.7: habilitado con selección y sin operación en curso
+        accion_renombrar_sel.setEnabled(bool(self._nombres_seleccionados) and not self._lote_esta_ocupado())
         accion_reproducir_marcadores.setEnabled(bool(self._nombres_seleccionados))
         accion_reproducir_marcadores.triggered.connect(
             self._reproducir_marcadores_en_vlc
@@ -7825,6 +8518,14 @@ class VisorVideos(QMainWindow):
             self._lote_carpeta_destino = None
             self._lote_resultado_pendiente = None
             self._lote_ultimo_error_completo = None
+        if getattr(self, "gestor_renombrar_masivo", None) is not None:
+            self.gestor_renombrar_masivo.cerrar()
+            self._renombrar_masivo_en_curso = False
+            self._renombrar_masivo_plan = None
+            self._renombrar_masivo_ids_origen = None
+            self._renombrar_masivo_ids_a_restaurar = None
+            self._renombrar_masivo_scroll_previo = None
+            self._renombrar_masivo_orden_previo = None
         super().closeEvent(event)
 
 
