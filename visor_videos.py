@@ -3402,6 +3402,49 @@ class VisorVideos(QMainWindow):
         self._actualizar_botones_carpeta()
         self._procesar_reordenamiento()
 
+    # === B7.8 Política mínima de consistencia post-operaciones ===
+    # Decisión explícita y testeable 'recarga paginada necesaria' vs 'actualización local suficiente'.
+    # La lectura paginada desde SQLite se conserva cuando una operación puede cambiar membresía,
+    # orden, filtro o paginación. No se reemplaza por manipulación manual frágil.
+    def _b78_copia_debe_recargar(self, carpeta_destino):
+        """B7.8: copia individual/lote debe recargar solo si destino es vista actual."""
+        try:
+            if not isinstance(carpeta_destino, str) or not carpeta_destino.strip():
+                return False
+            if not isinstance(self.carpeta_seleccionada, str) or not self.carpeta_seleccionada.strip():
+                return False
+            return carpetas_iguales(self.carpeta_seleccionada, carpeta_destino)
+        except Exception:
+            return False
+
+    def _b78_lote_debe_recargar(self, operacion, exitosos, carpeta_destino=None):
+        """B7.8: lote mover/eliminar con éxitos siempre recarga; copiar solo si destino visible."""
+        try:
+            if not isinstance(exitosos, list) or not exitosos:
+                return False
+            if operacion in ("mover", "eliminar"):
+                return True
+            if operacion == "copiar":
+                return self._b78_copia_debe_recargar(carpeta_destino)
+            return False
+        except Exception:
+            return True  # fallback seguro: si duda, recargar
+
+    def _b78_renombrado_masivo_debe_recargar(self, exitosos):
+        """B7.8 conservadora: renombrado masivo con éxitos siempre recarga (membresía/orden/filtro/paginación).
+
+        Orden dependiente de nombre, filtro/búsqueda activos o paginación pueden cambiar;
+        como la demostración local sin recarga es frágil, se conserva recarga paginada segura.
+        Si en futuro se demuestra que orden != nombre y filtro == todos y búsqueda vacía,
+        podría evitarse recarga y hacer actualización local por video_id, pero por ahora se mantiene segura.
+        """
+        try:
+            if not isinstance(exitosos, list) or not exitosos:
+                return False
+            return True
+        except Exception:
+            return True
+
     def seleccionar_carpeta(self):
         ruta = QFileDialog.getExistingDirectory(
             self, "Seleccionar carpeta de videos", ""
@@ -5626,14 +5669,8 @@ class VisorVideos(QMainWindow):
             self._copiar_nombre_origen = None
             self._copiar_video_id = None
             return
-        # El servicio garantiza coherencia de nombre/ruta y archivo existente; UI no consulta FS
-        # Determinar si la vista actual es la carpeta destino usando helper puro de rutas
-        vista_es_destino = False
-        try:
-            if isinstance(carpeta_destino, str) and carpeta_destino.strip() and isinstance(self.carpeta_seleccionada, str) and self.carpeta_seleccionada.strip():
-                vista_es_destino = carpetas_iguales(self.carpeta_seleccionada, carpeta_destino)
-        except Exception:
-            vista_es_destino = False
+        # B7.8: decisión centralizada copia individual — solo recargar si destino es vista actual
+        vista_es_destino = self._b78_copia_debe_recargar(carpeta_destino)
         self._copiar_nombre_origen = None
         self._copiar_video_id = None
         self._copiar_ruta_inconsistente = None
@@ -6299,26 +6336,20 @@ class VisorVideos(QMainWindow):
             hasattr(self.estado_escaneo, "setToolTip") and self.estado_escaneo.setToolTip(self.estado_escaneo.text())
             return
         inconsistencias = []
-        recarga_necesaria = False
         destino = getattr(self, "_lote_carpeta_destino", None)
-        # Simplificación B7.6 auditoría: preferir recarga paginada/background desde catálogo en lugar de manipulación manual frágil de tarjetas
-        if oper in ("mover", "eliminar") and exitosos:
-            recarga_necesaria = True
-        elif oper == "copiar" and exitosos and isinstance(destino, str) and destino.strip():
-            try:
-                from rutas import carpetas_iguales
-                if isinstance(self.carpeta_seleccionada, str) and carpetas_iguales(self.carpeta_seleccionada, destino):
-                    recarga_necesaria = True
-            except (TypeError, ValueError, AttributeError) as exc:
-                inconsistencias.append(f"verificación destino falló: {exc}")
-                recarga_necesaria = True
-            except Exception as exc:
-                inconsistencias.append(f"error inesperado verificando destino: {type(exc).__name__}: {exc}")
-                recarga_necesaria = True
+        # B7.8: decisión centralizada lote — evita recarga duplicada y respeta política segura
+        # usa helper _b78_lote_debe_recargar -> carpetas_iguales sin FS directo (rutas)
+        try:
+            recarga_necesaria = self._b78_lote_debe_recargar(oper, exitosos, destino)
+        except Exception as exc:
+            inconsistencias.append(f"verificación destino falló: {exc}")
+            recarga_necesaria = bool(exitosos)
         # Si hubo exitosos y fallo posterior de refresco UI, no revertir DB: recarga es recuperación segura sin Escanear carpeta y sin tocar FS
+        _b78_recarga_programada = False
         if recarga_necesaria:
             try:
                 self._programar_recarga_por_carpeta()
+                _b78_recarga_programada = True
             except (RuntimeError, AttributeError, ValueError) as exc:
                 inconsistencias.append(f"fallo recarga paginada: {exc}")
             except Exception as exc:
@@ -6368,22 +6399,27 @@ class VisorVideos(QMainWindow):
             hasattr(self.mensaje_carpeta, "setToolTip") and self.mensaje_carpeta.setToolTip(self.mensaje_carpeta.text())
             hasattr(self.estado_escaneo, "setToolTip") and self.estado_escaneo.setToolTip(self.estado_escaneo.text())
         # Reaplicar filtro/orden local sin reescaneo; no propaga FS. Errores visibles, no silencio.
+        # B7.8: evitar recarga duplicada si ya se programó por membresía/copia a vista
         try:
             self.filtrar(self.busqueda.text())
         except (AttributeError, TypeError, RuntimeError) as exc:
             self.mensaje_carpeta.setText(self.mensaje_carpeta.text() + f" — fallo filtrar: {exc}")
             self.estado_escaneo.setText(self.estado_escaneo.text() + f" — fallo filtrar: {exc}")
-            try:
-                self._programar_recarga_por_carpeta()
-            except Exception as exc2:
-                self.mensaje_carpeta.setText(self.mensaje_carpeta.text() + f" — fallo recarga tras filtrar: {type(exc2).__name__}: {exc2}")
+            if not _b78_recarga_programada:
+                try:
+                    self._programar_recarga_por_carpeta()
+                    _b78_recarga_programada = True
+                except Exception as exc2:
+                    self.mensaje_carpeta.setText(self.mensaje_carpeta.text() + f" — fallo recarga tras filtrar: {type(exc2).__name__}: {exc2}")
         except Exception as exc:
             self.mensaje_carpeta.setText(self.mensaje_carpeta.text() + f" — error inesperado filtrar: {type(exc).__name__}: {exc}")
             self.estado_escaneo.setText(self.estado_escaneo.text() + f" — error inesperado filtrar: {type(exc).__name__}: {exc}")
-            try:
-                self._programar_recarga_por_carpeta()
-            except Exception as exc2:
-                self.mensaje_carpeta.setText(self.mensaje_carpeta.text() + f" — fallo recarga: {type(exc2).__name__}: {exc2}")
+            if not _b78_recarga_programada:
+                try:
+                    self._programar_recarga_por_carpeta()
+                    _b78_recarga_programada = True
+                except Exception as exc2:
+                    self.mensaje_carpeta.setText(self.mensaje_carpeta.text() + f" — fallo recarga: {type(exc2).__name__}: {exc2}")
         try:
             self.actualizar_contador()
         except (AttributeError, RuntimeError, TypeError) as exc:
@@ -6607,9 +6643,9 @@ class VisorVideos(QMainWindow):
             except Exception as exc:
                 self.mensaje_carpeta.setText(f"Inconsistencia y fallo recarga: {exc} — DB preservada")
             return
-        # Recarga catálogo mediante mecanismos de lectura existentes, no Escanear carpeta
+        # B7.8: Recarga catálogo mediante política centralizada — si hay éxitos, recarga segura (orden/filtro/paginación)
         # FIX B7.7 post-rename: preservar selección por video_id (no por nombre) y no disparar Escanear/FFprobe
-        recarga_necesaria = bool(exitosos)
+        recarga_necesaria = self._b78_renombrado_masivo_debe_recargar(exitosos)
         # Preparar restauración por video_id: conservar exactamente los mismos video_id (incluye parcial: los que sigan en carpeta/vista)
         # Si el lote fue exitoso o parcial, restauraremos por video_id tras la recarga catalog SQLite
         ids_a_restaurar = None
