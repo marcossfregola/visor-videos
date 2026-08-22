@@ -1804,6 +1804,34 @@ class TareaLoteOperaciones(TareaBase):
         )
 
 
+class TareaListarSubcarpetasDestino(TareaBase):
+    """Lista subcarpetas inmediatas del destino (B7.10) en background.
+
+    Usa helper centralizado rutas.listar_subcarpetas sin duplicar lógica.
+    No toca SQLite/FFmpeg/shutil. Retorna dict {ok, valido, subcarpetas, error, destino}.
+    """
+
+    def __init__(self, carpeta, parent=None):
+        super().__init__(parent)
+        self._carpeta = carpeta
+
+    @property
+    def carpeta(self):
+        return self._carpeta
+
+    def _trabajo(self):
+        import rutas as rutas_mod
+        res = rutas_mod.listar_subcarpetas(self._carpeta)
+        # Validar contrato dict explícitamente; sin except genérico
+        if not isinstance(res, dict):
+            res = {"ok": False, "valido": False, "subcarpetas": [], "error": "helper contrato inválido: no dict", "destino": self._carpeta}
+            return res
+        # Copia superficial para añadir trazabilidad sin mutar original
+        res = dict(res)
+        res["destino"] = self._carpeta
+        return res
+
+
 class TareaRenombrarMasivo(TareaBase):
     """Renombrado masivo seguro B7.7 — plantilla cerrada, preview exacta, ciclos con temporales.
 

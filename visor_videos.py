@@ -80,7 +80,13 @@ from escanear_videos import (
     configurar_cantidad_previews,
     configurar_escaneo_recursivo,
 )
-from rutas import carpetas_iguales, ruta_carpeta_miniaturas, ruta_configuracion, ruta_video_existente
+from rutas import (
+    carpeta_padre,
+    carpetas_iguales,
+    ruta_carpeta_miniaturas,
+    ruta_configuracion,
+    ruta_video_existente,
+)
 from exploracion_temporal import (
     agregar_marcador_ordenado,
     preview_mas_cercana,
@@ -2700,26 +2706,49 @@ class VisorVideos(QMainWindow):
         self.boton_cancelar_export.clicked.connect(self._cancelar_export)
 
         # B7.9 panel Organización compacto (no reemplaza biblioteca)
+        # B7.10 navegación embebida del destino (sin FS directo en panel)
         self._modo_organizacion = False
         self._organizacion_destino = None
+        self._organizacion_destino_valido = False
+        self._organizacion_subcarpetas = []
+        self._organizacion_error = None
+        self._organizacion_cargando = False
+        self._organizacion_navegacion_version = 0
         self.panel_organizacion = PanelOrganizacion(self)
         self.panel_organizacion.setObjectName("panel_organizacion")
         self.panel_organizacion.setVisible(False)
         self.panel_organizacion.seleccionarDestinoSolicitado.connect(self._seleccionar_destino_organizacion)
         self.panel_organizacion.moverSolicitado.connect(self._iniciar_lote_mover_organizacion)
         self.panel_organizacion.copiarSolicitado.connect(self._iniciar_lote_copiar_organizacion)
+        self.panel_organizacion.entrarSubcarpetaSolicitada.connect(self._navegar_destino_a_subcarpeta)
+        self.panel_organizacion.subirSolicitado.connect(self._navegar_destino_subir)
 
         raiz = PanelPrincipal()
         layout = QVBoxLayout(raiz)
         layout.addLayout(fila_carpeta)
         layout.addLayout(barra)
-        layout.addWidget(self.panel_organizacion)
         layout.addWidget(self.barra_progreso)
         fila_export = QHBoxLayout()
         fila_export.addWidget(self.boton_cancelar_export)
         fila_export.addStretch()
         layout.addLayout(fila_export)
-        layout.addWidget(self.area)
+        # B7.11 doble panel estructural: QSplitter vertical secundario dentro de PanelPrincipal
+        # - panel Destino arriba, catálogo visual ORIGEN abajo, catálogo dominante, ajuste por handle
+        self.splitter_organizacion = QSplitter(Qt.Vertical)
+        self.splitter_organizacion.setObjectName("splitter_organizacion")
+        self.splitter_organizacion.setHandleWidth(6)
+        self.splitter_organizacion.setChildrenCollapsible(False)
+        # Catálogo con mínimo útil para que no colapse; destino con mínimo razonable
+        self.area.setMinimumHeight(140)
+        self.panel_organizacion.setMinimumHeight(96)
+        self.splitter_organizacion.addWidget(self.panel_organizacion)
+        self.splitter_organizacion.addWidget(self.area)
+        self.splitter_organizacion.setStretchFactor(0, 0)
+        self.splitter_organizacion.setStretchFactor(1, 1)
+        self.splitter_organizacion.setCollapsible(1, False)
+        # Tamaño inicial razonable: destino ~25-30%, catálogo 70-75%
+        self.splitter_organizacion.setSizes([150, 470])
+        layout.addWidget(self.splitter_organizacion, 1)
 
         panel_izquierdo = QWidget()
         panel_izquierdo.setMinimumWidth(80)
@@ -2987,6 +3016,12 @@ class VisorVideos(QMainWindow):
         # B7.7 UX final: preservación de contexto visual determinista (scroll/viewport)
         self._renombrar_masivo_scroll_previo = None
         self._renombrar_masivo_orden_previo = None
+
+        # B7.10 navegación destino: gestor background sin consulta periódica, sin FS directo en panel
+        self.gestor_navegacion_destino = GestorTareas(self)
+        self.gestor_navegacion_destino.tarea_resultado.connect(self._al_resultado_navegacion_destino)
+        self.gestor_navegacion_destino.tarea_error.connect(self._al_error_navegacion_destino)
+        self.gestor_navegacion_destino.tarea_finalizada.connect(self._al_navegacion_destino_finalizada)
 
         self._timer_previews = QTimer(self)
         self._timer_previews.setSingleShot(True)
@@ -3277,7 +3312,7 @@ class VisorVideos(QMainWindow):
 
         Si el filtro es Todos no hay recarga. Si el gestor principal está ocupado,
         deja pendiente el reordenamiento para ejecutarse en `_al_tarea_finalizada`.
-        No accede a SQLite ni hace polling.
+        No accede a SQLite ni hace consulta periódica.
         """
         if getattr(self, "_filtro_catalogo", "todos") == "todos":
             return
@@ -6171,9 +6206,10 @@ class VisorVideos(QMainWindow):
 
     def _al_cambiar_modo_organizacion(self, activo):
         # Preservar selección, carpeta activa, filtros, orden y scroll sin efecto colateral
-        # Panel está fuera del QScrollArea (hermano en QVBoxLayout de raiz), por lo que
-        # mostrar/ocultarlo solo reduce altura del viewport, no el maximum del contenido.
+        # B7.11: splitter vertical secundario dentro de PanelPrincipal (panel arriba, catálogo abajo).
+        # Mostrar/ocultar solo afecta distribución del splitter, no el maximum del contenido del catálogo.
         # Se preserva valor vertical exacto; se reprograma diferido por si layout difiere.
+        # B7.10: al entrar, cargar navegación embebida del destino (lazy background)
         scroll_previo = None
         barra_previa = None
         if hasattr(self, "area") and self.area is not None:
@@ -6185,11 +6221,40 @@ class VisorVideos(QMainWindow):
         if hasattr(self, "panel_organizacion") and self.panel_organizacion is not None:
             self.panel_organizacion.setVisible(self._modo_organizacion)
             self._actualizar_panel_organizacion()
+            if self._modo_organizacion:
+                # B7.11: asegurar proporción inicial razonable 25-30% destino / 70-75% catálogo
+                try:
+                    splitter = getattr(self, "splitter_organizacion", None)
+                    if splitter is not None:
+                        total = splitter.height()
+                        # Si el splitter aún no tiene altura (primer show), usar sizes iniciales ya definidos
+                        # Si tiene altura, forzar distribución ajustable inicial si estaba colapsado
+                        if total > 80:
+                            h_dest = max(110, min(260, int(total * 0.28)))
+                            h_cat = total - h_dest
+                            if h_cat < 140:
+                                h_cat = 140
+                                h_dest = total - h_cat
+                            splitter.setSizes([h_dest, h_cat])
+                        else:
+                            splitter.setSizes([150, 470])
+                except (RuntimeError, AttributeError, TypeError, ValueError) as exc:
+                    print(f"[B7.11] setSizes splitter error: {exc}")
+                # Cargar navegación si hay destino, sin tocar origen/catálogo
+                try:
+                    self._cargar_navegacion_destino()
+                except (RuntimeError, AttributeError, ValueError, OSError, TypeError) as exc:
+                    print(f"[B7.10] _al_cambiar_modo_organizacion carga navegación error: {exc}")
+                    if hasattr(self, "mensaje_carpeta") and self.mensaje_carpeta is not None:
+                        try:
+                            self.mensaje_carpeta.setText(f"Aviso: navegación destino no disponible ({exc})")
+                        except (RuntimeError, AttributeError, TypeError) as exc2:
+                            print(f"[B7.10] mensaje_carpeta setText error: {exc2}")
         if scroll_previo is not None and barra_previa is not None:
             barra_previa.setValue(scroll_previo)
 
             def _restaurar():
-                # Restauración diferida para cuando layout recalcula geometría.
+                # Restauración diferida para cuando layout recalcula geometría (splitter).
                 # Captura solo RuntimeError por destrucción Qt y registra diagnóstico visible.
                 b2 = None
                 if hasattr(self, "area") and self.area is not None:
@@ -6199,7 +6264,7 @@ class VisorVideos(QMainWindow):
                 try:
                     b2.setValue(scroll_previo)
                 except RuntimeError as exc:
-                    print(f"[B7.9] _restaurar scroll RuntimeError: {exc}")
+                    print(f"[B7.10] _restaurar scroll RuntimeError: {exc}")
                     if hasattr(self, "mensaje_carpeta") and self.mensaje_carpeta is not None:
                         self.mensaje_carpeta.setText(f"Aviso: no se pudo restaurar scroll ({exc})")
 
@@ -6219,12 +6284,335 @@ class VisorVideos(QMainWindow):
         gestor = getattr(self, "gestor", None)
         if gestor is not None and bool(getattr(gestor, "activo", False)):
             ocupado = True
-        self.panel_organizacion.actualizar(destino, tiene, ocupado)
+        destino_valido = bool(getattr(self, "_organizacion_destino_valido", False))
+        # Si hay error visible, forzar invalido
+        error = getattr(self, "_organizacion_error", None)
+        if error:
+            destino_valido = False
+        subcarpetas = getattr(self, "_organizacion_subcarpetas", []) or []
+        cargando = bool(getattr(self, "_organizacion_cargando", False))
+        puede_subir = False
+        if destino and not cargando and not error:
+            # Inferir valido si no hay flag explícito pero destino existe (compat B7.9)
+            # Si destino_valido es False pero no hay error/cargando, verificar existencia ligera
+            if not destino_valido:
+                try:
+                    import os as _os_chk
+                    if _os_chk.path.isdir(destino):
+                        destino_valido = True
+                except (OSError, RuntimeError, ValueError, AttributeError, TypeError):
+                    destino_valido = False
+            if destino_valido:
+                try:
+                    padre = carpeta_padre(destino)
+                    puede_subir = padre is not None
+                except (OSError, ValueError, AttributeError, RuntimeError, TypeError):
+                    puede_subir = False
+        # Si no hay destino, destino_valido debe ser False; panel inferirá
+        if destino is None:
+            destino_valido = False
+        try:
+            self.panel_organizacion.actualizar(destino, tiene, ocupado, destino_valido=destino_valido, subcarpetas=subcarpetas, error=error, cargando=cargando, puede_subir=puede_subir)
+        except TypeError:
+            # Compat fallback B7.9 signature 3 args si panel antiguo
+            self.panel_organizacion.actualizar(destino, tiene, ocupado)
+
+    def _cargar_navegacion_destino(self):
+        """Inicia carga background de subcarpetas del destino (B7.10).
+
+        No toca carpeta origen ni dispara recarga catálogo. Usa helper
+        rutas.listar_subcarpetas vía TareaListarSubcarpetasDestino.
+        Si destino es None, limpia estado y actualiza panel sin I/O.
+        Evita consulta periódica; solo carga bajo demanda (entrar, subir, seleccionar).
+        """
+        destino = getattr(self, "_organizacion_destino", None)
+        if not isinstance(destino, str) or not destino.strip():
+            self._organizacion_destino_valido = False
+            self._organizacion_subcarpetas = []
+            self._organizacion_error = None
+            self._organizacion_cargando = False
+            self._actualizar_panel_organizacion()
+            return
+        # Si hay tarea en curso, no duplicar; esperar
+        gestor = getattr(self, "gestor_navegacion_destino", None)
+        if gestor is not None and gestor.activo:
+            return
+        self._organizacion_cargando = True
+        self._organizacion_error = None
+        self._organizacion_navegacion_version = int(getattr(self, "_organizacion_navegacion_version", 0)) + 1
+        destino_norm = destino.strip()
+        self._actualizar_panel_organizacion()
+        try:
+            from tareas_videos import TareaListarSubcarpetasDestino
+            tarea = TareaListarSubcarpetasDestino(destino_norm)
+        except (ImportError, AttributeError, ValueError, TypeError, RuntimeError, OSError) as exc:
+            self._organizacion_cargando = False
+            self._organizacion_destino_valido = False
+            self._organizacion_error = f"no se pudo iniciar navegación: {exc}"
+            self._organizacion_subcarpetas = []
+            self._actualizar_panel_organizacion()
+            return
+        # Bloqueo competitivo: si lote activo, no iniciar navegación (reintentar luego)
+        if self._lote_esta_ocupado():
+            self._organizacion_cargando = False
+            # No mostrar error; simplemente no navegar mientras lote activo
+            self._actualizar_panel_organizacion()
+            return
+        if not gestor.iniciar(tarea):
+            self._organizacion_cargando = False
+            self._organizacion_error = f"navegación ocupada: {getattr(gestor, 'ultimo_rechazo', '')}"
+            self._organizacion_destino_valido = False
+            self._actualizar_panel_organizacion()
+
+    def _al_resultado_navegacion_destino(self, resultado):
+        """Callback background: actualiza estado navegación sin tocar origen/catálogo. Preserva viewport."""
+        # Preservar viewport catálogo: navegación destino jamás debe causar salto de scroll
+        scroll_previo = None
+        barra_previa = None
+        try:
+            if hasattr(self, "area") and self.area is not None:
+                b = self.area.verticalScrollBar()
+                if b is not None:
+                    scroll_previo = int(b.value())
+                    barra_previa = b
+        except (RuntimeError, AttributeError, TypeError, ValueError) as exc:
+            print(f"[B7.11] _al_resultado_navegacion_destino scroll save error: {exc}")
+        if not isinstance(resultado, dict):
+            self._organizacion_cargando = False
+            self._organizacion_destino_valido = False
+            self._organizacion_error = "resultado navegación no válido"
+            self._organizacion_subcarpetas = []
+            self._actualizar_panel_organizacion()
+            if scroll_previo is not None and barra_previa is not None:
+                try:
+                    barra_previa.setValue(scroll_previo)
+                except (RuntimeError, AttributeError, TypeError) as exc:
+                    print(f"[B7.11] restore scroll error: {exc}")
+            return
+        destino_res = resultado.get("destino") or resultado.get("carpeta") or getattr(self, "_organizacion_destino", None)
+        # Ignorar resultados obsoletos si destino cambió mientras cargaba
+        actual = getattr(self, "_organizacion_destino", None)
+        if isinstance(destino_res, str) and isinstance(actual, str):
+            try:
+                if os.path.normcase(os.path.normpath(destino_res)) != os.path.normcase(os.path.normpath(actual)):
+                    # obsoleto, pero limpiar cargando si es el último?
+                    self._organizacion_cargando = False
+                    self._actualizar_panel_organizacion()
+                    return
+            except (OSError, ValueError, AttributeError, TypeError, RuntimeError) as exc:
+                print(f"[B7.10] _al_resultado_navegacion_destino comparación obsoleta error: {exc}")
+                # Continuar procesamiento normal; no ocultar error silencioso
+        ok = bool(resultado.get("ok"))
+        valido = bool(resultado.get("valido"))
+        subcarpetas = resultado.get("subcarpetas") if isinstance(resultado.get("subcarpetas"), list) else []
+        error = resultado.get("error")
+        self._organizacion_cargando = False
+        self._organizacion_destino_valido = bool(ok and valido)
+        if not self._organizacion_destino_valido:
+            self._organizacion_subcarpetas = []
+            self._organizacion_error = error or "destino no disponible"
+        else:
+            self._organizacion_subcarpetas = list(subcarpetas)
+            self._organizacion_error = None
+        self._actualizar_panel_organizacion()
+        if scroll_previo is not None and barra_previa is not None:
+            try:
+                barra_previa.setValue(scroll_previo)
+            except (RuntimeError, AttributeError, TypeError) as exc:
+                print(f"[B7.11] restore scroll error post-result: {exc}")
+
+    def _al_error_navegacion_destino(self, mensaje):
+        scroll_previo = None
+        barra_previa = None
+        try:
+            if hasattr(self, "area") and self.area is not None:
+                b = self.area.verticalScrollBar()
+                if b is not None:
+                    scroll_previo = int(b.value())
+                    barra_previa = b
+        except (RuntimeError, AttributeError, TypeError, ValueError) as exc:
+            print(f"[B7.11] _al_error_navegacion_destino scroll save error: {exc}")
+        self._organizacion_cargando = False
+        self._organizacion_destino_valido = False
+        self._organizacion_subcarpetas = []
+        self._organizacion_error = mensaje or "error al listar destino"
+        self._actualizar_panel_organizacion()
+        if scroll_previo is not None and barra_previa is not None:
+            try:
+                barra_previa.setValue(scroll_previo)
+            except (RuntimeError, AttributeError, TypeError) as exc:
+                print(f"[B7.11] restore scroll error: {exc}")
+
+    def _al_navegacion_destino_finalizada(self):
+        # Si quedó cargando sin resultado (cancel), limpiar flag
+        if getattr(self, "_organizacion_cargando", False):
+            # Si gestor ya no activo y no se recibió resultado, dejar como no cargando pero conservar destino_valido previo?
+            # Forzar actualización para quitar spinner si no hay resultado
+            self._organizacion_cargando = False
+            self._actualizar_panel_organizacion()
+
+    def _navegar_destino_a_subcarpeta(self, nombre):
+        """Navega destino a subcarpeta hija (B7.10). No modifica origen. Preserva viewport."""
+        scroll_previo = None
+        barra_previa = None
+        try:
+            if hasattr(self, "area") and self.area is not None:
+                b = self.area.verticalScrollBar()
+                if b is not None:
+                    scroll_previo = int(b.value())
+                    barra_previa = b
+        except (RuntimeError, AttributeError, TypeError, ValueError) as exc:
+            print(f"[B7.11] _navegar_destino_a_subcarpeta scroll save error: {exc}")
+        if self._lote_esta_ocupado():
+            self.mensaje_carpeta.setText("Hay una operación en curso")
+            if scroll_previo is not None and barra_previa is not None:
+                try: barra_previa.setValue(scroll_previo)
+                except (RuntimeError, AttributeError, TypeError) as exc: print(f"[B7.11] restore scroll error: {exc}")
+            return
+        if getattr(self, "gestor", None) is not None and self.gestor.activo:
+            self.mensaje_carpeta.setText("Hay una operación en curso")
+            if scroll_previo is not None and barra_previa is not None:
+                try: barra_previa.setValue(scroll_previo)
+                except (RuntimeError, AttributeError, TypeError) as exc: print(f"[B7.11] restore scroll error: {exc}")
+            return
+        destino = getattr(self, "_organizacion_destino", None)
+        if not isinstance(destino, str) or not destino.strip():
+            self.mensaje_carpeta.setText("Seleccione destino primero")
+            if scroll_previo is not None and barra_previa is not None:
+                try: barra_previa.setValue(scroll_previo)
+                except (RuntimeError, AttributeError, TypeError) as exc: print(f"[B7.11] restore scroll error: {exc}")
+            return
+        if not isinstance(nombre, str) or not nombre.strip():
+            if scroll_previo is not None and barra_previa is not None:
+                try: barra_previa.setValue(scroll_previo)
+                except (RuntimeError, AttributeError, TypeError) as exc: print(f"[B7.11] restore scroll error: {exc}")
+            return
+        # Validar queDestino es valido antes de navegar (evitar navegar desde error)
+        if not getattr(self, "_organizacion_destino_valido", False):
+            self.mensaje_carpeta.setText("Destino no disponible")
+            if scroll_previo is not None and barra_previa is not None:
+                try: barra_previa.setValue(scroll_previo)
+                except (RuntimeError, AttributeError, TypeError) as exc: print(f"[B7.11] restore scroll error: {exc}")
+            return
+        # Construir ruta hija via join (no listar aún)
+        try:
+            nueva = os.path.join(destino.strip(), nombre.strip())
+            # Normalizar
+            nueva = os.path.normpath(nueva)
+            # Seguridad: debe ser hija directa (no traversal)
+            if os.path.normcase(os.path.normpath(nueva)) == os.path.normcase(os.path.normpath(destino.strip())):
+                if scroll_previo is not None and barra_previa is not None:
+                    try: barra_previa.setValue(scroll_previo)
+                    except (RuntimeError, AttributeError, TypeError) as exc: print(f"[B7.11] restore scroll error: {exc}")
+                return
+        except (OSError, ValueError, AttributeError, TypeError, RuntimeError) as exc:
+            self.mensaje_carpeta.setText(f"No se pudo navegar: {exc}")
+            if scroll_previo is not None and barra_previa is not None:
+                try: barra_previa.setValue(scroll_previo)
+                except (RuntimeError, AttributeError, TypeError) as exc2: print(f"[B7.11] restore scroll error: {exc2}")
+            return
+        # Actualizar destino y cargar background (sin recarga catálogo)
+        self._organizacion_destino = nueva
+        # No tocar carpeta_seleccionada, filtros, orden, selección
+        self._cargar_navegacion_destino()
+        if scroll_previo is not None and barra_previa is not None:
+            try:
+                barra_previa.setValue(scroll_previo)
+                # diferido
+                def _r():
+                    try: barra_previa.setValue(scroll_previo)
+                    except RuntimeError as exc: print(f"[B7.11] diferido restore scroll error: {exc}")
+                QTimer.singleShot(0, _r)
+            except (RuntimeError, AttributeError, TypeError) as exc:
+                print(f"[B7.11] restore scroll error: {exc}")
+
+    def _navegar_destino_subir(self):
+        """Sube destino al padre (B7.10). No modifica origen. Preserva viewport."""
+        scroll_previo = None
+        barra_previa = None
+        try:
+            if hasattr(self, "area") and self.area is not None:
+                b = self.area.verticalScrollBar()
+                if b is not None:
+                    scroll_previo = int(b.value())
+                    barra_previa = b
+        except (RuntimeError, AttributeError, TypeError, ValueError) as exc:
+            print(f"[B7.11] _navegar_destino_subir scroll save error: {exc}")
+        if self._lote_esta_ocupado():
+            self.mensaje_carpeta.setText("Hay una operación en curso")
+            if scroll_previo is not None and barra_previa is not None:
+                try: barra_previa.setValue(scroll_previo)
+                except (RuntimeError, AttributeError, TypeError) as exc: print(f"[B7.11] restore scroll error: {exc}")
+            return
+        if getattr(self, "gestor", None) is not None and self.gestor.activo:
+            self.mensaje_carpeta.setText("Hay una operación en curso")
+            if scroll_previo is not None and barra_previa is not None:
+                try: barra_previa.setValue(scroll_previo)
+                except (RuntimeError, AttributeError, TypeError) as exc: print(f"[B7.11] restore scroll error: {exc}")
+            return
+        destino = getattr(self, "_organizacion_destino", None)
+        if not isinstance(destino, str) or not destino.strip():
+            self.mensaje_carpeta.setText("Seleccione destino primero")
+            if scroll_previo is not None and barra_previa is not None:
+                try: barra_previa.setValue(scroll_previo)
+                except (RuntimeError, AttributeError, TypeError) as exc: print(f"[B7.11] restore scroll error: {exc}")
+            return
+        if not getattr(self, "_organizacion_destino_valido", False):
+            self.mensaje_carpeta.setText("Destino no disponible")
+            if scroll_previo is not None and barra_previa is not None:
+                try: barra_previa.setValue(scroll_previo)
+                except (RuntimeError, AttributeError, TypeError) as exc: print(f"[B7.11] restore scroll error: {exc}")
+            return
+        try:
+            padre = carpeta_padre(destino.strip())
+        except (OSError, ValueError, AttributeError, TypeError, RuntimeError) as exc:
+            self.mensaje_carpeta.setText(f"No se pudo subir: {exc}")
+            if scroll_previo is not None and barra_previa is not None:
+                try: barra_previa.setValue(scroll_previo)
+                except (RuntimeError, AttributeError, TypeError) as exc2: print(f"[B7.11] restore scroll error: {exc2}")
+            return
+        if not padre:
+            self.mensaje_carpeta.setText("Ya está en la raíz")
+            if scroll_previo is not None and barra_previa is not None:
+                try: barra_previa.setValue(scroll_previo)
+                except (RuntimeError, AttributeError, TypeError) as exc: print(f"[B7.11] restore scroll error: {exc}")
+            return
+        self._organizacion_destino = padre
+        self._cargar_navegacion_destino()
+        if scroll_previo is not None and barra_previa is not None:
+            try:
+                barra_previa.setValue(scroll_previo)
+                def _r():
+                    try: barra_previa.setValue(scroll_previo)
+                    except RuntimeError as exc: print(f"[B7.11] diferido restore scroll error: {exc}")
+                QTimer.singleShot(0, _r)
+            except (RuntimeError, AttributeError, TypeError) as exc:
+                print(f"[B7.11] restore scroll error: {exc}")
 
     def _seleccionar_destino_organizacion(self):
         # Reutiliza QFileDialog existente; NO cambia carpeta origen ni recarga catálogo
+        # B7.10 sincroniza navegador embebido tras elegir. Preserva viewport B7.11.
+        scroll_previo = None
+        barra_previa = None
+        try:
+            if hasattr(self, "area") and self.area is not None:
+                b = self.area.verticalScrollBar()
+                if b is not None:
+                    scroll_previo = int(b.value())
+                    barra_previa = b
+        except (RuntimeError, AttributeError, TypeError, ValueError) as exc:
+            print(f"[B7.11] _seleccionar_destino_organizacion scroll save error: {exc}")
+        if self._lote_esta_ocupado():
+            self.mensaje_carpeta.setText("Hay una operación en curso")
+            if scroll_previo is not None and barra_previa is not None:
+                try: barra_previa.setValue(scroll_previo)
+                except (RuntimeError, AttributeError, TypeError) as exc: print(f"[B7.11] restore scroll error: {exc}")
+            return
         carpeta = QFileDialog.getExistingDirectory(self, "Seleccionar destino…", "")
         if not carpeta:
+            if scroll_previo is not None and barra_previa is not None:
+                try: barra_previa.setValue(scroll_previo)
+                except (RuntimeError, AttributeError, TypeError) as exc: print(f"[B7.11] restore scroll error: {exc}")
             return
         if isinstance(carpeta, str):
             carpeta_str = carpeta.strip()
@@ -6233,13 +6621,44 @@ class VisorVideos(QMainWindow):
         if isinstance(carpeta_str, str) and carpeta_str:
             self._organizacion_destino = carpeta_str
         else:
+            if scroll_previo is not None and barra_previa is not None:
+                try: barra_previa.setValue(scroll_previo)
+                except (RuntimeError, AttributeError, TypeError) as exc: print(f"[B7.11] restore scroll error: {exc}")
             return
+        # Sincronizar navegador embebido: cargar subcarpetas background
+        self._cargar_navegacion_destino()
         self._actualizar_panel_organizacion()
+        if scroll_previo is not None and barra_previa is not None:
+            try:
+                barra_previa.setValue(scroll_previo)
+                def _r():
+                    try: barra_previa.setValue(scroll_previo)
+                    except RuntimeError as exc: print(f"[B7.11] diferido restore scroll error: {exc}")
+                QTimer.singleShot(0, _r)
+            except (RuntimeError, AttributeError, TypeError) as exc:
+                print(f"[B7.11] restore scroll error: {exc}")
 
     def _ejecutar_lote_organizacion(self, operacion):
         dest = getattr(self, "_organizacion_destino", None)
         if not isinstance(dest, str) or not dest.strip():
             self.mensaje_carpeta.setText("Seleccione destino primero")
+            return
+        # B7.10: destino debe ser válido y sin error; compat B7.9: inferir valido si isdir y no hay error/cargando
+        valido = bool(getattr(self, "_organizacion_destino_valido", False))
+        error = getattr(self, "_organizacion_error", None)
+        cargando = bool(getattr(self, "_organizacion_cargando", False))
+        if not valido and not error and not cargando:
+            try:
+                import os as _os_chk2
+                if _os_chk2.path.isdir(dest.strip()):
+                    valido = True
+            except (OSError, RuntimeError, ValueError, AttributeError, TypeError):
+                valido = False
+        if not valido or error:
+            self.mensaje_carpeta.setText("Destino no disponible")
+            return
+        if cargando:
+            self.mensaje_carpeta.setText("Destino cargando, intente nuevamente")
             return
         if self._lote_esta_ocupado():
             self.mensaje_carpeta.setText("Hay una operación en curso")

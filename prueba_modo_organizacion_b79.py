@@ -465,6 +465,7 @@ def test_09_widget_sin_acceso_directo():
 
 def test_10_panel_compacto_y_no_reemplaza_biblioteca():
     from PySide6.QtWidgets import QApplication
+    from PySide6.QtCore import Qt
     app=QApplication.instance()
     if app is None:
         app=QApplication(sys.argv)
@@ -477,13 +478,34 @@ def test_10_panel_compacto_y_no_reemplaza_biblioteca():
         # panel debe estar en layout principal, no reemplazar area
         verifica(v.area.isVisible(),"area catalogo sigue visible")
         verifica(v.contenedor.isVisible(),"contenedor catalogo sigue visible")
-        # panel compacto: height limitado
+        # panel compacto pero exploratorio B7.10: zona vertical destino (4-5 filas) sin dominar catalogo
+        # B7.11: splitter vertical secundario, sin limite rígido, catalogo dominante
         h=v.panel_organizacion.sizeHint().height()
-        verifica(h < 100,f"panel compacto height {h} < 100")
+        print(f"EVIDENCIA panel height hint={h}")
+        if hasattr(v, "splitter_organizacion"):
+            verifica(h < 350,f"B7.11 panel height hint {h} <350 (splitter, secundario)")
+            lista=v.panel_organizacion.lista_subcarpetas
+            verifica(lista.minimumHeight() >= 60, f"B7.11 lista minHeight >=60 min={lista.minimumHeight()}")
+            verifica(lista.maximumHeight() > 200 or lista.maximumHeight() == 16777215, f"B7.11 lista sin limite rigido max={lista.maximumHeight()}")
+            verifica(v.splitter_organizacion.objectName() == "splitter_organizacion","splitter objectName correcto B7.11")
+            verifica(v.splitter_organizacion.count() == 2 and v.splitter_organizacion.widget(0) is v.panel_organizacion and v.splitter_organizacion.widget(1) is v.area,"splitter contiene exactamente panel+area B7.11")
+        else:
+            verifica(h < 230,f"panel destino exploratorio height {h} < 230 (secundario, catalogo domina)")
+            lista=v.panel_organizacion.lista_subcarpetas
+            verifica(lista.minimumHeight() >= 60 and lista.maximumHeight() >= 80, f"lista altura util multi-fila min={lista.minimumHeight()} max={lista.maximumHeight()}")
+            verifica(lista.maximumHeight() <= 120, f"lista no domina pantalla max={lista.maximumHeight()} <=120")
+        lista=v.panel_organizacion.lista_subcarpetas
+        verifica(lista.maximumHeight() > 38, "lista no colapsa a una sola fila (maxHeight > 38)")
+        verifica(lista.verticalScrollBarPolicy() == Qt.ScrollBarAsNeeded, f"scroll vertical AsNeeded ({lista.verticalScrollBarPolicy()} == {Qt.ScrollBarAsNeeded})")
+        verifica(hasattr(v.panel_organizacion, "etiqueta_header_destino") and "Destino" in v.panel_organizacion.etiqueta_header_destino.text(), "header Destino presente")
         # al entrar modo, area sigue visible
         v.boton_modo_organizacion.setChecked(True)
         app.processEvents()
         verifica(v.area.isVisible(),"area sigue visible en modo organizacion")
+        if hasattr(v, "splitter_organizacion"):
+            verifica(v.splitter_organizacion.isVisible() or v.area.isVisible(),"B7.11 splitter visible y catalogo dominante")
+        else:
+            verifica(v.panel_organizacion.maximumHeight() < 200 or "QSplitter" not in inspect.getsource(visor_videos.VisorVideos.__init__), "panel secundario no QSplitter doble catalogo")
         v.close()
         try: v.gestor.cerrar()
         except: pass
