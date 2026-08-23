@@ -11,9 +11,10 @@
 - GitHub Release `v7.0-beta` prerelease publicada sin instalador público Beta 7.
 - Repositorio **PUBLIC**, default branch `main`.
 - Validación del instalador Beta 7: **contrato estático 8/8 APROBADO** (`python prueba_instalador.py` verifica `instalador.iss`/`rutas.py`); **build y artefacto Beta 7 APROBADOS** — portable `dist\VisorVideos\VisorVideos.exe` (inicia, no crash, cierre normal), DB seed `dist\VisorVideos\biblioteca.db` 61440 bytes `PRAGMA integrity_check=ok` vacía (`videos/marcadores/segmentos/derivados=0`, SHA256 `890CB0218DEE8CEBAE7A6DE88EC8E0F507CB4DD067009C926722D06E3B5EE9B3`), Setup `Distribucion/Beta7/VisorVideos_Beta7_Setup.exe` 33755374 bytes SHA256 `14A0D4D062AE44E3B4A9CD244869D866F1C9238952CF293D0A26CC25F084A471` (Inno Setup 6.7.3); **ciclo instalación/desinstalación/reinstalación NO EJECUTADO** por seguridad — preflight encontró instalación existente en `%LOCALAPPDATA%\Programs\VisorVideos` con `VisorVideos.exe`/`biblioteca.db`/`configuracion.json`/`unins000.exe` — detenido para no tocar datos del usuario. No es deuda bloqueante ni trabajo pendiente prioritario.
-- Beta 8 todavía no definida.
+- Planificación post-Beta 7 **completada**: consolidación de mejoras del propietario, inventario técnico interno, auditorías externas Grok y Claude, diseño técnico B8.0 aprobado; **Beta 8 definida y priorizada** (ver `ROADMAP.md`).
+- **Beta 8 definida pero todavía no implementada**; `T09` aún no resuelto. Próximo paso exacto: **B8.1 — Preparación de identidad**.
 
-Para el historial completo ver `HISTORIAL_PROYECTO.md` (119).
+Para el historial completo ver `HISTORIAL_PROYECTO.md` (121).
 
 ## Último baseline aprobado
 
@@ -31,10 +32,10 @@ Para el historial completo ver `HISTORIAL_PROYECTO.md` (119).
 
 ## Trabajo pendiente real
 
-- **Consolidación de mejoras pendientes** (deuda no bloqueante: crecimiento de miniaturas, reutilización por `mtime` sin hash, retención de pixmaps — ver `ARCHITECTURE.md`).
-- **Auditorías externas**.
-- **Definición y priorización de Beta 8** — alcance todavía no definido (queda pendiente de consolidación + auditorías externas).
-- Instalador: contrato estático 8/8 y build/artefacto Beta 7 aprobados; ciclo real instalación/desinstalación/reinstalación no ejecutado por seguridad y no bloquea el desarrollo — solo se retomará por pedido explícito del propietario.
+- **B8.1 — Preparación de identidad** — próximo paso inmediato (agregar `ruta_normalizada`, helper central, `UNIQUE(ruta_normalizada)`, `guardar_videos` devuelve `video_id`, reordenar pipeline).
+- **Beta 8 definida y priorizada** (B8.1–B8.4), pendiente de implementación; `T09` núcleo técnico de Beta 8 aún no resuelto.
+- **Consolidación de mejoras pendientes** y **auditorías externas** ya realizadas como insumo para Beta 8–11 (Grok/Claude).
+- Instalador: contrato estático 8/8 y build/artefacto Beta 7 aprobados; ciclo real no ejecutado por seguridad y no bloquea — solo por pedido explícito del propietario.
 
 ## Deuda técnica conocida
 
@@ -57,6 +58,7 @@ Para el historial completo ver `HISTORIAL_PROYECTO.md` (119).
 
 ## Próximos focos
 
-1. Consolidación de mejoras pendientes.
-2. Auditorías externas.
-3. Definición y priorización de Beta 8.
+1. **B8.1 — Preparación de identidad** — próximo paso inmediato.
+2. **B8.2 — Cache por video_id**.
+3. **B8.3 — Cutover de identidad** (habilita homónimos).
+4. Posterior: B8.4 regresión/cierre, luego Beta 9–11 según `ROADMAP.md`.

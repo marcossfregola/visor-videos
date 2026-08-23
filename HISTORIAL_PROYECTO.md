@@ -5,6 +5,27 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 121. Planificación post-Beta 7 — roadmap Beta 8–11 y deuda transversal
+
+- **Fecha:** 2026-08-23
+- **Tipo:** planificación documental post-Beta 7 (sin implementación de código).
+- **Consolidación de mejoras del propietario:** P01–P24 revisadas y consolidadas como insumo para Beta 9–11.
+- **Inventario técnico interno:** deuda técnica vigente auditada en `STATUS.md`/`ARCHITECTURE.md` (T01 crecimiento cache/miniaturas, T02 reutilización mtime sin hash, T03 prefijo `startswith`, T04 retención pixmaps, T05 carpetas escaneadas solo memoria, T06 duplicación tests, T07 cancelación escaneo, T08 filtrado árbol 2.10, T09 identidad global por nombre, T11 tests no aislados, T12 fallo transitorio, T15 coexistencia FFmpeg, **T16 reutilización de previews normales obsoletas basada solo en existencia / falta de validación de vigencia**).
+- **Auditorías externas:** Grok y Claude — dos auditorías independientes sobre deuda, bugs y arquitectura; hallazgos convergentes en identidad `UNIQUE(nombre)` y fragilidad caché por nombre.
+- **Identificación/priorización T09:** `videos.nombre UNIQUE` impide coexistencia `C:\A\video.mp4` + `D:\B\video.mp4` (segundo sobrescribe primero, `listar_videos` 1 fila); `ruta_miniatura` por nombre colisiona `video_01.jpg`.
+- **Hallazgo adicional de colisión de cache por nombre:** confirmada vía `tempfile` + `escanear_videos` y `exploracion_cache` por `video_id` no afectada; miniaturas/previews normales sí colisionan y requieren migración a `video_id`.
+- **Diseño B8.0:** `video_id` identidad lógica estable, `nombre` no único, `ruta_normalizada` (`abspath+normpath+normcase+strip`) clave física `UNIQUE(ruta_normalizada)`, cache normal por `video_id`, fingerprint/hash fuera de alcance inmediato para T09, `B8.1` preparación con `ruta_normalizada` + `UNIQUE(ruta_normalizada)` dual-write, `B8.2` cache por `video_id` con copia legacy no destructiva, `B8.3` cutover eliminando `UNIQUE(nombre)` habilitando homónimos, `B8.4` regresión.
+- **Aprobación del plan Beta 8–11:**
+  - **Beta 8 — Identidad e integridad del catálogo** (B8.1 preparación, B8.2 cache, B8.3 cutover, B8.4 cierre; movimientos/renombres externos quedan deuda futura)
+  - **Beta 9 — Exploración visual avanzada** (P01–P09, P18, P23, requisito T04 RAM)
+  - **Beta 10 — Vistas, navegación y organización personal** (P10, P11, P22, P12, P13, P14, P24, T08, T07, T05)
+  - **Beta 11 — Relaciones y segmentos multivideo** (P15, P16, P17, P19, P20, P21 con compatibilidad codec/resolución/FPS)
+- **Deuda transversal mantenida:** T01, T02, T06, T11, T12, T15 (T04 a Beta 9, T03/T16 a Beta 8, T05/T07/T08 a Beta 10, T09 núcleo Beta 8).
+- **BACKLOG reconciliado:** elementos promovidos a ROADMAP marcados como promovidos (`Tarjetas expandibles`→P01, `Reproducción desde preview`→P23, `Hover`→P07/P08, `Unión múltiples videos`→P21, `Favoritos/etiquetas`→P12–P14) para evitar duplicación.
+- **Próximo paso:** **B8.1 — Preparación de identidad** (agregar `ruta_normalizada`, helper central, poblarla, `UNIQUE(ruta_normalizada)`, `guardar_videos` devuelve `video_id`, reordenar pipeline).
+
+---
+
 ## 120. Decisión definitiva de alcance — uso exclusivamente personal
 
 - **Fecha:** 2026-08-23
