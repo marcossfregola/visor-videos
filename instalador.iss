@@ -6,14 +6,14 @@
 ; al compilador o editar los #define por defecto.
 ;
 ; Ejemplo:
-;   "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DAplicacionVersion=3.0 /DBetaEtiqueta=Beta3 instalador.iss
+;   "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DAplicacionVersion=7.0 /DBetaEtiqueta=Beta7 instalador.iss
 
 #ifndef AplicacionVersion
-  #define AplicacionVersion "3.0"
+  #define AplicacionVersion "7.0"
 #endif
 
 #ifndef BetaEtiqueta
-  #define BetaEtiqueta "Beta3"
+  #define BetaEtiqueta "Beta7"
 #endif
 
 [Setup]

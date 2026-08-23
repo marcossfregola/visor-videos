@@ -85,17 +85,19 @@ Verificación: `dist\VisorVideos\biblioteca.db` existe tras el script, `PRAGMA i
 
 ## 3. Generar el instalador (Inno Setup)
 
-Compilar el script oficial con la versión y la etiqueta correspondientes:
+Compilar el script oficial con la versión y la etiqueta correspondientes a **Beta 7**:
 
 ```
-"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DAplicacionVersion=3.0 /DBetaEtiqueta=Beta3 instalador.iss
+"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DAplicacionVersion=7.0 /DBetaEtiqueta=Beta7 instalador.iss
 ```
 
 - Entrada: `instalador.iss` (instalación por usuario en
   `%LOCALAPPDATA%\Programs\VisorVideos`, AppId independiente de Beta1/Beta2, desinstalación
   que **conserva los datos del usuario** desde B6.1, acceso directo, `biblioteca.db` vacía
   con `onlyifdoesntexist`, sin FFmpeg/FFprobe, sin `configuracion.json`, sin `miniaturas/`).
-- Resultado: `Distribucion\Beta3\VisorVideos_Beta3_Setup.exe`.
+- Resultado: `Distribucion\Beta7\VisorVideos_Beta7_Setup.exe`.
+
+> **Aclaración Beta 7:** actualizar la identidad (`AplicacionVersion 7.0` / `BetaEtiqueta Beta7`) y el procedimiento de empaquetado **no significa** que el instalador de **Beta 7** haya sido validado. La **validación real del instalador Beta 7** (instalación/desinstalación/reinstalación aislada preservando `biblioteca.db`/`configuracion.json`/`miniaturas`) queda **pendiente** hasta ejecutar específicamente `python prueba_instalador.py` sobre el artefacto Beta 7.
 
 ## 4. Verificación
 

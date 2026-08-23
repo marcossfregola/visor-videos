@@ -1,18 +1,21 @@
 # VISOR DE VIDEOS
 
-## Fase actual — Beta 6 (cerrada y publicada)
+## Fase actual — Beta 7 (cerrada localmente en B7.13)
 
-La **Beta 6 — "De marcar a conservar"** está **cerrada y publicada** sobre la rama `beta6` (commit `7d85e94bb8b617209a155e5b1086d1d38f4784f8`; **B6.1–B6.12 completas**; **identidad `Beta 6 - B6.12`**; **packaging reproducible y validación real del instalador aprobada**; **tag `v6.0-beta` anotado publicado sobre `7d85e94`, `origin/beta6` alineado y GitHub Release Beta 6 prerelease sin binarios**)
+La **Beta 7 — "Organización y operaciones de archivos"** está **cerrada localmente** en **`B7.13`** sobre la rama `beta7` (HEAD `6ceb3902beda633ed11cdf586a11a5b53f661053`; **B7.0–B7.13 completas y auditadas funcionalmente**; **identidad `Beta 7 - B7.13`**). Beta 6 permanece **cerrada y publicada** sobre la rama `beta6` (commit `7d85e94bb8b617209a155e5b1086d1d38f4784f8`; **B6.1–B6.12 completas**; **identidad `Beta 6 - B6.12`**; **packaging reproducible y validación real del instalador aprobada**; **tag `v6.0-beta` anotado publicado sobre `7d85e94`, `origin/beta6` alineado y GitHub Release Beta 6 prerelease sin binarios**)
 (punto de partida: cierre de la Beta 5). Objetivo de producto: **cerrar el ciclo
 iniciado en Beta 5** — localizar las partes útiles de los videos, clasificarlas y
 convertirlas en material definitivo, conservando calidad, trazabilidad e
 integridad de datos.
 
-> **Estado de cierre publicado:** **Beta 6 cerrada y publicada; B6.1–B6.12 completas; identidad Beta 6 - B6.12; packaging reproducible y validación real del instalador aprobada; tag `v6.0-beta` anotado publicado sobre `7d85e94`, `origin/beta6` alineado y GitHub Release Beta 6 prerelease sin binarios.**
+> **Estado de cierre local:** **Beta 7 cerrada localmente en B7.13; B7.0–B7.13 completas; identidad Beta 7 - B7.13; sin commit final documental/identidad, sin tag `v7.0-beta`, sin push, sin publicación/prerelease en GitHub, sin validación específica del instalador Beta 7 (pendientes).**
+
+> **Estado publicado previo:** **Beta 6 cerrada y publicada; B6.1–B6.12 completas; identidad Beta 6 - B6.12; packaging reproducible y validación real del instalador aprobada; tag `v6.0-beta` anotado publicado sobre `7d85e94`, `origin/beta6` alineado y GitHub Release Beta 6 prerelease sin binarios.**
 
 Estado actual:
 
-- **Rama actual:** `beta7` (base exacta `7d85e94bb8b617209a155e5b1086d1d38f4784f8`; Beta 6 cerrada y publicada en `beta6`, ver arriba).
+- **Rama actual:** `beta7` (HEAD `6ceb3902beda633ed11cdf586a11a5b53f661053`; base exacta `7d85e94bb8b617209a155e5b1086d1d38f4784f8`; Beta 6 cerrada y publicada en `beta6`, ver arriba).
+- **Beta 7 — cerrada localmente en B7.13.** **Pendientes explícitos mientras no se ejecuten:** `commit` final documental/identidad; `tag v7.0-beta` (no crear todavía); `push` a `origin/beta7`; publicación/prerelease en GitHub; **validación específica del instalador Beta 7** (`python prueba_instalador.py` sobre `Distribucion\Beta7\VisorVideos_Beta7_Setup.exe`).
 - **B6.1 — Preservación de datos del usuario al desinstalar.** **Completada.**
 - **Infraestructura y metodología del Bridge** ya **incorporadas** y versionadas
   (commits `dd17c72` y `7a0feae`).

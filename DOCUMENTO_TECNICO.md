@@ -1,5 +1,7 @@
 # Documento técnico — Visor de Videos
 
+> **Identidad vigente:** `Beta 7 - B7.13` — Beta 7 "Organización y operaciones de archivos" **cerrada localmente** en B7.13 (B7.0–B7.13 completas y auditadas; rama `beta7` HEAD `6ceb3902beda633ed11cdf586a11a5b53f661053`). Capacidades incorporadas en B7: **organización de archivos** (renombrado individual `TareaRenombrarVideo`, masivo `TareaRenombrarMasivo` con motor `nombres.py`, mover/copiar/eliminar por lote `TareaLoteOperaciones`/`TareaMoverVideo`/`TareaCopiarVideo`/`TareaEliminarVideo`, crear carpetas `TareaCrearCarpeta`) y **modo Organización/Explorer** (panel Destino con `PanelOrganizacion`, navegación destino `rutas.listar_subcarpetas`/`TareaListarSubcarpetasDestino`, doble panel `QSplitter` vertical, objetivo estable raíz/subcarpeta `resolver_destino_drop`, drag & drop interno `QDrag` `Qt.MoveAction` + MIME `application/x-visor-videos-ids-b713a` con prevalidación atómica fuera de UI, actualización catálogo vía recarga paginada B7.8 sin rescan global, preservación de filtros/orden/selección/viewport).
+
 ---
 
 ## 1. Árbol de directorios
@@ -51,8 +53,8 @@ prueba/
 ├── prueba_escaneo_subcarpetas.py  Pruebas automatizadas del escaneo recursivo con subcarpetas (12)
 ├── prueba_persistencia_subcarpetas.py  Pruebas automatizadas de la persistencia de "Incluir subcarpetas" (10)
 ├── prueba_cantidad_previews.py  Pruebas automatizadas de la cantidad configurable de previews (11)
-├── prueba_version_build.py  Pruebas automatizadas de la identificación visible de versión/build (B6.12, 3): constantes, texto exacto `Beta 6 — B6.12` y etiqueta visible en la status bar
-├── configuracion.py       Servicio de persistencia de configuración (última carpeta seleccionada en `configuracion.json`) + constantes centrales de versión/build (`VERSION_PRODUCTO`, `BUILD_IDENTIFICADOR`, `TEXTO_VERSION_BUILD` → `Beta 6 — B6.12`)
+├── prueba_version_build.py  Pruebas automatizadas de la identificación visible de versión/build (Beta 7, 3): constantes, texto exacto `Beta 7 — B7.13` y etiqueta visible en la status bar
+├── configuracion.py       Servicio de persistencia de configuración (última carpeta seleccionada en `configuracion.json`) + constantes centrales de versión/build (`VERSION_PRODUCTO`, `BUILD_IDENTIFICADOR`, `TEXTO_VERSION_BUILD` → `Beta 7 — B7.13`)
 ├── prueba_persistencia_carpeta.py  Pruebas automatizadas de la persistencia de la última carpeta seleccionada (20)
 ├── arbol_navegacion.py  Árbol de navegación del panel izquierdo (nodo raíz "Este equipo", discos y carpetas con carga diferida, selección funcional, sincronización y persistencia/restauración de la carpeta activa); Etapa 2.5 del bloque de trabajo 2, desacoplado del catálogo. Bloque 4: modo de selección de carpetas con checkboxes + herramientas de selección rápida (Etapas 2-3)
 ├── prueba_arbol_navegacion.py  Pruebas automatizadas del árbol de navegación del panel izquierdo (Etapa 2.1)

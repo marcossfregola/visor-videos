@@ -5,6 +5,17 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 117. Cierre Beta 7 — B7.13 cerrada localmente (sin commit/tag/push)
+
+- **Fecha:** 2026-08-23
+- **Tipo:** cierre **local** de **Beta 7 — B7.13** (B7.0–B7.13 completas y auditadas funcionalmente; **identidad `Beta 7 - B7.13`** en `configuracion.py`/`prueba_version_build.py`; rama `beta7` HEAD `6ceb3902beda633ed11cdf586a11a5b53f661053`; sin commit final documental/identidad, sin tag `v7.0-beta`, sin push a `origin/beta7`, sin publicación/prerelease en GitHub, sin validación específica del instalador Beta 7 al momento del cierre local).
+- **Rama:** `beta7` (base exacta `7d85e94bb8b617209a155e5b1086d1d38f4784f8`; `beta6`/`origin/beta6`/`v6.0-beta` publicados).
+- **Alcance demostrado (resumen factual):** Beta 7 — "Organización y operaciones de archivos": modo Organización/Explorer (panel Destino + catálogo origen, splitter vertical secundario, preservación de scroll/viewport, estado navegación destino vía `rutas.listar_subcarpetas`/`TareaListarSubcarpetasDestino`), objetivo estable raíz/subcarpeta (`resolver_destino_drop`/`validar_destino_drop_completo`), drag interno origen `Tarjeta` (`QDrag` `Qt.MoveAction`, `QApplication.startDragDistance`, MIME `application/x-visor-videos-ids-b713a`) y receptor `PanelOrganizacion` (`setAcceptDrops`, `dragEnter/Move/Drop` con validación), conexión drop→movimiento real vía `TareaPrevalidarDrop` (IDs + rutas fuente + destino, fuera de UI, cero movimiento si uno falta) → `TareaLoteOperaciones` mover por lote, actualización catálogo vía recarga paginada B7.8 (filtros/orden/paginación preservados), operaciones individuales `TareaRenombrarVideo`/`TareaMoverVideo`/`TareaCopiarVideo`/`TareaEliminarVideo`/`TareaCrearCarpeta` y masivas `TareaRenombrarMasivo` (motor `nombres.py`) con suites y regresiones en verde hasta `6ceb3902`.
+- **Identidad:** `VERSION_PRODUCTO="Beta 7"`, `BUILD_IDENTIFICADOR="B7.13"`, `TEXTO_VERSION_BUILD="Beta 7 - B7.13"`; `instalador.iss` `AplicacionVersion="7.0"` / `BetaEtiqueta="Beta7"` con `onlyifdoesntexist uninsneveruninstall` y sin `[UninstallDelete]` destructivo.
+- **Pendientes explícitos:** `commit` final documental/identidad; `tag v7.0-beta` anotado (no crear todavía); `push`; publicación/prerelease en GitHub; **validación específica del instalador Beta 7** (`python prueba_instalador.py` sobre `Distribucion\Beta7\VisorVideos_Beta7_Setup.exe`).
+
+---
+
 ## 116. Apertura Beta 7 — B7.0 reconciliación documental y cambio de identidad (sin commit)
 
 - **Fecha:** 2026-08-21

@@ -2,7 +2,7 @@
 
 Cubre:
 - constantes centrales de versión y build en `configuracion`;
-- texto exacto `Beta 7 - B7.0`;
+- texto exacto `Beta 7 - B7.13`;
 - etiqueta visible en la ventana principal (status bar).
 
 No depende de Git en tiempo de ejecución: los valores quedan embebidos en la
@@ -23,7 +23,7 @@ from visor_videos import VisorVideos
 
 def test_01():
     ok_producto = configuracion.VERSION_PRODUCTO == "Beta 7"
-    ok_build = configuracion.BUILD_IDENTIFICADOR == "B7.0"
+    ok_build = configuracion.BUILD_IDENTIFICADOR == "B7.13"
     return ok_producto and ok_build, (
         f"version={configuracion.VERSION_PRODUCTO} "
         f"build={configuracion.BUILD_IDENTIFICADOR}"
@@ -31,7 +31,7 @@ def test_01():
 
 
 def test_02():
-    esperado = "Beta 7 - B7.0"
+    esperado = "Beta 7 - B7.13"
     ok = configuracion.TEXTO_VERSION_BUILD == esperado
     return ok, f"texto={configuracion.TEXTO_VERSION_BUILD!r} esperado={esperado!r}"
 
