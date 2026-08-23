@@ -159,17 +159,6 @@ from tareas_videos import (
 )
 
 
-def _b713b_debug_log(msg):
-    if os.getenv("VISOR_DEBUG_DRAG") == "1":
-        try:
-            print(f"[B7.13B-DEBUG] {msg}", flush=True)
-        except (AttributeError, TypeError, RuntimeError, ValueError, OSError):
-            try:
-                print(f"[B7.13B-DEBUG] {msg}")
-            except (AttributeError, TypeError, RuntimeError, ValueError, OSError):
-                _ = None
-
-
 ANCHO_TARJETA = 320
 ALTO_TARJETA = 180
 TAMANIO_PAGINA_INICIAL = 100
@@ -1678,50 +1667,6 @@ class Tarjeta(QFrame):
                 return None
 
     def mousePressEvent(self, event):
-        # B7.13B-DEBUG: instrumentación temporal opt-in (VISOR_DEBUG_DRAG=1)
-        try:
-            if os.getenv("VISOR_DEBUG_DRAG") == "1":
-                try:
-                    pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
-                except (AttributeError, TypeError, RuntimeError, ValueError, OSError):
-                    try:
-                        pos = event.pos()
-                    except (AttributeError, TypeError, RuntimeError, ValueError, OSError):
-                        pos = None
-                try:
-                    visor_dbg = self._visor_para_drag()
-                    modo_dbg = getattr(visor_dbg, "_modo_organizacion", None) if visor_dbg is not None else None
-                except (AttributeError, TypeError, RuntimeError, ValueError, OSError):
-                    modo_dbg = None
-                try:
-                    btn = event.button()
-                except (AttributeError, TypeError, RuntimeError, ValueError, OSError):
-                    btn = None
-                try:
-                    mods = event.modifiers()
-                except (AttributeError, TypeError, RuntimeError, ValueError, OSError):
-                    mods = None
-                try:
-                    vid_dbg = getattr(self, "_video_id", None)
-                except (AttributeError, TypeError, RuntimeError, ValueError, OSError):
-                    vid_dbg = None
-                try:
-                    sel_dbg = getattr(self, "_seleccionada", None)
-                except (AttributeError, TypeError, RuntimeError, ValueError, OSError):
-                    sel_dbg = None
-                try:
-                    nom_dbg = getattr(self, "_nombre", None)
-                except (AttributeError, TypeError, RuntimeError, ValueError, OSError):
-                    nom_dbg = None
-                try:
-                    cls_origen = self.__class__.__name__
-                except (AttributeError, TypeError, RuntimeError, ValueError, OSError):
-                    cls_origen = "?"
-                _b713b_debug_log(
-                    f"mousePress nombre={nom_dbg!r} widget={cls_origen} button={btn} modifiers={mods} pos={pos} modo_organizacion={modo_dbg} seleccionada={sel_dbg} video_id={vid_dbg}"
-                )
-        except (AttributeError, TypeError, RuntimeError, ValueError, OSError):
-            _ = None
         # B7.13B: almacenar posición inicio para umbral Qt; preservar semántica de selección
         if event.button() == Qt.LeftButton:
             try:
@@ -1773,39 +1718,9 @@ class Tarjeta(QFrame):
     def mouseMoveEvent(self, event):
         # B7.13B: iniciar arrastre solo en modo Organización, con umbral Qt, desde tarjeta real
         try:
-            # DEBUG: log base move
-            if os.getenv("VISOR_DEBUG_DRAG") == "1":
-                try:
-                    btns = event.buttons()
-                except (AttributeError, TypeError, RuntimeError, ValueError, OSError):
-                    btns = None
-                try:
-                    cur_dbg = event.position().toPoint() if hasattr(event, "position") else event.pos()
-                except (AttributeError, TypeError, RuntimeError, ValueError, OSError):
-                    try:
-                        cur_dbg = event.pos()
-                    except (AttributeError, TypeError, RuntimeError, ValueError, OSError):
-                        cur_dbg = None
-                try:
-                    start_dbg = getattr(self, "_drag_start_pos", None)
-                except (AttributeError, TypeError, RuntimeError, ValueError, OSError):
-                    start_dbg = None
-                try:
-                    dist_dbg = (cur_dbg - start_dbg).manhattanLength() if cur_dbg is not None and start_dbg is not None else None
-                except (AttributeError, TypeError, RuntimeError, ValueError, OSError):
-                    dist_dbg = None
-                try:
-                    thr_dbg = QApplication.startDragDistance()
-                except (AttributeError, TypeError, RuntimeError, ValueError, OSError):
-                    thr_dbg = None
-                _b713b_debug_log(f"mouseMove buttons={btns} pos={cur_dbg} start_pos={start_dbg} dist={dist_dbg} threshold={thr_dbg}")
             if not (event.buttons() & Qt.LeftButton):
-                if os.getenv("VISOR_DEBUG_DRAG") == "1":
-                    _b713b_debug_log("ABORT=no_LeftButton")
                 return super().mouseMoveEvent(event)
             if getattr(self, "_drag_start_pos", None) is None:
-                if os.getenv("VISOR_DEBUG_DRAG") == "1":
-                    _b713b_debug_log("ABORT=start_pos_None")
                 return super().mouseMoveEvent(event)
             # Umbral Qt
             try:
@@ -1813,47 +1728,21 @@ class Tarjeta(QFrame):
                 dist = (cur - self._drag_start_pos).manhattanLength()
             except (AttributeError, TypeError, RuntimeError) as exc:
                 print(f"[B7.13B] mouseMove distancia error: {exc}")
-                if os.getenv("VISOR_DEBUG_DRAG") == "1":
-                    _b713b_debug_log(f"ABORT=distancia_error exc={exc}")
                 return super().mouseMoveEvent(event)
             if dist < QApplication.startDragDistance():
-                if os.getenv("VISOR_DEBUG_DRAG") == "1":
-                    try:
-                        thr = QApplication.startDragDistance()
-                    except (AttributeError, TypeError, RuntimeError, ValueError, OSError):
-                        thr = "?"
-                    _b713b_debug_log(f"ABORT=distancia_insuficiente dist={dist} threshold={thr}")
                 return super().mouseMoveEvent(event)
             visor = self._visor_para_drag()
             if visor is None:
-                if os.getenv("VISOR_DEBUG_DRAG") == "1":
-                    _b713b_debug_log("ABORT=visor_None")
                 return super().mouseMoveEvent(event)
             if not getattr(visor, "_modo_organizacion", False):
-                if os.getenv("VISOR_DEBUG_DRAG") == "1":
-                    _b713b_debug_log(f"ABORT=modo_organizacion_False visor_modo={getattr(visor, '_modo_organizacion', None)}")
                 return super().mouseMoveEvent(event)
             ids = self._ids_para_drag(visor)
             if not ids:
-                if os.getenv("VISOR_DEBUG_DRAG") == "1":
-                    _b713b_debug_log(f"ABORT=ids_vacios ids={ids}")
                 return super().mouseMoveEvent(event)
             mime = _crear_mime_data_drag_b713b(ids)
             if mime is None:
-                if os.getenv("VISOR_DEBUG_DRAG") == "1":
-                    _b713b_debug_log(f"ABORT=mime_None ids={ids}")
                 return super().mouseMoveEvent(event)
             # No agregar URLs ni texto genérico: solo MIME privado
-            if os.getenv("VISOR_DEBUG_DRAG") == "1":
-                try:
-                    fmts = mime.formats() if mime is not None else None
-                except (AttributeError, TypeError, RuntimeError, ValueError, OSError) as e_fmt:
-                    fmts = f"error:{e_fmt}"
-                try:
-                    drag_cls = QDrag.__name__ if hasattr(QDrag, "__name__") else str(type(QDrag))
-                except (AttributeError, TypeError, RuntimeError, ValueError, OSError):
-                    drag_cls = "QDrag"
-                _b713b_debug_log(f"BEFORE_QDRAG drag_class={drag_cls} nombre={getattr(self, '_nombre', None)!r} ids={ids} formats={fmts}")
             drag = QDrag(self)
             drag.setMimeData(mime)
             # B7.13C — feedback visual mínimo: ghost + hotspot (reutiliza grab(), sin FS/FFmpeg)
@@ -1893,32 +1782,18 @@ class Tarjeta(QFrame):
                     except (AttributeError, TypeError, RuntimeError):
                         _ = None
             # Acción Move para esta etapa (no ejecuta FS todavía)
-            if os.getenv("VISOR_DEBUG_DRAG") == "1":
-                _b713b_debug_log("BEFORE_EXEC drag.exec(Qt.MoveAction)")
             try:
                 result = drag.exec(Qt.MoveAction)
-                if os.getenv("VISOR_DEBUG_DRAG") == "1":
-                    _b713b_debug_log(f"AFTER_EXEC result={result}")
             except (AttributeError, TypeError, RuntimeError, ValueError, OSError) as exc:
-                if os.getenv("VISOR_DEBUG_DRAG") == "1":
-                    _b713b_debug_log(f"EXCEPTION QDrag/exec type={type(exc).__name__} msg={exc!r}")
                 print(f"[B7.13B] drag exec error: {exc}")
                 try:
-                    if os.getenv("VISOR_DEBUG_DRAG") == "1":
-                        _b713b_debug_log("BEFORE_EXEC fallback drag.exec_(Qt.MoveAction)")
                     result2 = drag.exec_(Qt.MoveAction)
-                    if os.getenv("VISOR_DEBUG_DRAG") == "1":
-                        _b713b_debug_log(f"AFTER_EXEC result={result2} (fallback)")
                 except (AttributeError, TypeError, RuntimeError, ValueError, OSError) as exc2:
-                    if os.getenv("VISOR_DEBUG_DRAG") == "1":
-                        _b713b_debug_log(f"EXCEPTION fallback type={type(exc2).__name__} msg={exc2!r}")
                     print(f"[B7.13B] drag exec_ fallback error: {exc2}")
             self._drag_start_pos = None
             self._drag_deferred = False
             return
         except (AttributeError, TypeError, RuntimeError, ValueError) as exc:
-            if os.getenv("VISOR_DEBUG_DRAG") == "1":
-                _b713b_debug_log(f"EXCEPTION mouseMoveEvent type={type(exc).__name__} msg={exc!r}")
             print(f"[B7.13B] mouseMoveEvent error: {exc}")
         return super().mouseMoveEvent(event)
 
@@ -2881,12 +2756,6 @@ class Tarjeta(QFrame):
             except (AttributeError, TypeError, RuntimeError, ImportError, ValueError):
                 _is_interactive = False
             if _is_interactive:
-                if os.getenv("VISOR_DEBUG_DRAG") == "1":
-                    try:
-                        cls_dbg = objeto.__class__.__name__
-                    except (AttributeError, TypeError, RuntimeError, ValueError, OSError):
-                        cls_dbg = "?"
-                    _b713b_debug_log(f"routing hijo={cls_dbg} tipo={evento.type()} EXCLUDED=is_interactive")
                 return super().eventFilter(objeto, evento)
             # Exclusión por identidad de widgets interactivos concretos de Tarjeta
             if objeto in (
@@ -2899,12 +2768,6 @@ class Tarjeta(QFrame):
                 getattr(self, "_selector_color", None),
                 getattr(self, "_boton_segmento", None),
             ):
-                if os.getenv("VISOR_DEBUG_DRAG") == "1":
-                    try:
-                        cls_dbg = objeto.__class__.__name__
-                    except (AttributeError, TypeError, RuntimeError, ValueError, OSError):
-                        cls_dbg = "?"
-                    _b713b_debug_log(f"routing hijo={cls_dbg} tipo={evento.type()} EXCLUDED=widget_interactivo_concreto")
                 return super().eventFilter(objeto, evento)
             # Exclusión por nombre de clase de widgets de exploración/marcadores
             _clsname = ""
@@ -2913,8 +2776,6 @@ class Tarjeta(QFrame):
             except (AttributeError, TypeError, RuntimeError):
                 _clsname = ""
             if _clsname in ("FranjaExploracion", "BarraResumenColapsada", "MiniaturaMarcador", "QScrollArea"):
-                if os.getenv("VISOR_DEBUG_DRAG") == "1":
-                    _b713b_debug_log(f"routing hijo={_clsname} tipo={evento.type()} EXCLUDED=clase_exploracion")
                 return super().eventFilter(objeto, evento)
             # Solo reenviar si el objeto es hijo drag-habilitado (labels, previews, imagen, recuadro)
             es_hijo_drag = False
@@ -2933,12 +2794,6 @@ class Tarjeta(QFrame):
                 elif objeto in getattr(self, "_etiquetas_previews", []):
                     es_hijo_drag = True
             if es_hijo_drag:
-                if os.getenv("VISOR_DEBUG_DRAG") == "1":
-                    try:
-                        cls_dbg = objeto.__class__.__name__
-                    except (AttributeError, TypeError, RuntimeError, ValueError, OSError):
-                        cls_dbg = "?"
-                    _b713b_debug_log(f"routing hijo={cls_dbg} tipo={evento.type()} FORWARDED to Tarjeta nombre={getattr(self, '_nombre', None)!r}")
                 try:
                     # Mapear posición hijo -> Tarjeta
                     if hasattr(evento, "position"):
@@ -2964,17 +2819,8 @@ class Tarjeta(QFrame):
                         self.mouseDoubleClickEvent(new_ev)
                     return True
                 except (AttributeError, TypeError, RuntimeError, ValueError) as exc:
-                    if os.getenv("VISOR_DEBUG_DRAG") == "1":
-                        _b713b_debug_log(f"EXCEPTION eventFilter redirect type={type(exc).__name__} msg={exc!r}")
                     print(f"[B7.13B] eventFilter redirect error: {exc}")
                     return super().eventFilter(objeto, evento)
-            else:
-                if os.getenv("VISOR_DEBUG_DRAG") == "1":
-                    try:
-                        cls_dbg = objeto.__class__.__name__
-                    except (AttributeError, TypeError, RuntimeError, ValueError, OSError):
-                        cls_dbg = "?"
-                    _b713b_debug_log(f"routing hijo={cls_dbg} tipo={evento.type()} EXCLUDED=no_hijo_drag")
         if evento.type() == QEvent.Enter:
             pixmap = self._pixmap_ampliada(objeto)
             if pixmap is not None:
@@ -7081,17 +6927,9 @@ class VisorVideos(QMainWindow):
           destino resoluble, lote no ocupado. Cero operación si cualquiera falla.
         - Objetivo puede ser str hijo o None (raíz). Se resuelve vía rutas.resolver_destino_drop.
         """
-        # DEBUG opt-in
-        try:
-            if os.getenv("VISOR_DEBUG_DRAG") == "1":
-                print(f"[B7.13C] _al_drop_videos_solicitado ids={ids!r} objetivo={objetivo!r} modo_org={getattr(self,'_modo_organizacion',None)}", flush=True)
-        except (AttributeError, TypeError, RuntimeError, ValueError, OSError):
-            _ = None
         # 1. Modo Organización
         try:
             if not getattr(self, "_modo_organizacion", False):
-                if os.getenv("VISOR_DEBUG_DRAG") == "1":
-                    print("[B7.13C] rechazo: modo_organizacion False", flush=True)
                 return
         except (AttributeError, TypeError, RuntimeError) as exc:
             print(f"[B7.13C] modo check error: {exc}")
@@ -7099,8 +6937,6 @@ class VisorVideos(QMainWindow):
         # 2. ids válidos
         ids_ok = self._validar_ids_drop_b713c(ids)
         if ids_ok is None:
-            if os.getenv("VISOR_DEBUG_DRAG") == "1":
-                print("[B7.13C] rechazo: ids inválidos/vacíos", flush=True)
             return
         # Normalizar objetivo: str strip o None
         objetivo_norm = None
@@ -7113,20 +6949,14 @@ class VisorVideos(QMainWindow):
             if objetivo_norm in ("(vacío)", "(cargando…)"):
                 objetivo_norm = None
             if objetivo_norm in (".", ".."):
-                if os.getenv("VISOR_DEBUG_DRAG") == "1":
-                    print(f"[B7.13C] rechazo: objetivo ilegal {objetivo_norm!r}", flush=True)
                 return
             if "/" in objetivo_norm or "\\" in objetivo_norm:
-                if os.getenv("VISOR_DEBUG_DRAG") == "1":
-                    print(f"[B7.13C] rechazo: objetivo con separador {objetivo_norm!r}", flush=True)
                 return
             # validar contra subcarpetas conocidas si destino válido; si no está en lista, rechazar
             try:
                 conocidas = getattr(self, "_organizacion_subcarpetas", []) or []
                 # solo rechazar si hay lista conocida no vacía y objetivo no está
                 if conocidas and objetivo_norm not in conocidas:
-                    if os.getenv("VISOR_DEBUG_DRAG") == "1":
-                        print(f"[B7.13C] rechazo: objetivo {objetivo_norm!r} no en subcarpetas {conocidas!r}", flush=True)
                     return
             except (AttributeError, TypeError, ValueError) as exc:
                 print(f"[B7.13C] validacion conocida drop error: {exc}")
@@ -7136,33 +6966,21 @@ class VisorVideos(QMainWindow):
         # 3. Estado destino / lote ocupado / cargando / error
         try:
             if callable(getattr(self, "_lote_esta_ocupado", None)) and self._lote_esta_ocupado():
-                if os.getenv("VISOR_DEBUG_DRAG") == "1":
-                    print("[B7.13C] rechazo: lote ocupado", flush=True)
                 return
             if getattr(self, "gestor", None) is not None and getattr(self.gestor, "activo", False):
-                if os.getenv("VISOR_DEBUG_DRAG") == "1":
-                    print("[B7.13C] rechazo: gestor activo", flush=True)
                 return
             if getattr(self, "_organizacion_cargando", False):
-                if os.getenv("VISOR_DEBUG_DRAG") == "1":
-                    print("[B7.13C] rechazo: cargando", flush=True)
                 return
             if getattr(self, "_organizacion_error", None):
-                if os.getenv("VISOR_DEBUG_DRAG") == "1":
-                    print(f"[B7.13C] rechazo: error {getattr(self,'_organizacion_error',None)!r}", flush=True)
                 return
             if not getattr(self, "_organizacion_destino_valido", False):
                 # compat: si flag invalido pero no hay error/cargando y destino isdir, considerar válido
                 # pero para drop exigimos válido estricto para no iniciar operación con destino desaparecido
                 # verificar isdir solo si helper dice no accesible; no tocar FS si ya invalido con error
                 # B7.13C: sin FS directo, delegar a rutas.listar_subcarpetas ya validó; si invalido -> rechazar
-                if os.getenv("VISOR_DEBUG_DRAG") == "1":
-                    print("[B7.13C] rechazo: destino no válido", flush=True)
                 return
             dest_base = getattr(self, "_organizacion_destino", None)
             if not isinstance(dest_base, str) or not dest_base.strip():
-                if os.getenv("VISOR_DEBUG_DRAG") == "1":
-                    print("[B7.13C] rechazo: destino base vacío", flush=True)
                 return
         except (AttributeError, TypeError, RuntimeError, OSError) as exc:
             print(f"[B7.13C] estado destino check error: {exc}")
@@ -7174,13 +6992,9 @@ class VisorVideos(QMainWindow):
             print(f"[B7.13C] resolver_destino_drop error: {exc}")
             return
         if dest is None:
-            if os.getenv("VISOR_DEBUG_DRAG") == "1":
-                print("[B7.13C] rechazo: resolver_destino_drop retornó None", flush=True)
             return
         try:
             if not validar_destino_drop_completo(dest):
-                if os.getenv("VISOR_DEBUG_DRAG") == "1":
-                    print(f"[B7.13C] rechazo: validar_destino_drop_completo False dest={dest!r}", flush=True)
                 return
         except (AttributeError, TypeError, RuntimeError, ValueError, OSError) as exc:
             print(f"[B7.13C] validar_destino_drop error: {exc}")
@@ -7189,8 +7003,6 @@ class VisorVideos(QMainWindow):
         # Evitar doble prevalidación/lote mientras hay operación en curso (incluye prevalidación)
         try:
             if getattr(self, "_prevalidacion_drop_en_curso", False) or (getattr(self, "gestor_prevalidacion_drop", None) is not None and self.gestor_prevalidacion_drop.activo):
-                if os.getenv("VISOR_DEBUG_DRAG") == "1":
-                    print("[B7.13C] rechazo: prevalidación en curso", flush=True)
                 return
         except (AttributeError, TypeError, RuntimeError) as exc:
             print(f"[B7.13C] prevalidacion check error: {exc}")
@@ -7204,8 +7016,6 @@ class VisorVideos(QMainWindow):
                 self.mensaje_carpeta.setText(f"Drop rechazado: {exc}")
             except (AttributeError, RuntimeError) as exc2:
                 print(f"[B7.13C] mensaje prevalidacion error: {exc2}")
-            if os.getenv("VISOR_DEBUG_DRAG") == "1":
-                print(f"[B7.13C] rechazo crear prevalidacion: {exc!r}", flush=True)
             return
         # guardar estado pendiente para el callback
         self._prevalidacion_drop_ids = list(ids_ok)
@@ -7231,16 +7041,12 @@ class VisorVideos(QMainWindow):
                 self.mensaje_carpeta.setText(f"No se pudo iniciar validación drop: {motivo}")
             except (AttributeError, TypeError, RuntimeError) as exc:
                 print(f"[B7.13C] mensaje rechazo prevalidacion error: {exc}")
-            if os.getenv("VISOR_DEBUG_DRAG") == "1":
-                print(f"[B7.13C] rechazo: gestor_prevalidacion_drop.iniciar False motivo={getattr(self.gestor_prevalidacion_drop,'ultimo_rechazo','')!r}", flush=True)
             self._prevalidacion_drop_en_curso = False
             self._prevalidacion_drop_ids = None
             self._prevalidacion_drop_dest = None
             self._actualizar_botones_lote()
             self._actualizar_panel_organizacion()
             return
-        if os.getenv("VISOR_DEBUG_DRAG") == "1":
-            print(f"[B7.13C] prevalidación iniciada ids={ids_ok!r} dest={dest!r}", flush=True)
 
     def _iniciar_lote_drop_real(self, ids, dest):
         """Inicia TareaLoteOperaciones mover tras prevalidación exitosa (intimo B7.13C)."""
@@ -7264,8 +7070,6 @@ class VisorVideos(QMainWindow):
                 self.mensaje_carpeta.setText(f"No se pudo iniciar mover por drop: {motivo}")
             except (AttributeError, TypeError, RuntimeError) as exc:
                 print(f"[B7.13C] mensaje rechazo lote post-prevalidacion error: {exc}")
-            if os.getenv("VISOR_DEBUG_DRAG") == "1":
-                print(f"[B7.13C] rechazo lote tras prevalidacion: gestor_lote.iniciar False motivo={getattr(self.gestor_lote,'ultimo_rechazo','')!r}", flush=True)
             return False
         self._lote_en_curso = True
         self._lote_operacion = "mover"
@@ -7283,16 +7087,12 @@ class VisorVideos(QMainWindow):
             self._actualizar_panel_organizacion()
         except (AttributeError, TypeError, RuntimeError, ValueError) as exc:
             print(f"[B7.13C] actualizar panel post-lote error: {exc}")
-        if os.getenv("VISOR_DEBUG_DRAG") == "1":
-            print(f"[B7.13C] lote mover iniciado tras prevalidación ids={ids!r} dest={dest!r}", flush=True)
         return True
 
     def _al_prevalidacion_drop_resultado(self, resultado):
         """Callback background prevalidación B7.13C: si ok inicia lote, si no rechaza con cero movimiento."""
         # Preservar ids/dest guardados; ignorar resultados obsoletos si ya no en curso
         if not getattr(self, "_prevalidacion_drop_en_curso", False):
-            if os.getenv("VISOR_DEBUG_DRAG") == "1":
-                print("[B7.13C] _al_prevalidacion_drop_resultado ignorado (no en curso)", flush=True)
             return
         ids_guardados = getattr(self, "_prevalidacion_drop_ids", None)
         dest_guardado = getattr(self, "_prevalidacion_drop_dest", None)
@@ -7321,8 +7121,6 @@ class VisorVideos(QMainWindow):
                 self.mensaje_carpeta.setToolTip(str(err))
             except (AttributeError, TypeError, RuntimeError) as exc:
                 print(f"[B7.13C] mensaje rechazo prevalidacion error: {exc}")
-            if os.getenv("VISOR_DEBUG_DRAG") == "1":
-                print(f"[B7.13C] prevalidación fallida ids={ids_guardados!r} dest={dest_guardado!r} error={err!r}", flush=True)
             self._prevalidacion_drop_ids = None
             self._prevalidacion_drop_dest = None
             self._actualizar_botones_lote()
@@ -7362,8 +7160,6 @@ class VisorVideos(QMainWindow):
                     self.mensaje_carpeta.setText("Drop rechazado: operación en curso tras validación")
                 except (AttributeError, RuntimeError) as exc:
                     print(f"[B7.13C] mensaje ocupado post-prevalidacion error: {exc}")
-                if os.getenv("VISOR_DEBUG_DRAG") == "1":
-                    print("[B7.13C] rechazo post-prevalidación: lote ocupado", flush=True)
                 self._prevalidacion_drop_ids = None
                 self._prevalidacion_drop_dest = None
                 self._actualizar_botones_lote()
@@ -7402,8 +7198,6 @@ class VisorVideos(QMainWindow):
             self.mensaje_carpeta.setToolTip(str(mensaje))
         except (AttributeError, TypeError, RuntimeError) as exc:
             print(f"[B7.13C] _al_prevalidacion_drop_error mensaje error: {exc}")
-        if os.getenv("VISOR_DEBUG_DRAG") == "1":
-            print(f"[B7.13C] prevalidación error mensaje={mensaje!r}", flush=True)
         self._prevalidacion_drop_ids = None
         self._prevalidacion_drop_dest = None
         try:
