@@ -153,3 +153,23 @@ En ese caso:
 El objetivo de este proceso es evitar la pérdida de decisiones de
 producto entre conversaciones y mantener la continuidad del proyecto a
 largo plazo.
+
+## 14. Protocolo de colaboración ChatGPT ↔ Bridge ↔ OpenCode
+
+El protocolo de colaboración entre ChatGPT, el Bridge/MCP/Telegram y
+OpenCode está **activo**. Su autoridad detallada (actores, flujo, estados,
+auditoría, persistencia, seguridad) es `METODOLOGIA_DESARROLLO.md`. Estas
+son las normas permanentes que siempre aplican:
+
+- **GitHub vivo es la fuente de verdad** del producto; el ledger contextual
+  del Bridge está **subordinado** a GitHub y no deriva datos del producto.
+- El **fallback manual** (`Usuario → ChatGPT → copiar prompt → OpenCode →
+  copiar informe → ChatGPT`) cambia solo el transporte y **conserva** el
+  mismo alcance, evidencia, auditoría y autorizaciones.
+- **OpenCode no ejecuta** acciones Git de publicación (commit, push, tag,
+  release, merge, rebase, resets destructivos) ni otras acciones de alcance
+  prohibido **sin autorización humana explícita**.
+- Se debe **procesar el mensaje completo del usuario** antes de avanzar en
+  la cadena (`post_audit`, `queue_task`).
+- Los secretos nunca se versionan ni se exponen; las instancias de runtime
+  no se trasladan para reconstruir otra máquina.

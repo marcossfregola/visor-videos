@@ -155,7 +155,12 @@ def test_02():
         and "eliminar_candidatos" not in funcs_tareas
         and "eliminar_candidatos" not in importados_tareas
         and "eliminar_candidatos" not in importados_visor
-        and not any("Eliminar" in c or "Eliminacion" in c for c in clases_tareas)
+        and not any(
+            ("Eliminar" in c or "Eliminacion" in c)
+            and "Marcador" not in c
+            and "Segmento" not in c
+            for c in clases_tareas
+        )
         and usados_eliminar is not None
         and "_validar_plan_sincronizacion" in usados_eliminar
         and "sqlite3" in usados_eliminar

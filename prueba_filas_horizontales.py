@@ -653,13 +653,27 @@ def test_14():
 def test_15():
     with open("visor_videos.py", "r", encoding="utf-8") as f:
         arbol = ast.parse(f.read())
-    literales = [
-        nodo.value
-        for nodo in ast.walk(arbol)
-        if isinstance(nodo, ast.Constant) and isinstance(nodo.value, str)
-    ]
+
+    def _literales_en_llamadas(arbol):
+        encontrados = []
+        for nodo in ast.walk(arbol):
+            if isinstance(nodo, ast.Call):
+                argumentos = list(nodo.args) + [
+                    kw.value for kw in nodo.keywords
+                ]
+                for arg in argumentos:
+                    if isinstance(arg, ast.Constant) and isinstance(
+                        arg.value, str
+                    ):
+                        encontrados.append(arg.value)
+        return encontrados
+
+    # La regla protege el uso real (p. ej. comandos pasados a una llamada que
+    # lanzaria un binario), no los docstrings ni comentarios documentales.
     binarios = [
-        lit for lit in literales if "ffprobe" in lit.lower() or "ffmpeg" in lit.lower()
+        lit
+        for lit in _literales_en_llamadas(arbol)
+        if "ffprobe" in lit.lower() or "ffmpeg" in lit.lower()
     ]
     nombres = [nodo.id for nodo in ast.walk(arbol) if isinstance(nodo, ast.Name)]
     importa_subprocess = any(

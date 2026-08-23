@@ -4,7 +4,7 @@ Visor de escritorio para Windows que permite explorar, organizar y analizar gran
 
 ## Estado actual
 
-**Beta 3: terminada, validada y publicada.** El estado detallado y la deuda conocida se registran en `STATUS.md`.
+**Beta 7 — B7.13 cerrada y publicada.** Commit oficial de cierre funcional `f9976d3b3b68a197bf8e9d29a4ecc670f48a9709` (`B7 Cerrar Beta 7 B7.13`); tag anotado `v7.0-beta` publicado y resolviendo permanentemente a ese commit; rama `beta7` publicada (reconciliación documental posterior `97e6fcf` en `beta7`); GitHub Release `v7.0-beta` prerelease publicada sin instalador público Beta 7; repositorio **PUBLIC** (default branch `main`); validación específica del instalador Beta 7 **PENDIENTE**. Para el estado completo, deuda y pendientes ver `STATUS.md`.
 
 ## Stack
 
@@ -42,3 +42,4 @@ Pendiente de definir.
 | `BACKLOG.md` | Ideas futuras no comprometidas |
 | `HISTORIAL_PROYECTO.md` | Registro historico de etapas aprobadas |
 | `EMPACADO.md` | Procedimiento de empaquetado y distribucion |
+| `METODOLOGIA_DESARROLLO.md` | Metodología y protocolo de desarrollo |

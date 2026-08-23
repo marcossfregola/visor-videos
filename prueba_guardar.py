@@ -128,7 +128,7 @@ def test_02():
         cap, fl, ok = correr(g, TareaGuardarVideo(datos, ruta_db))
         conn = sqlite3.connect(ruta_db)
         try:
-            filas = conn.execute("SELECT * FROM videos").fetchall()
+            filas = conn.execute("SELECT id, nombre, ruta, extension, fecha_importacion, duracion_segundos, ancho, alto, codec_video, cantidad_miniaturas, tamano_bytes FROM videos").fetchall()
         finally:
             conn.close()
         esperado = (1, "a.mp4", "C:\\v\\a.mp4", ".mp4", "2026-08-02T00:00:00", 3.5, 640, 360, "h264", 2, None)
@@ -161,7 +161,7 @@ def test_03():
         cap2, fl2, ok2 = correr(g2, TareaGuardarVideo(datos2, ruta_db))
         conn = sqlite3.connect(ruta_db)
         try:
-            filas = conn.execute("SELECT * FROM videos").fetchall()
+            filas = conn.execute("SELECT id, nombre, ruta, extension, fecha_importacion, duracion_segundos, ancho, alto, codec_video, cantidad_miniaturas, tamano_bytes FROM videos").fetchall()
         finally:
             conn.close()
         esperado = (id_v1, "a.mp4", "C:\\v\\a_v2.mp4", ".mp4", "2026-08-02T00:00:00", 9.5, 1920, 1080, "av1", 3, None)
@@ -265,7 +265,7 @@ def test_06():
         )
         conn = sqlite3.connect(ruta_db)
         try:
-            filas = conn.execute("SELECT * FROM videos").fetchall()
+            filas = conn.execute("SELECT id, nombre, ruta, extension, fecha_importacion, duracion_segundos, ancho, alto, codec_video, cantidad_miniaturas, tamano_bytes FROM videos").fetchall()
         finally:
             conn.close()
         ok = (
@@ -343,7 +343,7 @@ def test_09():
         def _dump():
             conn = sqlite3.connect(ruta_db)
             try:
-                return conn.execute("SELECT * FROM videos ORDER BY nombre").fetchall()
+                return conn.execute("SELECT id, nombre, ruta, extension, fecha_importacion, duracion_segundos, ancho, alto, codec_video, cantidad_miniaturas, tamano_bytes FROM videos ORDER BY nombre").fetchall()
             finally:
                 conn.close()
 
@@ -603,7 +603,7 @@ def test_16():
         def _dump():
             conn = sqlite3.connect(ruta_db)
             try:
-                return conn.execute("SELECT * FROM videos").fetchall()
+                return conn.execute("SELECT id, nombre, ruta, extension, fecha_importacion, duracion_segundos, ancho, alto, codec_video, cantidad_miniaturas, tamano_bytes FROM videos").fetchall()
             finally:
                 conn.close()
 
@@ -637,7 +637,7 @@ def test_17():
         def _dump():
             conn = sqlite3.connect(ruta_db)
             try:
-                return conn.execute("SELECT * FROM videos").fetchall()
+                return conn.execute("SELECT id, nombre, ruta, extension, fecha_importacion, duracion_segundos, ancho, alto, codec_video, cantidad_miniaturas, tamano_bytes FROM videos").fetchall()
             finally:
                 conn.close()
 

@@ -2,69 +2,63 @@
 
 ## Fase actual
 
-**Beta 3 terminada, validada y publicada.**
+**Beta 7 — B7.13 cerrada y publicada.**
 
-El estado tecnico verificado prevalece sobre cualquier texto historico que lo presente como pendiente. La Beta 3 esta cerrada sobre el codigo definitivo, validada manualmente y publicada; el instalador oficial `VisorVideos_Beta3_Setup.exe` existe en `Distribucion\Beta3\`.
+- Commit oficial de cierre funcional `f9976d3b3b68a197bf8e9d29a4ecc670f48a9709` (`B7 Cerrar Beta 7 B7.13`).
+- Tag anotado `v7.0-beta` publicado y resolviendo permanentemente a `f9976d3` (cierre funcional inmutable).
+- Rama `beta7` conserva su historia y reconciliación documental posterior `97e6fcf1489c3999fbf1c82222ce584862970f5b` (`B7 Reconciliar documentación post-publicación`).
+- `main` — rama vigente/canónica del estado actual del proyecto; este merge establece `main` como autoridad al incorporar la evolución completa hasta Beta 7 y la arquitectura documental V1.3 (merge `918cf67` ← `97e6fcf`, preservando ambas historias; producto funcional equivalente a Beta 7 salvo limpiezas whitespace).
+- GitHub Release `v7.0-beta` prerelease publicada sin instalador público Beta 7.
+- Repositorio **PUBLIC**, default branch `main`.
+- Validación específica del instalador Beta 7 **PENDIENTE** (`python prueba_instalador.py` sobre `Distribucion/Beta7/VisorVideos_Beta7_Setup.exe`).
+- Beta 8 todavía no definida.
 
-## Ultimo baseline aprobado
+Para el historial completo ver `HISTORIAL_PROYECTO.md` (119).
 
-- Tag `v3.0-beta` sobre HEAD `4408d5426f65db1e41aad8b1d58a97695d438bf8` (commit "Cerrar la Beta 3: alinear la documentación oficial con el estado final del proyecto").
-- Rama `main` con tracking `origin/main`; worktree limpio; 107 archivos tracked.
-- Proteccion del baseline de adopcion: `C:\ProjectStorage\VisorVideo\backups\adoption-baseline` (documentacion, methodology, agent_exchange, manifiesto SHA-256).
-- Bootstrap B-A en curso: `PROJECT_STRUCTURED` (transformacion documental aprobada).
+## Último baseline aprobado
 
-## Estado funcional
+- Tag `v7.0-beta` sobre `f9976d3` (cierre funcional Beta 7).
+- Rama `beta7` `97e6fcf` incluye B7.0–B7.13 completas y la reconciliación post-publicación que separa commit/tag inmutable de HEAD de rama.
+- `main` reconciliada mediante este merge: integra `main` previo `918cf67` (estructura V1.3) y `beta7` `97e6fcf` preservando ambas historias; matriz documental definitiva `PROJECT/STATUS/ARCHITECTURE/ENVIRONMENT/RULES/ROADMAP/BACKLOG/HISTORIAL/EMPACADO/METODOLOGIA`.
 
-- La aplicacion abre sin crash (verificado: titulo "Biblioteca de videos", 23 tarjetas cargadas, contador "23 videos").
-- FFmpeg funcional; FFprobe funcional; SQLite funcional (catalogo con 23 filas restauradas).
-- Datos restaurados identicos al backup persistente (`source-protect`).
-- Git limpio en HEAD.
+## Estado funcional (Beta 7)
 
-## Elementos implementados relevantes
-
-- Centro de Navegacion (Bloque 2): arbol "Este equipo", expansion diferida, seleccion, persistencia, escaneo automatico, indicadores de carpetas escaneadas.
-- Beta 3 (Bloques A-E): experiencia visual (tiempos, duracion simplificada, tamanos, vista ampliada configurable/desactivable, previews progresivas), seleccion y operaciones (modo checks, copiar, pegar, eliminar a Papelera, atajos), progreso real, integracion con reproductor (apertura por doble clic).
-- Bloque 4: catalogo por seleccion de carpetas (escaneo multicarpeta, sincronizacion multicarpeta segura, selector de alcance unificado, auditoria integral).
-- Correccion de la regresion de previews: cada video usa su propia carpeta real del catalogo.
-- Empaquetado oficial: `instalador.iss` + `EMPACADO.md`; instalador Beta 3 generado (por usuario, sin FFmpeg empaquetado).
-- 77 suites de pruebas presentes; resultados heredados: 74/77 OK (ver Problemas conocidos).
+- Aplicación abre sin crash; catálogo SQLite con metadatos FFprobe, miniaturas/previews FFmpeg, exploración temporal densa, marcadores/segmentos persistentes y clasificación por color.
+- Centro de Navegación: árbol Este equipo, expansión diferida, selección, persistencia, escaneo automático y multicarpeta.
+- Operaciones de organización: renombrado individual/masivo, mover/copiar/eliminar por lote, crear carpetas, modo Organización/Explorer con doble panel y drag & drop interno prevalidado.
+- Exportación: un segmento, lote y unión con trazabilidad de derivados (`videos_derivados`).
+- Suites: `prueba_integracion_b612` 14/14, `prueba_reescaneo_preserva_metadatos_b612` 3/3, `prueba_derivados_b611` 15/15, `prueba_version_build` 3/3 (Beta 7 - B7.13) y amplia suite previa en verde. Estado técnico verificado prevalece.
 
 ## Trabajo pendiente real
 
-- Definir el alcance de la **Beta 4** mediante planificacion exclusivamente documental (proximo ciclo de desarrollo).
-- Paginacion completa automatica del catalogo (scroll infinito, busqueda en SQL desde la interfaz, ordenamiento configurable).
-- Deduplicacion de nombres repetidos en el plan de sincronizacion.
-- Cancelacion del escaneo.
-- Filtrado del catalogo desde el arbol (Etapa 2.10 diferida).
-- Evaluar y optimizar el rendimiento con colecciones grandes.
-- Decisiones abiertas heredadas: identidad estable de videos, orden natural en selecciones de carpetas, alcance de Beta 4.
+- **Auditoría final** del `main` reconciliado (Git/GitHub/documentación).
+- **Validación del instalador Beta 7**: instalación/desinstalación/reinstalación preservando `biblioteca.db`/`configuracion.json`/`miniaturas`.
+- **Consolidación de mejoras + auditorías externas** (deuda no bloqueante y pendientes técnicos).
+- **Definición y priorización de Beta 8** — alcance todavía no definido (queda pendiente de la consolidación).
+- Deuda no bloqueante: crecimiento de miniaturas, reutilización por `mtime` sin hash, retención de pixmaps — ver `ARCHITECTURE.md`.
 
-## Deuda tecnica conocida
+## Deuda técnica conocida
 
-- Crecimiento y duplicacion de infraestructura entre las suites de prueba (helpers y conectores repetidos).
-- Detalle excesivo en el documento tecnico historico (ya resuelto en la estructura nueva: `ARCHITECTURE.md` condensada).
-- Restauracion de rutas Windows 8.3 (nombres cortos) en el arbol: cae en comportamiento tolerante; no afecta el uso normal.
-- Estado de "escaneada" por sesion: vive en memoria y se pierde al reiniciar.
-- Crecimiento acumulativo de miniaturas (nuevas ranuras sin limpieza; requiere autorizacion para limpiar).
-- Criterio de reutilizacion por `mtime` sin hash de integridad; riesgo de miniaturas parciales/corruptas si FFmpeg falla a mitad de escritura.
+- Crecimiento y duplicación de infraestructura entre suites de prueba (heredado).
+- Estado de "escaneada" por sesión vive en memoria y se pierde al reiniciar.
+- Crecimiento acumulativo de miniaturas (nuevas ranuras sin limpieza; requiere autorización).
+- Criterio de reutilización por `mtime` sin hash de integridad.
 - Coincidencia de miniaturas por prefijo (`startswith`).
 
 ## Problemas conocidos
 
-- **Tests capaces de tocar estado real:** algunos tests operan sobre la base real o asumen preferencias; los nuevos desarrollos deben aislar los tests del estado real (`RULES.md` 7).
-- **Fallos historicos de tests (2):** `prueba_persistencia_carpeta.py` 18/20 (T11/T16: asume que el arranque no crea `configuracion.json`; la restauracion de `escaneo_automatico` lo escribe) y `prueba_aplicar_incorporaciones.py` 14/15 (T15: asume filas con `tamano_bytes = NULL`; la base real lo tiene poblado). Preexistentes, no atribuibles a etapas recientes; corregir en etapas especificas.
-- **Fallo transitorio no reproducido:** `prueba_copiar_rutas_seleccionados.py` fallo una vez en suite completa y luego paso 8/8 aislado; sin evidencia de bug reproducible del producto.
-- **Coexistencia FFmpeg 8.1.1 / 9.0:** la 8.1.1 es la efectiva por PATH; la 9.0 vive en ProjectStorage. Ambas funcionan; no se corrige sin autorizacion (ver `ENVIRONMENT.md`).
-- **PyInstaller ausente:** necesario solo para generar el ejecutable portable; el procedimiento documentado en `EMPACADO.md` no se puede ejecutar hasta instalarlo en una etapa autorizada.
+- Tests históricos con datos reales: aislar de `biblioteca.db`/`configuracion.json` (`RULES.md` 7).
+- Fallo transitorio no reproducido de `prueba_copiar_rutas_seleccionados` (ya documentado).
+- Coexistencia FFmpeg 8.1.1 (efectivo por PATH) / 9.0 en ProjectStorage — ambas funcionan.
 
 ## Entorno pendiente relacionado
 
-- PyInstaller ausente (ver arriba).
-- Coexistencia FFmpeg a resolver o documentar como aceptada.
-- No existen manifests de dependencias (solo `EMPACADO.md` y `ENVIRONMENT.md`).
+- Validación instalador Beta 7 pendiente (no bloquea merge).
+- No requiere instalar dependencias para reconciliación documental.
 
-## Proximos focos
+## Próximos focos
 
-1. Cerrar la adopcion metodologica B-A (auditorias del Director hasta `BOOTSTRAP_HANDOFF_COMPLETED`).
-2. Planificacion documental de la Beta 4.
-3. Abordar los pendientes reales priorizados en `ROADMAP.md`.
+1. Auditoría final Git/GitHub/documentación del `main` reconciliado.
+2. Validación específica del instalador Beta 7 (etapa específica).
+3. Consolidación de mejoras + auditorías externas.
+4. Definición y priorización de Beta 8.

@@ -6,14 +6,14 @@
 ; al compilador o editar los #define por defecto.
 ;
 ; Ejemplo:
-;   "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DAplicacionVersion=3.0 /DBetaEtiqueta=Beta3 instalador.iss
+;   "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DAplicacionVersion=7.0 /DBetaEtiqueta=Beta7 instalador.iss
 
 #ifndef AplicacionVersion
-  #define AplicacionVersion "3.0"
+  #define AplicacionVersion "7.0"
 #endif
 
 #ifndef BetaEtiqueta
-  #define BetaEtiqueta "Beta3"
+  #define BetaEtiqueta "Beta7"
 #endif
 
 [Setup]
@@ -48,8 +48,9 @@ Name: "desktopicon"; Description: "Crear acceso directo en el escritorio"; Group
 Source: "dist\VisorVideos\VisorVideos.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "dist\VisorVideos\_internal\*"; DestDir: "{app}\_internal"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; Base de datos vacia con el esquema vigente (se genera en el paso previo del build;
-; onlyifdoesntexist preserva el catalogo del usuario en reinstalaciones)
-Source: "dist\VisorVideos\biblioteca.db"; DestDir: "{app}"; Flags: ignoreversion onlyifdoesntexist
+; onlyifdoesntexist preserva el catalogo del usuario en reinstalaciones;
+; uninsneveruninstall conserva la base y los datos del usuario al desinstalar)
+Source: "dist\VisorVideos\biblioteca.db"; DestDir: "{app}"; Flags: ignoreversion onlyifdoesntexist uninsneveruninstall
 
 [Icons]
 Name: "{autoprograms}\Visor de Videos"; Filename: "{app}\VisorVideos.exe"
@@ -58,8 +59,7 @@ Name: "{autodesktop}\Visor de Videos"; Filename: "{app}\VisorVideos.exe"; Tasks:
 [Run]
 Filename: "{app}\VisorVideos.exe"; Description: "Ejecutar Visor de Videos"; Flags: nowait postinstall skipifsilent
 
-[UninstallDelete]
-; Elimina tambien los datos creados en tiempo de ejecucion (biblioteca.db,
-; configuracion.json, miniaturas/ y cualquier dato generado por la aplicacion)
-; para una desinstalacion completa
-Type: filesandordirs; Name: "{app}"
+; Beta 6 / B6.1: la desinstalacion NO borra {app} recursivamente.
+; Los binarios instalados desde [Files] se eliminan de forma normal; los datos
+; persistentes del usuario (biblioteca.db, configuracion.json, miniaturas/) se
+; conservan al desinstalar para permitir una reinstalacion sin perdida de datos.

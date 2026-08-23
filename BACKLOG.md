@@ -31,8 +31,8 @@ Ideas futuras, posibilidades y mejoras **no comprometidas**. Separacion obligato
 ## Administracion
 
 - Deteccion de archivos movidos. (Origen: `ROADMAP.md`, Legacy Handoff 10.10.)
-- Renombrado masivo. (Origen: `ROADMAP.md`, Legacy Handoff 10.10.)
-- Organizacion automatica. (Origen: `ROADMAP.md`, Legacy Handoff 10.10.)
+- ~~Renombrado masivo.~~ **Implementado en Beta 7 (B7.7 `TareaRenombrarMasivo` con motor `nombres.py`)** — reubicado fuera de backlog.
+- Organización automática. (Origen: `ROADMAP.md`, Legacy Handoff 10.10.) — **futura / no implementada**; Beta 7 implementó modo Organización/Explorer manual y operaciones de archivos por lote con drag & drop (base reutilizable en el futuro, pero no constituye automatización).
 - Deteccion de duplicados. (Origen: `ROADMAP.md`, Legacy Handoff 10.10.)
 
 ## Infraestructura y futuro

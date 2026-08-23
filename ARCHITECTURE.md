@@ -4,96 +4,102 @@ Arquitectura vigente del proyecto (condensada del documento tecnico heredado y d
 
 ## 1. Estructura general
 
-Workspace: `C:\Codex\VisorVideo` (repo Git, rama `main`, remote `origin` = `https://github.com/marcossfregola/visor-videos.git`).
+Workspace: `C:\prueba` (repo Git, rama `main` reconciliada con `beta7`, remote `origin` = `https://github.com/marcossfregola/visor-videos.git`).
 
 ```text
-visor_videos.py          Interfaz grafica PySide6 (ventana, tarjetas, previews, navegacion)
-escanear_videos.py       Backend / logica del catalogo: escaneo, SQLite, FFprobe, FFmpeg, sincronizacion
+visor_videos.py          Interfaz grafica PySide6 (ventana, tarjetas, previews, navegacion, organización)
+escanear_videos.py       Backend / logica del catalogo: escaneo, SQLite, FFprobe, FFmpeg, sincronizacion, marcadores/segmentos/derivados
 arbol_navegacion.py      Arbol de navegacion del panel izquierdo (Este equipo -> discos -> carpetas)
-configuracion.py         Servicio de persistencia de preferencias (configuracion.json)
+configuracion.py         Servicio de persistencia de preferencias (configuracion.json) + colores de clasificación
 tareas.py                Infraestructura generica de trabajos en segundo plano (QThread / GestorTareas)
-tareas_videos.py         Tareas asincronas especificas de video (FFprobe, escaneo, miniaturas, lectura, guardado, sincronizacion)
-operaciones.py           Logica pura de operaciones sobre archivos (copiar, pegar, eliminar)
-seleccion_carpetas.py    Conjunto de carpetas seleccionadas por ruta (Seleccion personalizada)
-rutas.py                 Resolucion centralizada de rutas, independiente del CWD (soporta PyInstaller)
+tareas_videos.py         Tareas asincronas especificas de video (FFprobe, escaneo, miniaturas, lectura, guardado, sincronizacion, marcadores, exploración densa, exportación, lote, organización)
+operaciones.py           Logica pura de operaciones sobre archivos (copiar, pegar, eliminar) — base para lote
+seleccion_carpetas.py    Conjunto de carpetas seleccionadas por ruta (Selección personalizada)
+rutas.py                 Resolucion centralizada de rutas, independiente del CWD (soporta PyInstaller) + destino drop y miniaturas
 apertura_videos.py       Servicio de apertura con la aplicacion predeterminada (unico modulo que ejecuta os.startfile)
-main.py                  Punto de entrada de produccion
+playlist_vlc.py          Integración VLC via playlists .m3u (B4.4)
+exploracion_cache.py     Motor de caché densa versionada y reanudable (B4.3.1) con fingerprint
+exploracion_temporal.py  Utilidades de tiempos objetivo para exploración densa
+scrubber.py              Superficie temporal y render de marcadores/segmentos (B4.1/B6.3/B6.4)
+nombres.py               Motor puro de nombres con sanitización Windows (B6.8)
+copiar_video.py / mover_video.py / eliminar_video.py / crear_carpeta.py / lote_operaciones.py / renombrar_video.py / renombrar_masivo.py
+                         Operaciones individuales y por lote de organización (B7.1–B7.6)
+panel_organizacion.py    Panel Organización/Explorer con drag & drop (B7.9–B7.13)
+exportar_segmento.py / exportar_secuencia.py
+                         Exportación de segmentos con verificación FFprobe (B6.7/B6.10)
 instalador.iss           Script Inno Setup oficial del instalador (ver EMPACADO.md)
 biblioteca.db            Catalogo SQLite (ignorado; regenerable)
 configuracion.json       Preferencias locales del usuario (ignorado)
-miniaturas/              Miniatura/previews JPG (ignorado; derivado de los videos)
+miniaturas/              Miniatura/previews JPG + caché exploración (ignorado)
 videos_prueba/           Videos de prueba (tracked)
-Distribucion/            Instaladores de Beta 2 y Beta 3 (ignorado)
-prueba_*.py              77 suites de pruebas
+Distribucion/            Instaladores (ignorado)
+prueba_*.py              amplia suite de pruebas automatizadas versionadas (B3–B7)
+infra/bridge/            Infraestructura reconstruible Bridge/MCP
 ```
 
-Mantenidos como ajenos al visor (artefactos de prueba preservados): `main.py` (script de prueba de operaciones), `operaciones.py` (logica pura usada por el visor), `prueba_agente.py`, `datos.txt`.
+Mantenidos como ajenos al visor: `main.py` (script de prueba de operaciones), `operaciones.py` (logica pura usada por el visor), `prueba_agente.py`, `datos.txt`.
 
 ## 2. Responsabilidades por modulo
 
-- `escanear_videos.py`: unico modulo con responsabilidad sobre el dominio y los datos. Escaneo de archivos (`.mp4`, `.mkv`, `.avi`), preparacion de registros, acceso SQLite con migracion idempotente, integracion FFprobe/FFmpeg con `CREATE_NO_WINDOW`, reutilizacion/generacion de miniaturas y previews (nunca sobrescribe ni elimina), deteccion de diferencias disco-BD, plan de sincronizacion, incorporaciones y eliminacion controlada de registros, lectura paginada con busqueda SQL parametrizada.
-- `visor_videos.py`: interfaz grafica. Carga inicial asincrona de la primera pagina, "Cargar mas", filtro en vivo, tarjetas con miniaturas/previews, seleccion (simple, Ctrl, Shift, modo checks), menu contextual, operaciones, apertura por doble clic, escaneo asincrono, pipeline encadenado, sincronizacion y recarga del catalogo. No abre SQLite directamente ni ejecuta FFprobe/FFmpeg en el hilo principal.
-- `arbol_navegacion.py`: panel izquierdo con nodo raiz "Este equipo", discos y carpetas con carga diferida, seleccion funcional, indicadores de escaneo, modo seleccion multicarpeta con herramientas rapidas.
-- `rutas.py`: resolucion centralizada de rutas (raiz, BD, miniaturas, videos) independiente del CWD, con soporte para modo empaquetado (`sys.frozen`).
-- `configuracion.py`: persistencia de preferencias en `configuracion.json` (carpeta, incluir subcarpetas, cantidad de previews, escaneo automatico, tamanos, vista ampliada).
-- `tareas.py`: infraestructura generica de tareas en segundo plano (`TareaBase` + `GestorTareas` con `QThread` por ejecucion; unica tarea activa por gestor).
-- `tareas_videos.py`: tareas especificas (escaneo, FFprobe, tamanos, miniaturas, lectura y lectura paginada, guardado individual/coleccion, previews progresivas, sincronizacion del catalogo).
-- `operaciones.py`: logica pura de operaciones sobre archivos (copiar, pegar, eliminar a Papelera).
-- `seleccion_carpetas.py`: conjunto de carpetas seleccionadas por ruta para el alcance multicarpeta.
-- `apertura_videos.py`: apertura del video con la aplicacion predeterminada (`os.startfile`), unico punto de apertura.
-- `instalador.iss` + `EMPACADO.md`: empaquetado oficial (PyInstaller + Inno Setup por usuario).
+- `escanear_videos.py`: unico modulo con responsabilidad sobre el dominio y los datos. Escaneo, preparación de registros, acceso SQLite con migración idempotente (videos, marcadores, segmentos, derivados, colores), integración FFprobe/FFmpeg, reutilización/generación de miniaturas y previews, detección de diferencias, plan de sincronización, lectura paginada, paleta de colores, trazabilidad de derivados.
+- `visor_videos.py`: interfaz grafica. Carga inicial asíncrona, "Cargar mas", filtro y ordenamiento, tarjetas con miniaturas/previews y exploración temporal, marcadores/segmentos con edición, selección, menú contextual, operaciones de organización por lote, panel Organización/Explorer con doble panel y drag & drop, escaneo asíncrono y recarga con preservación de filtros/orden/selección/viewport.
+- `arbol_navegacion.py`: panel izquierdo con nodo raiz "Este equipo", discos y carpetas con carga diferida, selección funcional, indicadores de escaneo, modo selección multicarpeta.
+- `rutas.py`: resolucion centralizada de rutas (raiz, BD, miniaturas, videos) independiente del CWD, con soporte PyInstaller, `ruta_video_existente`, `resolver_destino_drop`/`validar_destino_drop_completo`, `listar_subcarpetas`.
+- `configuracion.py`: persistencia de preferencias en `configuracion.json` (carpeta, subcarpetas, cantidad de previews, escaneo automático, tamaños, vista ampliada, modo alcance, orden, nombres de colores, versión/build).
+- `tareas.py`: infraestructura generica (`TareaBase` + `GestorTareas`).
+- `tareas_videos.py`: tareas específicas (escaneo, FFprobe, tamaños, miniaturas, lectura paginada, guardado, previews progresivas, sincronización, marcadores/segmentos/colores, exploración densa, exportación segmento/lote/secuencia, organización, prevalidación drop).
+- `operaciones.py` + `copiar/mover/eliminar/crear_carpeta/lote/renombrar_*`: lógica pura de operaciones de archivos (copiar/pegar/eliminar a Papelera, mover, renombrar) — base para `TareaLoteOperaciones`.
+- `nombres.py`: motor puro de nombres (tokens, sanitización Windows, extensión controlada, colisiones).
+- `panel_organizacion.py`: panel destino con validación de drop y prevalidación atómica.
+- `playlist_vlc.py` / `scrubber.py` / `exploracion_*`: exploración temporal y reproducción VLC.
+- `instalador.iss` + `EMPACADO.md` + `preparar_empaquetado.py`: empaquetado oficial.
 
 ## 3. Separacion de responsabilidades
 
 - UI separada de logica: la interfaz no accede directamente a SQLite, FFprobe, FFmpeg, archivos ni logica pesada; todo se encola como tarea en segundo plano.
-- El catalogo (`escanear_videos.py`) contiene capas puras de transformacion (registros basicos, combinacion con FFprobe/miniaturas/tamanos) separadas del acceso a SQLite y de los subprocesos FFmpeg/FFprobe.
+- El catalogo (`escanear_videos.py`) contiene capas puras de transformacion separadas del acceso a SQLite y de los subprocesos.
 - La apertura de archivos esta aislada en un unico servicio.
 - La resolucion de rutas esta centralizada y es independiente del CWD.
 
 ## 4. Catalogos y sincronizacion (SQLite)
 
-- Tabla `videos` con columnas base y extras (`duracion_segundos`, `ancho`, `alto`, `codec_video`, `cantidad_miniaturas`, `tamano_bytes`, `ruta`).
-- Migracion idempotente por `PRAGMA table_info` + `ALTER TABLE` cuando la columna falta.
-- Escritura transaccional: colecciones en una unica transaccion atomica; rollback total ante error; base inexistente -> `FileNotFoundError` sin crear archivos.
-- Lectura paginada con `LIMIT/OFFSET` y `COUNT` parametrizados; la primera pagina se carga asincrona y las siguientes con "Cargar mas".
-- Sincronizacion: `detectar_diferencias` (no destructiva) -> `preparar_plan_sincronizacion` -> `aplicar_incorporaciones` -> `eliminar_candidatos`, ejecutada en segundo plano; tras exito, recarga asincrona del catalogo con reemplazo de tarjetas.
-- Cada video transporta su `ruta` real; el alcance del catalogo (carpetas seleccionadas) es distinto de la carpeta activa de navegacion.
+- Tabla `videos` con columnas base y extras (`duracion_segundos`, `ancho`, `alto`, `codec_video`, `cantidad_miniaturas`, `tamano_bytes`, `ruta`, `mtime_ns`) + `marcadores_video`, `segmentos_video` (con `color`), `videos_derivados` y `videos_derivados_segmentos`.
+- Migracion idempotente por `PRAGMA table_info` + `ALTER TABLE`.
+- Escritura transaccional atomica; `FileNotFoundError` sin crear archivos si base inexistente.
+- Lectura paginada con `LIMIT/OFFSET` y `COUNT` parametrizados; ordenamiento configurable y filtros por color/segmento.
+- Sincronizacion: `detectar_diferencias` -> `preparar_plan_sincronizacion` -> `aplicar_incorporaciones` -> `eliminar_candidatos`, en segundo plano; recarga con reemplazo de tarjetas preservando filtros/orden/selección (B7.8).
+- Cada video transporta su `ruta` real; alcance multicarpeta vs carpeta activa.
 
 ## 5. Escaneo, FFprobe y FFmpeg
 
-- Escaneo de archivos de video por extension, con modo recursivo configurable ("Incluir subcarpetas") y nombres planos seguros para miniaturas.
-- FFprobe: metadatos (duracion, ancho, alto, codec) en segundo plano con timeout de 30 s; `None` ante fallo individual.
-- FFmpeg: generacion de miniaturas y previews en segundo plano, con reutilizacion por `mtime` (miniatura valida si su mtime >= al del video) y escritura en la siguiente ranura libre (`miniaturas/<prefijo>_NN.jpg`, previews `_preview_NN.jpg`). Nunca sobrescribe ni elimina archivos existentes.
-- Videos vacios (0 bytes) no generan miniatura.
-- Subprocesos con `CREATE_NO_WINDOW` para evitar consolas emergentes.
+- Escaneo por extension, modo recursivo configurable y nombres planos seguros.
+- FFprobe con timeout 30s; reutilización por `ruta+tamano+mtime_ns` (B4.5) para evitar FFprobe redundante.
+- FFmpeg: miniaturas y previews con reutilizacion por `mtime` y ranuras sin sobrescribir; previews faltantes generadas de forma progresiva y diferida (B4.6). Caché densa versionada por fingerprint (B4.3) y exploración con 15 prioritarios + densidad secundaria.
+- Subprocesos con `CREATE_NO_WINDOW`.
 
 ## 6. Tareas en segundo plano
 
-- `TareaBase` + `GestorTareas`: un `QThread` por ejecucion, una tarea activa por gestor, senales `inicio/resultado/error/finalizada`, apagado ordenado con `cerrar(timeout)`.
-- Pipeline encadenado del catalogo: escaneo -> tamanos -> FFprobe -> miniaturas -> guardado -> sincronizacion -> recarga, con el mismo gestor.
-- Previews progresivas con gestor independiente y lotes por carpeta.
+- `TareaBase` + `GestorTareas`: un `QThread` por ejecucion, una tarea activa por gestor, senales `inicio/resultado/error/finalizada`, apagado ordenado.
+- Pipeline encadenado: escaneo -> tamanos -> FFprobe -> miniaturas -> guardado -> sincronizacion -> recarga.
+- Previews progresivas, exploración densa y exportación con gestores independientes.
 
 ## 7. Pruebas
 
-- 77 suites `prueba_*.py` en la raiz (smoke, escaneo, lectura/paginacion, previews/miniaturas, seleccion, sincronizacion, operaciones, persistencia, progreso, interfaz asincrona, recarga de catalogo).
-- Arnés de smoke tests (`prueba_smoke.py`) con base SQLite temporal; ejecucion explicita.
-- Fallos historicos conocidos y fallo transitorio no reproducido: ver `STATUS.md` (Problemas conocidos). Los tests no deben modificar el estado real del usuario (`RULES.md` 7).
+- Amplia suite de pruebas automatizadas versionadas `prueba_*.py` (desde `prueba_tareas.py` hasta `prueba_drag_*`, `prueba_version_build.py`, `prueba_integracion_b612.py` etc.).
+- Arnés smoke (`prueba_smoke.py`) y suites de organización/exportación/derivados integradas.
+- Fallos históricos y transitorios ver `STATUS.md`; tests no deben modificar estado real del usuario (`RULES.md` 7).
 
 ## 8. Puntos de extension previstos
 
-- Generacion de miniaturas/previews con reutilizacion por `mtime` y preservacion de archivos.
-- Infraestructura asincrona reutilizable para escaneo, FFprobe, miniaturas, lectura y escritura.
-- Modulo de configuracion completo (centralizar rutas, extensiones, tamanos, columnas).
-- Cache formal de miniaturas/metadatos.
-- Vistas del catalogo: orden, agrupacion y filtros sobre `listar_videos`/`listar_videos_paginado` (paginacion automatica y busqueda SQL desde la interfaz pendientes).
-- Resolucion de rutas con soporte PyInstaller.
-- Paneles adicionales (propiedades, favoritos, etiquetas, IA) sobre la infraestructura QSplitter existente.
+- Paneles adicionales y organización ya implementada (Beta 7) sobre QSplitter.
+- Vistas del catalogo con filtros y ordenamiento ya implementadas (B6.2/B6.5).
+- Resolución de rutas con soporte PyInstaller.
 
 ## 9. Direccion arquitectonica futura
 
-- Interfaz hacia un sistema de paneles independientes y configurables (base QSplitter implementada).
-- Centro de navegacion permanente con estructura extensible (catalogo, Este equipo, favoritos, etiquetas, colecciones, recientes, ultimos escaneos).
-- Los cambios futuros se hacen por etapas pequenas; cada etapa extiende la arquitectura solo en la medida de su alcance aprobado.
+- Centro de navegacion permanente extensible (ya con Organización/Explorer).
+- Herramientas de manipulación basadas en el modelo visual de escenas/previews sin timeline.
+- Cambios por etapas pequeñas; cada etapa extiende la arquitectura solo en su alcance aprobado.
 
 ## 10. Decisiones arquitectonicas duraderas
 
@@ -101,55 +107,55 @@ Formato: Decision / Razon / Alternativas descartadas.
 
 ### 10.1 PySide6 sobre PyQt6
 - **Decision:** el stack es PySide6 (Qt 6).
-- **Razon:** decision conversacional vigente; PyQt6 es referencia historica superada.
+- **Razon:** decision conversacional vigente.
 - **Alternativas descartadas:** PyQt6, Tkinter, wxPython.
 
 ### 10.2 Separacion estricta UI / logica
 - **Decision:** la interfaz nunca accede directamente a SQLite, FFprobe, FFmpeg, archivos ni logica pesada.
-- **Razon:** evita bloqueos, acoplamiento y errores de estado; el catalogo es la unica capa de dominio/datos.
-- **Alternativas descartadas:** UI con acceso directo a la BD (causo problemas historicos de duplicacion de nombres de BD y bloqueos).
+- **Razon:** evita bloqueos y acoplamiento.
+- **Alternativas descartadas:** UI con acceso directo a la BD.
 
 ### 10.3 Trabajo pesado fuera del hilo principal
 - **Decision:** toda tarea costosa usa `QThread`/`GestorTareas`.
-- **Razon:** la fluidez de la interfaz es requisito del producto.
-- **Alternativas descartadas:** ejecucion síncrona en el hilo principal (bloqueaba el escaneo y FFprobe).
+- **Razon:** fluidez de la interfaz.
+- **Alternativas descartadas:** ejecucion síncrona.
 
 ### 10.4 Pipeline por carpeta, no paralelismo agresivo
-- **Decision:** el soporte multicarpeta reutiliza el pipeline secuencialmente, una carpeta por vez.
-- **Razon:** menor riesgo; evita reescribir tareas y pipelines simultaneos compitiendo.
+- **Decision:** soporte multicarpeta reutiliza pipeline secuencialmente.
+- **Razon:** menor riesgo.
 - **Alternativas descartadas:** pipelines paralelos simultaneos.
 
 ### 10.5 Carpeta activa != alcance del catalogo; cada video transporta su ruta
-- **Decision:** cada registro del catalogo lleva su `ruta` real; los previews/miniaturas se resuelven por esa ruta, no por la carpeta de navegacion.
-- **Razon:** el bug critico final de Beta 3 fue consecuencia de usar estado de navegacion para una operacion que necesitaba la ruta real del video.
-- **Alternativas descartadas:** resolver por `carpeta_seleccionada` (corregida).
+- **Decision:** cada registro lleva su `ruta` real.
+- **Razon:** bug critico Beta 3 por usar estado de navegacion.
+- **Alternativas descartadas:** resolver por `carpeta_seleccionada`.
 
 ### 10.6 Seleccion personalizada materializada como rutas
-- **Decision:** la seleccion multicarpeta es un conjunto explicito de rutas; los comandos de rango son herramientas para construirlo.
-- **Razon:** evita semantica ambigua si cambia el contenido u orden de las carpetas.
-- **Alternativas descartadas:** representacion interna por intervalos.
+- **Decision:** conjunto explicito de rutas.
+- **Razon:** evita ambigüedad.
+- **Alternativas descartadas:** intervalos.
 
 ### 10.7 Operaciones de archivos seguras
-- **Decision:** copiar = copia fisica; pegar = portapapeles interno; nunca sobrescribir silenciosamente; eliminar = Papelera nativa de Windows (`SHFileOperationW` via `ctypes`); nunca borrado permanente desde el producto; operaciones en segundo plano.
-- **Razon:** seguridad y previsibilidad; comportamiento recuperable; sin dependencias externas.
-- **Alternativas descartadas:** `os.remove`/borrado permanente, sobrescritura directa.
+- **Decision:** copiar = copia fisica; pegar = portapapeles interno; renombrar con motor `nombres.py` y ciclos con temporales; mover/copiar/eliminar por lote y drag & drop con prevalidación atómica; nunca sobrescribir silenciosamente; eliminar = Papelera nativa Windows; nunca borrado permanente; operaciones en segundo plano.
+- **Razon:** seguridad y previsibilidad.
+- **Alternativas descartadas:** `os.remove`/sobrescritura directa.
 
 ### 10.8 Incrementalidad despues de operaciones
-- **Decision:** copiar/pegar/eliminar no provocan reescaneos completos cuando la actualizacion incremental es posible.
-- **Razon:** coherente con la actualizacion parcial; menor costo en bibliotecas grandes.
-- **Alternativas descartadas:** reescaneo completo tras cada operacion.
+- **Decision:** copiar/pegar/mover/renombrar/eliminar no provocan reescaneos completos; actualización vía recarga paginada preservando filtros/orden/selección/viewport (B7.8).
+- **Razon:** coherente con actualización parcial.
+- **Alternativas descartadas:** reescaneo completo tras cada operación.
 
 ### 10.9 Reutilizacion de miniaturas por mtime y ranuras sin sobrescribir
-- **Decision:** se reutiliza la miniatura valida (mtime >= video); la generacion escribe en la siguiente ranura libre; nunca se sobrescribe ni elimina.
-- **Razon:** preservacion de datos y cache; convivencia con miniaturas preexistentes.
-- **Alternativas descartadas:** sobrescritura de la miniatura existente, regeneracion total.
+- **Decision:** se reutiliza miniatura valida (mtime >= video); generación en siguiente ranura libre; nunca sobrescribir ni eliminar.
+- **Razon:** preservacion de cache.
+- **Alternativas descartadas:** sobrescritura total.
 
 ### 10.10 Resolucion centralizada de rutas
-- **Decision:** `rutas.py` centraliza las rutas del proyecto independientemente del CWD, con soporte para modo empaquetado.
-- **Razon:** la app fallaba al lanzarse desde otra ubicacion; el empaquetado exige rutas relativas al ejecutable.
+- **Decision:** `rutas.py` centraliza rutas independientemente del CWD, con soporte PyInstaller, incluyendo `resolver_destino_drop` y `validar_destino_drop_completo`.
+- **Razon:** fallaba al lanzarse desde otra ubicación; empaquetado exige rutas relativas al ejecutable.
 - **Alternativas descartadas:** rutas relativas al CWD.
 
-### 10.11 Instalador por usuario, sin FFmpeg empaquetado
-- **Decision:** instalacion por usuario (`%LOCALAPPDATA%\Programs\VisorVideos`, `PrivilegesRequired=lowest`), AppId independiente por version, `biblioteca.db` vacia con `onlyifdoesntexist`, desinstalacion completa de datos generados; FFmpeg/FFprobe se resuelven por PATH, no se empaquetan.
-- **Razon:** sin permisos de administrador; preserva el catalogo del usuario en reinstalaciones; los binarios multimedia pesan y varian por maquina.
-- **Alternativas descartadas:** instalacion por maquina (administrador), empaquetado de FFmpeg dentro del instalador.
+### 10.11 Instalador por usuario con preservación de datos
+- **Decision:** instalacion por usuario (`%LOCALAPPDATA%\Programs\VisorVideos`, `PrivilegesRequired=lowest`), AppId independiente, `biblioteca.db` vacía con `onlyifdoesntexist uninsneveruninstall`, **sin** `[UninstallDelete]` destructivo que borre `biblioteca.db`/`configuracion.json`/`miniaturas`; desinstalación conserva datos del usuario (B6.1) y **no** elimina datos persistentes; FFmpeg/FFprobe por PATH, no se empaquetan; DB seed via `preparar_empaquetado.py` con `escanear_videos.conectar_bd`.
+- **Razon:** sin permisos de administrador; preserva catalogo en reinstalaciones; evita pérdida irreversible de marcadores/segmentos.
+- **Alternativas descartadas:** instalacion por maquina, empaquetado de FFmpeg, desinstalación completa con `[UninstallDelete]` (Beta 3, obsoleta desde B6.1).

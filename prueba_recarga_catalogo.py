@@ -674,6 +674,7 @@ def test_13():
             ventana.seleccionar_carpeta()
         ventana.boton_escanear.click()
         _esperar(lambda v=ventana: _cadena_terminada(v))
+        _esperar(lambda v=ventana: not getattr(v, "gestor_resumen", None) or (not v.gestor_resumen.activo and not v._cola_resumen), timeout_ms=5000)
         ok_exito = (
             ventana.gestor.estado == Estado.INACTIVO
             and ventana.gestor.hilo is None
@@ -708,6 +709,7 @@ def test_13():
             and not v._cola_previews
             and not v._timer_previews.isActive()
         )
+        _esperar(lambda v=ventana2: not getattr(v, "gestor_resumen", None) or (not v.gestor_resumen.activo and not v._cola_resumen), timeout_ms=5000)
         ok_error = (
             ventana2.gestor.estado == Estado.INACTIVO
             and ventana2.gestor.hilo is None

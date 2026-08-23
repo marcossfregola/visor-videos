@@ -23,11 +23,23 @@ El proposito central es permitir identificar rapidamente el contenido de un vide
 - Conservar una interfaz fluida con trabajo pesado fuera del hilo principal.
 - Preservar los datos del usuario como prioridad absoluta.
 
-## Alcance
+## Alcance vigente (Beta 7 — B7.13 cerrada y publicada)
+
+Producto evolucionado hasta:
+
+- Exploración temporal interactiva (B4.1–B4.3): superficie temporal 0-100%, marcadores temporales y caché densa de exploración.
+- Persistencia de marcadores y segmentos por video (B4.2, B5).
+- Clasificación visual por color de marcadores/segmentos (B6.3) y resumen colapsado (B6.4).
+- Filtros estructurados y ordenamiento configurable del catálogo (B6.5, B6.2).
+- Exportación de material: extracción de un segmento (B6.7), lote de segmentos (B6.9), unión de segmentos (B6.10) con motor de nombres reutilizable (B6.8).
+- Trazabilidad de videos derivados e integración robusta (B6.11–B6.12) con validación de reescaneo preservando metadatos.
+- Organización de archivos (Beta 7 B7.1–B7.13): renombrado individual y masivo (motor `nombres.py`), mover/copiar/eliminar por lote, crear carpetas, modo Organización/Explorer con doble panel, navegación destino, objetivo drop estable y drag & drop interno con prevalidación atómica y actualización vía recarga paginada B7.8.
+
+## Alcance base (heredado)
 
 - Exploracion y navegacion visual de colecciones de videos en Windows.
 - Catalogo SQLite con escaneo, metadatos (FFprobe), miniaturas/previews (FFmpeg) y sincronizacion incremental.
-- Operaciones seguras de archivos: copiar, pegar y eliminar (Papelera de reciclaje).
+- Operaciones seguras de archivos: copiar, pegar, mover, renombrar, crear carpetas y eliminar a Papelera de reciclaje (operaciones por lote y drag & drop desde B7).
 - Configuracion persistente de preferencias del usuario.
 
 ## No-alcance
@@ -45,14 +57,15 @@ El proposito central es permitir identificar rapidamente el contenido de un vide
 - **Navegacion permanente:** el arbol de navegacion y la seleccion de carpetas forman parte del contexto central.
 - **Seguridad de datos:** nunca sobrescribir silenciosamente, nunca borrar sin autorizacion; ante la duda, preservar.
 - **Incrementalidad:** las operaciones no deben provocar reescaneos completos innecesarios.
+- **Identidad lógica preservada:** las operaciones físicas conservan la identidad lógica del video y sus relaciones con marcadores/segmentos/derivados.
 
 ## Direccion futura vigente
 
-- Espacio de trabajo de paneles independientes y configurables (infraestructura base QSplitter ya implementada).
+- Espacio de trabajo de paneles independientes y configurables (infraestructura base QSplitter ya implementada; doble panel B7.11).
 - Centro de navegacion permanente con estructura extensible (catalogo, sistema de archivos, favoritos, etiquetas, colecciones, recientes, ultimos escaneos).
-- Herramientas de manipulacion basadas en el modelo visual de escenas/previews (recorte y union) sin adoptar una interfaz de timeline.
-- Organizacion (favoritos, etiquetas, puntuaciones) y administracion avanzada (deteccion de movidos, renombrado masivo, duplicados) como direccion a planificar.
+- Organización ya implementada (Beta 7); favoritos/etiquetas/puntuaciones y administración avanzada (detección de duplicados) quedan como dirección a planificar en BACKLOG.
 - Las ideas no comprometidas viven en `BACKLOG.md`; el trabajo decidido en `ROADMAP.md`.
+- Validación del instalador Beta 7 pendiente como próximo paso operativo.
 
 ## Stack conceptual
 

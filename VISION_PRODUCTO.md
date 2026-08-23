@@ -70,6 +70,57 @@ Ideas registradas para etapas futuras:
 
 ---
 
+## Marcadores temporales como función de navegación
+
+Decisión de producto (cerrada en la validación de la B4.1):
+
+- Los **marcadores temporales** son una **función permanente de navegación
+  del producto**, no exclusivamente puntos de corte.
+- Un marcador representa un **instante significativo dentro de un video**,
+  un punto al que el usuario quiera regresar días o meses después.
+- Deberán permitir, en etapas futuras, **iniciar reproducción desde el
+  marcador** y actuar como **destino seleccionable durante la reproducción**
+  para saltar exactamente a ese instante (navegación entre marcadores
+  durante la reproducción).
+- Los marcadores se asocian a los videos del catálogo de forma **permanente**:
+  desde la **B4.2** se persisten en SQLite (`marcadores_video`, relacionados
+  mediante `videos.id`) y reaparecen entre sesiones; pueden eliminarse
+  permanentemente y recuperan su representación visual con las previews
+  disponibles.
+- Los mismos puntos podrán participar posteriormente en **selección A/B,
+  loops, selección de fragmentos o corte/unión**, pero eso es otra función:
+  el marcador conserva su significado de navegación.
+- **Conservación de datos del usuario**: la persistencia es deliberadamente
+  no destructiva — si el registro del video desaparece, los marcadores **no**
+  se eliminan automáticamente (pueden quedar huérfanos) y su **reasociación**
+  a archivos movidos/renombrados (o por nombre/ruta) es una **función
+  futura**, para evitar pérdida automática de datos creados por el usuario.
+
+---
+
+## Segmentos A–B y secuencias de reproducción
+
+Decisiones estratégicas de producto (cerradas en la planificación **B5.0** de la Beta 5):
+
+- **Marcador y segmento son entidades distintas.** El marcador significa "un instante
+  interesante del video" y el segmento "un intervalo interesante del video". No se convierten
+  los marcadores en puntos de inicio/fin especiales: aunque compartan un mismo instante
+  temporal, ambos objetos son **independientes**.
+- Los **segmentos se definen mediante instantes/previews**: se construyen sobre la exploración
+  temporal (previews y fotogramas como superficie de interacción), no sobre una línea de tiempo
+  tradicional.
+- **Una lista de segmentos puede convertirse en una secuencia de reproducción**: reproducir
+  A→B, C→D, E→F automáticamente, sin intervención del usuario entre segmentos.
+- **VLC continúa siendo el reproductor externo preferente** para la reproducción avanzada
+  (inicio temporal, fin temporal, bucle A–B y secuencias de segmentos, mediante playlists
+  puras).
+- **El Visor sigue siendo principalmente un explorador visual**; la reproducción permanece
+  como función secundaria respecto de la exploración.
+- Cualquier **futura edición deberá seguir orientada a escenas/previews** y no evolucionar
+  hacia una línea de tiempo compleja tradicional.
+
+---
+
 ## Herramientas futuras
 
 - Recorte de videos utilizando previews como puntos de inicio y fin.

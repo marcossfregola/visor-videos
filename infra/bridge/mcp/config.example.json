@@ -1,0 +1,4 @@
+{
+  "bridge_dir": "%LOCALAPPDATA%\\VisorVideosDevBridge",
+  "max_prompt_bytes": 131072
+}

@@ -5,6 +5,1214 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 119. Reconciliación de main con Beta 7 y adopción documental vigente
+
+- **Fecha:** 2026-08-23
+- **Tipo:** reconciliación de `main` con `beta7` y adopción definitiva de la matriz documental V1.3.
+- **Líneas históricas reconciliadas:**
+  - `main` previo `918cf67fa6b02b4506f08bbb2af351702239161d` (estructura documental V1.3)
+  - `beta7` `97e6fcf1489c3999fbf1c82222ce584862970f5b` (producto Beta 7 B7.13 + reconciliación post-publicación)
+- **Método:** merge normal no destructivo `beta7 → main` (`--no-ff`), preservando ambas historias sin reescritura ni force push.
+- **Producto funcional:** equivalente a `beta7`. Los archivos funcionales son idénticos a `beta7` salvo cuatro correcciones exclusivamente de whitespace, sin efecto semántico:
+  - `prueba_copiar_miniatura_reinicio_b74_fix.py`
+  - `prueba_lote_b76.py`
+  - `prueba_mover_b72.py`
+  - `renombrar_masivo.py`
+- **Higiene/documentación:** además se corrigieron whitespace documental en `DOCUMENTO_TECNICO.md` / `ESTADO_PROYECTO.md` y se realizó la reconciliación semántica V1.3 en `PROJECT.md` / `STATUS.md` / `ARCHITECTURE.md` / `ENVIRONMENT.md` / `BACKLOG.md` / `ROADMAP.md` / etc. (no son whitespace).
+- **Matriz documental adoptada:**
+  - `PROJECT.md` — identidad/visión/alcance
+  - `STATUS.md` — estado actual
+  - `ARCHITECTURE.md` — arquitectura
+  - `ENVIRONMENT.md` — entorno
+  - `RULES.md` — reglas
+  - `ROADMAP.md` — trabajo futuro decidido
+  - `BACKLOG.md` — ideas no comprometidas
+  - `HISTORIAL_PROYECTO.md` — historia
+  - `EMPACADO.md` — empaquetado
+  - `METODOLOGIA_DESARROLLO.md` — metodología
+- **Documentos heredados conservados como históricos (referencia, no autoridad):** `DOCUMENTO_TECNICO.md` → `ARCHITECTURE.md`, `ESTADO_PROYECTO.md` → `STATUS.md`, `REGLAS_PROYECTO.md` → `RULES.md`, `VISION_PRODUCTO.md` → `PROJECT.md`.
+- **Cierre funcional Beta 7 permanece:** `f9976d3b3b68a197bf8e9d29a4ecc670f48a9709` (`B7 Cerrar Beta 7 B7.13`); `v7.0-beta` debe permanecer asociado a ese cierre (no mover tag).
+- **Repositorio:** PUBLIC, default branch `main`.
+- **Release:** `v7.0-beta` prerelease PUBLIC sin instalador (asociada a `f9976d3`).
+- **Validación específica del instalador Beta 7:** sigue PENDIENTE.
+- **Beta 8:** aún no definida ni priorizada; queda pendiente de auditoría final, validación instalador, consolidación y priorización.
+- **Nota:** Este merge establece `main` como rama vigente/canónica. El SHA de este merge no se registra dentro de esta misma entrada para evitar una referencia circular; queda determinado por Git al crear el commit.
+
+---
+
+## 118. Publicación Beta 7 — B7.13 publicada (commit/tag/push/Release)
+
+- **Fecha:** 2026-08-23
+- **Tipo:** publicación post-cierre de **Beta 7 — B7.13** (B7.0–B7.13 completas y auditadas funcionalmente; identidad `Beta 7 - B7.13`).
+- **Commit oficial de cierre funcional:** `f9976d3b3b68a197bf8e9d29a4ecc670f48a9709` `B7 Cerrar Beta 7 B7.13` (identidad inmutable; tag `v7.0-beta` → `f9976d3`).
+- **Rama publicada:** `beta7` publicada en `origin/beta7`; **al momento de la publicación** `beta7`/`origin/beta7` resolvían a `f9976d3` (ver `git rev-parse HEAD` / `origin/beta7` en ese momento); la rama puede contener reconciliaciones documentales posteriores al tag.
+- **Tag anotado publicado:** `v7.0-beta` anotado publicado y resolviendo permanentemente a `f9976d3` (`v7.0-beta^{commit}` → `f9976d3`; tag no movido ni recreado).
+- **Repositorio GitHub:** actualmente **PUBLIC** (`visibility:PUBLIC`, `isPrivate:false`, `defaultBranch:main`).
+- **GitHub Release `v7.0-beta`:** **prerelease publicada** — `Visor de Videos Beta 7 - B7.13` (`tag v7.0-beta`, `draft:false`, `prerelease:true`, `published:2026-08-23T19:10:50Z`, `url https://github.com/marcossfregola/visor-videos/releases/tag/v7.0-beta`); descripción documenta capacidades reales (operaciones de organización, renombrado individual/masivo, mover/copiar/eliminar por lote, carpetas, modo Organización/Explorer, doble panel, drag & drop) y aclara `No incluye instalador publico Beta 7. El instalador Beta 7 todavia no fue validado`.
+- **Validación del instalador Beta 7:** **sigue PENDIENTE** (`python prueba_instalador.py` sobre `Distribucion\Beta7\VisorVideos_Beta7_Setup.exe` no ejecutada en esta etapa).
+- **Relación con 117:** la entrada **117 permanece como hecho histórico** — describe correctamente el momento del cierre local (`HEAD 6ceb390`, sin commit/tag/push al momento del cierre local). Esta entrada **118** registra el estado posterior efectivo post-cierre/publicación.
+
+---
+
+## 117. Cierre Beta 7 — B7.13 cerrada localmente (sin commit/tag/push)
+
+- **Fecha:** 2026-08-23
+- **Tipo:** cierre **local** de **Beta 7 — B7.13** (B7.0–B7.13 completas y auditadas funcionalmente; **identidad `Beta 7 - B7.13`** en `configuracion.py`/`prueba_version_build.py`; rama `beta7` HEAD `6ceb3902beda633ed11cdf586a11a5b53f661053`; sin commit final documental/identidad, sin tag `v7.0-beta`, sin push a `origin/beta7`, sin publicación/prerelease en GitHub, sin validación específica del instalador Beta 7 al momento del cierre local).
+- **Rama:** `beta7` (base exacta `7d85e94bb8b617209a155e5b1086d1d38f4784f8`; `beta6`/`origin/beta6`/`v6.0-beta` publicados).
+- **Alcance demostrado (resumen factual):** Beta 7 — "Organización y operaciones de archivos": modo Organización/Explorer (panel Destino + catálogo origen, splitter vertical secundario, preservación de scroll/viewport, estado navegación destino vía `rutas.listar_subcarpetas`/`TareaListarSubcarpetasDestino`), objetivo estable raíz/subcarpeta (`resolver_destino_drop`/`validar_destino_drop_completo`), drag interno origen `Tarjeta` (`QDrag` `Qt.MoveAction`, `QApplication.startDragDistance`, MIME `application/x-visor-videos-ids-b713a`) y receptor `PanelOrganizacion` (`setAcceptDrops`, `dragEnter/Move/Drop` con validación), conexión drop→movimiento real vía `TareaPrevalidarDrop` (IDs + rutas fuente + destino, fuera de UI, cero movimiento si uno falta) → `TareaLoteOperaciones` mover por lote, actualización catálogo vía recarga paginada B7.8 (filtros/orden/paginación preservados), operaciones individuales `TareaRenombrarVideo`/`TareaMoverVideo`/`TareaCopiarVideo`/`TareaEliminarVideo`/`TareaCrearCarpeta` y masivas `TareaRenombrarMasivo` (motor `nombres.py`) con suites y regresiones en verde hasta `6ceb3902`.
+- **Identidad:** `VERSION_PRODUCTO="Beta 7"`, `BUILD_IDENTIFICADOR="B7.13"`, `TEXTO_VERSION_BUILD="Beta 7 - B7.13"`; `instalador.iss` `AplicacionVersion="7.0"` / `BetaEtiqueta="Beta7"` con `onlyifdoesntexist uninsneveruninstall` y sin `[UninstallDelete]` destructivo.
+- **Pendientes explícitos:** `commit` final documental/identidad; `tag v7.0-beta` anotado (no crear todavía); `push`; publicación/prerelease en GitHub; **validación específica del instalador Beta 7** (`python prueba_instalador.py` sobre `Distribucion\Beta7\VisorVideos_Beta7_Setup.exe`).
+
+---
+
+## 116. Apertura Beta 7 — B7.0 reconciliación documental y cambio de identidad (sin commit)
+
+- **Fecha:** 2026-08-21
+- **Tipo:** apertura controlada **B7.0** sin funcionalidad (rama local `beta7` creada exactamente desde `7d85e94bb8b617209a155e5b1086d1d38f4784f8`, cierre publicado de Beta 6).
+- **Rama:** `beta7` (HEAD `7d85e94bb8b617209a155e5b1086d1d38f4784f8`; base exacta verificada `beta6`/`origin/beta6`/`v6.0-beta^{commit}` alineados; sin commit/push/tag/Release en esta etapa).
+- **Alcance:** reconciliación documental de referencias obsoletas que describían Beta 6 como solo local/pendiente → reflejando realidad demostrada: **tag `v6.0-beta` anotado publicado sobre `7d85e94`, `origin/beta6` alineado y GitHub Release Beta 6 prerelease sin binarios**; actualización de identidad de desarrollo a `Beta 7 - B7.0` en `configuracion.py` y adaptación de `prueba_version_build.py`; sin modificar lógica/SQLite/UI/FFmpeg/caché/operaciones de archivos; sin B7.1.
+- **Archivos modificados en esta etapa (working tree, sin commit):** `README.md`, `ESTADO_PROYECTO.md`, `ROADMAP.md`, `HISTORIAL_PROYECTO.md`, `EMPACADO.md`, `configuracion.py`, `prueba_version_build.py` (modificados solo según autoridad documental).
+
+---
+
+## 115. Cerrar Beta 6 — cierre local documental y de packaging
+
+- **Fecha:** 2026-08-21
+- **Tipo:** cierre **LOCAL** de **Beta 6 — B6.12** (B6.1–B6.12 completas; identidad vigente `Beta 6 - B6.12`; packaging reproducible y validación real del instalador aprobada; sin tag `v6.0-beta`, sin push/Release al momento del commit).
+- **Rama:** `beta6` (HEAD previo `4251c1969c362975c55fdafd97baeb433d1a7f4f`).
+- **Alcance:** Beta 6 cerrada LOCALMENTE al momento de este commit; instalación/desinstalación/reinstalación aislada validada preservando `biblioteca.db`/`configuracion.json`/`miniaturas` (B6.1 `uninsneveruninstall`); `preparar_empaquetado.py` genera DB seed vacía con `escanear_videos.conectar_bd`, `PRAGMA integrity_check=ok` y conteos cero. Publicación posterior (fuera de este commit): tag `v6.0-beta` anotado publicado sobre `7d85e94bb8b617209a155e5b1086d1d38f4784f8`, `origin/beta6` alineado y GitHub Release Beta 6 prerelease sin binarios (reconciliado en B7.0).
+- **Verificación de esta entrega:** `py_compile` OK; `prueba_version_build.py` 3/3 (`Beta 6 - B6.12`); `prueba_instalador.py` 8/8; `prueba_reescaneo_preserva_metadatos_b612.py` 3/3 y `prueba_integracion_b612.py` 14/14 y `prueba_derivados_b611.py` 15/15 ya aprobadas en tarea anterior (no repetidas aquí); `git diff --check` limpio; `v6.0-beta` no creado al momento del commit; push/Release pendientes entonces (publicados posteriormente, ver B7.0).
+- **Archivos versionados en este commit:** `configuracion.py`, `prueba_version_build.py`, `preparar_empaquetado.py`, `EMPACADO.md`, `ESTADO_PROYECTO.md`, `README.md`, `ROADMAP.md`, `HISTORIAL_PROYECTO.md`, `DOCUMENTO_TECNICO.md`.
+
+---
+
+## 114. Cierre técnico B6.12 — Integración, robustez y cierre funcional
+
+- **Fecha:** 2026-08-21
+- **Tipo:** cierre técnico funcional de **B6.12 completada y verificada; cerrada documental y técnica en este commit local de `beta6` (sin tag/merge/release/push; sin cierre final de Beta 6).**
+- **Rama:** `beta6` (HEAD previo `cc71224079fc69991099aa29d5dc349e72469213`).
+- **Alcance verificado (resumen factual):**
+  - **Integración B6.12 — `prueba_integracion_b612.py` 14/14** — validación cruzada con DB/video/fixture aislados bajo `C:\prueba\_tmp_b612_integracion` (eliminado en `finally`; no toca datos reales) y **FFmpeg 8.1.1/FFprobe 8.1.1 reales** (`testsrc`/`anullsrc`): P01 filtro `marcador:rojo` + `orden duracion asc` + paginación 1/1 sin duplicados; P02 `segmento:sin_clasificar` (`color IS NULL`) + `orden nombre asc` + paginación; P03 resumen colapsado batch `TareaResumenColapsado` (6 marcadores + 6 segmentos con `NULL` preservados); P04 export individual real FFmpeg/FFprobe + naming `nombres.generar_sugerencia_exportacion` + `alta/trazabilidad` `incorporar_video_derivado_al_catalogo`/`obtener_derivacion_por_derivado` (duración `TOLERANCIA_DURACION_EXPORT`); P05 lote por color + colisiones FS (`_001`) e intra-lote + parciales 2 ok/1 fallo con `alta_catalogo` solo en exitosos; P06 secuencia ordenada con `TareaExportarSecuencia` + trazabilidad `ORDER BY orden` exacta; P07 cancelación `GestorTareas`+`TareaExportarSegmento` sin temporales ni trazabilidad falsa; P08 derivado fuera de raíz + FFprobe + alta incremental; P09 persistencia/snapshot histórico tras borrar original de `videos` (snapshot `original_nombre/ruta` preservado); P10 bloqueo derivado-de-derivado; P11 `UNIQUE(nombre)` misma/distinta ruta → `catalog_error` con archivo conservado; P12 migraciones idempotentes 3× + `PRAGMA integrity_check=ok`; P13 filtro texto+color `AND` + paginación determinista; P14 derivado eliminado físicamente histórica persiste. Limpieza `LIMPIEZA_TMP=OK`, `INTEGRITY_CHECK=ok`.
+  - **Reescaneo preserva metadatos — `prueba_reescaneo_preserva_metadatos_b612.py` 3/3** — regresión sobre APIs productivas exactas (`conectar_bd`, `preparar_registros_basicos`, `combinar_registros_con_ffprobe/_miniaturas/_tamanos`, `guardar_videos`, `guardar_marcador/segmento`, `listar_*`, `detectar_diferencias`, `preparar_plan_sincronizacion`, `aplicar_incorporaciones`, `eliminar_candidatos`, `PRAGMA integrity_check`) bajo `C:\prueba\_tmp_b612_reescaneo`: base con A/B/C + marcadores `rojo/azul/verde` y segmentos `amarillo/violeta` repartidos, guarda D y verifica IDs preservados + marcadores/segmentos idénticos + `integrity_check=ok` + idempotencia; modificado (A cambia `tamano 4096/mtime/duracion 120.5` y se re-guardasincroniza) conserva IDs/marcadores/segmentos y actualiza metadata; plan completo (E nuevo + B modificado `hevc`) misma preservación. **No reproduce** incidente aislado anterior: **3/3 PASS** en base/modificado/plan completo.
+  - **Control B6.11 — `prueba_derivados_b611.py` 15/15** — regresión de control en verde en esta entrega (ver detalle en ##113).
+- **Verificación de esta entrega:** `prueba_integracion_b612.py` **14/14**; `prueba_reescaneo_preserva_metadatos_b612.py` **3/3**; `prueba_derivados_b611.py` **15/15** en verde; `FFMPEG=OK`/`FFPROBE=OK` 8.1.1; `INTEGRITY_CHECK=ok`; `py_compile` ambas suites OK; `git diff --check` limpio; artefacto humano `videos_prueba/output_video_MMH3Tools_2_chunks_prueba_00001__segmento_0.33-1.25.mp4` preservado sin stagear/versionar.
+- **Observación no bloqueante:** incidente aislado anterior no reproducido (reescaneo preserva metadatos — 3/3 — sin fallo; se registra como observación, no bloquea cierre funcional B6.12).
+- **Validación humana:** persistencia tras reinicio+reescaneo validada por Marcos (artefacto humano preservado).
+- **Beta 6 permanece abierta:** B6.12 es cierre funcional; **falta cierre FINAL de Beta 6** (identidad/documentación final/tag/push según autorización separada; no se cierra la beta ni se publica en este commit).
+- **Archivos versionados en este commit:** `prueba_integracion_b612.py`, `prueba_reescaneo_preserva_metadatos_b612.py`, `ESTADO_PROYECTO.md`, `ROADMAP.md`, `HISTORIAL_PROYECTO.md`.
+
+---
+
+## 113. Cierre de B6.11 — Incorporación al catálogo y trazabilidad de videos derivados
+
+- **Fecha:** 2026-08-21
+- **Tipo:** implementación técnica de **B6.11 completada, probada y auditada; cerrada documental, técnica y en Git en este commit** (commit de cierre en `beta6`; sin tag/merge/release; sin B6.12).
+- **Rama:** `beta6`.
+- **Implementación verificada (resumen factual):**
+  - **Persistencia `escanear_videos.py` (412 líneas B6.11)** — migración aditiva idempotente `_asegurar_tablas_derivados` (`CREATE TABLE IF NOT EXISTS videos_derivados` + `videos_derivados_segmentos` + índices `idx_videos_derivados_original/derivado/segmentos_derivacion/orden`, invocada desde `conectar_bd`); tabla `videos_derivados` (`id PK, derivado_video_id UNIQUE, original_video_id, tipo CHECK individual/lote/secuencia, fecha_creacion, derivado_nombre/ruta, original_nombre/ruta` — snapshot sin `FOREIGN KEY CASCADE` destructivo, relación persiste tras borrar original o derivado de `videos`); tabla `videos_derivados_segmentos` (`id PK, derivacion_id, segmento_id, orden, inicio, fin`; `ORDER BY orden` preserva orden explícito de secuencia); `incorporar_video_derivado_al_catalogo(derivado_ruta, original_video_id, segmentos_orden, tipo, ruta_db)` — alta incremental **sin reescaneo** aun fuera de raíz (validación archivo existente/no vacío, tipo/segmentos `segmento_id>0` + `fin>ini`, extensión `.mp4/.mkv`, `original_video_id` existe, bloqueo derivado-de-derivado (`SELECT` en `videos_derivados` sobre `original_video_id`), duplicado `UNIQUE(nombre)` con `normcase/normpath` sin reutilización silenciosa, validación `segmento_id` pertenece a `original_video_id`, FFprobe + `os.stat` fuera de transacción larga, transacción atómica `BEGIN` → `videos` upsert + `videos_derivados` insert + `videos_derivados_segmentos` N inserts → `COMMIT`, rollback ante `IntegrityError`; `catalog_error` distingue fallo de catalogación con archivo conservado).
+  - **Lectura/trazabilidad** — `es_video_derivado`, `obtener_derivacion_por_derivado` (dict `derivacion+segmentos` ordenados), `listar_derivaciones_por_original` (`ORDER BY id ASC`), `_validar_tipo_derivado`/`_validar_segmentos_trazabilidad` con `gestion segura de conexiones` (único `finally` por fase, evita doble `close`).
+  - **Tareas/background sin SQLite/FFmpeg directo desde UI** — `tareas_videos.py`: `TareaExportarSegmento` añade `original_video_id/segmento_id/ruta_db` y tras `ok` intenta `incorporar... tipo individual` con `alta_catalogo`; `TareaExportarLoteSegmentos` por cada éxito `ok` intenta `incorporar... tipo lote` (`alta_catalogo` por ítem, solo exitosos generan alta, fallidos no); `TareaExportarSecuencia` con `original_video_id/segmentos_info_orden/ruta_db` y validación estricta (longitud y correspondencia `segmentos` vs `segmentos_info_orden` + `float` estricto, mismatch → archivo conservado sin `alta_catalogo ok` ni trazabilidad falsa).
+  - **UI mínima** — `visor_videos.py`: `_al_segmento_exportacion_solicitada`/`_al_exportar_lote_solicitado`/`_al_exportar_secuencia_solicitado` pasan `original_video_id`/`segmento_id`/`video_ids`/`segmentos_info_orden` y `ruta_db` (`self._ruta_db`) a las tareas; `DialogoExportarLote`/`DialogoExportarSecuencia` preparan vía `GestorTareas+TareaListarSegmentosVarios` sin SQLite en UI; handlers `_al_resultado_export` discriminan por `_export_tipo` y exponen `alta_catalogo`/`catalog_error` sin borrar archivo.
+  - **Suite nueva `prueba_derivados_b611.py` 15/15** — P01 migración DB anterior con dato intacto, P02 migración idempotente 3×, P03 alta fuera de raíz con FFprobe real, P04 trazabilidad individual `segmento_id`/`inicio`/`fin`/`orden0`, P05 lote parcial 2 ok/1 fallo solo exitosos con alta, P06 secuencia IDs+inicio/fin+orden exactos (orden inverso), P07 mismatch longitud/correspondencia archivo conservado sin trazabilidad falsa, P08 nombre duplicado misma/distinta ruta rechazados, P09 derivado-de-derivado bloqueado, P10 original eliminado snapshot persiste, P11 derivado eliminado físicamente relación histórica persiste, P12 fallo y cancelación sin relación falsa, P13 fallo FFprobe/catalogación conserva archivo `catalog_error`, P14 rollback integridad sin video huérfano, P15 lectura/listado 3 tipos ordenados.
+- **Verificación:** `prueba_derivados_b611.py` **15/15**; regresiones `prueba_exportacion_b67.py` **21/21**, `prueba_exportacion_lote_b69.py` **30/30**, `prueba_exportacion_secuencia_b610.py` **15/15**, `prueba_ui_export_fix_b610.py` **10/10** en verde; `py_compile` OK; `git diff --check` limpio.
+- **Beta 6 continúa abierta** y la siguiente etapa prevista es **B6.12 — Integración, robustez y cierre funcional** (definida en `ROADMAP.md`).
+
+---
+
+## 112. Cierre de B6.10 — Unión de varios segmentos del mismo original
+
+- **Fecha:** 2026-08-21
+- **Tipo:** implementación técnica de **B6.10 completada, probada y validada manualmente; cerrada documental, técnica y en Git en commit previo `a117611`** (sin tag/merge/release; sin B6.11).
+- **Rama:** `beta6`.
+- **Implementación verificada (resumen factual):**
+  - **Servicio `exportar_secuencia.py` (nuevo, 652 líneas)** — unión de N>=2 segmentos del mismo origen en orden explícito: **vía principal sin subtítulos** con `trim`/`atrim`/`setpts`+`concat` y recodificación CPU (`libx264 veryfast crf18 yuv420p` + `aac 128k`, `+faststart` en MP4, mapeo explícito `0:v`/`0:a` hasta 2 audios) para precisión independiente de keyframes; **fallback con subtítulos compatibles** mediante extracción precisa de cada segmento con recodificación (`exportar_segmento._construir_args_ffmpeg`) + `concat` demuxer (`-f concat -safe 0`) con recodificación y mapeo `0:v/0:a/0:s` (`mov_text` MP4, `srt` MKV); **rechazo claro de MKV/SubRip no validado** (`subrip`/`srt` en MKV) y de codecs no soportados; validación N>=2, `fin>ini`, `fin<=duración+tol`, no `-y`, temporal único `*.tmp_seq_*` en mismo directorio, doble comprobación de colisión, `os.rename` atómico, verificación FFprobe (duración suma, `start` cercano a 0, `has_video/audio/subs`), limpieza de temporales y de partes `part*` y lista concat, cancelación real `terminate→kill` con limpieza.
+  - **Tareas/background sin SQLite/FFmpeg directo desde UI** — `tareas_videos.py`: `TareaExportarSecuencia(TareaBase)` delega en `exportar_secuencia.exportar_secuencia` con `cancel_check=lambda: self._cancelada` y soporta `cancelar()` real; corre fuera del hilo UI vía `GestorTareas`.
+  - **UI mínima y segura — reutiliza selección B6.9** — `visor_videos.py`: `DialogoExportarSecuencia` (lista con checkboxes, orden explícito Subir/Bajar, validación N>=2 y mismo `video_id`, `segmentos_ordenados()` y `video_id_seleccionado()`), preparación async con `GestorTareas` + `TareaListarSegmentosVarios` (reutiliza B6.9 sin SQLite/FFmpeg en hilo UI, orden determinista por video/inicio), `_al_exportar_secuencia_solicitado` y `_abrir_dialogo_secuencia_con_datos` con naming B6.8 (`nombres.generar_sugerencia_exportacion` + `nombres.asegurar_extension` + `QFileDialog.getSaveFileName` MP4/MKV, `normcase/normpath` contra fuente y colisión), botón `Unir segmentos…` y `gestor_export` con estados `_export_tipo="secuencia"` y `_export_lote_activo`, handlers `_al_resultado_export`/`_al_error_export`/`_al_export_finalizada` discriminando por `_export_tipo` explícito (sin inferir por filename), restauración idempotente de botones y corrección de inferencia frágil (`_segmentos`/`secuencia` in filename) — fix validado por `prueba_ui_export_fix_b610.py`.
+  - **Suites nuevas** — `prueba_exportacion_secuencia_b610.py` **15/15** (P01 py_compile; P02 2 seg, P03 3 seg, P04 sin audio, P05 doble audio 2→2, P06 no-keyframe 1.37/3.63s, P07 orden inverso explícito, P08 destino existente no sobrescribe + hash, P09 subtítulo compatible MP4 preservado vía fallback, P10 MKV/SubRip rechazo claro, P11 cancelación durante unión limpia temporales y gestor inactivo, P12 background inactivo, P13 UI aislada con naming B6.8 y orden explícito, P14 temporales/dir/ext/no `-y`/mapeo recodificación, P15 validación N<2) con FFmpeg/FFprobe reales sobre videos generados `testsrc`/`anullsrc`; `prueba_ui_export_fix_b610.py` **10/10** (B6.7 individual/cancel/error, B6.10 secuencia ok/cancel/error, B6.9 lote, discriminación no filename, botones restauran, inferencia frágil eliminada `_export_tipo`).
+- **Verificación:** `prueba_exportacion_secuencia_b610.py` **15/15**; `prueba_ui_export_fix_b610.py` **10/10**; regresiones `prueba_exportacion_b67.py` **21/21**, `prueba_nombres_b68.py` **25/25**, `prueba_exportacion_lote_b69.py` **30/30** en verde; `py_compile` OK; `git diff --check` limpio.
+- **FFmpeg real:** validación con FFmpeg/FFprobe reales sobre fuentes sintéticas (H.264/AAC, sin audio, doble audio, no-keyframe, orden inverso, subtítulo `mov_text`, MKV `srt`) y artefacto humano `videos_prueba/output_video_MiniMax_H3_00006__segmento_20.06-9.55_secuencia_2seg.mp4` derivado de 2 segmentos; duración suma verificada dentro de `TOLERANCIA_DURACION_EXPORT 0.35s` + `start` cercano a 0.
+- **Evidencia humana (distinguida):** **Marcos validó manualmente el flujo completo — unión de 2 segmentos del mismo video original produjo un único derivado verificado, reproducido correctamente y correspondiente a los tramos en orden explícito** (diálogo secuencia con checkboxes y Subir/Bajar, sugerencia B6.8 `*_secuencia_2seg.mp4`, destino vía `QFileDialog`, sin sobrescritura, verificación FFprobe y sin incorporación automática al catálogo — B6.11 diferido).
+- **Política de streams/subtítulos y limitación MKV/SubRip:** vía principal sin subtítulos rechaza fuente con subtítulos (usa fallback); fallback preserva subtítulos compatibles (`mov_text` MP4, `srt` MKV) con mapeo explícito; **MKV con SubRip/`srt` no validado es rechazado claro sin pérdida silenciosa**; otros codecs no soportados en MP4/MKV también rechazados; `ext` `.mp4`/`.mkv` normalizadas, sin `-y`, sin sobrescritura, sin B6.11.
+- **Beta 6 continúa abierta** y la siguiente etapa prevista es **B6.11 — Incorporación al catálogo y trazabilidad de videos derivados** (definida en `ROADMAP.md`).
+
+---
+
+## 111. Cierre de B6.8 — Motor general y reutilizable de nombres
+
+- **Fecha:** 2026-08-20
+- **Tipo:** implementación técnica de **B6.8 completada, probada y validada manualmente; cerrada documental, técnica y en Git en este commit** (commit de cierre en `beta6`; sin tag/merge/release; push fast-forward normal a `origin/beta6`).
+- **Rama:** `beta6`.
+- **Implementación verificada (resumen factual):**
+  - **Motor puro `nombres.py` (nuevo, 574 líneas)** — componente general y reutilizable separado de UI/SQLite/FFmpeg/PySide6 (solo stdlib `datetime`/`math`/`os`/`re`); **tokens cerrados y validados** `{original}` (stem sin última extensión, preserva puntos internos), `{numero}`/`{numero:03d}` (padding seguro limitado `0?[1-9]d`, ancho 1..5), `{fecha}`/`{fecha:YYYY-MM-DD}` (formatos permitidos `None/YYYYMMDD/YYYY-MM-DD/DDMMYYYY/DD-MM-YYYY`, inyección `fecha_hoy` determinista), `{texto}` (sanitizado, espacios internos no colapsados, Unicode preservado), `{inicio}`/`{fin}` (dos decimales estables `:.2f` igual que B6.7); plantilla default B6.7 `"{original}_segmento_{inicio}-{fin}"` + extensión `.mp4`; validación de plantilla (llaves sueltas, token desconocido, formato no permitido) con excepciones de dominio `PlantillaInvalidaError`/`TokenDesconocidoError`/`FormatoInvalidoError`/`ContextoFaltanteError`.
+  - **Sanitización Windows** — `sanitizar_componente` reemplaza `<>:"/\|?*` y controles U+0000..U+001F por `_`, elimina puntos y espacios finales (`rstrip " ."`), prefija `_` si el stem antes del primer punto es reservado (`CON/PRN/AUX/NUL/COM1..9/LPT1..9`, case-insensitive, incluso con extensión), preserva Unicode/acentos sin transliterar y no colapsa espacios internos; componentes vacíos/solo inválidos → `NombreVacioError`; longitud máxima de componente Windows **255** validada explícitamente (reserva espacio para extensión y sufijo `_001`; exceso → error, sin truncado silencioso).
+  - **Extensión controlada aparte** — `normalizar_extension`/`validar_extension`/`asegurar_extension(ruta, extensiones_validas={".mp4",".mkv"}, default=".mp4")`: normaliza a minúsculas con punto, valida solo alfanuméricos, sin extensión agrega default validado, `.MP4`/`.MKV` se normalizan, `.avi`/`.exe` explícitos se **rechazan** con `ExtensionInvalidaError` (no oculta agregando `.mp4`), validación estricta sobre `os.path.splitext(ruta)[1]`.
+  - **Resolución determinista de colisiones FS/intra-lote sin sobrescritura** — `resolver_colision(stem, extension, existe_fn, nombres_en_lote)` con sufijo `_001`/`_002`… (hasta 999), considera simultáneamente `existe_fn(candidato)` (FS) y conjunto de lote normalizado case-insensitive, sin creación de archivos, sin `os.replace` ni flag `-y`; `generar_lote` y `generar_nombre_unico`/`generar_sugerencia_exportacion_unica` reutilizan el mismo determinismo; `validar_longitud_final` y sufijo validan que `stem+sufijo+ext <=255`.
+  - **Integración B6.7 delegando al motor** — `visor_videos.py` importa `nombres`, `_al_segmento_exportacion_solicitada` genera sugerencia vía `nombres.generar_sugerencia_exportacion(nombre, inicio, fin, extension=".mp4")` y valida extensión vía `nombres.asegurar_extension(ruta_dest, {".mp4",".mkv"}, ".mp4")`, eliminando la duplicación previa (`f"{base}_segmento_…"` + loop manual `for ch in '<>…'` + `os.path.splitext … if ext not in (".mp4",".mkv")`); mantiene `os.path.exists(ruta_dest)`/`normcase`/`normpath` y `TareaExportarSegmento` con publicación segura (no sobrescritura).
+  - **Suite nueva `prueba_nombres_b68.py` 25/25** — P01 py_compile; P02 original simple/múltiples puntos; P03 Unicode/acentos preservados; P04 inválidos Windows; P05 controles U+0000..U+001F; P06 reservados y variantes case; P07 trailing punto/espacio; P08 vacío tras sanitización; P09 numero default/padding válido; P10 padding/formato inválido; P11 fecha determinista inyectada; P12 texto personalizado; P13 token desconocido/plantilla mal formada; P14 contexto requerido ausente; P15 extensión normalizada/no permitida (`.avi` rechazo, sin ext agrega `.mp4`, `.exe` rechazo, `.MP4`/`.MKV` normalizados); P16 colisión FS `_001`; P17 múltiples colisiones; P18 colisión intra-lote case-insensitive; P19 combinación FS+lote; P20 repetibilidad/determinismo; P21 inicio/fin dos decimales y default B6.7; P22 integración B6.7 visor usa motor y no loop manual; P23 motor sin imports prohibidos (no PySide6/sqlite3/subprocess/FFmpeg/QFileDialog); P24 no sobrescritura/publicación B6.7 no debilitada; P25 longitud máxima 255.
+- **Verificación:** `prueba_nombres_b68.py` **25/25**; regresiones `prueba_exportacion_b67.py` **21/21**, `prueba_filtro_b65.py` **24/24**, `prueba_ordenamiento_b62.py` **18/18**, `prueba_color_b63.py` **21/21**, `prueba_resumen_colapsado_b64.py` **8/8** en verde; `py_compile` OK; `git diff --check` limpio.
+- **Evidencia humana (distinguida, no test automático):** **Marcos completó la validación manual real — al intentar guardar una exportación con extensión `.avi` la aplicación informó correctamente que la extensión no era válida y canceló la operación** (diálogo `QMessageBox.warning` "Extensión inválida" desde `asegurar_extension` → `NombresError`; operación cancelada sin crear archivo).
+- **Beta 6 continúa abierta** y la siguiente etapa prevista es **B6.9 — Exportación múltiple de segmentos separados** (definida en `ROADMAP.md`).
+
+---
+
+## 110. Cierre de B6.6 y B6.7 — Investigación/contrato y extracción segura de un segmento
+
+- **Fecha:** 2026-08-20
+- **Tipo:** implementación técnica de **B6.6 (investigación y contrato) y B6.7 (extracción segura de un segmento) completadas, probadas y validadas manualmente; cerradas documental, técnica y en Git en este commit** (commit de cierre en `beta6`; sin tag/merge/release; push fast-forward normal a `origin/beta6`).
+- **Rama:** `beta6`.
+- **Implementación verificada (resumen factual):**
+  - **B6.6 — Investigación y contrato del motor de exportación — completada:** validación física FFmpeg sobre casos reales (H.264/AAC no alineado, segmento corto/cercano al final, sin audio, doble audio, subtítulo compatible, subtítulo no soportado, colisión de destino, destino igual a fuente, inicio/fin inválidos/NaN/inf/fin>duración, FFmpeg fallido, verificación fallida, cancelación, publicación post-verificación, tareas fuera del hilo principal, aislación UI, temporal en mismo directorio, no `-y`, mapeo explícito, recodificación CPU) y fijación de contrato para B6.7 — **recodificación CPU precisa (`libx264 veryfast crf18 yuv420p` + `aac 128k`, con `+faststart` en MP4) y no stream-copy** para precisión independiente de keyframes; tolerancias `TOLERANCIA_DURACION_EXPORT 0.35s` / `TOLERANCIA_FIN_DURACION 0.05s` / `TOLERANCIA_START 0.6s`; manejo explícito de streams (`-map 0:v/0:a/0:s`); subtítulos: `mov_text` en MP4 y `srt` en MKV, rechazo explícito de codecs no soportados (`hdmv_pgs_subtitle` etc.); temporal único `*.tmp_<hex8>.mp4/.mkv` en mismo directorio del destino con `os.rename` atómico y doble comprobación de colisión; verificación FFprobe posterior (duración esperada, start cercano a 0, video/audio/subs presentes, no vacío); cancelación real con `terminate→kill` y limpieza de temporal; operación sin `-y` contra destino final.
+  - **B6.7 — Extracción segura de un segmento — servicio** — `exportar_segmento.py` (**nuevo, 525 líneas**): `_validar_entrada`, `_ffprobe_info`, `_generar_temporal`, `_construir_args_ffmpeg`, `_verificar_salida`, `exportar_segmento(fuente,inicio,fin,destino,cancel_check)` con política atómica y verificación; extensión soportada `.mp4/.mkv`; helper `obtener_comando_ffmpeg_preview`.
+  - **Tareas/background sin SQLite/FFmpeg directo desde UI** — `tareas_videos.py`: `TareaExportarSegmento(TareaBase)` delega exclusivamente en `exportar_segmento.exportar_segmento` con `cancel_check=lambda: self._cancelada`; `cancelar()` marca flag; corre fuera del hilo principal vía `GestorTareas`.
+  - **UI mínima y segura** — `visor_videos.py`: `Tarjeta` señal `segmento_exportacion_solicitada` y menú contextual del segmento "Exportar segmento…" con `segmento_exportacion_solicitada.emit`; `VisorVideos` gestor dedicado `gestor_export` (`tarea_resultado`→`_al_resultado_export`, `tarea_error`→`_al_error_export`, `tarea_finalizada`→`_al_export_finalizada`, `actividad_cambiada`→`_al_actividad_export`), handler `_al_segmento_exportacion_solicitada` (validación de `gestor_export.activo`, `video_id`, `inicio/fin` finitos, resolución de ruta vía `_ruta_video_de`, sugerencia `base_segmento_inicio-fin.mp4` con sanitización Windows `<>:"/\|?*`, `QFileDialog.getSaveFileName` con filtros `*.mp4;;*.mkv`, normalización de extensión, doble validación de colisión y de destino≠fuente con `normcase/normpath`, `TareaExportarSegmento` + `gestor_export.iniciar` + feedback `_mostrar_progreso`/`boton_cancelar_export`); handlers de resultado/error/finalizada/actividad y `_cancelar_export` (llama `tarea.cancelar()` y deshabilita botón).
+  - **Suite nueva `prueba_exportacion_b67.py` 21/21** — T01 py_compile; T02 H.264/AAC 1.5→3.7 duración/start/video+audio; T03 corto y cercano al final; T04 sin audio; T05 doble audio; T06 subtítulo compatible preservado; T07 política explícita para no soportado (pgs rechazo); T08 destino ya existente no sobrescribe (hash intacto); T09 destino==fuente rechazo; T10 inicio/fin inválidos (negativo, igual, invertido, NaN/inf, fin>duración); T11 FFmpeg fallido sin archivo ni huérfano; T12 verificación fallida sin publicación; T13 cancelación durante exportación (termina FFmpeg, sin huérfano, gestor inactivo, sin destino); T14 publicación solo tras verificación; T15 tarea fuera del hilo y gestor vuelve a inactivo; T16 UI aislada (no subprocess/sqlite directo, usa `TareaExportarSegmento`); T17 temporal en mismo directorio/extensión conservada/no `-y`; T18 no `-y` en construcción; T19 mapeo explícito `0:v/0:a`; T20 recodificación precisa `libx264 veryfast crf18 yuv420p`; T21 menú "Exportar segmento…" y señal/diálogo/tarea.
+- **Verificación:** `prueba_exportacion_b67.py` **21/21**; regresiones `prueba_color_b63.py` **21/21**, `prueba_resumen_colapsado_b64.py` **8/8**, `prueba_filtro_b65.py` **24/24**, `prueba_ordenamiento_b62.py` **18/18** en verde; `py_compile` OK; `git diff --check` limpio; validación visual y funcional por **Marcos** del flujo completo.
+- **Evidencia humana (distinguida):** **Marcos confirmó que el flujo visual y funcional de exportación de un segmento funciona correctamente y que el archivo resultante se reproduce y corresponde al tramo seleccionado** — selección de destino vía diálogo, exportación sin sobrescritura y reproducción del archivo resultante correcta.
+- **Beta 6 continúa abierta** y la siguiente etapa prevista es **B6.8 — Motor general y reutilizable de nombres** (definida en `ROADMAP.md`).
+
+---
+
+## 109. Cierre de B6.5 — Filtros y localización del material marcado
+
+- **Fecha:** 2026-08-20
+- **Tipo:** implementación técnica de **B6.5 completada y validada visualmente por Marcos, cerrada documentalmente en este commit** (commit de cierre en `beta6`; sin tag/merge/release; push fast-forward normal a `origin/beta6`).
+- **Rama:** `beta6`.
+- **Implementación verificada (resumen factual):**
+  - **Filtros estructurados del catálogo a nivel SQLite paginado/background (B6.5) — whitelist cerrada** — `escanear_videos.py`: constantes `FILTRO_TODOS`, `FILTRO_CON_MARCADORES`, `FILTRO_CON_SEGMENTOS`, `FILTRO_PREFIJO_MARCADOR/SEGMENTO`, `FILTRO_MARCADOR/SEGMENTO_SIN_CLASIFICAR`; `_validar_filtro_catalogo` (normaliza `todos`→`None`, valida tipo y color contra `CLAVES_COLOR_CLASIFICACION`, `TypeError`/`ValueError`); `_filtro_catalogo_exists` (fragmento `EXISTS` parametrizado con `?` para color y `IS NULL` para Sin clasificar); `listar_videos_paginado(..., filtro=None)` construye `WHERE` estructurado `texto LIKE ? AND EXISTS(...)` con `COUNT(*) {where_sql}` coherente con `SELECT` (verificado COUNT==SELECT, paginación y orden B6.2).
+  - **Tareas/background sin SQLite directo desde la UI** — `tareas_videos.py`: `TareaLecturaCatalogoPaginada` propaga `filtro`; validación temprana de color inválido; `filtro=="todos"` normalizado a `None`.
+  - **UI — combo compacto `Mostrar:` en la barra del catálogo** — `visor_videos.py`: `_filtro_catalogo="todos"`, `_bloqueo_filtro`, `_poblar_combo_filtro` (Todos, Con marcadores, Con segmentos, Marcador/Segmento: Sin clasificar y por color con `texto_color`), `_refrescar_textos_filtro` (preserva selección por `data`), `_al_cambiar_filtro_catalogo` y `_programar_recarga_por_filtro` (si filtro != todos, recarga controlada con generación+cola de resumen reseteadas; si gestor ocupado deja pendiente); `_crear_tarea_lectura` pasa `filtro_param`; recarga ante mutaciones de marcadores/segmentos/colores bajo filtro activo; integración con orden B6.2 y `Cargar más`.
+  - **Render y resumen B6.4 preservado** — `scrubber.py`: marcas/bandas/barra colapsada toleran `color IS NULL` (gris `#9e9e9e` para Sin clasificar).
+  - **Suites adaptadas** — `prueba_color_b63.py` y `prueba_ordenamiento_b62.py` verifican que orden+ filtro coexisten y que la propagación de `filtro` llega a `listar_videos_paginado` sin romper paginación/selección.
+  - **Suite nueva `prueba_filtro_b65.py` 24/24** — T01 py_compile; T02 Todos/none; T03/T04 Con marcadores/segmentos; T05 por color; T06 Sin clasificar; T07 whitelist/validación; T08 AND texto+filtro; T09 COUNT==SELECT; T10 paginación; T11 orden B6.2 + NULL al final + tie-break; T12/T13 Cargar más y cambio rápido (obsoleto); T14 UI sin sqlite/no N+1; T15 tareas/tarea obsoleta; T16 pixmap/segmentos bajo filtro; T17 combo Mostrar: 17 entradas/datas estables + nombres globales; T18 persistencia color NULL; T19-T22 filtros por Sin clasificar/color/combinados; T23 gris vs paleta; T24 ciclo completo filtrado.
+- **Verificación:** `prueba_filtro_b65.py` **24/24**; `prueba_color_b63.py` **21/21**; `prueba_ordenamiento_b62.py` **18/18**; `prueba_resumen_colapsado_b64.py` **8/8**; `py_compile` OK; `git diff --check` limpio; validación visual de Marcos OK.
+- **Beta 6 continúa abierta** y la siguiente etapa prevista es **B6.6 — Investigación y contrato del motor de exportación** (definida en `ROADMAP.md`).
+
+---
+
+## 108. Finalización técnica de B6.4 — Marcadores y segmentos visibles en tarjetas colapsadas
+
+- **Fecha:** 2026-08-20
+- **Tipo:** implementación técnica de **B6.4 committeada y publicada en `beta6`** (commit `74bb4590fa59c506fba2e00d070e530b0b8cf34f` en `origin/beta6`; sin tag/merge/release en esta etapa).
+- **Rama:** `beta6`.
+- **Implementación verificada (resumen factual):**
+  - **Resumen colapsado en la tarjeta** — `visor_videos.py` + `scrubber.py` + `escanear_videos.py` + `tareas_videos.py`: cada tarjeta colapsada expone posición proporcional del material marcado dentro de la duración completa, diferenciando marcadores (marca puntual) y segmentos (banda A–B) con los colores de B6.3 sin sobrecargar visualmente; mantiene la exploración visual como prioridad.
+  - **Carga del resumen** — tareas de resumen por video con `COUNT`/`LIMIT` y protección de lecturas obsoletas; integración con recarga paginada y orden B6.2.
+  - **Suite nueva `prueba_resumen_colapsado_b64.py` 8/8** y regresiones en verde.
+- **Verificación:** `prueba_resumen_colapsado_b64.py` **8/8**; regresiones y smoke en verde; `git diff --check` limpio.
+- **Beta 6 continúa abierta** y la siguiente etapa prevista era **B6.5** (ahora también completada, ver ##109).
+
+---
+
+## 107. Finalización técnica de B6.3 — Clasificación visual de marcadores y segmentos
+
+- **Fecha:** 2026-08-20
+- **Tipo:** implementación técnica de **B6.3 committeada y publicada en `beta6`**
+  (commit `c28ccf6942fd0b52fc1c84090f0a6df083b26488` en `origin/beta6`; sin tag/merge/release en esta etapa).
+- **Rama:** `beta6`.
+- **Implementación verificada (resumen factual):**
+  - **Paleta cerrada de 6 colores** — `COLORES_CLASIFICACION` en
+    `escanear_videos.py` (rojo, naranja, amarillo, verde, azul, violeta),
+    única fuente de verdad, misma paleta para marcadores y segmentos;
+    `CLAVES_COLOR_CLASIFICACION`, `color_rgb` y `_validar_color_clasificacion`.
+  - **Persistencia SQLite aditiva e idempotente** — `color TEXT NULL` añadido
+    por migración a `marcadores_video` y `segmentos_video`
+    (`_asegurar_columna_color`, invocada desde `conectar_bd` via
+    `_asegurar_tabla_marcadores`/`_asegurar_tabla_segmentos`); `NULL` conserva
+    los colores históricos (marcador rojo, segmento azul). Sin cambio de
+    esquema para los datos existentes; sin CASCADE.
+  - **Asignar / quitar color** — `asignar_color_marcador(marcador_id, clave)`
+    y `asignar_color_segmento(segmento_id, clave)` (`UPDATE` transaccional que
+    devuelve la fila persistida o `None`); `guardar_marcador`/`guardar_segmento`
+    aceptan `color` en el mismo `INSERT`; las lecturas
+    (`listar_marcadores`, `listar_marcadores_de`, `listar_segmentos`,
+    `listar_segmentos_de`) devuelven `color` como último campo.
+  - **Tareas asíncronas fuera de SQLite directo desde la UI** —
+    `TareaAsignarColorMarcador`/`TareaAsignarColorSegmento` y soporte de
+    `color` en `TareaGuardarMarcador`/`TareaGuardarSegmento`; la interfaz
+    encola operaciones de tipo `"color"` en los gestores dedicados y **revierte
+    el color previo** ante un error de persistencia.
+  - **Render visual** — `scrubber.py` pinta las marcas y las bandas de
+    segmento con el color de la paleta (fondo y borde); un valor `NULL`
+    conserva el color histórico (rojo / azul).
+  - **Menús contextuales con submenú "Asignar color"** — clic derecho sobre
+    una marca abre el menú del marcador («Asignar color» con los 6 colores más
+    "Sin clasificar" y «Eliminar marcador»); el menú de segmento incorpora el
+    mismo submenú. El clic derecho sobre una marca ya **no elimina
+    directamente** (comportamiento previo de B4.2).
+  - **Nombres globales personalizables sin cambiar las claves** —
+    `configuracion.py` (`CLAVE_NOMBRES_COLORES = "nombres_colores"`,
+    `LIMITE_LONGITUD_NOMBRE_COLOR = 40`, `NOMBRES_COLORES_POR_DEFECTO`,
+    `guardar_nombre_color`, `obtener_nombres_colores`, `texto_color`);
+    sección "Nombres de colores de la clasificación" en `PreferenciasDialog` y
+    selector "Color:" por tarjeta (`_selector_color`), aplicado a marcadores y
+    segmentos nuevos.
+  - **Corrección del defecto PySide/QMenu** — los submenús se crean con el menú
+    como padre `QObject` (`QMenu("Asignar color", menu)`) y se conserva la
+    referencia previa en la tarjeta (`_submenu_segmento_color_actual` /
+    `_submenu_marcador_color_actual`), evitando que PySide libere el submenú
+    antes de mostrarlo.
+- **Verificación:** suite propia `prueba_color_b63.py` **21/21**; regresiones
+  afectadas (marcadores, segmentos, entrada temporal, reproducción VLC) y smoke
+  en verde; `git diff --check` limpio. Los fallos VLC ambientales reales (b56
+  P27, b57 P23, b58 P27/P28) **no son parte funcional de B6.3** y quedan
+  registrados como deuda ambiental en `ESTADO_PROYECTO.md`.
+- **Beta 6 continúa abierta** y la siguiente etapa prevista es
+  **B6.4 — Marcadores y segmentos visibles en tarjetas colapsadas** (definida
+  en `ROADMAP.md`).
+
+---
+
+## 106. Publicación de B6.2 y planificación de Beta 6 (push fast-forward)
+
+- **Fecha:** 2026-08-18
+- **Tipo:** publicación remota de dos commits locales aprobados mediante un
+  **push fast-forward normal** de la rama `beta6`; **exclusivamente documental**
+  (sin implementación funcional, sin cambios sobre código ni instalador).
+- **Rama:** `beta6`.
+- **Commit técnico B6.2:** `52eddb8d4633282578638ba18ec2acdb2e00bf47` — "B6.2
+  Agregar ordenamiento configurable del catálogo".
+- **Commit documental de planificación:** `4fe46df7bfd7ed3d2d8b4408a8b3e410e43ed258`
+  — "B6 Documentar alcance De marcar a conservar" (reconciliación de Beta 6 y
+  delimitación de Beta 7).
+- **Resultado de la verificación post-push:** `beta6` local, `origin/beta6` y
+  `git ls-remote` quedaron **alineados en `4fe46df7bfd7ed3d2d8b4408a8b3e410e43ed258`**;
+  ahead/behind `0/0`; working tree limpio; cadena lineal
+  `7a0feae → 52eddb8 → 4fe46df`.
+- **Sin fuerza:** push fast-forward normal, sin `--force` ni `--force-with-lease`.
+- **Sin tag nuevo ni GitHub Release:** la lista de tags quedó en
+  `v2.0-beta`, `v3.0-beta`, `v4.0-beta`, `v5.0-beta`; sin `v6.0-beta`.
+- **Beta 6 continúa abierta** y la siguiente etapa prevista es
+  **B6.3 — Clasificación visual de marcadores y segmentos**.
+
+---
+
+## 105. Finalización técnica de B6.2 y reconciliación del alcance de Beta 6
+
+- **Fecha:** 2026-08-18
+- **Tipo:** etapa **exclusivamente documental** (sin implementación funcional)
+  que formaliza la **finalización técnica de B6.2**, registra el estado de push y
+  **recupera/reconcilia el alcance originalmente acordado** de la Beta 6, que no
+  había quedado correctamente incorporado a la documentación viva del
+  repositorio.
+- **Rama:** `beta6`.
+- **B6.1 — Preservación de datos del usuario al desinstalar (ya realizada).**
+  Commit `8b6f19f` (2026-08-16): `instalador.iss` incorpora `uninsneveruninstall`
+  sobre `biblioteca.db` y elimina el `[UninstallDelete]` recursivo; la
+  desinstalación conserva los datos del usuario (`biblioteca.db`,
+  `configuracion.json`, `miniaturas/`) para permitir una reinstalación sin
+  pérdida de datos. Suite `prueba_instalador.py` incorporada.
+- **Bridge — infraestructura reconstruible:** la materialización prevista quedó
+  **completada y versionada** (commit `dd17c72` — documentación y persistencia;
+  commit `7a0feae` — infraestructura `infra/bridge/`).
+- **B6.2 — Ordenamiento configurable del catálogo (finalización técnica).**
+  Commit técnico local `52eddb8d4633282578638ba18ec2acdb2e00bf47` (2026-08-17,
+  "B6.2 Agregar ordenamiento configurable del catálogo"), **pendiente de push**
+  (HEAD local por delante de `origin/beta6`). Implementa el ordenamiento del
+  catálogo por criterio (nombre, duración, resolución, códec, tamaño, fecha de
+  importación) y dirección (asc/desc), persistente en `configuracion.json`, con
+  whitelists cerradas y fragmento SQL único autorizado (desempate estable por
+  `id ASC`, NULLs al final) y protección de lecturas obsoletas en la recarga.
+  Validación incorporada en el commit: suite nueva `prueba_ordenamiento_b62.py`
+  (18 pruebas, T01–T18) y adaptación de `prueba_pagina_siguiente.py`. **B6.2 no
+  cierra la Beta 6.**
+- **Reconciliación del alcance de Beta 6:** se recuperó y formalizó el alcance
+  amplio originalmente acordado para la Beta 6, que no estaba correctamente
+  reflejado en `ROADMAP.md`, `ESTADO_PROYECTO.md` e `HISTORIAL_PROYECTO.md`.
+- **Definición formal del ciclo:** **"Beta 6 — De marcar a conservar"** — cerrar
+  el ciclo iniciado en Beta 5: localizar las partes útiles de los videos,
+  clasificarlas y convertirlas en material definitivo conservando calidad,
+  trazabilidad e integridad de datos.
+- **Separación deliberada de Beta 7:** se definió **"Beta 7 — Organización y
+  operaciones de archivos"** como el siguiente gran ciclo (absorberá el
+  administrador de archivos completo); **no se adelanta durante Beta 6**.
+- **Decisión explícita de no cerrar Beta 6 en B6.2:** la Beta 6 continúa
+  abierta y la siguiente etapa prevista es **B6.3**.
+- **Alcance completo:** B6.1–B6.12 y el límite explícito de Beta 6 en
+  `ROADMAP.md`; estado vigente en `ESTADO_PROYECTO.md` ("Fase actual — Beta 6").
+
+---
+
+## 104. Adopción y estabilización del Bridge/MCP/Telegram; preparación de la persistencia
+
+- **Fecha:** 2026-08-17
+- **Tipo:** hito de proceso/colaboración y preparación documental (antes de B6.2).
+- **Adopción y estabilización del Bridge/MCP/Telegram y B4.2:** se adoptó y
+  estabilizó el Bridge/MCP/Telegram como transporte/orquestación del protocolo
+  y el mecanismo/contrato de auditoría B4/B4.2, con GitHub vivo como fuente de
+  verdad del producto y el ledger contextual subordinado.
+- **Validación del fallback y del retorno automático:** se validó el fallback
+  manual (que conserva alcance, evidencia, auditoría y autorizaciones) y los
+  criterios de retorno seguro al flujo automático.
+- **Cierre de la inspección de persistencia:** la inspección de persistencia
+  quedó cerrada y aprobada, definiendo qué se versiona y qué no, y el reparto
+  documental vigente.
+- **Inicio de la materialización documental:** se inició la materialización de
+  la autoridad documental (`METODOLOGIA_DESARROLLO.md` como detalle del
+  protocolo, referencia en `REGLAS_PROYECTO.md`, estado y protecciones Git)
+  como etapa previa a B6.2. Sin copia de código/runtime ni creación de
+  infraestructura real todavía.
+- **Detalle operativo:** el contrato operativo completo está en
+  `METODOLOGIA_DESARROLLO.md`; aquí solo se registra el hito.
+- **Próxima fase:** continuar la materialización de persistencia; B6.2
+  permanece no iniciada hasta cerrar y aprobar esa materialización.
+
+---
+
+## 103. Cierre interno de Beta 5
+
+- **Fecha:** 2026-08-15
+- **Tipo:** cierre formal interno y local de Beta 5 (identidad definitiva, documentación,
+  commit de cierre separado). **Sin** distribución pública, **sin** merge a `main`, **sin**
+  GitHub Release, **sin** push.
+- **Rama:** `beta5`.
+- **Commit técnico principal:** `969efcd9d71e78c1ca538bfa238a3e27f1484d9e`
+  («Pulir interacción, edición y visualización de segmentos en Beta 5»).
+- **Identidad definitiva:** `Beta 5 — B5.0` (constantes en `configuracion.py`).
+- **Instalador interno validado en notebook:** `VisorVideos_Beta5_ValidacionFinal_Setup.exe`
+  (SHA-256 `F40ACF41FE7D3931FF042AC718B6D2805460AE380092E9E782A918C42A650133`), aprobado.
+- **Funcionalidad incorporada en Beta 5:** doble clic temporal → VLC desde instante; modelo
+  persistente de segmentos A–B; carga lazy/asíncrona; creación visual A+B; robustez y ciclo de
+  vida; reproducción individual A→B; bucle A→B; secuencia de segmentos; creación por drag;
+  edición de extremos A/B conservando id; feedback visual de edición (handle/cursor); mejora de
+  visibilidad de segmentos; scroll horizontal local de previews.
+- **Correcciones B5.9.2:** doble clic interceptado por `MiniaturaMarcador`; creación de
+  marcadores cercanos bloqueada por solapamiento.
+- **Persistencia de edición:** UPDATE por id; tarea asíncrona; rollback en error.
+- **Validación final:** suites verdes; auditoría integral aprobada; notebook objetivo aprobada.
+- **Deudas registradas:** uninstaller destructivo (bloqueante futuro para distribución pública);
+  retención de pixmaps densos (deuda de Beta 4, no empeoró); flake ocasional de timing en
+  pruebas VLC/PySide6; seek VLC aproximado por keyframes.
+
+---
+
+## 102. Apertura y planificación de Beta 5 (B5.0)
+
+- **Fecha:** 2026-08-13
+- **Tipo:** etapa **exclusivamente documental y de preparación Git** (sin implementación
+  funcional; sin modificar archivos `.py`; sin instalador; sin merge a `main`; sin push).
+- **Origen:** rama `beta5` creada exactamente desde el cierre de la Beta 4,
+  `v4.0-beta` = `5ed40fa1ac4d257f29878a137b5a4240e36716ac`. No se modificó `beta4` ni `main`.
+- **Alcance inicial congelado (cuatro bloques, no necesariamente el alcance definitivo):**
+  - **A — Entrada temporal a VLC:** doble clic sobre una preview/instante temporal abre VLC
+    reproduciendo el video desde ese instante; se conserva el doble clic existente de la tarjeta.
+  - **B — Segmentos A–B:** nuevo concepto independiente (SEGMENTO = `video_id` + A + B, A < B),
+    con la decisión estratégica **MARCADOR ≠ SEGMENTO** (no se convierten marcadores en puntos
+    de inicio/fin).
+  - **C — Reproducción de segmento:** simple (A→B) y en bucle.
+  - **D — Secuencia automática de segmentos:** A→B, C→D, E→F sin intervención del usuario.
+- **Investigación VLC (B5.0, probado físicamente en VLC 3.0.23):** `start-time` y `stop-time`
+  funcionan por CLI y dentro de M3U, con decimales; el **bucle** se logra con playlist de una
+  entrada + `--loop`; la **secuencia** automática se logra con playlist de varias entradas del
+  mismo archivo. Pendiente: validación en notebook objetivo y frame-exactitud de límites.
+- **Modelo aprobado conceptualmente (dirección, NO implementado):** tabla independiente
+  `segmentos_video` (`id`, `video_id`, `inicio`, `fin`) con índice `(video_id, inicio)`,
+  orfandad igual que marcadores, sin CASCADE, sin hashes, migración aditiva e idempotente.
+- **Higiene de procesos VLC:** se detectó y **corrigió en infraestructura temporal** un residual
+  de una prueba `--loop` (proceso huérfano al terminar el script controlador); criterio
+  adoptado: limpieza por PID propio, cierre normal primero, `terminate`/`kill` como fallback,
+  prohibido matar globalmente `vlc.exe` y no cerrar instancias preexistentes del usuario. Los
+  scripts temporales de `%TEMP%` no se incorporan al repositorio.
+- **Plan de etapas:** **B5.1** (modelo SQLite y repositorio de segmentos), **B5.2** (tareas
+  asíncronas + carga lazy), **B5.3** (Bloque A), **B5.4** (Bloque B), **B5.5** (robustez/
+  persistencia/reconciliación), **B5.6** (Bloque C-1), **B5.7** (Bloque C-2), **B5.8** (Bloque D),
+  **B5.9** (auditoría integral y decisión de cerrar o ampliar la Beta 5).
+- **Sin implementación funcional:** ninguna de las etapas B5.x está implementada todavía.
+- **Próxima fase (no iniciada):** B5.1 — modelo SQLite y repositorio de segmentos.
+
+---
+
+- **Fecha:** 2026-08-10
+- **Decisión:** la **Beta 4 queda CERRADA y aprobada**. El cierre es **documental** (sin cambios de
+  código): la build final **`Beta 4 — B4.12`** superó la validación en la notebook objetivo.
+- **Build final:** `Beta 4 — B4.12`.
+- **Commit técnico validado:** `198cdf533986b88c6e25dc0087722cf2b86e5f99`
+  ("Cerrar regresiones y contratos de prueba de Beta 4").
+- **Instalador validado:** `Distribucion\Beta4\VisorVideos_Beta4_Setup.exe` — SHA-256
+  `730B4DAB1CD2F1F5CFDD184D2DC6FE80CF0481B8754080F0FF10CF991F89431F`.
+- **Validación en notebook:** B4.11 pasó la **validación manual amplia**; B4.12 pasó la
+  **validación final corta** (status bar `Beta 4 — B4.12`, carpeta grande, tarjetas y previews,
+  selector `Densidad: Auto | 15 | 30 | 60 | 120 | 200`, marcadores y reproducción en VLC).
+- **Suite integral** posterior a las correcciones: **87 suites / 1570/1570 pruebas funcionales OK /
+  0 FAIL funcional**; `py_compile` 103/103; `git diff --check` limpio.
+- **Líneas funcionales cerradas:** exploración temporal interactiva; marcadores visuales y
+  persistentes; caché temporal densa/progresiva; densidad automática y manual; reproducción de
+  marcadores en VLC; optimizaciones FFprobe/metadata; carga visual progresiva; identificación
+  visible de build; preservación de marcadores al mover un video manteniendo el nombre (validada en
+  notebook).
+- **Deuda no bloqueante (registrada, no pendiente de Beta 4):** RAM de previews; construcción
+  anticipada de widgets de exploración en tarjetas colapsadas; `_reemplazar_tarjetas`; listados
+  repetidos de miniaturas; flakiness intermitente del teardown de `prueba_exploracion_densidad_b432.py`;
+  flakiness ambiental del portapapeles bajo tooling; funciones futuras A/B, loops, fragmentos y
+  edición; detección avanzada de archivos renombrados/reasociación.
+- **Riesgo obligatorio para una etapa posterior:** el desinstalador actual (`[UninstallDelete]`)
+  puede eliminar datos de usuario (`biblioteca.db`, `configuracion.json`, `miniaturas/`, marcadores
+  y cachés). **No impide el cierre técnico de Beta 4; debe resolverse antes de una distribución
+  pública segura o una release destinada a conservar datos reales.** No se modifica el instalador en
+  esta etapa.
+- **Próxima fase:** pendiente de planificación (no se inicia automáticamente una Beta 5).
+
+## 100. Cerrar regresiones y contratos de prueba de Beta 4 (B4.12)
+
+- **Fecha:** 2026-08-10
+- **Objetivo:** corrección técnica previa al cierre de la **Beta 4** (rama `beta4`), a partir de la
+  auditoría integral: restaurar la separación arquitectónica en la UI y reconciliar los tests con
+  los contratos actuales, para conseguir un HEAD de Beta 4 con la suite integral limpia.
+- **Corrección de arquitectura (filesystem fuera de la UI):**
+  - `rutas.py` — nuevo `ruta_video_existente(carpeta, nombre)`: resuelve y valida la existencia de
+    la ruta de video fuera de la UI.
+  - `visor_videos.py` — `_ruta_video_de` delega en `ruta_video_existente`; **deja de usar
+    `os.path.isfile`** (regla "la UI no accede a SQLite/FFmpeg/FFprobe/filesystem" restaurada;
+    verificado por `prueba_doble_clic.py` T14 sin relajar la regla).
+- **Reconciliación de contract-tests:**
+  - 7 suites de "vista ampliada/previews/miniaturas" adaptadas al contrato **progresivo/diferido de
+    B4.6** (espera determinista de "previews aplicadas"; sin sleeps arbitrarios, sin skips):
+    `prueba_vista_ampliada` 24/24, `prueba_vista_ampliada_desactivada` 20/20,
+    `prueba_preferencias_miniaturas` 31/31, `prueba_pulido_bloque_a` 29/29,
+    `prueba_tamano_muy_grande` 27/27, `prueba_tiempo_previews` 35/35, `prueba_tamano_vista_ampliada`
+    38/38.
+  - `prueba_filas_horizontales.py` T15 — la regla pasó a inspeccionar **uso real** (literales en
+    llamadas) y no docstrings/comentarios; suite 16/16.
+  - `prueba_eliminar_candidatos.py` T02 — regla AST precisa excluyendo las tareas legítimas de
+    marcadores (`TareaEliminarMarcador`, B4.2); suite 16/16.
+  - `prueba_persistencia_carpeta.py` T11/T16 — contrato actualizado a "sin carpeta guardada" (el
+    archivo puede crearse por el default de `escaneo_automatico`); suite 20/20.
+  - `prueba_aplicar_incorporaciones.py` T15 — comparación de filas preexistentes robusta al esquema
+    vigente (por nombre de columna, con `mtime_ns` y `tamano_bytes`); suite 15/15.
+- **Identidad de build:** `configuracion.py` — `BUILD_IDENTIFICADOR = "B4.12"` (la etapa modifica
+  código de producción, por lo que no conserva B4.11); texto visible `Beta 4 — B4.12`;
+  `prueba_version_build.py` adaptada (3/3).
+- **Suite integral:** 87 suites, **1570/1570** pruebas, **0 FAIL** en la corrida final. Flakiness
+  residual conocida (documentada, no bloqueante): teardown ocasional de
+  `prueba_exploracion_densidad_b432.py` (`0xC0000409` en la salida del proceso; las 12/12
+  comprobaciones funcionales pasan siempre).
+- **Transición de builds:** `B4.11` = build ampliamente validada en la notebook; `B4.12` = candidata
+  final posterior a las correcciones de arquitectura/tests. **La Beta 4 todavía NO se declara
+  cerrada hasta validar B4.12.**
+
+## 99. Identificación visible de versión/build (B4.11)
+
+- **Fecha:** 2026-08-10
+- **Objetivo:** pequeña mejora de diagnóstico sobre la **Beta 4** (rama `beta4`): mostrar en la ventana
+  principal una identificación visible y discreta de la versión/build en ejecución, para poder
+  verificar rápidamente qué build está instalada en cualquier PC (p. ej. la notebook de validación).
+  Surge de un incidente real: la notebook estaba ejecutando una build antigua de Beta 4 sin el
+  selector de densidad (B4.3.3), y no había forma visual de identificar la build en ejecución.
+- **Decisión de versionado:** la identificación visible de las builds distribuidas es **independiente
+  del SHA Git**. Para cada build de validación se mantiene la asociación **identificador visible →
+  SHA Git exacto → SHA-256 del instalador**. Para esta: `B4.11`. El identificador se incrementa
+  **manualmente** cuando ChatGPT autoriza una nueva build distribuible; **sin automatización** (ni
+  generadores de versiones, ni hooks Git, ni lectura de `.git`, ni CI). No usar el SHA Git como
+  identificador visible embebido (el SHA del propio commit no puede conocerse dentro de él).
+- **Cambios:**
+  - `configuracion.py` — constantes centrales `VERSION_PRODUCTO = "Beta 4"`,
+    `BUILD_IDENTIFICADOR = "B4.11"` y `TEXTO_VERSION_BUILD = "Beta 4 — B4.11"` (fuente única de
+    verdad; embebidas en la build congelada por PyInstaller, sin Git en runtime).
+  - `visor_videos.py` — `QLabel` discreto con `TEXTO_VERSION_BUILD` en la **status bar** inferior de
+    la ventana principal (`VisorVideos`); sin tocar el layout principal ni otra funcionalidad.
+  - `prueba_version_build.py` — **nueva**: 3 pruebas (constantes de versión/build; texto exacto
+    `Beta 4 — B4.11`; etiqueta visible en la status bar).
+- **Verificación:** en desarrollo la etiqueta se muestra en la status bar con el texto
+  `Beta 4 — B4.11`; en la **build congelada** (PyInstaller) las constantes `Beta 4` y `B4.11`
+  quedan embebidas. **`B4.11` es la build usada para continuar la validación manual en la
+  notebook; no es el cierre definitivo de la Beta 4.**
+- **Pruebas:** `prueba_version_build.py` **3/3**, `prueba_exploracion_b433.py` **22/22**,
+  `prueba_carga_visual_b462.py` **9/9**, `prueba_smoke.py` OK. `python -m py_compile` OK.
+  `git diff --check` OK.
+
+## 98. Diferir la carga de previews para acelerar la interfaz (B4.6 — Etapas 1-2)
+
+- **Fecha:** 2026-08-09
+- **Objetivo:** Décima etapa del ciclo **Beta 4** (rama `beta4`), **B4.6 — Rendimiento de carga
+  visual**. El objetivo es que la interfaz quede **utilizable antes de terminar de cargar las
+  previews** (criterio de éxito principal). Dos subetapas: **Etapa 1** (diagnóstico, sin cambios de
+  producción) y **Etapa 2** (carga diferida de previews cacheadas).
+- **Etapa 1 — Diagnóstico de construcción/población de tarjetas (aprobada):** con 100 tarjetas/300
+  previews cacheadas se descompuso el costo de la carga visual en la PC de desarrollo:
+  construcción de widgets ~0.42 s (dominada por `_construir_exploracion`, que crea
+  `FranjaExploracion`+`QComboBox` por tarjeta aunque esté colapsada); `miniatura_principal` ~0.05 s
+  (un `os.listdir` completo por tarjeta, O(n×m)); **`_crear_tarjetas` cargaba y escalaba las 300
+  previews de golpe (0.74 s caliente / ~3.5 s frío)**; bloqueo síncrono total 1.4–4.4 s;
+  `_reemplazar_tarjetas` re-decodificaba las mismas previews; RAM ~+690 MB por retención de pixmaps
+  originales. Sin cambios de producción.
+- **Etapa 2 — Carga diferida de previews cacheadas:** `_crear_tarjetas`/`_agregar_tarjetas`/
+  `_reemplazar_tarjetas` ya **no** cargan previews cacheadas de golpe: las tarjetas parten con
+  **textos + miniatura principal + placeholders** y las previews (existentes o faltantes) se
+  incorporan **progresivamente** por la tubería existente (`_programar_previews` → `_timer_previews`
+  → `_encolar_previews` → `TareaPreviewsProgresivas` → `generar_previews_faltantes` →
+  `_aplicar_previews` → `actualizar_previews`), sin pipeline paralelo. Con caché completa **0
+  FFmpeg**; con faltantes la generación FFmpeg normal se conserva. `Tarjeta._previews_completas`
+  (estado interno, **no persistido**) decide si una tarjeta entra a la cola. `_aplicar_previews`
+  valida la carpeta del video del resultado contra la tarjeta actual: un **resultado tardío de otra
+  carpeta (cambio A→B) se ignora** (sin imágenes cruzadas ni crash). `_siguiente_lote_previews` dejó
+  de filtrar por `os.path.isdir` (reutilizar previews cacheadas solo usa la caché de miniaturas).
+  **Ajuste de integración** (documentado): `_reconstruir_previews_exploracion` dispone de un fallback
+  a las previews cacheadas en disco cuando las etiquetas aún no las tienen materializadas — es
+  consecuencia necesaria de la carga diferida; no modifica el motor B4.3, ni scrub, ni densidad, ni
+  tiempos/IDs de marcadores (las regresiones B4.1/B4.2/B4.3 quedaron verdes).
+- **Rendimiento (PC de desarrollo, 100 tarjetas / 300 previews cacheadas):** `_crear_tarjetas(100)`
+  **0.69–0.85 s** (antes 1.4–4.4 s); tarjetas visibles ~0.72 s; primera preview ~1.0 s; **300
+  previews completas ~2.1 s**; máximo bloqueo continuo del event loop **~0.7 s** (antes 1.4–4.4 s);
+  lotes posteriores ~20–30 ms; `_reemplazar_tarjetas` ~0.73 s sin recargar previews de golpe. La
+  interfaz queda utilizable antes de terminar de cargar las previews. Con caché completa: **FFmpeg =
+  0**, FFprobe interno = 0. Con previews faltantes: generación normal conservada.
+- **RAM (pendiente separado, no corregido):** la carga completa de las 300 previews sigue elevando
+  el consumo en **~+690 MB** por la retención de pixmaps originales; esta etapa solo hace que el
+  consumo aumente **progresivamente** en lugar de todo de golpe. No se modifica la política de
+  retención.
+- **Otros pendientes visuales separados (sin implementar):** `_construir_exploracion` crea widgets
+  en tarjetas colapsadas; `_reemplazar_tarjetas` reconstruye tarjetas idénticas (no se hizo
+  reconciliación/diff); `miniatura_principal` hace un `os.listdir` completo por tarjeta.
+- **Pruebas:** `prueba_carga_visual_b462.py` **9/9** (no aplicación eager; placeholders; recuperación
+  cacheada progresiva con 0 FFmpeg; generación de faltantes; lotes; cambio A→B; reemplazo; cargar
+  más; filtrado/correspondencia). Regresiones en verde en el cierre: `prueba_previews_progresivas.py`
+  **16/16**, `prueba_previews_automaticas.py` **22/22**, `prueba_previews_multicarpeta.py` **5/5**,
+  `prueba_recarga_catalogo.py` **20/20**, `prueba_pagina_siguiente.py` **20/20**,
+  `prueba_tamano_miniaturas.py` **32/32**, `prueba_interfaz_asincrona.py` **29/29**,
+  `prueba_escaneo_interfaz.py` **36/36**, `prueba_marcadores_b42.py` **17/17**,
+  `prueba_exploracion_b41.py` **28/28**, `prueba_exploracion_b432.py` **20/20**,
+  `prueba_exploracion_b433.py` **22/22**, `prueba_reutilizacion_metadata_b453.py` **20/20**,
+  `prueba_optimizacion_ffprobe_b452.py` **14/14**, `prueba_reproduccion_marcadores_b44.py` **24/24**,
+  `prueba_smoke.py` OK. `python -m py_compile` OK. `git diff --check` OK.
+- **Próximo candidato técnico (registrado, SIN implementar): reducir el consumo de RAM asociado a
+  previews cargadas** (~+690 MB); antes de cambiar esa política debe inspeccionarse por qué se
+  conservan los pixmaps originales y qué funciones dependen de ellos (cambio de tamaño de miniaturas,
+  calidad de reescalado, exploración/marcadores). **B4.6 quedó completada en sus Etapas 1-2; no se
+  declara la Beta 4 completa todavía.**
+- **Archivos modificados:** producción `visor_videos.py`; pruebas `prueba_carga_visual_b462.py`
+  (nueva) y adaptadas al comportamiento progresivo `prueba_tamano_miniaturas.py`,
+  `prueba_marcadores_b42.py`, `prueba_exploracion_b41.py`; más los documentos oficiales
+  (`ESTADO_PROYECTO.md`, `ROADMAP.md`, `DOCUMENTO_TECNICO.md`, `HISTORIAL_PROYECTO.md`). Sin cambios
+  en `tareas_videos.py`, `escanear_videos.py`, SQLite, B4.3/VLC, scrubber ni configuración.
+- **Commit:** `Diferir la carga de previews para acelerar la interfaz` (cierre de B4.6 — Etapa 2).
+
+---
+
+## 97. Reutilizar metadata de videos sin cambios en reescaneos (B4.5 — Etapa 3)
+
+- **Fecha:** 2026-08-09
+- **Objetivo:** Novena etapa del ciclo **Beta 4** (rama `beta4`), **B4.5 — Etapa 3:
+  reutilización de metadata en reescaneos de videos sin cambios**. En un reescaneo se ejecuta
+  FFprobe únicamente para videos nuevos, modificados, registros sin `mtime_ns` o con metadata
+  inválida; un video sin cambios reutiliza `duracion_segundos`/`ancho`/`alto`/`codec_video` con
+  **0 FFprobe**.
+- **Criterio de reutilización (aprobado en la Fase 1):** barato, **`ruta normalizada +
+  tamano_bytes + mtime_ns`** (sin hash de contenido). Se reutiliza solo si: existe registro previo
+  por nombre; `mtime_ns` previo no es NULL; la ruta normalizada coincide; el tamaño coincide; el
+  `mtime_ns` coincide; y la metadata persistida es válida (`_metadata_ffprobe_utilizable`:
+  duración finita > 0, ancho/alto enteros > 0, codec texto no vacío). Fuerzan FFprobe: archivo
+  nuevo, registro sin `mtime_ns`, ruta/tamaño/`mtime_ns` cambiados o metadata inválida.
+- **Migración SQLite:** columna **`videos.mtime_ns INTEGER NULL`** aditiva e idempotente
+  (helper `_asegurar_columnas_videos` extraído de `conectar_bd`, reutilizado por `conectar_bd`,
+  `guardar_video` y `guardar_videos`; `BEGIN` explícito en el guardado para que el `ALTER` sea
+  transaccional). Sin reconstrucción de tabla; registros antiguos quedan NULL; no cambia
+  `videos.id`; no toca `marcadores_video`. Bases existentes: primera pasada FFprobe normal y
+  rellena `mtime_ns`; pasadas posteriores reutilizan.
+- **Implementación:** `obtener_tamanos_archivos` obtiene tamaño+`mtime_ns` con **un `os.stat` por
+  archivo**; `combinar_registros_con_tamanos` propaga `mtime_ns`; `_upsert_video` lo persiste;
+  `listar_registros_por_nombres` consulta por lote por `nombre` (una SELECT, sin consultas por
+  video); `TareaFFprobe(rutas, nombres=None, stats=None, ruta_db=None)` clasifica y solo probea lo
+  necesario, devolviendo metadata completa con el mismo formato (indistinguible por origen);
+  `_iniciar_ffprobe` pasa nombres/stats/ruta_db sin tocar SQLite en la UI.
+- **Rendimiento (referencia de PC de desarrollo):** reescaneo caliente de 121 videos **121 FFprobe
+  → 0**, backend **~4.9 s → ~0.1–0.5 s** (no extrapolable a la notebook; la UI de tarjetas no se
+  optimizó). Verificación empírica decisiva con **10 copias físicas independientes** (10 inodos,
+  sin hardlinks/symlinks): **10 → 0 → 1 → 0** (tercera pasada: se modifica únicamente `mtime_ns`
+  de un archivo → 1 FFprobe, 9 metadata reutilizadas y 1 reprocesada; cuarta pasada sin cambios →
+  0). Aclaración técnica: en el benchmark con hardlinks, modificar un "único" archivo dio 6
+  FFprobe porque seis entradas compartían inode; no era regresión (la verificación con copias
+  independientes confirmó el comportamiento real).
+- **Identidad y marcadores:** `video_id` se conserva; marcadores intactos; un cambio de ruta
+  fuerza FFprobe pero mantiene la política de identidad por nombre/upsert (sin reasociación
+  avanzada).
+- **Riesgo residual aceptado:** si un archivo distinto reemplaza al original conservando
+  ruta+tamaño+`mtime_ns`, la metadata puede reutilizarse; **sin hash de contenido**.
+- **Pruebas:** `prueba_reutilizacion_metadata_b453.py` **20/20** (migración antigua e idempotente;
+  NULL → FFprobe; idéntico → 0 FFprobe; tamaño/mtime/ambos/ruta/nuevo/metadata inválida →
+  FFprobe; metadata reutilizada exacta; persistir `mtime_ns`; video_id y marcadores preservados;
+  lote mixto 10 → 3 FFprobe; lote 121 → 0 FFprobe; consulta por lote = 1 SELECT; un stat por
+  archivo; normalización de ruta). Regresiones en verde en el cierre:
+  `prueba_optimizacion_ffprobe_b452.py` **14/14**, `prueba_escaneo_guardado.py` **24/24**,
+  `prueba_guardar_videos.py` **34/34**, `prueba_guardar.py` **19/19**, `prueba_recarga_catalogo.py`
+  **20/20**, `prueba_escaneo_interfaz.py` **36/36**, `prueba_plan_sincronizacion.py` **12/12**,
+  `prueba_sincronizacion_asincrona.py` **27/27**, `prueba_previews_progresivas.py` **16/16**,
+  `prueba_tamano_archivo.py` **15/15**, `prueba_detectar.py` **15/15**, `prueba_lectura.py`
+  **15/15**, `prueba_lectura_paginada.py` **32/32**, `prueba_interfaz_asincrona.py` **29/29**,
+  `prueba_seleccion_carpeta.py` **26/26**, `prueba_reproduccion_marcadores_b44.py` **24/24**,
+  `prueba_marcadores_b42.py` **17/17**, `prueba_smoke.py` OK. `python -m py_compile` OK.
+  `git diff --check` OK.
+- **Fallos preexistentes sin cambios (baseline):** `prueba_eliminar_candidatos.py` **T02** y
+  `prueba_aplicar_incorporaciones.py` **T15**; no corregidos ni adjudicados a esta etapa.
+- **Próxima etapa:** **B4.5 queda completada en sus Etapas 1-3**; no se declara la Beta 4 completa
+  todavía. Pendiente técnico sin corregir: las previews normales se consideran reutilizables por
+  existencia del archivo. Siguientes líneas del ciclo (no iniciadas): selección A/B, loops,
+  fragmentos, corte/unión, detección de archivos movidos con reasociación futura de marcadores
+  huérfanos y las evoluciones de reproducción indicadas en `ROADMAP.md`.
+- **Archivos modificados:** producción `escanear_videos.py`, `tareas_videos.py`, `visor_videos.py`;
+  pruebas `prueba_reutilizacion_metadata_b453.py` (nueva) y adaptadas al esquema nuevo
+  `prueba_guardar.py`, `prueba_guardar_videos.py`, `prueba_aplicar_incorporaciones.py`,
+  `prueba_sincronizacion_asincrona.py`; más los documentos oficiales (`ESTADO_PROYECTO.md`,
+  `ROADMAP.md`, `DOCUMENTO_TECNICO.md`, `HISTORIAL_PROYECTO.md`). Sin cambios en exploración B4.3,
+  VLC, scrubber ni configuración.
+- **Commit:** `Reutilizar metadata de videos sin cambios en reescaneos` (cierre de B4.5 — Etapa 3).
+
+---
+
+## 96. Eliminar FFprobe redundante al generar miniaturas y previews (B4.5 — Etapas 1-2)
+
+- **Fecha:** 2026-08-09
+- **Objetivo:** Octava etapa del ciclo **Beta 4** (rama `beta4`), **B4.5 — Rendimiento de carga
+  inicial**. La demora perceptible de Marcos con carpetas de ~121 videos (carga inicial,
+  procesamiento y miniaturas normales) se investigó y optimizó **sin tocar la exploración
+  temporal B4.3**. Dos subetapas: **Etapa 1** (diagnóstico, sin cambios de producción) y
+  **Etapa 2** (eliminar FFprobe redundante en la generación normal de imágenes).
+- **Etapa 1 — Diagnóstico del cuello de botella (aprobada):** con un dataset temporal de 121
+  videos funcionales (hardlinks de los videos reales de muestra) y base/caché temporales se
+  midió el pipeline normal de catálogo/miniaturas en la PC de desarrollo: escaneo y tamaños
+  despreciables; **FFprobe de metadata ~4.5 s (121 procesos, secuenciales)**; **miniaturas
+  normales ~12.3 s** (121 FFmpeg + 121 FFprobe internos); **previews normales ~38.6 s** (363
+  FFmpeg + 363 FFprobe internos); SQLite y lectura despreciables; UI ~1.5 s (tarjetas + QPixmap
+  en el hilo principal). El **reescaneo caliente re-ejecuta los 121 FFprobe de metadata de forma
+  redundante** (~4.6 s de ~4.9 s). **Cuello dominante: FFmpeg+FFprobe de las previews normales
+  (~70 % del tiempo en frío)**; secundarios: FFprobe redundante del reescaneo y el doble proceso
+  (FFprobe interno por cada FFmpeg).
+- **Etapa 2 — Eliminar FFprobe redundante:** `generar_miniatura` y `generar_preview` aceptan
+  `duracion_segundos=None` (B4.5): con una duración **utilizable** (`_duracion_utilizable`:
+  número real finito > 0; rechaza `None`, bool, no numérico, 0, negativos, NaN/infinito) usan esa
+  duración **sin ejecutar FFprobe interno**, con el **mismo cálculo temporal** y el **mismo
+  FFmpeg**; si es inválida o ausente conservan el **fallback FFprobe** anterior (compatibilidad
+  con callers antiguos). `asegurar_miniatura`/`asegurar_miniaturas`/`generar_previews_faltantes`
+  propagan un mapa de duraciones (por ruta o por nombre); `TareaMiniaturas`/`TareaPreviewsProgresivas`
+  lo reciben; la interfaz lo construye desde `TareaFFprobe` (`_duraciones_desde_ffprobe`) para las
+  miniaturas y desde las tarjetas (`Tarjeta._duracion`) para las previews.
+- **Rendimiento (PC de desarrollo, dataset temporal de 121 videos, caché fría):** **FFprobe
+  internos 484 → 0** (121 miniaturas + 363 previews), mismos 484 FFmpeg; total backend
+  **~55.6 s → ~37.1 s**; miniaturas **12.3 → 7.9 s**; previews **38.6 → 24.8 s**. No se
+  extrapolan tiempos absolutos a la notebook. Verificación funcional con la app real (dataset
+  temporal): carga inicial ~0.83 s, previews generadas progresivamente con **ffprobe interno =
+  0**, UI fluida y sin ventanas de consola.
+- **No alterado:** cantidad de imágenes, posiciones, resolución, calidad, progresividad, lotes,
+  caché, nombres/rutas, parámetros FFmpeg, paralelismo ni GPU. `TareaFFprobe` del pipeline
+  continúa igual (la Etapa 3, evitar el FFprobe de metadata en reescaneos, queda registrada y NO
+  iniciada). Pendiente técnico registrado sin corregir: las **previews normales existentes se
+  consideran reutilizables por existencia del archivo** (sin validación equivalente por cambio
+  del video).
+- **Fallos preexistentes confirmados sobre el HEAD base limpio `507ec81`:** `prueba_eliminar_candidatos.py`
+  **T02** (AST de estructura) y `prueba_aplicar_incorporaciones.py` **T15** (documentado:
+  base real con `tamano_bytes` poblado); se registran como preexistentes, **no se corrigen** y no
+  se consideran regresión de B4.5.
+- **Pruebas:** `prueba_optimizacion_ffprobe_b452.py` **14/14** (miniatura/preview con duración
+  conocida sin FFprobe interno; fallback sin duración; duración inválida; tiempos equivalentes
+  (`-ss` idéntico); pipelines miniaturas y previews con 0 FFprobe internos; cache existente sin
+  procesos; callers antiguos sin parámetro; `_duracion_utilizable`). Regresiones en verde en el
+  cierre: `prueba_previews_progresivas.py` **16/16**, `prueba_tamano_miniaturas.py` **32/32**,
+  `prueba_recarga_catalogo.py` **20/20**, `prueba_pagina_siguiente.py` **20/20**,
+  `prueba_escaneo_interfaz.py` **36/36**, `prueba_escaneo_guardado.py` **24/24**,
+  `prueba_previews_multicarpeta.py` **5/5**, `prueba_previews_automaticas.py` **22/22**,
+  `prueba_reproduccion_marcadores_b44.py` **24/24**, `prueba_smoke.py` OK. `python -m py_compile`
+  OK. `git diff --check` OK.
+- **Próxima etapa:** **B4.5 — Etapa 3 — evitar el FFprobe de metadata en reescaneos de videos
+  sin cambios** (reescaneo caliente ≈4.9 s con ~93 % en FFprobe); registrada, **no iniciada**.
+  **B4.5 queda completada en sus Etapas 1-2; no se declara la Beta 4 completa todavía.**
+- **Archivos modificados:** producción `escanear_videos.py`, `tareas_videos.py`, `visor_videos.py`;
+  pruebas `prueba_optimizacion_ffprobe_b452.py` (nueva) y adaptadas a la firma nueva
+  `prueba_previews_progresivas.py`, `prueba_previews_multicarpeta.py`, `prueba_previews_automaticas.py`,
+  `prueba_escaneo_guardado.py`; más los documentos oficiales (`ESTADO_PROYECTO.md`, `ROADMAP.md`,
+  `DOCUMENTO_TECNICO.md`, `HISTORIAL_PROYECTO.md`). Sin cambios en exploración B4.3, VLC, SQLite,
+  configuración ni scrubber.
+- **Commit:** `Eliminar FFprobe redundante al generar miniaturas y previews` (cierre de B4.5 —
+  Etapa 2).
+
+---
+
+## 95. Integrar reproduccion de marcadores mediante playlists VLC (B4.4)
+
+- **Fecha:** 2026-08-09
+- **Objetivo:** Séptima etapa del ciclo **Beta 4** (rama `beta4`), con dos subetapas: **Etapa
+  1** — inspección y prototipo técnico de reproducción de marcadores en VLC; **Etapa 2** —
+  integración mínima "Reproducir marcadores en VLC". Permite seleccionar uno o varios videos en
+  el Visor y abrir una playlist temporal de VLC con una entrada por marcador persistido,
+  recorrible con los botones Siguiente/Anterior visibles de VLC.
+- **Estrategia (Etapa 1, aprobada):** se validó físicamente con **VLC 3.0.23**
+  (`C:\Program Files\VideoLAN\VLC\vlc.exe`) la estrategia **playlist pura**: una entrada por
+  marcador con `#EXTVLCOPT:start-time=<segundos>`; Siguiente/Anterior visibles de VLC recorren
+  los marcadores; marcadores consecutivos del mismo archivo resultan **fluidos** (sin negro ni
+  parpadeo perceptible); `--loop` correcto; play/pause, volumen, fullscreen y seek manual
+  intactos. Se descartaron HTTP/telnet y libVLC para esta integración.
+- **Integración mínima (Etapa 2):** acción **"Reproducir marcadores en VLC"** en el menú
+  contextual (habilitada con selección). El Visor recolecta los videos seleccionados en el
+  **orden visible actual del catálogo** (mismo patrón que `_copiar_rutas_seleccionados`; no usa
+  el `set` de selección como orden), obtiene sus marcadores persistidos (B4.2) en **orden
+  cronológico ascendente** mediante `listar_marcadores_de` + `TareaListarMarcadoresVarios`, y
+  genera una playlist temporal `.m3u` con una entrada por marcador (`#EXTVLCOPT:start-time`,
+  **precisión decimal**, p. ej. `12.437`) en el directorio temporal del sistema, con encoding
+  **UTF-8** (espacios/acentos/Unicode) y **limpieza propia previa** (`visor_marcadores_*.m3u`;
+  solo patrón propio, sin tocar archivos ajenos ni subdirectorios; una playlist bloqueada se
+  conserva y se continúa; no se borra la recién lanzada). Abre **VLC una única vez** con la
+  playlist completa, sin loop automático.
+- **Videos sin marcadores (decisión de producto):** se pregunta **en cada ocasión** con un único
+  diálogo: **Omitir videos sin marcadores** / **Reproducir desde el inicio (00:00)** /
+  **Cancelar** (no abre VLC). No se persiste la elección. Si todos carecen de marcadores y se
+  elige Omitir, no se abre VLC y se informa que no hay marcadores para reproducir.
+- **Archivos inexistentes:** se omiten de la playlist con un aviso informativo; no se borran
+  marcadores ni registros y no se modifica SQLite (la reasociación queda fuera de esta etapa).
+- **VLC ausente:** mensaje claro "VLC no está instalado o no pudo encontrarse."; sin instalar,
+  sin descargar, sin abrir navegador y sin búsquedas recursivas de discos.
+- **Resolución de VLC:** `%ProgramFiles%\VideoLAN\VLC\vlc.exe` → `%ProgramFiles(x86)%\...` →
+  `shutil.which("vlc")` (sin registro).
+- **Observación (múltiples instancias):** la configuración actual de VLC en la PC de desarrollo
+  abrió una instancia por ejecución; no impidió la reproducción ni la limpieza de playlists
+  anteriores y **no se corrige en esta etapa** (se evaluará solo si genera un problema de UX en
+  uso real).
+- **Validación física (PC de desarrollo, VLC 3.0.23, videos reales de `Videos de muestra`):**
+  primera reproducción (A: 1.5 / 17.83 / 30 s + B: 2 s): VLC abrió una sola vez, primer marcador
+  en ~1.5 s, Siguiente A→A→A→B, Anterior correcto, play/pause y fullscreen normales; segunda
+  reproducción (A + video sin marcadores, "Desde el inicio"): diálogo con las 3 opciones y
+  comportamiento correcto. Al final de `%TEMP%` solo quedó la última playlist propia; la
+  anterior y un residuo previo fueron eliminados por la limpieza.
+- **SQLite intacto:** no se modificaron esquema ni datos; solo se leen marcadores (nueva función
+  de consulta `listar_marcadores_de`); los `INSERT` de la prueba física se realizaron en bases
+  temporales fuera del repositorio.
+- **Pruebas:** `prueba_reproduccion_marcadores_b44.py` **24/24** (orden visible, orden
+  cronológico, generación M3U, tiempos decimales, mismo archivo múltiples entradas, mezcla de
+  videos, decisiones Omitir/Desde inicio/Cancelar, todos sin marcadores, playlist vacía, VLC no
+  encontrado, archivo inexistente, no modificación de marcadores, lanzamiento único, limpieza de
+  playlists propias, no borrar archivos ajenos, eliminación bloqueada, rutas con espacios y
+  rutas Unicode). Regresiones en verde en el cierre: `prueba_exploracion_b433.py` **22/22**,
+  `prueba_marcadores_b42.py` **17/17**, `prueba_recarga_catalogo.py` **20/20**,
+  `prueba_pagina_siguiente.py` **20/20**, `prueba_smoke.py` OK. `python -m py_compile` OK.
+  `git diff --check` OK.
+- **Próxima etapa:** **B4.4 quedó completada**; no se declara la Beta 4 completa todavía.
+  Siguientes líneas del ciclo (no iniciadas): selección A/B, loops, selección de fragmentos,
+  corte/unión y detección de archivos movidos con reasociación futura de marcadores huérfanos,
+  más las evoluciones de reproducción (iniciar desde el marcador, destino durante la
+  reproducción, UX de múltiples instancias de VLC). Pendiente separado: la demora perceptible al
+  cargar una carpeta de 121 videos y generar las miniaturas normales iniciales.
+- **Archivos modificados:** `escanear_videos.py`, `tareas_videos.py`, `visor_videos.py`,
+  `playlist_vlc.py` (nueva) y `prueba_reproduccion_marcadores_b44.py` (nueva), más los
+  documentos oficiales (`ESTADO_PROYECTO.md`, `ROADMAP.md`, `DOCUMENTO_TECNICO.md`,
+  `HISTORIAL_PROYECTO.md`). Sin cambios en cache, miniaturas, scrubber, escaneo, configuración ni
+  SQLite (solo lectura de marcadores).
+- **Commit:** `Integrar reproduccion de marcadores mediante playlists VLC` (cierre de B4.4 —
+  Etapa 2).
+
+---
+
+## 94. Agregar densidad manual y priorizar la vista dinamica temporal (B4.3.3)
+
+- **Fecha:** 2026-08-09
+- **Objetivo:** Sexta etapa del ciclo **Beta 4** (rama `beta4`), cuarta subetapa de
+  **B4.3 — Caché densa de exploración temporal**. Dos mejoras de interacción detectadas por
+  Marcos en la notebook: (A) que la miniatura dinámica bajo el puntero prevalezca visualmente
+  sobre las miniaturas fijas de marcadores; (B) poder pedir manualmente más fotogramas de
+  exploración incluso en videos cortos.
+- **Mejora A — prioridad visual de la miniatura dinámica:** el z-order vivía en la tarjeta
+  (`visor_videos.py`), no en `scrubber.py` (widget de dibujo puro): la preview dinámica
+  (`_imagen_exploracion`) se creaba antes que las `MiniaturaMarcador`, por lo que las fijas
+  quedaban por encima y tapaban el instante explorado. Solución por orden/z-order de widgets:
+  `_al_instante_exploracion` hace `raise_()` a la preview dinámica durante el hover, y el
+  `eventFilter` del franja la baja (`lower()`) al salir de la superficie (`QEvent.Leave`). Sin
+  reconstruir el scrubber; `mouseMove` sigue siendo exclusivamente RAM (solo `raise_`/`lower`
+  baratos). Los marcadores conservan tiempo/id y su eliminación por clic derecho sigue
+  funcionando; al salir del hover las fijas vuelven a su orden normal.
+- **Mejora B — densidad manual:** `QComboBox` discreto "Densidad:" (`Auto | 15 | 30 | 60 | 120 |
+  200`, constante `DENSIDADES_DISPONIBLES`) en la tarjeta expandida. Los valores manuales son el
+  **total objetivo independiente de la duración** (video de 30 s: Auto → 15, manual 60 → 60,
+  manual 120 → 120); siempre los **15 prioritarios primero** y luego se completa hasta el total
+  solicitado. `TareaExploracionDensa` recibe `objetivo_manual` (None = Auto): la **fase rápida**
+  son los 15 y la **fase secundaria** completa hasta el objetivo. En cada fase se construye
+  explícitamente el **conjunto permitido** `tiempos_objetivo(duración, cantidad_actual)` y la
+  emisión (`resultado_parcial`) y la cola final **solo decodifican/emiten ese subconjunto**: la
+  caché en disco puede contener un **superset** (densidades manuales previas) y la tarea decide
+  qué subconjunto utiliza (RAM/UI limitada al conjunto objetivo; extras en disco sin regenerar
+  ni borrar). **Aumentar** reutiliza lo existente (15→60 reutiliza 15 y genera 45; 60→120
+  reutiliza 60 y genera 60); **disminuir** no borra disco ni regenera; **volver a Auto**
+  recalcula el objetivo automático y conserva los extras. El valor es **por tarjeta/sesión**
+  (se conserva en colapso/reexpansión; vuelve a Auto si se reconstruye por recarga); **sin
+  SQLite ni persistencia en `configuracion.json`** (la persistencia futura queda separada).
+- **Rendimiento:** se mantiene la política aprobada — `mouseMove` solo RAM (sin filesystem,
+  FFmpeg, SQLite, JSON ni decodificación), solo la tarjeta expandida conserva densos en RAM,
+  colapsar libera esas referencias, la caché permanece en disco, un único FFmpeg activo,
+  generación individual/secuencial en background, sin batch.
+- **Validación visual (PC de desarrollo, app real + FFmpeg real, video de 30 s, caché
+  temporal):** Auto → 15; marcador en 15 s: hover con dinámica arriba y al salir la fija vuelve
+  arriba; Auto→60 → 60 densos con scrub fluido; 60→120 → 120 densos; 120→Auto → RAM filtrada a
+  15 sin errores y marcador con tiempo 15.0 intacto. **B4.3 quedó validada satisfactoriamente
+  también en la notebook objetivo** (Marcos).
+- **SQLite intacto:** `videos`, `marcadores_video` y `biblioteca.db` no fueron modificados.
+- **Pruebas:** `prueba_exploracion_b433.py` **22/22** (z-order 1/varios marcadores y leave;
+  eliminación clic derecho; Auto/manual en videos cortos 30 s y 2 min; 56 min + 120; incremento
+  15→60 y 60→120; disminución 120→30 sin borrar disco ni regenerar; volver a Auto sin borrar
+  extras; máximo un FFmpeg; mouseMove solo RAM; marcadores tiempo/id intactos; caché superset
+  120→30, 120→60, 120→Auto; fase rápida limitada a 15 con superset). Regresiones en verde en el
+  cierre: `prueba_exploracion_densidad_b432.py` **12/12**, `prueba_exploracion_b432.py` **20/20**,
+  `prueba_exploracion_cache_b431.py` **29/29**, `prueba_exploracion_b41.py` **28/28**,
+  `prueba_marcadores_b42.py` **17/17**, `prueba_previews_progresivas.py` **16/16**,
+  `prueba_tamano_miniaturas.py` **32/32**, `prueba_recarga_catalogo.py` **20/20**,
+  `prueba_pagina_siguiente.py` **20/20**, `prueba_smoke.py` OK. `python -m py_compile` OK.
+  `git diff --check` OK.
+- **Próxima etapa:** **reproducción de marcadores en VLC** (seleccionar varios videos, abrir
+  reproducción, Siguiente/Anterior por marcadores del video actual y pasar al siguiente video);
+  **no implementada**. **B4.3 queda funcionalmente muy avanzada**; **no se declara la Beta 4
+  completa todavía**. Se conservan como funciones futuras: selección A/B, loops, selección de
+  fragmentos, corte/unión y detección de archivos movidos con reasociación futura de marcadores
+  huérfanos. Pendiente separado (no corresponde a B4.3, sin optimizar ahora): la demora
+  perceptible al **cargar una carpeta de 121 videos** y generar las miniaturas normales
+  iniciales.
+- **Archivos modificados:** `tareas_videos.py`, `visor_videos.py`, `prueba_exploracion_b433.py`
+  (nueva), y los documentos oficiales (`ESTADO_PROYECTO.md`, `ROADMAP.md`, `DOCUMENTO_TECNICO.md`,
+  `HISTORIAL_PROYECTO.md`). Sin cambios en `exploracion_cache.py`, `scrubber.py`,
+  `escanear_videos.py`, SQLite ni configuración.
+- **Commit:** `Agregar densidad manual y priorizar la vista dinamica temporal` (cierre de
+  B4.3.3).
+
+---
+
+## 93. Agregar densidad temporal adaptativa en segundo plano (B4.3.2 — Etapa 2)
+
+- **Fecha:** 2026-08-09
+- **Objetivo:** Quinta etapa del ciclo **Beta 4** (rama `beta4`), tercera subetapa de
+  **B4.3 — Caché densa de exploración temporal**. Agregar una **densidad secundaria
+  adaptativa** en segundo plano detrás de los 15 fotogramas prioritarios, con la **menor
+  complejidad** y sin degradar la fluidez ya validada.
+- **Decisión de estrategia:** tras un **benchmark experimental** sobre un video de ~56 min en el
+  PC de desarrollo (individual ≈7 s; batch por orden de cobertura ≈41 s → **descartado**; batch
+  cronológico ≈10.5 s; pasada uniforme ≈10.8 s sin ventaja suficiente), por **decisión de
+  producto** se adoptó la **generación individual y secuencial**: **un FFmpeg por objetivo, sin
+  batch, sin paralelismo**. La Etapa 1 ya funcionaba correctamente en la notebook objetivo, por
+  lo que la fase rápida no se modifica.
+- **Comportamiento final:**
+  - `exploracion_cache.py` — **densidad secundaria centralizada**: `FOTOGRAMAS_INICIALES = 15`,
+    `PASO_SEGUNDOS_DENSIDAD = 30.0`, `MINIMO_FOTOGRAMAS_DENSIDAD = 15`,
+    `MAXIMO_FOTOGRAMAS_DENSIDAD = 200` y `objetivo_total_densidad(duración)` =
+    `clamp(max(15, ceil(d/30)), 15, 200)` (duración inválida → 0). El motor `generar_fotogramas`
+    no cambia: reutiliza lo presente y genera solo faltantes, serial.
+  - `tareas_videos.py` — **`TareaExploracionDensa._trabajo()` en dos fases secuenciales**:
+    **fase rápida** = los 15 prioritarios (comportamiento de la Etapa 1 intacto); **fase
+    secundaria** = solo después de terminar la rápida y sin cancelarse, genera hasta
+    `objetivo_total_densidad(duración)` reutilizando lo existente y completando únicamente los
+    faltantes. Ambas fases emiten `resultado_parcial` progresivo y comparten `_emitidos` (sin
+    duplicados). **Un solo FFmpeg activo** en todo momento.
+  - `visor_videos.py` — `FOTOGRAMAS_INICIALES` pasa a referenciar
+    `exploracion_cache.MINIMO_FOTOGRAMAS_DENSIDAD` (valor único centralizado; **sin controles
+    visibles**).
+- **Densidad (ejemplos aprobados):** 2 min → 15, 10 min → 20, 30 min → 60, 50 min → 100,
+  56 min → 112, 2 h → 200. Parámetros **provisionales** (30 s / mín 15 / máx 200), no congelados
+  y sin configuración visible; la arquitectura permite exponerlos en una etapa separada
+  (p. ej. 60 / 30 / 15 s).
+- **Reutilización y cancelación:** la fase secundaria **nunca regenera** los fotogramas ya
+  presentes (reanudación por `objetivos - existentes`); cambiar de video o colapsar la tarjeta
+  **cancela** la continuación de forma cooperativa y lo ya generado queda **reutilizable**.
+- **Medidas de referencia (PC de desarrollo, video ≈56 min — no garantizan igualdad en la
+  notebook):** primer fotograma prioritario ≈**0.10 s**; **15 prioritarios ≈1.13 s**; primer
+  secundario (16.º) ≈1.21 s (**después** de la fase rápida, sin solapamiento); **total 112
+  ≈8.39 s**; reexpansión con caché completa ≈**0.08 s** sin regenerar; scrub en RAM sin
+  problema perceptible.
+- **Validación visual (PC de desarrollo, app real + FFmpeg real):** aprobada — expansión
+  inmediata, 15 prioritarios primero, densidad creciente progresiva, scrub fluido, colapso libera
+  RAM, reexpansión reutiliza (0.08 s). La **notebook objetivo** ya validó la **Etapa 1**
+  (expansión y scrub correctos con un video real de ~56 min en i7-7500U / 16 GB / 940MX); la
+  **Etapa 2** recibirá una **comprobación visual sencilla** posterior (sin campaña adicional de
+  benchmarks).
+- **SQLite intacto:** `videos`, `marcadores_video` y `biblioteca.db` no fueron modificados.
+- **Pruebas:** `prueba_exploracion_densidad_b432.py` **12/12** (P01 py_compile; P02 fórmula de
+  densidad; P03 fase rápida primero con orden `[15, objetivo_total]`; P04 los 15 no se regeneran
+  (15+85); P05 reutiliza 45 y genera 55; P06 máximo un FFmpeg concurrente; P07 secundarios
+  progresivos; P08 A→B sin fugas; P09 colapso libera RAM; P10 reexpansión reutiliza; P11
+  mouseMove solo RAM; P12 marcadores conservan tiempo/id y mejoran). Regresiones en verde en el
+  cierre: `prueba_exploracion_b432.py` **20/20**, `prueba_exploracion_cache_b431.py` **29/29**,
+  `prueba_exploracion_b41.py` **28/28**, `prueba_marcadores_b42.py` **17/17**,
+  `prueba_previews_progresivas.py` **16/16**, `prueba_tamano_miniaturas.py` **32/32**,
+  `prueba_recarga_catalogo.py` **20/20**, `prueba_pagina_siguiente.py` **20/20**,
+  `prueba_smoke.py` OK. `python -m py_compile` OK. `git diff --check` OK.
+- **Pendiente separado (no corresponde a B4.3, sin optimizar ahora):** Marcos observó en la
+  notebook una demora perceptible al **cargar una carpeta de 121 videos** y generar las
+  miniaturas normales iniciales; quedó registrado como cuello de botella aparte.
+- **Archivos modificados:** `exploracion_cache.py`, `tareas_videos.py`, `visor_videos.py`,
+  `prueba_exploracion_densidad_b432.py` (nueva), y los documentos oficiales (`ESTADO_PROYECTO.md`,
+  `ROADMAP.md`, `DOCUMENTO_TECNICO.md`, `HISTORIAL_PROYECTO.md`). Sin cambios en
+  `exploracion_temporal.py`, `escanear_videos.py`, SQLite ni configuración.
+- **Commit:** `Agregar densidad temporal adaptativa en segundo plano` (cierre de B4.3.2 Etapa 2).
+
+---
+
+## 92. Integrar cobertura temporal densa progresiva en la interfaz (B4.3.2)
+
+- **Fecha:** 2026-08-09
+- **Objetivo:** Cuarta etapa del ciclo **Beta 4** (rama `beta4`), segunda subetapa de
+  **B4.3 — Caché densa de exploración temporal**. Integrar el motor de B4.3.1 en la tarjeta:
+  cobertura densa **asíncrona**, **progresiva** y con **fallback a las previews normales**,
+  priorizando agilidad y fluidez en el scrubbing.
+- **Comportamiento final:**
+  - `tareas_videos.py` — **`TareaExploracionDensa`** (nueva): genera la cobertura inicial de
+    **`FOTOGRAMAS_INICIALES = 15`** provisionales con el motor `exploracion_cache.py`; captura
+    instantáneas inmutables de `video_id`/`ruta_video`/`duracion` en el constructor; emite
+    **resultados parciales progresivos** (`resultado_parcial = Signal(object)`) en cuanto hay
+    fotogramas y termina con la cola final `{"imagenes": [...]}` de **`QImage`** ya decodificadas
+    en el worker. Exposición de `FOTOGRAMAS_INICIALES` y **cancelación cooperativa**.
+  - `visor_videos.py` — **consumo en la tarjeta:** `_procesar_siguiente_exploracion` conecta la
+    señal de parciales; `_al_resultado_parcial_exploracion` los recibe; `_aplicar_exploracion_densa`
+    (compatible con `(ms, QImage)` y deduplicación) convierte la `QImage` en `QPixmap` **en la
+    GUI** y la aplica al fotograma temporal. **Fallback inmediato a las previews normales**
+    mientras no hay caché; `mouseMove` con selección **exclusivamente en RAM** (cero FFmpeg,
+    cero disco); imagen mostrada = la **más cercana** entre preview normal y densa (la preview
+    normal gana el empate); **cancelación cooperativa** al cambiar de video; **aislamiento
+    A→B** (cada tarjeta usa su caché); **colapso que libera las referencias densas de RAM**;
+    **reexpansión que reutiliza la caché** (sin regenerar); los **marcadores** conservan su
+    tiempo/id y mejoran visualmente al llegar fotogramas densos.
+- **Validación visual (manual, PC de desarrollo):** aprobada por Marcos (puntos A–G) —
+  respuesta inmediata, fotogramas correctos, sin tirones ni en blanco, mejora progresiva,
+  marcadores correctos, cambio A→B correcto, colapso correcto y reexpansión/reutilización
+  correctas. El **rendimiento en la notebook objetivo NO está medido** (próximo paso obligatorio).
+- **Medidas de referencia (PC de desarrollo):** `FOTOGRAMAS_INICIALES=15`; video ≈4.36 s;
+  primer denso ≈0.883 s; reexpansión 12.5 ms/20 ms/0 archivos; scrub 300 consultas ≈1.15 ms
+  (~4 µs/consulta); worker decode ≈2.5 ms/15; GUI `fromImage` + escala ≈3.5 ms/15; RAM del
+  lote ≈3.3 MiB. **Hardware objetivo:** i7-7500U 2.70 GHz, 16 GB RAM, NVIDIA 940MX 2 GB,
+  Intel HD 620 — pendiente de probar.
+- **Batch/híbrido:** **NO implementado** — B4.3.2 usa generación individual solo para los 15
+  fotogramas iniciales; la estrategia híbrida y los parámetros (cantidad inicial, `MAX` 40–200,
+  lote, concurrencia) se decidirán tras la prueba en la notebook (opciones A mantener / B
+  batch/híbrido / C ajustar densidad, sin anticipar cuál).
+- **SQLite intacto:** `videos`, `marcadores_video` y `biblioteca.db` no fueron modificados.
+- **Pruebas:** `prueba_exploracion_b432.py` **20/20** (P16–P20 progresividad: parciales en
+  vivo con la señal, guardas aislamiento A–B/colapso/sin-op, `QImage` directo + deduplicación,
+  `_trabajo` real con parciales + cola `QImage`, y cancelación con parcial aplicado).
+  Regresiones en verde en el cierre: `prueba_exploracion_cache_b431.py` **29/29**,
+  `prueba_exploracion_b41.py` **28/28**, `prueba_marcadores_b42.py` **17/17**,
+  `prueba_previews_progresivas.py` **16/16**, `prueba_tamano_miniaturas.py` **32/32**,
+  `prueba_recarga_catalogo.py` **20/20**, `prueba_pagina_siguiente.py` **20/20**,
+  `prueba_smoke.py` OK. `python -m py_compile` OK. `git diff --check` OK.
+- **Próxima etapa:** **validación de esta implementación exacta en el hardware objetivo
+  (notebook)**; tras esa medición se decidirá entre mantener solo esta cobertura (A), una
+  segunda fase batch/híbrida (B) o ajustar la densidad (C), **sin anticipar cuál** y **sin
+  asumir que el batch sea obligatorio**. Se conservan como funciones futuras: reproducción
+  desde el marcador; navegación entre marcadores durante la reproducción; A/B; loops;
+  selección de fragmentos; corte/unión; detección de archivos movidos; reasociación futura de
+  marcadores huérfanos.
+- **Archivos modificados:** `tareas_videos.py`, `visor_videos.py`,
+  `prueba_exploracion_b432.py` (nueva), y los documentos oficiales (`ESTADO_PROYECTO.md`,
+  `ROADMAP.md`, `DOCUMENTO_TECNICO.md`, `HISTORIAL_PROYECTO.md`). Sin cambios en
+  `exploracion_cache.py`, `exploracion_temporal.py`, `escanear_videos.py`, SQLite ni
+  configuración.
+- **Commit:** Aprobado y commiteado (cierre de B4.3.2).
+
+---
+
+## 91. Implementar motor de cache temporal versionada y reanudable (B4.3.1)
+
+- **Fecha:** 2026-08-09
+- **Objetivo:** Tercera etapa del ciclo **Beta 4** (rama `beta4`), primera subetapa de
+  **B4.3 — Caché densa de exploración temporal**. Implementar el **motor de disco** de la caché
+  densa de exploración (fotogramas temporales de scrubbing) con **versiones aisladas**,
+  **reanudación** de generaciones incompletas y **escritura atómica**, dejando la integración
+  con la tarjeta para la **B4.3.2**.
+- **Comportamiento final:**
+  - `exploracion_cache.py` (nuevo) — motor puro (sin Qt, sin SQLite, sin acoplamiento con
+    `escanear_videos`) con estructura `miniaturas/exploracion/<video_id>/<version_fingerprint>/`
+    (`meta.json` + `f{ms:010d}.jpg`, altura 120 px).
+  - **Versionado físico por fingerprint:** `fingerprint_actual` (ruta normalizada + tamaño +
+    `mtime_ns` + duración) → `version_id_de_fingerprint` = **SHA-256 reducido a 16 hex**. **NO**
+    es hash de contenido; **limitación aceptada**: dos archivos con la misma ruta, tamaño,
+    mtime y duración no son distinguibles (no se intenta resolver). Costo `version_actual` ≈
+    **13 µs**/llamada (medido con 20 000 llamadas); impacto CPU/RAM despreciable.
+  - **Reanudación:** un `f*.jpg` presente en la versión se reutiliza aunque la versión esté
+    incompleta; p. ej. una generación detenida en **8/20 reutiliza los 8 y genera 12**. Cada
+    JPEG se escribe **atómicamente** (temporal → `os.replace`), de modo que un JPEG presente
+    está completo. `meta.json` solo se escribe al terminar sin cancelarse y **completa**
+    (`faltantes == 0`); `.tmp`/preparados/fallidos quedan fuera del índice.
+  - **Invalidación no destructiva:** cualquier cambio del fingerprint crea una **versión
+    distinta**; nada se borra automáticamente (las versiones antiguas quedan para una limpieza
+    futura, fuera de alcance); una versión nunca usa ni lista JPEGs de otra.
+  - **Generación:** `generar_fotogramas(...)` consulta la duración con ffprobe si no se pasa,
+    usa la densidad y la cobertura progresiva, reutiliza lo presente y emite **un FFmpeg por
+    fotograma** (`-ss` + `-frames:v 1` + `scale=-2:120`, timeout 30 s, sin ventana de consola)
+    como **mecanismo actual de validación** que **no será necesariamente el final** desde la UI.
+  - `exploracion_temporal.py` — **densidad y orden de la caché densa:** `cantidad_fotogramas`
+    = `clamp(round(duración / 2 s), 40, 200)`; `tiempos_objetivo` = instantes (ms) en **orden
+    progresivo de cobertura** por bisección de huecos (50 %, 25/75 %, octavos…);
+    `fotograma_mas_cercano` por `bisect` (empate → el anterior). API de B4.1 intacta.
+  - `rutas.py` — `ruta_carpeta_exploracion()` = `miniaturas/exploracion`.
+- **Decisiones registradas (no implementadas):** la **estrategia híbrida** de B4.3.2 (pocos
+  fotogramas prioritarios distribuidos + luego uno/pocos lotes eficientes) quedó **registrada
+  pero NO implementada**; la **cantidad inicial y sus parámetros NO están decididos**. El
+  **hardware objetivo** es la notebook de 16 GB RAM, Intel Core i7-7500U @ 2.70 GHz, NVIDIA
+  GeForce 940MX 2 GB, Intel HD Graphics 620; antes de congelar MAX / cantidad inicial / tamaño
+  de lote / concurrencia se requiere una **prueba real en esa notebook**, priorizando
+  **agilidad y fluidez** en la exploración.
+- **Benchmarks (B4.3.1):** fuente sintética `testsrc2` 640×360 @ 24 fps, 300 s. FFmpeg por
+  fotograma: 20 → **1.20 s**, 40 → **2.38 s**, 100 → **6.02 s**, 200 → **12.04 s**; primera
+  imagen individual ≈ **0.06 s**; cobertura de 15 puntos ≈ **0.88 s**. Modo lote (solo
+  medición de referencia, no implementado): 40 → **0.70 s**, 100 → **0.72 s**; primera imagen
+  del lote ≈ **0.054 s**. Medido en el PC de desarrollo; **no garantiza rendimiento** en el
+  hardware objetivo. Prueba de referencia P16 (FFmpeg real, video real de 5 s): 20 JPEG en
+  ~0.97–0.99 s sin tocar la caché real.
+- **SQLite intacto:** `videos`, `marcadores_video` y `biblioteca.db` no fueron modificados.
+- **Pruebas:** `prueba_exploracion_cache_b431.py` **29/29** (densidad, orden progresivo,
+  nearest por bisect, estructura versionada, fingerprint sin hash, invalidación no destructiva,
+  reanudación 8/20, fallos parciales, aislamiento A/B/C, atomicidad, nearest solo de la versión
+  actual y aislamiento de la etapa). Regresiones en verde en el cierre:
+  `prueba_exploracion_b41.py` **28/28**, `prueba_marcadores_b42.py` **17/17**,
+  `prueba_previews_progresivas.py` **16/16**, `prueba_smoke.py` OK. `python -m py_compile` OK.
+  `git diff --check` OK.
+- **Próxima etapa:** **B4.3.2 — Integración de la caché temporal en la tarjeta** (tarea/gestor
+  de generación, consumo del fotograma más cercano en la superficie temporal, fallback a las
+  previews normales, actualización progresiva, marcadores con imagen más precisa, liberación de
+  RAM al colapsar, cancelación al cambiar de tarjeta y prueba en la notebook objetivo). Se
+  conservan como funciones futuras: reproducción desde el marcador; navegación entre marcadores
+  durante la reproducción; A/B; loops; selección de fragmentos; corte/unión; detección de
+  archivos movidos; reasociación futura de marcadores huérfanos.
+- **Archivos modificados:** `exploracion_temporal.py`, `rutas.py`, `exploracion_cache.py`
+  (nuevo), `prueba_exploracion_cache_b431.py` (nueva), y los documentos oficiales
+  (`ESTADO_PROYECTO.md`, `ROADMAP.md`, `DOCUMENTO_TECNICO.md`, `HISTORIAL_PROYECTO.md`). Sin
+  cambios de UI, `escanear_videos.py`, `tareas*.py`, SQLite ni configuración.
+- **Commit:** Aprobado y commiteado (cierre de B4.3.1).
+
+---
+
+## 90. Persistir marcadores temporales asociados a videos (B4.2)
+
+- **Fecha:** 2026-08-09
+- **Objetivo:** Segunda etapa del ciclo **Beta 4** (rama `beta4`). Guardar los marcadores
+  temporales de forma **permanente** en SQLite, relacionarlos correctamente con el video del
+  catálogo y **recuperarlos automáticamente** cuando ese video vuelva a cargarse, usando la
+  arquitectura de repositorios/migraciones existente y **sin que la interfaz acceda a SQLite
+  directamente**.
+- **Comportamiento final:**
+  - Los marcadores creados por el usuario se almacenan **permanentemente en SQLite** en la
+    tabla `marcadores_video` (`id INTEGER PRIMARY KEY AUTOINCREMENT`, `video_id INTEGER NOT
+    NULL`, `tiempo REAL NOT NULL`, índice `idx_marcadores_video_video_id_tiempo`), relacionados
+    mediante **`videos.id`**; reaparecen entre sesiones, pueden eliminarse permanentemente y
+    recuperan su representación visual usando las previews disponibles.
+  - **Sin** cascade automático, **sin** nombre/ruta como identidad, **sin** imagen persistida,
+    **sin** nota/color/tipo y **sin** JSON.
+  - `escanear_videos.py` — **migración aditiva e idempotente** de `marcadores_video`
+    (`_asegurar_tabla_marcadores`, invocada desde `conectar_bd`) y nuevas funciones
+    `listar_marcadores(video_id)`, `guardar_marcador(video_id, tiempo)` y
+    `eliminar_marcador(marcador_id)` con validación previa de contrato y conexión propia por
+    operación. `listar_videos` y `listar_videos_paginado` exponen ahora **9 campos** (se
+    agrega `id` como última columna).
+  - `tareas_videos.py` — **nuevas tareas asíncronas**: `TareaListarMarcadores`,
+    `TareaGuardarMarcador` y `TareaEliminarMarcador`.
+  - `visor_videos.py` — `Tarjeta` recibe `video_id` (de `_resto[1]` de la fila) y **no ejecuta
+    SQLite directamente**: mantiene la **representación optimista en memoria**
+    (`_marcadores` con `{"id", "tiempo", "pixmap", "etiqueta", "eliminada"}`; `marcador_id`
+    como identidad técnica persistente), carga los marcadores al expandir
+    (`marcadores_solicitados` → `_solicitar_carga_marcadores`, una sola vez por tarjeta) y
+    persiste altas/bajas mediante el **gestor dedicado `gestor_marcadores`** (cuarto
+    `GestorTareas`, cola serializada `_cola_marcadores` + `_procesar_siguiente_marcador`,
+    cerrado en `closeEvent`). Ante un DELETE fallido se vuelve a cargar; ante un CREATE
+    fallido se deshace la marca local de eliminación pendiente.
+  - **Reconciliación asíncrona.** La carga desde SQLite se trata como un **snapshot
+    potencialmente antiguo** que **NO reemplaza ciegamente** el estado local: conserva las
+    **altas locales** ocurridas mientras la carga estaba pendiente, respeta las **bajas
+    locales** (`_marcadores_eliminados_carga`, con DELETE compensatorio de la fila
+    persistida), conserva los **IDs persistentes existentes** y **deduplica por la misma
+    tolerancia temporal** de la interacción (`_tolerancia_marcadores` = duración / ancho ×
+    0.5), cancelando el INSERT redundante ante una fila equivalente.
+  - **Carreras cubiertas:** *crear y borrar antes de terminar el INSERT* (si el CREATE sigue
+    en cola se cancela con `_cancelar_crear_pendiente`; si ya se ejecutó se emite un DELETE
+    compensatorio); *cargar + crear* (la carga tardía no elimina la nueva marca); *carga +
+    marcador equivalente* (un solo marcador, se adopta el ID persistente y se cancela el
+    INSERT redundante); *carga + baja local* (el snapshot viejo no resucita el marcador; puede
+    ejecutarse DELETE compensatorio); *recuperación tras DELETE fallido* (se vuelve a
+    consultar sin destruir altas locales pendientes).
+- **Política de conservación (registrada en la documentación):** reescaneo del mismo registro
+  → conserva marcadores; cambios de metadatos → conserva; reemplazo silencioso manteniendo el
+  mismo registro → conserva; si el registro de video desaparece → los marcadores **no** se
+  eliminan automáticamente (pueden quedar huérfanos); no existe aún reasociación de
+  movidos/renombrados ni se intenta por nombre o ruta. Deliberado para evitar pérdida
+  automática de datos creados por el usuario.
+- **Pruebas:** `prueba_marcadores_b42.py` **17/17** (migración e idempotencia, persistencia y
+  eliminación, contrato de lectura con 9 campos, tareas asíncronas y reconciliación de la
+  cola). Regresiones en verde en el cierre: `prueba_exploracion_b41.py` **28/28**,
+  `prueba_lectura.py` **15/15**, `prueba_lectura_paginada.py` **32/32**. `python -m py_compile`
+  OK. `git diff --check` OK.
+- **Validación de Marcos:** **satisfactoria** en la aplicación real de desarrollo con videos
+  de prueba: crear marcador → cerrar la aplicación → volver a abrir → el marcador reaparece;
+  eliminar marcador → cerrar/reabrir → el eliminado no reaparece. No se afirma otra
+  computadora ni un instalador.
+- **Próxima etapa:** **B4.3 — Caché densa de exploración temporal** (mejorar la resolución
+  visual del scrubbing reemplazando la dependencia de las pocas previews normales por una
+  caché específica de fotogramas temporales). No implementar todavía. Se conservan como
+  funciones futuras: reproducción desde el marcador; navegación entre marcadores durante la
+  reproducción; A/B; loops; selección de fragmentos; corte/unión; detección de archivos
+  movidos; reasociación futura de marcadores huérfanos.
+- **Archivos modificados:** `escanear_videos.py`, `tareas_videos.py`, `visor_videos.py`,
+  `prueba_lectura.py`, `prueba_lectura_paginada.py`, `prueba_marcadores_b42.py` (nueva), y
+  los documentos oficiales (`ESTADO_PROYECTO.md`, `ROADMAP.md`, `DOCUMENTO_TECNICO.md`,
+  `VISION_PRODUCTO.md`, `HISTORIAL_PROYECTO.md`).
+- **Commit:** Aprobado y commiteado (cierre de B4.2).
+
+---
+
+## 89. Implementar exploración temporal interactiva y marcadores visuales (B4.1)
+
+- **Fecha:** 2026-08-09
+- **Objetivo:** Primera etapa del ciclo **Beta 4** (rama `beta4`, punto de partida: cierre de la
+  Beta 3). Incorporar la exploración temporal de videos largos para localizar qué fragmentos
+  sirven y cuáles pueden descartarse: al expandir una tarjeta, una **superficie temporal**
+  representa la duración completa del video (0–100 %) y permite recorrerla con el mouse usando
+  únicamente las previews existentes (todavía sin caché propia de scrubbing), más **marcadores
+  temporales libres** que conservan tiempo real y miniatura fijada.
+- **Comportamiento final:**
+  - Cada `Tarjeta` gana un control "Expandir/Colapsar" con **una sola tarjeta expandida a la vez**.
+  - La segunda fila expandida es la superficie temporal (`FranjaExploracion`): izquierda = 0 %,
+    derecha = 100 %; el movimiento del mouse (solo la coordenada X) emite el instante, el marcador
+    móvil azul acompaña al cursor y el tiempo se muestra en la propia superficie.
+  - La preview mostrada es la existente más cercana al instante por **tiempo real**
+    (`preview_mas_cercana`), y la **preview móvil** se posiciona por el **instante solicitado**
+    (no por el tiempo de la preview elegida); funciona con previews horizontales y verticales
+    (el label se ajusta al tamaño del pixmap, sin huecos internos) y el extremo derecho (100 %)
+    siempre es alcanzable porque la superficie se acota al ancho visible.
+  - El clic sobre la superficie crea **marcadores temporales libres** (lista `_marcadores` con
+    `{"tiempo", "pixmap", "etiqueta"}`; el tiempo es la fuente de verdad); cada uno deja marca
+    visual y miniatura fijada, con **solapamiento permitido** y persistencia **en memoria**
+    mientras vive la tarjeta durante la sesión.
+  - El **clic derecho** sobre una miniatura fijada, o sobre la marca roja, elimina **únicamente**
+    ese marcador (sin menú contextual, sin selección y sin crear otro marcador).
+  - **`mouseMove` = cero FFmpeg + cero acceso a disco + cero creación innecesaria de pixmaps**.
+  - **Sin persistencia permanente**: los marcadores no se guardan todavía (B4.2 lo hará).
+- **Correcciones surgidas de la validación manual:**
+  - La segunda fila pasó de una franja estrecha a una **superficie completa** de scrubbing.
+  - Corrección de geometría: la superficie heredaba el ancho de la tarjeta (dominada por la fila
+    de imágenes) y el extremo derecho quedaba fuera de pantalla; ahora se acota al ancho visible.
+  - Corrección de posicionamiento inicial: el label fijo 320×180 con `AlignCenter` desplazaba el
+    contenido de previews verticales (~100 px ≈ 10 %) dejando un hueco a la izquierda; el label
+    ahora se ajusta al tamaño real del pixmap, de modo que en instante 0 la preview queda pegada
+    al extremo izquierdo.
+  - Marcadores con miniatura fijada (imagen + tiempo real) y eliminación individual por clic
+    derecho.
+- **Pruebas:** `prueba_exploracion_b41.py` **28/28** (lógica pura, widget, integración, geometría,
+  distribución temporal con 9 previews, preview móvil, marcadores con imagen, eliminación, y
+  separación "qué preview / en qué posición"). Regresiones en verde ejecutadas durante la etapa:
+  `prueba_smoke.py` OK, `prueba_previews_progresivas.py` 16/16, `prueba_previews_automaticas.py`
+  22/22, `prueba_seleccion.py` 28/28, `prueba_doble_clic.py` 14/14, `prueba_vista_ampliada.py`
+  24/24, `prueba_filas_horizontales.py` 16/16, `prueba_tamano_miniaturas.py` 32/32,
+  `prueba_cantidad_previews.py` 14/14, `prueba_tiempo_previews.py` 35/35,
+  `prueba_recarga_catalogo.py` 20/20, `prueba_tamano_muy_grande.py` 27/27,
+  `prueba_modo_seleccion.py` 20/20, `prueba_duracion_simplificada.py` 23/23,
+  `prueba_shift_clic.py` 28/28, `prueba_preferencias_miniaturas.py` 31/31,
+  `prueba_menu_contextual.py` 18/18. `python -m py_compile` OK. `git diff --check` OK.
+- **Validación de Marcos:** **satisfactoria** (expansión, scrubbing, extremos, marcadores con
+  miniatura, solapamiento, eliminación por clic derecho, persistencia en sesión y ausencia de
+  regresiones en selección/menú/doble clic/vista ampliada).
+- **Decisiones sobre persistencia futura:** los marcadores temporales son una **función
+  permanente de navegación del producto** (no exclusivamente puntos de corte): representan un
+  instante significativo al que regresar, y en el futuro permitirán iniciar reproducción desde el
+  marcador y ser destino seleccionable durante la reproducción; podrán participar en selección
+  A/B o edición como otra función. La **persistencia permanente** queda delegada a la **B4.2 —
+  Persistencia de marcadores temporales por video** (SQLite + arquitectura de
+  repositorios/migraciones existente; antes de diseñar la relación debe estudiarse la identidad
+  actual de los videos). Después seguirá la **B4.3 — Caché densa de exploración temporal**
+  (fotogramas específicos de scrubbing).
+- **Archivos modificados:** `exploracion_temporal.py` (nuevo), `scrubber.py` (nuevo),
+  `visor_videos.py`, `prueba_exploracion_b41.py` (nueva), y los documentos oficiales
+  (`ESTADO_PROYECTO.md`, `ROADMAP.md`, `DOCUMENTO_TECNICO.md`, `VISION_PRODUCTO.md`,
+  `HISTORIAL_PROYECTO.md`). Sin cambios de SQLite, configuración, `escanear_videos.py`,
+  `tareas*.py` ni `rutas.py`.
+- **Commit:** Aprobado y commiteado (cierre de B4.1).
+
+---
+
 ## 88. Corregir la regresión de previews: carpeta real por video desde el catálogo
 
 - **Fecha:** 2026-08-07

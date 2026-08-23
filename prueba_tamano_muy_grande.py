@@ -338,6 +338,16 @@ def main():
                     config_contenido.get(CLAVE_TAMANIO_MINIATURAS) == "muy_grande",
                     "preferencia Muy grande persistida",
                 )
+
+                # Desde B4.6 las previews se aplican de forma progresiva/diferida.
+                def _previews_aplicadas():
+                    return all(
+                        dict(ventana.tarjetas)[nombre]._etiquetas_previews[0]._pixmap_original
+                        is not None
+                        for nombre in ("a.mp4", "b.mp4")
+                    )
+
+                esperar(_previews_aplicadas)
                 overlays = all(
                     all(e._tiempo is not None for e in dict(ventana.tarjetas)[nombre]._etiquetas_previews)
                     for nombre in ("a.mp4", "b.mp4")

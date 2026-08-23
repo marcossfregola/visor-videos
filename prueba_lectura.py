@@ -148,7 +148,7 @@ def test_03():
             and datos.get("hilo") != id_main
             and cerrada
             and not hasattr(tarea, "_conexion")
-            and cap.resultado == [("a.mp4", 1.0, 1, 1, "c", 0, None, "r")]
+            and cap.resultado == [("a.mp4", 1.0, 1, 1, "c", 0, None, "r", 1)]
             and set(cap.ids) == {"inicio", "resultado", "finalizada"}
             and all(py == id_main and qt for py, qt in cap.ids.values())
         )
@@ -219,9 +219,9 @@ def test_06():
         ok = (
             ok
             and not fl["timeout"]
-            and con_null == ("con_null.mp4", None, None, None, None, None, None, "r")
+            and con_null == ("con_null.mp4", None, None, None, None, None, None, "r", 1)
             and con_datos
-            == ("con_datos.mp4", 2.5, 640, 360, "h264", 4, None, "r")
+            == ("con_datos.mp4", 2.5, 640, 360, "h264", 4, None, "r", 2)
         )
         return ok, f"con_null={con_null} con_datos={con_datos}"
     finally:
@@ -392,7 +392,7 @@ def test_12():
         ok = (
             ok
             and not fl["timeout"]
-            and cap.resultado == [("a.mp4", 1.0, 1, 1, "c", 0, None, "r")]
+            and cap.resultado == [("a.mp4", 1.0, 1, 1, "c", 0, None, "r", 1)]
             and llamadas == {"escaneo": 0, "ffprobe": 0, "subprocess": 0}
         )
         return ok, f"llamadas={llamadas}"
@@ -425,7 +425,7 @@ def test_13():
     ok = (
         ok
         and not fl["timeout"]
-        and cap.resultado == [("x.mp4", 1.0, 1, 1, "c", 0, None, "r")]
+        and cap.resultado == [("x.mp4", 1.0, 1, 1, "c", 0, None, "r", 1)]
         and antes == despues
     )
     return ok, f"datos_reales_sin_cambios={antes == despues}"

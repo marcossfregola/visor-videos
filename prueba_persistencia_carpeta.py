@@ -282,10 +282,11 @@ def test_11():
         etiqueta = ventana.etiqueta_carpeta.text()
         ventana.close()
         _limpiar(ventana)
+        datos = _leer_json(ruta_config) if os.path.exists(ruta_config) else None
         ok = (
             inicial is None
             and etiqueta == MENSAJE_SIN_CARPETA
-            and not os.path.exists(ruta_config)
+            and (datos is None or CLAVE_CARPETA not in datos)
         )
         return ok, f"inicial={inicial} etiqueta={etiqueta!r}"
     finally:
@@ -426,7 +427,8 @@ def test_16():
         guardada = ventana.carpeta_seleccionada
         ventana.close()
         _limpiar(ventana)
-        ok = guardada is None and not os.path.exists(ruta_config)
+        datos = _leer_json(ruta_config) if os.path.exists(ruta_config) else None
+        ok = guardada is None and (datos is None or CLAVE_CARPETA not in datos)
         return ok, f"guardada={guardada} existe={os.path.exists(ruta_config)}"
     finally:
         config.cleanup()

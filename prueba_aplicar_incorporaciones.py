@@ -29,7 +29,8 @@ def _crear_bd(filas):
                 alto INTEGER,
                 codec_video TEXT,
                 cantidad_miniaturas INTEGER,
-                tamano_bytes INTEGER
+                tamano_bytes INTEGER,
+                mtime_ns INTEGER
             )
             """
         )
@@ -587,6 +588,14 @@ def test_15():
     antes = estado_archivos()
     bytes_antes = bytes_bd()
     dump_antes = _dump_bd(bd)
+    conn_real = sqlite3.connect(bd)
+    try:
+        columnas_antes = [
+            fila_info[1]
+            for fila_info in conn_real.execute("PRAGMA table_info(videos)")
+        ]
+    finally:
+        conn_real.close()
 
     temp = tempfile.TemporaryDirectory()
     try:
@@ -607,10 +616,14 @@ def test_15():
         nombres_incorporados = [r["nombre"] for r in plan["a_incorporar"]]
         candidatos = plan["candidatos_a_eliminar"]
         tiene_tamano = "tamano_bytes" in columnas_bd(copia)
+
+        def _por_columnas(fila, nombres):
+            return dict(zip(nombres, fila))
+
         preexistentes_ok = all(
             fila[1] in por_nombre
-            and por_nombre[fila[1]][:10] == fila
-            and por_nombre[fila[1]][10] is None
+            and _por_columnas(fila, columnas_antes)
+            == _por_columnas(por_nombre[fila[1]], columnas_antes)
             for fila in dump_antes
         )
         candidatos_presentes = {

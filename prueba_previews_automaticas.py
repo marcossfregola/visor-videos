@@ -80,7 +80,7 @@ def _espia_generar_preview():
     llamadas = []
     original = escanear_mod.generar_preview
 
-    def _generar(ruta_video, destino, indice=None):
+    def _generar(ruta_video, destino, indice=None, duracion_segundos=None):
         llamadas.append(indice)
         imagen = QImage(160, 100, QImage.Format_RGB32)
         imagen.fill(QColor("green"))

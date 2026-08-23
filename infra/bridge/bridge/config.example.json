@@ -1,0 +1,31 @@
+{
+  "activeProjectId": "visor-videos",
+  "projects": [
+    {
+      "projectId": "visor-videos",
+      "repo": "__REPO__",
+      "localRepo": "__LOCAL_REPO__",
+      "issueControl": 1
+    }
+  ],
+  "executor": {
+    "model": "__EXECUTOR_MODEL__",
+    "pollIntervalMs": 500,
+    "githubPollEverySec": 15,
+    "telegramPollTimeoutSec": 5,
+    "alarmAIntervalSec": 120,
+    "alarmBIntervalSec": 60,
+    "opencodeTimeoutMs": 900000,
+    "githubAuthor": "__GITHUB_AUTHOR__",
+    "reportCheckRetries": 4,
+    "reportCheckRetryDelaySec": 5,
+    "reportMaxBytes": 1048576,
+    "durableRetryBaseSec": 30,
+    "durableRetryFactor": 2,
+    "durableRetryMaxSec": 3600
+  },
+  "telegram": {
+    "authorizedUserId": "__TELEGRAM_AUTHORIZED_USER_ID__",
+    "authorizedChatId": "__TELEGRAM_AUTHORIZED_CHAT_ID__"
+  }
+}
