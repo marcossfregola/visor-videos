@@ -10,7 +10,7 @@
 - `main` — rama vigente/canónica del estado actual del proyecto; este merge establece `main` como autoridad al incorporar la evolución completa hasta Beta 7 y la arquitectura documental V1.3 (merge `918cf67` ← `97e6fcf`, preservando ambas historias; producto funcional equivalente a Beta 7 salvo limpiezas whitespace).
 - GitHub Release `v7.0-beta` prerelease publicada sin instalador público Beta 7.
 - Repositorio **PUBLIC**, default branch `main`.
-- Validación específica del instalador Beta 7 **PENDIENTE** (`python prueba_instalador.py` sobre `Distribucion/Beta7/VisorVideos_Beta7_Setup.exe`).
+- Validación específica del instalador Beta 7 **PENDIENTE**: prueba estática de contrato `python prueba_instalador.py` (8/8 verifica `instalador.iss`/`rutas.py`, no instala artefacto) + validación real del artefacto `Distribucion/Beta7/VisorVideos_Beta7_Setup.exe` (instalación/desinstalación/reinstalación preservando datos, en entorno aislado) — pendiente y separada.
 - Beta 8 todavía no definida.
 
 Para el historial completo ver `HISTORIAL_PROYECTO.md` (119).

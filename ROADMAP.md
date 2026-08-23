@@ -11,7 +11,7 @@ Trabajo futuro **decidido** y priorizado. Separacion obligatoria: `ROADMAP = dec
 ## Prioridad inmediata
 
 1. **Auditoría final del estado reconciliado** (`main` reconciliada mediante este cierre con `beta7` preservando estructura V1.3 y producto Beta7).
-2. **Validación específica del instalador Beta 7** (`python prueba_instalador.py` sobre `Distribucion/Beta7/VisorVideos_Beta7_Setup.exe` — instalación/desinstalación/reinstalación preservando datos).
+2. **Validación específica del instalador Beta 7** — prueba estática de contrato `python prueba_instalador.py` (8/8, no instala) + validación real del artefacto `Distribucion/Beta7/VisorVideos_Beta7_Setup.exe` (instalación/desinstalación/reinstalación preservando `biblioteca.db`/`configuracion.json`/`miniaturas` en entorno aislado) — **PENDIENTE** como etapa posterior.
 3. **Consolidación de mejoras + auditorías externas** (deuda no bloqueante y pendientes técnicos de `STATUS.md`/`ARCHITECTURE.md`).
 4. **Definición y priorización de Beta 8** — todavía no definida ni comprometida; recién después de 1–3.
 

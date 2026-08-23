@@ -1,5 +1,9 @@
-"""Prueba de contrato del instalador (Beta 6 / B6.1): preservar datos
+"""Prueba ESTÁTICA de contrato del instalador (Beta 6 / B6.1): preservar datos
 persistentes del usuario al desinstalar.
+
+Esta prueba NO acepta ruta de Setup, NO ejecuta el Setup, NO instala ni
+desinstala la aplicación, NO comprueba reinstalación ni modifica el sistema.
+Únicamente inspecciona de forma estática `instalador.iss` y `rutas.py`.
 
 Verifica de forma estatica el script Inno Setup `instalador.iss` y las rutas
 de persistencia reales de `rutas.py`:

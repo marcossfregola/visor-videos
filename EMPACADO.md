@@ -97,7 +97,10 @@ Compilar el script oficial con la versión y la etiqueta correspondientes a **Be
   con `onlyifdoesntexist`, sin FFmpeg/FFprobe, sin `configuracion.json`, sin `miniaturas/`).
 - Resultado: `Distribucion\Beta7\VisorVideos_Beta7_Setup.exe`.
 
-> **Aclaración Beta 7:** actualizar la identidad (`AplicacionVersion 7.0` / `BetaEtiqueta Beta7`) y el procedimiento de empaquetado **no significa** que el instalador de **Beta 7** haya sido validado. La **validación real del instalador Beta 7** (instalación/desinstalación/reinstalación aislada preservando `biblioteca.db`/`configuracion.json`/`miniaturas`) queda **pendiente** hasta ejecutar específicamente `python prueba_instalador.py` sobre el artefacto Beta 7.
+> **Aclaración Beta 7:** actualizar la identidad (`AplicacionVersion 7.0` / `BetaEtiqueta Beta7`) y el procedimiento de empaquetado **no significa** que el instalador de **Beta 7** haya sido validado.
+> - **Prueba estática de contrato:** `python prueba_instalador.py` (8 pruebas) verifica de forma estática `instalador.iss`/`rutas.py` (destino por usuario, `onlyifdoesntexist`/`uninsneveruninstall`, ausencia de `[UninstallDelete]` destructivo, rutas persistentes) — **no instala ni valida el artefacto real**.
+> - **Generación de artefacto:** `PyInstaller` + `preparar_empaquetado.py` + `ISCC.exe /DAplicacionVersion=7.0 /DBetaEtiqueta=Beta7` → `Distribucion/Beta7/VisorVideos_Beta7_Setup.exe` y comprobación del artefacto.
+> - **Validación real del instalador Beta 7:** ejecución aislada del artefacto `Distribucion/Beta7/VisorVideos_Beta7_Setup.exe` con instalación, primer inicio, desinstalación, verificación de `biblioteca.db`/`configuracion.json`/`miniaturas` preservados, reinstalación y ausencia de datos reales tocados — **PENDIENTE** como etapa posterior independiente.
 
 ## 4. Verificación
 
