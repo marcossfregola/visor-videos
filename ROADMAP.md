@@ -947,7 +947,7 @@ archivos.
 
 ---
 
-# Beta 7 — "Organización y operaciones de archivos" (cerrada localmente en B7.13)
+# Beta 7 — "Organización y operaciones de archivos" (cerrada y publicada en B7.13)
 
 La **Beta 7 — "Organización y operaciones de archivos"** es la siguiente gran
 dirección de producto. **No se implementa nada de Beta 7 durante Beta 6**; el
@@ -971,4 +971,4 @@ Alcance previsto — **completado B7.0–B7.13**:
 
 > **B7.0 — Apertura y reconciliación documental (2026-08-21):** rama local `beta7` abierta exactamente desde `7d85e94bb8b617209a155e5b1086d1d38f4784f8` (cierre de Beta 6 publicado: tag `v6.0-beta` anotado sobre `7d85e94`, `origin/beta6` alineado, Release Beta 6 prerelease sin binarios); identidad de desarrollo `Beta 7 - B7.0`; reconciliación de documentación obsoleta que describía Beta 6 como solo local/pendiente; sin funcionalidades B7.1, sin push/tag/Release de Beta 7.
 
-> **B7.1–B7.13 — Completadas y cerradas localmente (2026-08-23, rama `beta7` HEAD `6ceb3902beda633ed11cdf586a11a5b53f661053`, identidad `Beta 7 - B7.13`):** B7.1 renombrado individual, B7.2 mover, B7.3 crear carpeta, B7.4 copiar, B7.5 eliminar, B7.6 lote, B7.7 renombrado masivo, B7.8 consistencia post-operaciones, B7.9 modo Organización, B7.10 navegación destino/Explorer, B7.11 doble panel, B7.12 objetivo drop, B7.13 drag & drop conectado a movimiento real con prevalidación atómica (IDs + rutas fuente + destino). **No se crea B7.14 funcional.** Beta 7 cerrada localmente; pendientes: commit final, tag `v7.0-beta`, push, publicación/prerelease y validación específica del instalador Beta 7.
+> **B7.1–B7.13 — Completadas, cerradas y publicadas (2026-08-23, commit oficial `f9976d3b3b68a197bf8e9d29a4ecc670f48a9709` `B7 Cerrar Beta 7 B7.13`, identidad `Beta 7 - B7.13`; tag `v7.0-beta` → `f9976d3`; rama `beta7` publicada y puede contener reconciliaciones documentales posteriores al tag):** B7.1 renombrado individual, B7.2 mover, B7.3 crear carpeta, B7.4 copiar, B7.5 eliminar, B7.6 lote, B7.7 renombrado masivo, B7.8 consistencia post-operaciones, B7.9 modo Organización, B7.10 navegación destino/Explorer, B7.11 doble panel, B7.12 objetivo drop, B7.13 drag & drop conectado a movimiento real con prevalidación atómica (IDs + rutas fuente + destino). **No se crea B7.14 funcional.** Beta 7 funcionalmente cerrada en B7.13 y publicada: **commit oficial `f9976d3` con tag `v7.0-beta` → `f9976d3`; rama `beta7` publicada y puede contener reconciliaciones documentales posteriores; repositorio GitHub actualmente PUBLIC, GitHub Release `v7.0-beta` prerelease publicada sin binarios**; **validación específica del instalador Beta 7 permanece PENDIENTE**.

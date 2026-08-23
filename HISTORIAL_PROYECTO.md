@@ -5,6 +5,20 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 118. Publicación Beta 7 — B7.13 publicada (commit/tag/push/Release)
+
+- **Fecha:** 2026-08-23
+- **Tipo:** publicación post-cierre de **Beta 7 — B7.13** (B7.0–B7.13 completas y auditadas funcionalmente; identidad `Beta 7 - B7.13`).
+- **Commit oficial de cierre funcional:** `f9976d3b3b68a197bf8e9d29a4ecc670f48a9709` `B7 Cerrar Beta 7 B7.13` (identidad inmutable; tag `v7.0-beta` → `f9976d3`).
+- **Rama publicada:** `beta7` publicada en `origin/beta7`; **al momento de la publicación** `beta7`/`origin/beta7` resolvían a `f9976d3` (ver `git rev-parse HEAD` / `origin/beta7` en ese momento); la rama puede contener reconciliaciones documentales posteriores al tag.
+- **Tag anotado publicado:** `v7.0-beta` anotado publicado y resolviendo permanentemente a `f9976d3` (`v7.0-beta^{commit}` → `f9976d3`; tag no movido ni recreado).
+- **Repositorio GitHub:** actualmente **PUBLIC** (`visibility:PUBLIC`, `isPrivate:false`, `defaultBranch:main`).
+- **GitHub Release `v7.0-beta`:** **prerelease publicada** — `Visor de Videos Beta 7 - B7.13` (`tag v7.0-beta`, `draft:false`, `prerelease:true`, `published:2026-08-23T19:10:50Z`, `url https://github.com/marcossfregola/visor-videos/releases/tag/v7.0-beta`); descripción documenta capacidades reales (operaciones de organización, renombrado individual/masivo, mover/copiar/eliminar por lote, carpetas, modo Organización/Explorer, doble panel, drag & drop) y aclara `No incluye instalador publico Beta 7. El instalador Beta 7 todavia no fue validado`.
+- **Validación del instalador Beta 7:** **sigue PENDIENTE** (`python prueba_instalador.py` sobre `Distribucion\Beta7\VisorVideos_Beta7_Setup.exe` no ejecutada en esta etapa).
+- **Relación con 117:** la entrada **117 permanece como hecho histórico** — describe correctamente el momento del cierre local (`HEAD 6ceb390`, sin commit/tag/push al momento del cierre local). Esta entrada **118** registra el estado posterior efectivo post-cierre/publicación.
+
+---
+
 ## 117. Cierre Beta 7 — B7.13 cerrada localmente (sin commit/tag/push)
 
 - **Fecha:** 2026-08-23
