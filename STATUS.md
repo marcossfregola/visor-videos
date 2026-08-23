@@ -10,7 +10,7 @@
 - `main` — rama vigente/canónica del estado actual del proyecto; este merge establece `main` como autoridad al incorporar la evolución completa hasta Beta 7 y la arquitectura documental V1.3 (merge `918cf67` ← `97e6fcf`, preservando ambas historias; producto funcional equivalente a Beta 7 salvo limpiezas whitespace).
 - GitHub Release `v7.0-beta` prerelease publicada sin instalador público Beta 7.
 - Repositorio **PUBLIC**, default branch `main`.
-- Validación específica del instalador Beta 7 **PENDIENTE**: prueba estática de contrato `python prueba_instalador.py` (8/8 verifica `instalador.iss`/`rutas.py`, no instala artefacto) + validación real del artefacto `Distribucion/Beta7/VisorVideos_Beta7_Setup.exe` (instalación/desinstalación/reinstalación preservando datos, en entorno aislado) — pendiente y separada.
+- Validación del instalador Beta 7: **contrato estático 8/8 APROBADO** (`python prueba_instalador.py` verifica `instalador.iss`/`rutas.py`); **build y artefacto Beta 7 APROBADOS** — portable `dist\VisorVideos\VisorVideos.exe` (inicia, no crash, cierre normal), DB seed `dist\VisorVideos\biblioteca.db` 61440 bytes `PRAGMA integrity_check=ok` vacía (`videos/marcadores/segmentos/derivados=0`, SHA256 `890CB0218DEE8CEBAE7A6DE88EC8E0F507CB4DD067009C926722D06E3B5EE9B3`), Setup `Distribucion/Beta7/VisorVideos_Beta7_Setup.exe` 33755374 bytes SHA256 `14A0D4D062AE44E3B4A9CD244869D866F1C9238952CF293D0A26CC25F084A471` (Inno Setup 6.7.3); **ciclo instalación/desinstalación/reinstalación NO EJECUTADO** por seguridad — preflight encontró instalación existente en `%LOCALAPPDATA%\Programs\VisorVideos` con `VisorVideos.exe`/`biblioteca.db`/`configuracion.json`/`unins000.exe` — detenido para no tocar datos del usuario. No es deuda bloqueante ni trabajo pendiente prioritario.
 - Beta 8 todavía no definida.
 
 Para el historial completo ver `HISTORIAL_PROYECTO.md` (119).
@@ -31,11 +31,10 @@ Para el historial completo ver `HISTORIAL_PROYECTO.md` (119).
 
 ## Trabajo pendiente real
 
-- **Auditoría final** del `main` reconciliado (Git/GitHub/documentación).
-- **Validación del instalador Beta 7**: instalación/desinstalación/reinstalación preservando `biblioteca.db`/`configuracion.json`/`miniaturas`.
-- **Consolidación de mejoras + auditorías externas** (deuda no bloqueante y pendientes técnicos).
-- **Definición y priorización de Beta 8** — alcance todavía no definido (queda pendiente de la consolidación).
-- Deuda no bloqueante: crecimiento de miniaturas, reutilización por `mtime` sin hash, retención de pixmaps — ver `ARCHITECTURE.md`.
+- **Consolidación de mejoras pendientes** (deuda no bloqueante: crecimiento de miniaturas, reutilización por `mtime` sin hash, retención de pixmaps — ver `ARCHITECTURE.md`).
+- **Auditorías externas**.
+- **Definición y priorización de Beta 8** — alcance todavía no definido (queda pendiente de consolidación + auditorías externas).
+- Instalador: contrato estático 8/8 y build/artefacto Beta 7 aprobados; ciclo real instalación/desinstalación/reinstalación no ejecutado por seguridad y no bloquea el desarrollo — solo se retomará por pedido explícito del propietario.
 
 ## Deuda técnica conocida
 
@@ -53,12 +52,11 @@ Para el historial completo ver `HISTORIAL_PROYECTO.md` (119).
 
 ## Entorno pendiente relacionado
 
-- Validación instalador Beta 7 pendiente (no bloquea merge).
-- No requiere instalar dependencias para reconciliación documental.
+- No requiere instalar dependencias para consolidación/auditorías/definición Beta 8.
+- Instalador Beta 7: build/artefacto aprobado; validación real no ejecutada por seguridad y no bloquea (ver Fase actual).
 
 ## Próximos focos
 
-1. Auditoría final Git/GitHub/documentación del `main` reconciliado.
-2. Validación específica del instalador Beta 7 (etapa específica).
-3. Consolidación de mejoras + auditorías externas.
-4. Definición y priorización de Beta 8.
+1. Consolidación de mejoras pendientes.
+2. Auditorías externas.
+3. Definición y priorización de Beta 8.

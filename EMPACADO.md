@@ -130,3 +130,12 @@ Packaging reproducible validado en entrega Beta 6 (ver `HISTORIAL_PROYECTO.md` #
   utilizan `[UninstallDelete]` destructivos).
 - El nombre oficial de la aplicación es **Visor de Videos**; el ejecutable se llama
   `VisorVideos.exe`.
+
+## Alcance actual del empaquetado (decisión definitiva 2026-08-23)
+
+Visor de Videos es de **uso exclusivamente personal** del propietario. **No existe objetivo de distribución pública**; publicar instaladores/binarios para terceros queda **fuera de alcance**.
+
+- El procedimiento de empaquetado se conserva como **capacidad técnica** de referencia (PyInstaller + `preparar_empaquetado.py` + Inno Setup).
+- **No es necesario** completar una validación comercial/externa del instalador para cerrar betas o avanzar el desarrollo.
+- **Build/artefacto Beta 7 APROBADOS** (portable, DB seed y Setup generados correctamente); la validación real instalación/desinstalación/reinstalación no se ejecutó por seguridad y queda reservada solo para necesidad personal explícita del propietario.
+- Cualquier trabajo futuro de packaging se hará **únicamente por pedido explícito** del propietario.

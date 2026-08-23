@@ -5,6 +5,21 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 120. Decisión definitiva de alcance — uso exclusivamente personal
+
+- **Fecha:** 2026-08-23
+- **Tipo:** decisión definitiva de alcance de producto.
+- **Decisión del propietario:** Visor de Videos es una aplicación de **uso exclusivamente personal** del propietario.
+- **Alcance de distribución:** **no se proyecta distribución pública** de la aplicación; la publicación de instaladores/binarios para terceros queda **fuera de alcance**.
+- **Instalador:** deja de ser requisito de cierre o de avance entre betas; el empaquetado existe como capacidad técnica opcional para comodidad personal. No se dedicará trabajo adicional al instalador salvo pedido explícito del propietario.
+- **Evidencia de build Beta 7:** ya demostró generación correcta de portable `dist\VisorVideos\VisorVideos.exe`, DB seed `dist\VisorVideos\biblioteca.db` 61440 bytes `PRAGMA integrity_check=ok` vacía (`videos/marcadores/segmentos/derivados=0`, SHA256 `890CB0218DEE8CEBAE7A6DE88EC8E0F507CB4DD067009C926722D06E3B5EE9B3`), y Setup `Distribucion/Beta7/VisorVideos_Beta7_Setup.exe` 33755374 bytes SHA256 `14A0D4D062AE44E3B4A9CD244869D866F1C9238952CF293D0A26CC25F084A471` (Inno Setup 6.7.3).
+- **Ciclo real instalación/desinstalación/reinstalación:** **no se ejecutó** por seguridad — preflight encontró instalación existente en `%LOCALAPPDATA%\Programs\VisorVideos` con `VisorVideos.exe`/`biblioteca.db`/`configuracion.json`/`unins000.exe`/`_internal/`; la prueba se detuvo correctamente para no tocar datos del usuario.
+- **No se continuará** esa validación salvo necesidad personal explícita del propietario.
+- **Siguiente trabajo:** consolidación de mejoras pendientes, auditorías externas y definición/priorización de Beta 8 (instalador no bloquea).
+- **Repositorio GitHub:** permanece **PUBLIC**; esta decisión es de distribución de la aplicación, no de visibilidad del repositorio.
+
+---
+
 ## 119. Reconciliación de main con Beta 7 y adopción documental vigente
 
 - **Fecha:** 2026-08-23

@@ -10,10 +10,11 @@ Trabajo futuro **decidido** y priorizado. Separacion obligatoria: `ROADMAP = dec
 
 ## Prioridad inmediata
 
-1. **Auditoría final del estado reconciliado** (`main` reconciliada mediante este cierre con `beta7` preservando estructura V1.3 y producto Beta7).
-2. **Validación específica del instalador Beta 7** — prueba estática de contrato `python prueba_instalador.py` (8/8, no instala) + validación real del artefacto `Distribucion/Beta7/VisorVideos_Beta7_Setup.exe` (instalación/desinstalación/reinstalación preservando `biblioteca.db`/`configuracion.json`/`miniaturas` en entorno aislado) — **PENDIENTE** como etapa posterior.
-3. **Consolidación de mejoras + auditorías externas** (deuda no bloqueante y pendientes técnicos de `STATUS.md`/`ARCHITECTURE.md`).
-4. **Definición y priorización de Beta 8** — todavía no definida ni comprometida; recién después de 1–3.
+1. **Consolidación de mejoras pendientes** (deuda no bloqueante y pendientes técnicos de `STATUS.md`/`ARCHITECTURE.md`).
+2. **Auditorías externas**.
+3. **Definición y priorización de Beta 8** — todavía no definida ni comprometida; alcance se definirá tras 1–2. No se compromete funcionalidad concreta en esta etapa.
+
+> **Nota de alcance:** la distribución pública queda **fuera de alcance**. El instalador (`PyInstaller`/`Inno Setup`) es secundario y opcional para comodidad personal del propietario; su validación real completa no es requisito para futuras betas y solo se retomará por pedido explícito. La validación del instalador Beta 7 no bloquea el desarrollo.
 
 ## Pendientes técnicos comprometidos (post-Beta 7)
 
@@ -23,7 +24,8 @@ Herencia de deuda no bloqueante registrada en `STATUS.md`/`ARCHITECTURE.md`:
 - Cancelación del escaneo (diferida desde Beta 3).
 - Filtrado del catálogo desde el árbol (Etapa 2.10 diferida).
 - Optimización de rendimiento con colecciones grandes (B4.5/B4.6 mejoraron carga, queda deuda RAM pixmaps).
-- Validación del instalador Beta 7 (pendiente).
+
+> Validación del instalador Beta 7: contrato estático 8/8 y build/artefacto aprobados; validación real no ejecutada por seguridad y no es compromiso futuro obligatorio — solo se retomará por necesidad personal explícita de empaquetado o instalación propia.
 
 ## Criterio
 

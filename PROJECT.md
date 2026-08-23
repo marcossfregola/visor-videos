@@ -59,13 +59,26 @@ Producto evolucionado hasta:
 - **Incrementalidad:** las operaciones no deben provocar reescaneos completos innecesarios.
 - **Identidad lógica preservada:** las operaciones físicas conservan la identidad lógica del video y sus relaciones con marcadores/segmentos/derivados.
 
+## Decisión definitiva de alcance — uso exclusivamente personal
+
+**Visor de Videos es una aplicación de uso exclusivamente personal del propietario.** No existe intención de distribuir la aplicación públicamente ni convertirla en un producto para terceros. Esta decisión es definitiva y no temporal.
+
+- La distribución pública de la aplicación queda **FUERA DE ALCANCE**.
+- Publicar instaladores/binarios para terceros queda **FUERA DE ALCANCE**.
+- El empaquetado/instalador (`PyInstaller` + `Inno Setup`) es secundario y opcional, solo como herramienta de comodidad personal del propietario.
+- No se dedicará trabajo adicional al instalador salvo pedido explícito del propietario.
+- La validación completa instalación/desinstalación/reinstalación **no es requisito** para cerrar betas ni continuar el desarrollo.
+- Beta 8 puede definirse independientemente del instalador.
+- Esta decisión se refiere a la distribución de la aplicación, **no a la visibilidad del repositorio GitHub**, que permanece **PUBLIC** por decisión separada.
+
+Prioridades vigentes: funcionalidad, UX, exploración visual, rendimiento, integridad de datos y mantenibilidad.
+
 ## Direccion futura vigente
 
 - Espacio de trabajo de paneles independientes y configurables (infraestructura base QSplitter ya implementada; doble panel B7.11).
 - Centro de navegacion permanente con estructura extensible (catalogo, sistema de archivos, favoritos, etiquetas, colecciones, recientes, ultimos escaneos).
 - Organización ya implementada (Beta 7); favoritos/etiquetas/puntuaciones y administración avanzada (detección de duplicados) quedan como dirección a planificar en BACKLOG.
 - Las ideas no comprometidas viven en `BACKLOG.md`; el trabajo decidido en `ROADMAP.md`.
-- Validación del instalador Beta 7 pendiente como próximo paso operativo.
 
 ## Stack conceptual
 
