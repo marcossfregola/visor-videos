@@ -1925,3 +1925,126 @@ class TareaRenombrarMasivo(TareaBase):
             cancel_check=lambda: self._cancelada,
             progreso_callback=self.reportar_progreso,
         )
+
+
+class TareaPrevalidarDrop(TareaBase):
+    """B7.13C corrección — prevalidación atómica antes de mover por drop.
+
+    - Sin Qt, sin FFmpeg, sin acceso directo desde UI.
+    - En background verifica: todos los video_id existen (vía listar_videos_por_ids)
+      y destino sigue siendo utilizable/existente (vía rutas.listar_subcarpetas + validar_destino_drop_completo).
+    - Si uno falta o destino no disponible → ok False, cero movimiento.
+    - No toca filesystem directo salvo delegar a helpers centralizados.
+    - No inicia movimiento; solo valida. El caller decide iniciar TareaLoteOperaciones.
+    """
+
+    def __init__(self, video_ids, carpeta_destino, ruta_db, parent=None):
+        super().__init__(parent)
+        if isinstance(video_ids, (str, bytes, bytearray)):
+            raise TypeError("video_ids debe ser colección, no texto")
+        try:
+            self._video_ids = list(video_ids)
+        except TypeError:
+            raise TypeError("video_ids debe ser iterable") from None
+        if not self._video_ids:
+            raise ValueError("video_ids no puede estar vacía")
+        for vid in self._video_ids:
+            if isinstance(vid, bool) or not isinstance(vid, int):
+                raise TypeError(f"video_id debe ser entero, got {vid!r}")
+            if vid <= 0:
+                raise ValueError(f"video_id debe ser positivo, got {vid!r}")
+        if not isinstance(carpeta_destino, str) or not carpeta_destino.strip():
+            raise ValueError("carpeta_destino debe ser texto no vacío")
+        self._carpeta_destino = carpeta_destino.strip()
+        self._ruta_db = ruta_db
+
+    @property
+    def video_ids(self):
+        return list(self._video_ids)
+
+    @property
+    def carpeta_destino(self):
+        return self._carpeta_destino
+
+    @property
+    def ruta_db(self):
+        return self._ruta_db
+
+    def _trabajo(self):
+        import escanear_videos as escanear_mod
+        import rutas as rutas_mod
+        from rutas import validar_destino_drop_completo, carpetas_iguales
+        # 1. Validar que todos los ids existen en DB (una sola consulta)
+        try:
+            vmap = escanear_mod.listar_videos_por_ids(self._video_ids, self._ruta_db)
+        except Exception as exc:
+            return {"ok": False, "error": f"no se pudo listar videos: {exc}", "ids": list(self._video_ids), "destino": self._carpeta_destino, "tipo": type(exc).__name__}
+        faltantes = [vid for vid in self._video_ids if vid not in vmap]
+        if faltantes:
+            return {"ok": False, "error": f"video_id inexistente: {faltantes}", "faltantes": faltantes, "ids": list(self._video_ids), "destino": self._carpeta_destino, "videos": vmap}
+        # 1b. Verificar que cada archivo fuente existe y es archivo regular (background, no UI)
+        try:
+            import os as _os
+            faltantes_fuente = []
+            detalles_faltante = []
+            for vid in self._video_ids:
+                info = vmap.get(vid)
+                if not isinstance(info, dict):
+                    faltantes_fuente.append(vid)
+                    detalles_faltante.append({"video_id": vid, "error": "entrada no es dict"})
+                    continue
+                ruta = info.get("ruta")
+                if not isinstance(ruta, str) or not ruta.strip():
+                    faltantes_fuente.append(vid)
+                    detalles_faltante.append({"video_id": vid, "error": f"ruta inválida: {ruta!r}"})
+                    continue
+                # Usar os.path.isfile en background (no UI) — helpers centralizados no tienen verificación de ruta completa
+                try:
+                    if not _os.path.isfile(ruta):
+                        faltantes_fuente.append(vid)
+                        detalles_faltante.append({"video_id": vid, "ruta": ruta, "error": "archivo fuente no existe o no es archivo"})
+                except (OSError, ValueError, TypeError) as exc:
+                    faltantes_fuente.append(vid)
+                    detalles_faltante.append({"video_id": vid, "ruta": ruta, "error": f"excepción al verificar: {exc}"})
+            if faltantes_fuente:
+                return {"ok": False, "error": f"archivo fuente faltante para video_id: {faltantes_fuente}", "faltantes_fuente": faltantes_fuente, "detalles": detalles_faltante, "ids": list(self._video_ids), "destino": self._carpeta_destino, "videos": vmap}
+        except Exception as exc:
+            return {"ok": False, "error": f"verificación archivo fuente falló: {exc}", "ids": list(self._video_ids), "destino": self._carpeta_destino}
+        # 2. Validar destino completo puro
+        try:
+            if not validar_destino_drop_completo(self._carpeta_destino):
+                return {"ok": False, "error": "destino no válido", "ids": list(self._video_ids), "destino": self._carpeta_destino}
+        except Exception as exc:
+            return {"ok": False, "error": f"validación destino falló: {exc}", "ids": list(self._video_ids), "destino": self._carpeta_destino}
+        # 3. Verificar existencia real del destino vía helper centralizado (fuera de UI)
+        try:
+            res_dest = rutas_mod.listar_subcarpetas(self._carpeta_destino)
+        except Exception as exc:
+            return {"ok": False, "error": f"no se pudo verificar destino: {exc}", "ids": list(self._video_ids), "destino": self._carpeta_destino}
+        if not isinstance(res_dest, dict) or not res_dest.get("ok") or not res_dest.get("valido"):
+            err = res_dest.get("error") if isinstance(res_dest, dict) else "destino no disponible"
+            return {"ok": False, "error": err or "destino no disponible", "ids": list(self._video_ids), "destino": self._carpeta_destino, "detalle_dest": res_dest}
+        # 4. Destino equivalente / no-op: si algún video ya está en destino, considerar no-op atómico
+        try:
+            for vid in self._video_ids:
+                info = vmap.get(vid)
+                if not isinstance(info, dict):
+                    continue
+                ruta = info.get("ruta")
+                if not isinstance(ruta, str) or not ruta.strip():
+                    continue
+                # comparar carpeta del video con destino
+                try:
+                    import os as _os
+                    carpeta_video = _os.path.dirname(ruta)
+                except Exception:
+                    continue
+                # usar helper puro carpetas_iguales (sin FS directo)
+                try:
+                    if carpetas_iguales(carpeta_video, self._carpeta_destino):
+                        return {"ok": False, "error": f"destino equivalente al origen para video_id {vid}", "ids": list(self._video_ids), "destino": self._carpeta_destino, "video_id_equivalente": vid, "videos": vmap}
+                except Exception:
+                    continue
+        except Exception as exc:
+            return {"ok": False, "error": f"verificación no-op falló: {exc}", "ids": list(self._video_ids), "destino": self._carpeta_destino}
+        return {"ok": True, "ids": list(self._video_ids), "destino": self._carpeta_destino, "videos": vmap, "detalle_dest": res_dest}

@@ -6,11 +6,13 @@ import os
 import sys
 import tempfile
 
-from PySide6.QtCore import QEvent, QPoint, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QByteArray, QEvent, QMimeData, QPoint, QPointF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import (
     QColor,
     QCursor,
+    QDrag,
     QKeySequence,
+    QMouseEvent,
     QPainter,
     QPixmap,
     QShortcut,
@@ -83,9 +85,11 @@ from escanear_videos import (
 from rutas import (
     carpeta_padre,
     carpetas_iguales,
+    resolver_destino_drop,
     ruta_carpeta_miniaturas,
     ruta_configuracion,
     ruta_video_existente,
+    validar_destino_drop_completo,
 )
 from exploracion_temporal import (
     agregar_marcador_ordenado,
@@ -107,7 +111,11 @@ from playlist_vlc import (
     reproducir_segmento,
     reproducir_segmento_en_bucle,
 )
-from panel_organizacion import PanelOrganizacion
+from panel_organizacion import (
+    MIME_VIDEOS_IDS,
+    PanelOrganizacion,
+    _serializar_ids_videos_para_mime,
+)
 from tareas_videos import (
     TareaActualizarSegmento,
     TareaAsignarColorMarcador,
@@ -134,6 +142,7 @@ from tareas_videos import (
     TareaLoteOperaciones,
     TareaMiniaturas,
     TareaMoverVideo,
+    TareaPrevalidarDrop,
     TareaPreviewsProgresivas,
     TareaRenombrarMasivo,
     TareaRenombrarVideo,
@@ -148,6 +157,18 @@ from tareas_videos import (
     guardar_videos,
     previews_existentes,
 )
+
+
+def _b713b_debug_log(msg):
+    if os.getenv("VISOR_DEBUG_DRAG") == "1":
+        try:
+            print(f"[B7.13B-DEBUG] {msg}", flush=True)
+        except (AttributeError, TypeError, RuntimeError, ValueError, OSError):
+            try:
+                print(f"[B7.13B-DEBUG] {msg}")
+            except (AttributeError, TypeError, RuntimeError, ValueError, OSError):
+                _ = None
+
 
 ANCHO_TARJETA = 320
 ALTO_TARJETA = 180
@@ -218,6 +239,30 @@ def clave_tamano_miniaturas(texto):
         if valor == texto:
             return clave
     return "mediano"
+
+# ── B7.13B — helper origen drag (reutiliza contrato MIME B7.13A sin duplicar) ──
+def _crear_mime_data_drag_b713b(ids):
+    """Construye QMimeData con MIME_VIDEOS_IDS para origen drag B7.13B.
+
+    Usa exactamente la serialización B7.13A. Retorna QMimeData real o None si
+    ids inválidos. No agrega URLs/texto genérico. Sin FS/SQLite/FFmpeg.
+    """
+    try:
+        payload = _serializar_ids_videos_para_mime(ids)
+        if payload is None:
+            return None
+        mime = QMimeData()
+        mime.setData(MIME_VIDEOS_IDS, QByteArray(payload))
+        return mime
+    except (TypeError, ValueError, RuntimeError) as exc:
+        print(f"[B7.13B] _crear_mime_data_drag_b713b error: {exc}")
+        return None
+
+
+def crear_mime_data_drag(ids):
+    """Alias público para pruebas B7.13B (reutiliza mismo helper)."""
+    return _crear_mime_data_drag_b713b(ids)
+
 
 MENSAJE_CARGANDO = "Cargando catálogo…"
 MENSAJE_ERROR = "No se pudo cargar el catálogo"
@@ -1245,6 +1290,9 @@ class Tarjeta(QFrame):
         self.setFrameShadow(QFrame.Raised)
         self._ruta_config = ruta_config
         self._color_activo = None
+        # B7.13B — estado drag origen (umbral Qt)
+        self._drag_start_pos = None
+        self._drag_deferred = False
         fila_principal = QHBoxLayout()
 
         nombre, duracion, ancho, alto, codec, miniaturas, tamano, *_resto = fila
@@ -1281,9 +1329,12 @@ class Tarjeta(QFrame):
             ("Tamaño", formatear_tamano(tamano)),
         ]
         columna_campos = QVBoxLayout()
+        self._labels_campos = []
         for etiqueta, valor in campos:
             campo = QLabel(f"<b>{etiqueta}:</b> {valor}")
             campo.setWordWrap(True)
+            campo.installEventFilter(self)
+            self._labels_campos.append(campo)
             columna_campos.addWidget(campo)
         columna_campos.addStretch()
         self._boton_expandir = QPushButton("Expandir")
@@ -1343,6 +1394,8 @@ class Tarjeta(QFrame):
 
         if self._imagen_miniatura is not None:
             self._imagen_miniatura.installEventFilter(self)
+        if self._recuadro_sin_miniatura is not None:
+            self._recuadro_sin_miniatura.installEventFilter(self)
         for etiqueta in self._etiquetas_previews:
             etiqueta.installEventFilter(self)
 
@@ -1448,8 +1501,258 @@ class Tarjeta(QFrame):
     def nombre(self):
         return self._nombre
 
+    # ── B7.13B — origen drag: estado mínimo para umbral Qt ──
+    def _visor_para_drag(self):
+        """Localiza VisorVideos ancestro sin FS/SQLite."""
+        try:
+            w = self.window()
+            if w is not None and w.__class__.__name__ == "VisorVideos":
+                return w
+            p = self.parent()
+            while p is not None:
+                if p.__class__.__name__ == "VisorVideos":
+                    return p
+                try:
+                    np = p.parent()
+                    if np is p:
+                        break
+                    p = np
+                except (AttributeError, TypeError, RuntimeError):
+                    break
+        except (AttributeError, TypeError, RuntimeError) as exc:
+            print(f"[B7.13B] _visor_para_drag error: {exc}")
+        return None
+
+    def _ids_para_drag(self, visor):
+        """Retorna lista ordenada de video_id para drag o None si no utilizable.
+
+        Reutiliza exactamente _video_ids_seleccionados_ordenados del visor
+        (orden estable determinista por tarjetas_visibles). Sin duplicar lógica.
+        """
+        try:
+            if visor is None or not getattr(visor, "_modo_organizacion", False):
+                return None
+            vid_self = getattr(self, "_video_id", None)
+            if not isinstance(vid_self, int) or isinstance(vid_self, bool) or vid_self <= 0:
+                return None
+            metodo = getattr(visor, "_video_ids_seleccionados_ordenados", None)
+            if callable(metodo):
+                try:
+                    ids = metodo()
+                except (AttributeError, TypeError, RuntimeError) as exc:
+                    print(f"[B7.13B] _ids_para_drag metodo error: {exc}")
+                    return None
+                if isinstance(ids, list) and len(ids) > 0:
+                    filtrados = [x for x in ids if isinstance(x, int) and not isinstance(x, bool) and x > 0]
+                    if filtrados and vid_self in filtrados:
+                        return filtrados
+                    if filtrados:
+                        # Si origen no está en selección (caso no seleccionado tras press ya es single)
+                        # filtrados ya contiene el single correcto; si no, fallback single
+                        if vid_self in filtrados:
+                            return filtrados
+                        # origen no seleccionado pero selección existe: tras press será single con vid_self
+                        # devolver filtrados si ya incluye vid_self sino single
+                        return [vid_self] if getattr(self, "_seleccionada", False) else None
+                    return None
+                # Sin selección utilizable
+                if getattr(self, "_seleccionada", False):
+                    return [vid_self]
+                return None
+            if getattr(self, "_seleccionada", False):
+                return [vid_self]
+            return None
+        except (AttributeError, TypeError, RuntimeError, ValueError) as exc:
+            print(f"[B7.13B] _ids_para_drag error: {exc}")
+            return None
+
+    def _pixmap_drag_b713c(self, ids):
+        """B7.13C — genera pixmap ghost semi-transparente reutilizando grab().
+
+        - Reutiliza visualmente la tarjeta actual mediante grab() (sin leer disco ni procesos externos).
+        - Tamaño razonable acotado (max 200x120) con escalado suave.
+        - Semi-transparente (opacity 0.85) sobre fondo transparente.
+        - Incluye indicación visible de cantidad: "1 video", "2 videos", etc.
+        - Fallback sin grab si no disponible.
+        """
+        try:
+            cnt = len(ids) if isinstance(ids, list) else 1
+            try:
+                cnt = int(cnt)
+            except (TypeError, ValueError):
+                cnt = 1
+            if cnt < 1:
+                cnt = 1
+            # Intentar capturar visual de la tarjeta
+            base = None
+            try:
+                base = self.grab()
+            except (AttributeError, TypeError, RuntimeError) as exc:
+                print(f"[B7.13C] grab error: {exc}")
+                base = None
+            if base is None or base.isNull():
+                # Fallback: pixmap placeholder con nombre
+                pix = QPixmap(180, 100)
+                pix.fill(QColor(240, 240, 240, 210))
+                try:
+                    p = QPainter(pix)
+                    p.setPen(QColor("#333333"))
+                    nombre_txt = getattr(self, "_nombre", "video")
+                    if not isinstance(nombre_txt, str):
+                        nombre_txt = str(nombre_txt)
+                    # truncar
+                    if len(nombre_txt) > 28:
+                        nombre_txt = nombre_txt[:28] + "…"
+                    p.drawText(pix.rect(), Qt.AlignCenter, nombre_txt)
+                    # badge cantidad
+                    text = f"{cnt} video" if cnt == 1 else f"{cnt} videos"
+                    fm = p.fontMetrics()
+                    tw = fm.horizontalAdvance(text) + 16
+                    th = fm.height() + 8
+                    x = (pix.width() - tw) // 2
+                    y = pix.height() - th - 6
+                    p.setPen(Qt.NoPen)
+                    p.setBrush(QColor(33, 150, 243, 230))
+                    p.drawRoundedRect(x, y, tw, th, 6, 6)
+                    p.setPen(QColor(255, 255, 255))
+                    p.drawText(x + 8, y + fm.ascent() + 4, text)
+                    p.end()
+                except (AttributeError, TypeError, RuntimeError) as exc2:
+                    print(f"[B7.13C] fallback painter error: {exc2}")
+                    try:
+                        p.end()
+                    except (AttributeError, TypeError, RuntimeError):
+                        _ = None
+                return pix
+            # Acotar tamaño razonable no gigante
+            MAX_W = 200
+            MAX_H = 120
+            w = base.width()
+            h = base.height()
+            if w > MAX_W or h > MAX_H:
+                try:
+                    base = base.scaled(MAX_W, MAX_H, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                except (AttributeError, TypeError, RuntimeError) as exc:
+                    print(f"[B7.13C] scaled error: {exc}")
+            # Crear pixmap semi-transparente con badge
+            try:
+                pix = QPixmap(base.size())
+                pix.fill(Qt.transparent)
+                painter = QPainter(pix)
+                painter.setOpacity(0.85)
+                painter.drawPixmap(0, 0, base)
+                painter.setOpacity(1.0)
+                # Indicación cantidad (siempre visible para test determinista: "1 video" / "N videos")
+                text = f"{cnt} video" if cnt == 1 else f"{cnt} videos"
+                fm = painter.fontMetrics()
+                tw = fm.horizontalAdvance(text) + 16
+                th = fm.height() + 8
+                # Centrar badge abajo
+                x = (pix.width() - tw) // 2
+                y = pix.height() - th - 6
+                if y < 2:
+                    y = 2
+                if x < 2:
+                    x = 2
+                painter.setPen(Qt.NoPen)
+                painter.setBrush(QColor(33, 150, 243, 230))
+                painter.drawRoundedRect(x, y, tw, th, 6, 6)
+                painter.setPen(QColor(255, 255, 255))
+                painter.drawText(x + 8, y + fm.ascent() + 4, text)
+                painter.end()
+                return pix
+            except (AttributeError, TypeError, RuntimeError) as exc:
+                print(f"[B7.13C] painter badge error: {exc}")
+                try:
+                    painter.end()
+                except (AttributeError, TypeError, RuntimeError):
+                    _ = None
+                return base
+        except (AttributeError, TypeError, RuntimeError, ValueError) as exc:
+            print(f"[B7.13C] _pixmap_drag_b713c error: {exc}")
+            try:
+                fallback = QPixmap(180, 100)
+                fallback.fill(QColor(220, 220, 220, 200))
+                return fallback
+            except (AttributeError, TypeError, RuntimeError):
+                return None
+
     def mousePressEvent(self, event):
+        # B7.13B-DEBUG: instrumentación temporal opt-in (VISOR_DEBUG_DRAG=1)
+        try:
+            if os.getenv("VISOR_DEBUG_DRAG") == "1":
+                try:
+                    pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
+                except (AttributeError, TypeError, RuntimeError, ValueError, OSError):
+                    try:
+                        pos = event.pos()
+                    except (AttributeError, TypeError, RuntimeError, ValueError, OSError):
+                        pos = None
+                try:
+                    visor_dbg = self._visor_para_drag()
+                    modo_dbg = getattr(visor_dbg, "_modo_organizacion", None) if visor_dbg is not None else None
+                except (AttributeError, TypeError, RuntimeError, ValueError, OSError):
+                    modo_dbg = None
+                try:
+                    btn = event.button()
+                except (AttributeError, TypeError, RuntimeError, ValueError, OSError):
+                    btn = None
+                try:
+                    mods = event.modifiers()
+                except (AttributeError, TypeError, RuntimeError, ValueError, OSError):
+                    mods = None
+                try:
+                    vid_dbg = getattr(self, "_video_id", None)
+                except (AttributeError, TypeError, RuntimeError, ValueError, OSError):
+                    vid_dbg = None
+                try:
+                    sel_dbg = getattr(self, "_seleccionada", None)
+                except (AttributeError, TypeError, RuntimeError, ValueError, OSError):
+                    sel_dbg = None
+                try:
+                    nom_dbg = getattr(self, "_nombre", None)
+                except (AttributeError, TypeError, RuntimeError, ValueError, OSError):
+                    nom_dbg = None
+                try:
+                    cls_origen = self.__class__.__name__
+                except (AttributeError, TypeError, RuntimeError, ValueError, OSError):
+                    cls_origen = "?"
+                _b713b_debug_log(
+                    f"mousePress nombre={nom_dbg!r} widget={cls_origen} button={btn} modifiers={mods} pos={pos} modo_organizacion={modo_dbg} seleccionada={sel_dbg} video_id={vid_dbg}"
+                )
+        except (AttributeError, TypeError, RuntimeError, ValueError, OSError):
+            _ = None
+        # B7.13B: almacenar posición inicio para umbral Qt; preservar semántica de selección
         if event.button() == Qt.LeftButton:
+            try:
+                if hasattr(event, "position"):
+                    self._drag_start_pos = event.position().toPoint()
+                else:
+                    self._drag_start_pos = event.pos()
+            except (AttributeError, TypeError, RuntimeError):
+                try:
+                    self._drag_start_pos = event.pos()
+                except (AttributeError, TypeError, RuntimeError):
+                    self._drag_start_pos = None
+            # Preservar selección múltiple si origen ya seleccionado (evitar clear prematuro antes de drag)
+            visor = self._visor_para_drag()
+            defer = False
+            if visor is not None and getattr(visor, "_modo_organizacion", False):
+                if getattr(self, "_seleccionada", False):
+                    try:
+                        sel = getattr(visor, "_nombres_seleccionados", set())
+                        if isinstance(sel, set) and len(sel) > 1 and self._nombre in sel:
+                            shift = bool(event.modifiers() & Qt.ShiftModifier)
+                            ctrl = bool(event.modifiers() & Qt.ControlModifier)
+                            if not shift and not ctrl:
+                                defer = True
+                    except (AttributeError, TypeError, RuntimeError):
+                        defer = False
+            if defer:
+                self._drag_deferred = True
+                super().mousePressEvent(event)
+                return
+            self._drag_deferred = False
             shift = bool(event.modifiers() & Qt.ShiftModifier)
             if shift:
                 self.seleccion_por_rango.emit(self._nombre)
@@ -1457,13 +1760,190 @@ class Tarjeta(QFrame):
                 ctrl = bool(event.modifiers() & Qt.ControlModifier)
                 self.seleccionada.emit(self._nombre, ctrl)
         elif event.button() == Qt.RightButton:
+            self._drag_start_pos = None
+            self._drag_deferred = False
             if not self._seleccionada:
                 self.seleccionada.emit(self._nombre, False)
             self.menu_contextual.emit(self._nombre)
+        else:
+            self._drag_start_pos = None
+            self._drag_deferred = False
         super().mousePressEvent(event)
 
+    def mouseMoveEvent(self, event):
+        # B7.13B: iniciar arrastre solo en modo Organización, con umbral Qt, desde tarjeta real
+        try:
+            # DEBUG: log base move
+            if os.getenv("VISOR_DEBUG_DRAG") == "1":
+                try:
+                    btns = event.buttons()
+                except (AttributeError, TypeError, RuntimeError, ValueError, OSError):
+                    btns = None
+                try:
+                    cur_dbg = event.position().toPoint() if hasattr(event, "position") else event.pos()
+                except (AttributeError, TypeError, RuntimeError, ValueError, OSError):
+                    try:
+                        cur_dbg = event.pos()
+                    except (AttributeError, TypeError, RuntimeError, ValueError, OSError):
+                        cur_dbg = None
+                try:
+                    start_dbg = getattr(self, "_drag_start_pos", None)
+                except (AttributeError, TypeError, RuntimeError, ValueError, OSError):
+                    start_dbg = None
+                try:
+                    dist_dbg = (cur_dbg - start_dbg).manhattanLength() if cur_dbg is not None and start_dbg is not None else None
+                except (AttributeError, TypeError, RuntimeError, ValueError, OSError):
+                    dist_dbg = None
+                try:
+                    thr_dbg = QApplication.startDragDistance()
+                except (AttributeError, TypeError, RuntimeError, ValueError, OSError):
+                    thr_dbg = None
+                _b713b_debug_log(f"mouseMove buttons={btns} pos={cur_dbg} start_pos={start_dbg} dist={dist_dbg} threshold={thr_dbg}")
+            if not (event.buttons() & Qt.LeftButton):
+                if os.getenv("VISOR_DEBUG_DRAG") == "1":
+                    _b713b_debug_log("ABORT=no_LeftButton")
+                return super().mouseMoveEvent(event)
+            if getattr(self, "_drag_start_pos", None) is None:
+                if os.getenv("VISOR_DEBUG_DRAG") == "1":
+                    _b713b_debug_log("ABORT=start_pos_None")
+                return super().mouseMoveEvent(event)
+            # Umbral Qt
+            try:
+                cur = event.position().toPoint() if hasattr(event, "position") else event.pos()
+                dist = (cur - self._drag_start_pos).manhattanLength()
+            except (AttributeError, TypeError, RuntimeError) as exc:
+                print(f"[B7.13B] mouseMove distancia error: {exc}")
+                if os.getenv("VISOR_DEBUG_DRAG") == "1":
+                    _b713b_debug_log(f"ABORT=distancia_error exc={exc}")
+                return super().mouseMoveEvent(event)
+            if dist < QApplication.startDragDistance():
+                if os.getenv("VISOR_DEBUG_DRAG") == "1":
+                    try:
+                        thr = QApplication.startDragDistance()
+                    except (AttributeError, TypeError, RuntimeError, ValueError, OSError):
+                        thr = "?"
+                    _b713b_debug_log(f"ABORT=distancia_insuficiente dist={dist} threshold={thr}")
+                return super().mouseMoveEvent(event)
+            visor = self._visor_para_drag()
+            if visor is None:
+                if os.getenv("VISOR_DEBUG_DRAG") == "1":
+                    _b713b_debug_log("ABORT=visor_None")
+                return super().mouseMoveEvent(event)
+            if not getattr(visor, "_modo_organizacion", False):
+                if os.getenv("VISOR_DEBUG_DRAG") == "1":
+                    _b713b_debug_log(f"ABORT=modo_organizacion_False visor_modo={getattr(visor, '_modo_organizacion', None)}")
+                return super().mouseMoveEvent(event)
+            ids = self._ids_para_drag(visor)
+            if not ids:
+                if os.getenv("VISOR_DEBUG_DRAG") == "1":
+                    _b713b_debug_log(f"ABORT=ids_vacios ids={ids}")
+                return super().mouseMoveEvent(event)
+            mime = _crear_mime_data_drag_b713b(ids)
+            if mime is None:
+                if os.getenv("VISOR_DEBUG_DRAG") == "1":
+                    _b713b_debug_log(f"ABORT=mime_None ids={ids}")
+                return super().mouseMoveEvent(event)
+            # No agregar URLs ni texto genérico: solo MIME privado
+            if os.getenv("VISOR_DEBUG_DRAG") == "1":
+                try:
+                    fmts = mime.formats() if mime is not None else None
+                except (AttributeError, TypeError, RuntimeError, ValueError, OSError) as e_fmt:
+                    fmts = f"error:{e_fmt}"
+                try:
+                    drag_cls = QDrag.__name__ if hasattr(QDrag, "__name__") else str(type(QDrag))
+                except (AttributeError, TypeError, RuntimeError, ValueError, OSError):
+                    drag_cls = "QDrag"
+                _b713b_debug_log(f"BEFORE_QDRAG drag_class={drag_cls} nombre={getattr(self, '_nombre', None)!r} ids={ids} formats={fmts}")
+            drag = QDrag(self)
+            drag.setMimeData(mime)
+            # B7.13C — feedback visual mínimo: ghost + hotspot (reutiliza grab(), sin FS/FFmpeg)
+            try:
+                pix = self._pixmap_drag_b713c(ids)
+                if pix is not None and not pix.isNull():
+                    if hasattr(drag, "setPixmap"):
+                        try:
+                            drag.setPixmap(pix)
+                        except (AttributeError, TypeError, RuntimeError) as exc_pm:
+                            print(f"[B7.13C] setPixmap error: {exc_pm}")
+                    # Hotspot desplazado para no tapar destino
+                    if hasattr(drag, "setHotSpot"):
+                        try:
+                            w = pix.width()
+                            h = pix.height()
+                            hx = 12 if w > 12 else max(0, w // 3)
+                            hy = 12 if h > 12 else max(0, h // 3)
+                            drag.setHotSpot(QPoint(hx, hy))
+                        except (AttributeError, TypeError, RuntimeError, ValueError) as exc_hs:
+                            print(f"[B7.13C] setHotSpot error: {exc_hs}")
+                            try:
+                                drag.setHotSpot(QPoint(10, 10))
+                            except (AttributeError, TypeError, RuntimeError):
+                                _ = None
+                else:
+                    if hasattr(drag, "setHotSpot"):
+                        try:
+                            drag.setHotSpot(QPoint(10, 10))
+                        except (AttributeError, TypeError, RuntimeError):
+                            _ = None
+            except (AttributeError, TypeError, RuntimeError, ValueError) as exc_pix:
+                print(f"[B7.13C] pixmap drag error: {exc_pix}")
+                if hasattr(drag, "setHotSpot"):
+                    try:
+                        drag.setHotSpot(QPoint(10, 10))
+                    except (AttributeError, TypeError, RuntimeError):
+                        _ = None
+            # Acción Move para esta etapa (no ejecuta FS todavía)
+            if os.getenv("VISOR_DEBUG_DRAG") == "1":
+                _b713b_debug_log("BEFORE_EXEC drag.exec(Qt.MoveAction)")
+            try:
+                result = drag.exec(Qt.MoveAction)
+                if os.getenv("VISOR_DEBUG_DRAG") == "1":
+                    _b713b_debug_log(f"AFTER_EXEC result={result}")
+            except (AttributeError, TypeError, RuntimeError, ValueError, OSError) as exc:
+                if os.getenv("VISOR_DEBUG_DRAG") == "1":
+                    _b713b_debug_log(f"EXCEPTION QDrag/exec type={type(exc).__name__} msg={exc!r}")
+                print(f"[B7.13B] drag exec error: {exc}")
+                try:
+                    if os.getenv("VISOR_DEBUG_DRAG") == "1":
+                        _b713b_debug_log("BEFORE_EXEC fallback drag.exec_(Qt.MoveAction)")
+                    result2 = drag.exec_(Qt.MoveAction)
+                    if os.getenv("VISOR_DEBUG_DRAG") == "1":
+                        _b713b_debug_log(f"AFTER_EXEC result={result2} (fallback)")
+                except (AttributeError, TypeError, RuntimeError, ValueError, OSError) as exc2:
+                    if os.getenv("VISOR_DEBUG_DRAG") == "1":
+                        _b713b_debug_log(f"EXCEPTION fallback type={type(exc2).__name__} msg={exc2!r}")
+                    print(f"[B7.13B] drag exec_ fallback error: {exc2}")
+            self._drag_start_pos = None
+            self._drag_deferred = False
+            return
+        except (AttributeError, TypeError, RuntimeError, ValueError) as exc:
+            if os.getenv("VISOR_DEBUG_DRAG") == "1":
+                _b713b_debug_log(f"EXCEPTION mouseMoveEvent type={type(exc).__name__} msg={exc!r}")
+            print(f"[B7.13B] mouseMoveEvent error: {exc}")
+        return super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        # B7.13B: si se difirió selección y no hubo drag (distancia < umbral), ahora sí seleccionar single
+        try:
+            if event.button() == Qt.LeftButton and getattr(self, "_drag_deferred", False):
+                # Si no se inició drag (start_pos aún existe => no hubo drag), emitir selección single
+                if getattr(self, "_drag_start_pos", None) is not None:
+                    # Simular click sin modificadores: limpiar y seleccionar solo este
+                    self.seleccionada.emit(self._nombre, False)
+        except (AttributeError, TypeError, RuntimeError) as exc:
+            print(f"[B7.13B] mouseRelease deferred error: {exc}")
+        self._drag_start_pos = None
+        self._drag_deferred = False
+        super().mouseReleaseEvent(event)
+
     def mouseDoubleClickEvent(self, event):
+        # B7.13B: doble click no debe iniciar drag; resetear estado
+        self._drag_start_pos = None
+        self._drag_deferred = False
         super().mouseDoubleClickEvent(event)
+        # Qt puede re-entrar a mousePressEvent via super, restablecer definitivamente
+        self._drag_start_pos = None
+        self._drag_deferred = False
         self.doble_clic.emit(self._nombre)
 
     def marcar_seleccionada(self, valor):
@@ -2389,6 +2869,112 @@ class Tarjeta(QFrame):
             if evento.type() == QEvent.Leave:
                 self._imagen_exploracion.lower()
             return super().eventFilter(objeto, evento)
+        # B7.13B — routing drag sobre hijos reales: reenvío centralizado press/move/release/dbl
+        # Evita duplicar lógica, excluye controles interactivos (checkbox, botones, franja, barras)
+        if evento.type() in (QEvent.MouseButtonPress, QEvent.MouseMove, QEvent.MouseButtonRelease, QEvent.MouseButtonDblClick):
+            # Excluir controles interactivos que necesitan su propio mouse (sin except genérico)
+            _is_interactive = False
+            try:
+                from PySide6.QtWidgets import QCheckBox as _CB, QPushButton as _PB, QComboBox as _CO, QScrollArea as _SA
+                if isinstance(objeto, (_CB, _PB, _CO, _SA)):
+                    _is_interactive = True
+            except (AttributeError, TypeError, RuntimeError, ImportError, ValueError):
+                _is_interactive = False
+            if _is_interactive:
+                if os.getenv("VISOR_DEBUG_DRAG") == "1":
+                    try:
+                        cls_dbg = objeto.__class__.__name__
+                    except (AttributeError, TypeError, RuntimeError, ValueError, OSError):
+                        cls_dbg = "?"
+                    _b713b_debug_log(f"routing hijo={cls_dbg} tipo={evento.type()} EXCLUDED=is_interactive")
+                return super().eventFilter(objeto, evento)
+            # Exclusión por identidad de widgets interactivos concretos de Tarjeta
+            if objeto in (
+                getattr(self, "_check", None),
+                getattr(self, "_boton_expandir", None),
+                getattr(self, "_franja", None),
+                getattr(self, "_barra_colapsada", None),
+                getattr(self, "_area_imagenes", None),
+                getattr(self, "_selector_densidad", None),
+                getattr(self, "_selector_color", None),
+                getattr(self, "_boton_segmento", None),
+            ):
+                if os.getenv("VISOR_DEBUG_DRAG") == "1":
+                    try:
+                        cls_dbg = objeto.__class__.__name__
+                    except (AttributeError, TypeError, RuntimeError, ValueError, OSError):
+                        cls_dbg = "?"
+                    _b713b_debug_log(f"routing hijo={cls_dbg} tipo={evento.type()} EXCLUDED=widget_interactivo_concreto")
+                return super().eventFilter(objeto, evento)
+            # Exclusión por nombre de clase de widgets de exploración/marcadores
+            _clsname = ""
+            try:
+                _clsname = objeto.__class__.__name__
+            except (AttributeError, TypeError, RuntimeError):
+                _clsname = ""
+            if _clsname in ("FranjaExploracion", "BarraResumenColapsada", "MiniaturaMarcador", "QScrollArea"):
+                if os.getenv("VISOR_DEBUG_DRAG") == "1":
+                    _b713b_debug_log(f"routing hijo={_clsname} tipo={evento.type()} EXCLUDED=clase_exploracion")
+                return super().eventFilter(objeto, evento)
+            # Solo reenviar si el objeto es hijo drag-habilitado (labels, previews, imagen, recuadro)
+            es_hijo_drag = False
+            # permitir QLabel genérico y PreviewConTiempo sin try genérico
+            if isinstance(objeto, QLabel):
+                es_hijo_drag = True
+            elif getattr(objeto.__class__, "__name__", "") == "PreviewConTiempo":
+                es_hijo_drag = True
+            if not es_hijo_drag:
+                if objeto in getattr(self, "_labels_campos", []):
+                    es_hijo_drag = True
+                elif objeto is getattr(self, "_imagen_miniatura", None):
+                    es_hijo_drag = True
+                elif objeto is getattr(self, "_recuadro_sin_miniatura", None):
+                    es_hijo_drag = True
+                elif objeto in getattr(self, "_etiquetas_previews", []):
+                    es_hijo_drag = True
+            if es_hijo_drag:
+                if os.getenv("VISOR_DEBUG_DRAG") == "1":
+                    try:
+                        cls_dbg = objeto.__class__.__name__
+                    except (AttributeError, TypeError, RuntimeError, ValueError, OSError):
+                        cls_dbg = "?"
+                    _b713b_debug_log(f"routing hijo={cls_dbg} tipo={evento.type()} FORWARDED to Tarjeta nombre={getattr(self, '_nombre', None)!r}")
+                try:
+                    # Mapear posición hijo -> Tarjeta
+                    if hasattr(evento, "position"):
+                        child_pos = evento.position()
+                        try:
+                            mapped = objeto.mapTo(self, child_pos.toPoint())
+                        except (AttributeError, TypeError, RuntimeError, ValueError):
+                            mapped = objeto.mapTo(self, QPoint(int(child_pos.x()), int(child_pos.y())))
+                        mappedF = QPointF(mapped)
+                    else:
+                        child_pos = evento.pos()
+                        mapped = objeto.mapTo(self, child_pos)
+                        mappedF = QPointF(mapped)
+                    # Crear evento sintético en coordenadas de Tarjeta
+                    new_ev = QMouseEvent(evento.type(), mappedF, evento.button(), evento.buttons(), evento.modifiers())
+                    if evento.type() == QEvent.MouseButtonPress:
+                        self.mousePressEvent(new_ev)
+                    elif evento.type() == QEvent.MouseMove:
+                        self.mouseMoveEvent(new_ev)
+                    elif evento.type() == QEvent.MouseButtonRelease:
+                        self.mouseReleaseEvent(new_ev)
+                    elif evento.type() == QEvent.MouseButtonDblClick:
+                        self.mouseDoubleClickEvent(new_ev)
+                    return True
+                except (AttributeError, TypeError, RuntimeError, ValueError) as exc:
+                    if os.getenv("VISOR_DEBUG_DRAG") == "1":
+                        _b713b_debug_log(f"EXCEPTION eventFilter redirect type={type(exc).__name__} msg={exc!r}")
+                    print(f"[B7.13B] eventFilter redirect error: {exc}")
+                    return super().eventFilter(objeto, evento)
+            else:
+                if os.getenv("VISOR_DEBUG_DRAG") == "1":
+                    try:
+                        cls_dbg = objeto.__class__.__name__
+                    except (AttributeError, TypeError, RuntimeError, ValueError, OSError):
+                        cls_dbg = "?"
+                    _b713b_debug_log(f"routing hijo={cls_dbg} tipo={evento.type()} EXCLUDED=no_hijo_drag")
         if evento.type() == QEvent.Enter:
             pixmap = self._pixmap_ampliada(objeto)
             if pixmap is not None:
@@ -2707,6 +3293,7 @@ class VisorVideos(QMainWindow):
 
         # B7.9 panel Organización compacto (no reemplaza biblioteca)
         # B7.10 navegación embebida del destino (sin FS directo en panel)
+        # B7.12 preparación objetivo estable para futuro soltado (sin gesto arrastre)
         self._modo_organizacion = False
         self._organizacion_destino = None
         self._organizacion_destino_valido = False
@@ -2714,6 +3301,8 @@ class VisorVideos(QMainWindow):
         self._organizacion_error = None
         self._organizacion_cargando = False
         self._organizacion_navegacion_version = 0
+        self._organizacion_objetivo_nombre = None
+        self._organizacion_objetivo_completo = None
         self.panel_organizacion = PanelOrganizacion(self)
         self.panel_organizacion.setObjectName("panel_organizacion")
         self.panel_organizacion.setVisible(False)
@@ -2722,6 +3311,8 @@ class VisorVideos(QMainWindow):
         self.panel_organizacion.copiarSolicitado.connect(self._iniciar_lote_copiar_organizacion)
         self.panel_organizacion.entrarSubcarpetaSolicitada.connect(self._navegar_destino_a_subcarpeta)
         self.panel_organizacion.subirSolicitado.connect(self._navegar_destino_subir)
+        self.panel_organizacion.objetivoSeleccionado.connect(self._al_objetivo_drop_seleccionado)
+        self.panel_organizacion.dropVideosSolicitado.connect(self._al_drop_videos_solicitado)
 
         raiz = PanelPrincipal()
         layout = QVBoxLayout(raiz)
@@ -3022,6 +3613,15 @@ class VisorVideos(QMainWindow):
         self.gestor_navegacion_destino.tarea_resultado.connect(self._al_resultado_navegacion_destino)
         self.gestor_navegacion_destino.tarea_error.connect(self._al_error_navegacion_destino)
         self.gestor_navegacion_destino.tarea_finalizada.connect(self._al_navegacion_destino_finalizada)
+
+        # B7.13C corrección — prevalidación atómica antes de mover (fuera de UI, sin SQLite/FS directo)
+        self.gestor_prevalidacion_drop = GestorTareas(self)
+        self.gestor_prevalidacion_drop.tarea_resultado.connect(self._al_prevalidacion_drop_resultado)
+        self.gestor_prevalidacion_drop.tarea_error.connect(self._al_prevalidacion_drop_error)
+        self.gestor_prevalidacion_drop.tarea_finalizada.connect(self._al_prevalidacion_drop_finalizada)
+        self._prevalidacion_drop_ids = None
+        self._prevalidacion_drop_dest = None
+        self._prevalidacion_drop_en_curso = False
 
         self._timer_previews = QTimer(self)
         self._timer_previews.setSingleShot(True)
@@ -6180,6 +6780,10 @@ class VisorVideos(QMainWindow):
             return True
         if getattr(self, "gestor_renombrar_masivo", None) is not None and self.gestor_renombrar_masivo.activo:
             return True
+        if getattr(self, "gestor_prevalidacion_drop", None) is not None and self.gestor_prevalidacion_drop.activo:
+            return True
+        if getattr(self, "_prevalidacion_drop_en_curso", False):
+            return True
         if getattr(self, "gestor", None) is not None and self.gestor.activo:
             return True
         return False
@@ -6316,6 +6920,512 @@ class VisorVideos(QMainWindow):
         except TypeError:
             # Compat fallback B7.9 signature 3 args si panel antiguo
             self.panel_organizacion.actualizar(destino, tiene, ocupado)
+        # B7.12: sincronizar objetivo completo tras actualizar panel (sin FS adicional)
+        # Si panel cambió objetivo a None (reset por navegación), reflejar en estado visor
+        # sin emitir ciclo; solo si visor tiene objetivo obsoleto que ya no existe
+        try:
+            panel_obj = getattr(self.panel_organizacion, "_objetivo_nombre", None)
+            visor_obj = getattr(self, "_organizacion_objetivo_nombre", None)
+            if panel_obj != visor_obj:
+                # panel es fuente de verdad visual; alinear visor si diverge por reconstrucción lista
+                if panel_obj is None and visor_obj is not None:
+                    # solo alinear si visor tenía hijo que ya no figura en subcarpetas
+                    if visor_obj not in (subcarpetas or []):
+                        self._organizacion_objetivo_nombre = None
+                        self._organizacion_objetivo_completo = None
+        except (RuntimeError, AttributeError, TypeError, ValueError) as exc:
+            print(f"[B7.12] sincronizacion objetivo post-actualizar error: {exc}")
+
+    def _al_objetivo_drop_seleccionado(self, nombre):
+        """B7.12 — recibe objetivo estable del panel sin FS ni recarga.
+
+        Almacena identificación estable (nombre hijo o None) y resuelve
+        destino completo vía rutas.resolver_destino_drop para futuro soltado.
+        No modifica origen/filtros/orden/selección/viewport. No implementa
+        gesto de arrastre; solo contrato y validación de destino.
+        Preserva viewport del catálogo como resto de navegación B7.10+.
+        """
+        scroll_previo = None
+        barra_previa = None
+        try:
+            if hasattr(self, "area") and self.area is not None:
+                b = self.area.verticalScrollBar()
+                if b is not None:
+                    scroll_previo = int(b.value())
+                    barra_previa = b
+        except (RuntimeError, AttributeError, TypeError, ValueError) as exc:
+            print(f"[B7.12] _al_objetivo_drop_seleccionado scroll save error: {exc}")
+        # Normalizar nombre recibido del panel (str hijo o None)
+        objetivo = None
+        if isinstance(nombre, str) and nombre.strip():
+            try:
+                objetivo = nombre.strip()
+            except (AttributeError, TypeError, ValueError) as exc:
+                print(f"[B7.12] objetivo strip error: {exc}")
+                objetivo = None
+            if not objetivo or objetivo in ("(vacío)", "(cargando…)"):
+                objetivo = None
+            # Validar contra subcarpetas conocidas si destino válido
+            try:
+                conocidas = getattr(self, "_organizacion_subcarpetas", []) or []
+                if objetivo is not None and objetivo not in conocidas:
+                    objetivo = None
+            except (AttributeError, TypeError, ValueError) as exc:
+                print(f"[B7.12] validacion conocida error: {exc}")
+        else:
+            objetivo = None
+        # Si destino inválido/cargando/error, forzar None (panel ya lo hizo, pero visor refuerza)
+        try:
+            if not getattr(self, "_organizacion_destino_valido", False) or getattr(self, "_organizacion_cargando", False) or getattr(self, "_organizacion_error", None):
+                objetivo = None
+        except (AttributeError, TypeError) as exc:
+            print(f"[B7.12] estado destino check error: {exc}")
+        self._organizacion_objetivo_nombre = objetivo
+        # Resolver completo vía helper puro (sin FS)
+        try:
+            from rutas import resolver_destino_drop
+            destino = getattr(self, "_organizacion_destino", None)
+            if isinstance(destino, str) and destino.strip():
+                self._organizacion_objetivo_completo = resolver_destino_drop(destino, objetivo)
+            else:
+                self._organizacion_objetivo_completo = None
+        except (ImportError, AttributeError, ValueError, TypeError, RuntimeError, OSError) as exc:
+            print(f"[B7.12] resolver_destino_drop error: {exc}")
+            self._organizacion_objetivo_completo = None
+        if scroll_previo is not None and barra_previa is not None:
+            try:
+                barra_previa.setValue(scroll_previo)
+            except (RuntimeError, AttributeError, TypeError) as exc:
+                print(f"[B7.12] restore scroll error: {exc}")
+
+    def _obtener_destino_drop_actual(self):
+        """B7.12 — destino efectivo para futuro soltado (completo o None).
+
+        Contrato reutilizable: si hay objetivo hijo seleccionado retorna
+        destino/objetivo, else destino raíz. None si destino inválido/cargando.
+        Sin FS directo, delega a rutas.resolver_destino_drop cuando es necesario
+        recalcular (panel es fuente de verdad visual).
+        """
+        # Si ya está cacheado y coincide con estado actual, devolver cache
+        try:
+            if getattr(self, "_organizacion_objetivo_completo", None) is not None:
+                # verificar coherencia con nombre actual y destino actual
+                from rutas import resolver_destino_drop
+                destino = getattr(self, "_organizacion_destino", None)
+                nombre = getattr(self, "_organizacion_objetivo_nombre", None)
+                esperado = resolver_destino_drop(destino, nombre) if isinstance(destino, str) and destino.strip() else None
+                if esperado == self._organizacion_objetivo_completo:
+                    return self._organizacion_objetivo_completo
+                # si diverge, actualizar cache
+                self._organizacion_objetivo_completo = esperado
+                return esperado
+        except (ImportError, AttributeError, ValueError, TypeError, RuntimeError, OSError) as exc:
+            print(f"[B7.12] _obtener_destino_drop_actual cache error: {exc}")
+        try:
+            from rutas import resolver_destino_drop
+            destino = getattr(self, "_organizacion_destino", None)
+            nombre = getattr(self, "_organizacion_objetivo_nombre", None)
+            if not isinstance(destino, str) or not destino.strip():
+                return None
+            if not getattr(self, "_organizacion_destino_valido", False):
+                return None
+            if getattr(self, "_organizacion_cargando", False) or getattr(self, "_organizacion_error", None):
+                return None
+            return resolver_destino_drop(destino, nombre)
+        except (ImportError, AttributeError, ValueError, TypeError, RuntimeError, OSError) as exc:
+            print(f"[B7.12] _obtener_destino_drop_actual error: {exc}")
+            return None
+
+    def _validar_destino_drop_actual(self):
+        """B7.12 — validación pura de destino drop sin FS redundante."""
+        try:
+            # Estado ocupado invalida drop aunque destino sea válido (B7.12 contrato)
+            try:
+                if callable(getattr(self, "_lote_esta_ocupado", None)) and self._lote_esta_ocupado():
+                    return False
+                if getattr(self, "gestor", None) is not None and getattr(self.gestor, "activo", False):
+                    return False
+            except (AttributeError, TypeError, RuntimeError) as exc:
+                print(f"[B7.12] _validar ocupado check error: {exc}")
+            dest = self._obtener_destino_drop_actual()
+            if dest is None:
+                return False
+            from rutas import validar_destino_drop_completo
+            return bool(validar_destino_drop_completo(dest))
+        except (ImportError, AttributeError, ValueError, TypeError, RuntimeError, OSError) as exc:
+            print(f"[B7.12] _validar_destino_drop_actual error: {exc}")
+            return False
+
+    # ── B7.13C — conectar drop aceptado a infraestructura existente mover por lote ──
+    def _validar_ids_drop_b713c(self, ids):
+        """Valida payload ids de drop (lista ordenada de video_id positivos, sin bool)."""
+        try:
+            if not isinstance(ids, list) or len(ids) == 0:
+                return None
+            for v in ids:
+                if type(v) is not int:
+                    return None
+                if v <= 0:
+                    return None
+            return list(ids)
+        except (TypeError, ValueError, AttributeError, RuntimeError) as exc:
+            print(f"[B7.13C] _validar_ids_drop error: {exc}")
+            return None
+
+    def _al_drop_videos_solicitado(self, ids, objetivo):
+        """B7.13C — drop → validación → delegación a TareaLoteOperaciones mover.
+
+        - No toca SQLite/FS/FFmpeg directamente; delega a gestor_lote/TareaLoteOperaciones.
+        - Preserva responsividad: validación pura y tarea en background; sin rescan global.
+        - Validaciones obligatorias: destino válido, no cargando/error/ocupado, ids válidos,
+          destino resoluble, lote no ocupado. Cero operación si cualquiera falla.
+        - Objetivo puede ser str hijo o None (raíz). Se resuelve vía rutas.resolver_destino_drop.
+        """
+        # DEBUG opt-in
+        try:
+            if os.getenv("VISOR_DEBUG_DRAG") == "1":
+                print(f"[B7.13C] _al_drop_videos_solicitado ids={ids!r} objetivo={objetivo!r} modo_org={getattr(self,'_modo_organizacion',None)}", flush=True)
+        except (AttributeError, TypeError, RuntimeError, ValueError, OSError):
+            _ = None
+        # 1. Modo Organización
+        try:
+            if not getattr(self, "_modo_organizacion", False):
+                if os.getenv("VISOR_DEBUG_DRAG") == "1":
+                    print("[B7.13C] rechazo: modo_organizacion False", flush=True)
+                return
+        except (AttributeError, TypeError, RuntimeError) as exc:
+            print(f"[B7.13C] modo check error: {exc}")
+            return
+        # 2. ids válidos
+        ids_ok = self._validar_ids_drop_b713c(ids)
+        if ids_ok is None:
+            if os.getenv("VISOR_DEBUG_DRAG") == "1":
+                print("[B7.13C] rechazo: ids inválidos/vacíos", flush=True)
+            return
+        # Normalizar objetivo: str strip o None
+        objetivo_norm = None
+        if isinstance(objetivo, str) and objetivo.strip():
+            try:
+                objetivo_norm = objetivo.strip()
+            except (AttributeError, TypeError, ValueError) as exc:
+                print(f"[B7.13C] objetivo strip error: {exc}")
+                objetivo_norm = None
+            if objetivo_norm in ("(vacío)", "(cargando…)"):
+                objetivo_norm = None
+            if objetivo_norm in (".", ".."):
+                if os.getenv("VISOR_DEBUG_DRAG") == "1":
+                    print(f"[B7.13C] rechazo: objetivo ilegal {objetivo_norm!r}", flush=True)
+                return
+            if "/" in objetivo_norm or "\\" in objetivo_norm:
+                if os.getenv("VISOR_DEBUG_DRAG") == "1":
+                    print(f"[B7.13C] rechazo: objetivo con separador {objetivo_norm!r}", flush=True)
+                return
+            # validar contra subcarpetas conocidas si destino válido; si no está en lista, rechazar
+            try:
+                conocidas = getattr(self, "_organizacion_subcarpetas", []) or []
+                # solo rechazar si hay lista conocida no vacía y objetivo no está
+                if conocidas and objetivo_norm not in conocidas:
+                    if os.getenv("VISOR_DEBUG_DRAG") == "1":
+                        print(f"[B7.13C] rechazo: objetivo {objetivo_norm!r} no en subcarpetas {conocidas!r}", flush=True)
+                    return
+            except (AttributeError, TypeError, ValueError) as exc:
+                print(f"[B7.13C] validacion conocida drop error: {exc}")
+                return
+        else:
+            objetivo_norm = None
+        # 3. Estado destino / lote ocupado / cargando / error
+        try:
+            if callable(getattr(self, "_lote_esta_ocupado", None)) and self._lote_esta_ocupado():
+                if os.getenv("VISOR_DEBUG_DRAG") == "1":
+                    print("[B7.13C] rechazo: lote ocupado", flush=True)
+                return
+            if getattr(self, "gestor", None) is not None and getattr(self.gestor, "activo", False):
+                if os.getenv("VISOR_DEBUG_DRAG") == "1":
+                    print("[B7.13C] rechazo: gestor activo", flush=True)
+                return
+            if getattr(self, "_organizacion_cargando", False):
+                if os.getenv("VISOR_DEBUG_DRAG") == "1":
+                    print("[B7.13C] rechazo: cargando", flush=True)
+                return
+            if getattr(self, "_organizacion_error", None):
+                if os.getenv("VISOR_DEBUG_DRAG") == "1":
+                    print(f"[B7.13C] rechazo: error {getattr(self,'_organizacion_error',None)!r}", flush=True)
+                return
+            if not getattr(self, "_organizacion_destino_valido", False):
+                # compat: si flag invalido pero no hay error/cargando y destino isdir, considerar válido
+                # pero para drop exigimos válido estricto para no iniciar operación con destino desaparecido
+                # verificar isdir solo si helper dice no accesible; no tocar FS si ya invalido con error
+                # B7.13C: sin FS directo, delegar a rutas.listar_subcarpetas ya validó; si invalido -> rechazar
+                if os.getenv("VISOR_DEBUG_DRAG") == "1":
+                    print("[B7.13C] rechazo: destino no válido", flush=True)
+                return
+            dest_base = getattr(self, "_organizacion_destino", None)
+            if not isinstance(dest_base, str) or not dest_base.strip():
+                if os.getenv("VISOR_DEBUG_DRAG") == "1":
+                    print("[B7.13C] rechazo: destino base vacío", flush=True)
+                return
+        except (AttributeError, TypeError, RuntimeError, OSError) as exc:
+            print(f"[B7.13C] estado destino check error: {exc}")
+            return
+        # 4. Resolver destino real (objetivo_norm o raíz)
+        try:
+            dest = resolver_destino_drop(dest_base, objetivo_norm)
+        except (AttributeError, TypeError, ValueError, RuntimeError, OSError) as exc:
+            print(f"[B7.13C] resolver_destino_drop error: {exc}")
+            return
+        if dest is None:
+            if os.getenv("VISOR_DEBUG_DRAG") == "1":
+                print("[B7.13C] rechazo: resolver_destino_drop retornó None", flush=True)
+            return
+        try:
+            if not validar_destino_drop_completo(dest):
+                if os.getenv("VISOR_DEBUG_DRAG") == "1":
+                    print(f"[B7.13C] rechazo: validar_destino_drop_completo False dest={dest!r}", flush=True)
+                return
+        except (AttributeError, TypeError, RuntimeError, ValueError, OSError) as exc:
+            print(f"[B7.13C] validar_destino_drop error: {exc}")
+            return
+        # 5. Prevalidación atómica en background antes de mover (fuera de UI, sin SQLite/FS directo)
+        # Evitar doble prevalidación/lote mientras hay operación en curso (incluye prevalidación)
+        try:
+            if getattr(self, "_prevalidacion_drop_en_curso", False) or (getattr(self, "gestor_prevalidacion_drop", None) is not None and self.gestor_prevalidacion_drop.activo):
+                if os.getenv("VISOR_DEBUG_DRAG") == "1":
+                    print("[B7.13C] rechazo: prevalidación en curso", flush=True)
+                return
+        except (AttributeError, TypeError, RuntimeError) as exc:
+            print(f"[B7.13C] prevalidacion check error: {exc}")
+            return
+        # Iniciar tarea de prevalidación (valida existencia IDs + destino real)
+        try:
+            tarea_pre = TareaPrevalidarDrop(ids_ok, dest, self._ruta_db)
+        except (TypeError, ValueError, AttributeError, RuntimeError, OSError) as exc:
+            print(f"[B7.13C] crear TareaPrevalidarDrop error: {exc}")
+            try:
+                self.mensaje_carpeta.setText(f"Drop rechazado: {exc}")
+            except (AttributeError, RuntimeError) as exc2:
+                print(f"[B7.13C] mensaje prevalidacion error: {exc2}")
+            if os.getenv("VISOR_DEBUG_DRAG") == "1":
+                print(f"[B7.13C] rechazo crear prevalidacion: {exc!r}", flush=True)
+            return
+        # guardar estado pendiente para el callback
+        self._prevalidacion_drop_ids = list(ids_ok)
+        self._prevalidacion_drop_dest = dest
+        self._prevalidacion_drop_en_curso = True
+        try:
+            self.mensaje_carpeta.setText(f"Validando {len(ids_ok)} videos…")
+            self._actualizar_botones_lote()
+            self._actualizar_panel_organizacion()
+        except (AttributeError, TypeError, RuntimeError) as exc:
+            print(f"[B7.13C] ui prevalidacion progress error: {exc}")
+        try:
+            ok = self.gestor_prevalidacion_drop.iniciar(tarea_pre)
+        except (AttributeError, TypeError, RuntimeError, ValueError, OSError) as exc:
+            print(f"[B7.13C] gestor_prevalidacion_drop.iniciar error: {exc}")
+            self._prevalidacion_drop_en_curso = False
+            self._prevalidacion_drop_ids = None
+            self._prevalidacion_drop_dest = None
+            return
+        if not ok:
+            try:
+                motivo = getattr(self.gestor_prevalidacion_drop, "ultimo_rechazo", "")
+                self.mensaje_carpeta.setText(f"No se pudo iniciar validación drop: {motivo}")
+            except (AttributeError, TypeError, RuntimeError) as exc:
+                print(f"[B7.13C] mensaje rechazo prevalidacion error: {exc}")
+            if os.getenv("VISOR_DEBUG_DRAG") == "1":
+                print(f"[B7.13C] rechazo: gestor_prevalidacion_drop.iniciar False motivo={getattr(self.gestor_prevalidacion_drop,'ultimo_rechazo','')!r}", flush=True)
+            self._prevalidacion_drop_en_curso = False
+            self._prevalidacion_drop_ids = None
+            self._prevalidacion_drop_dest = None
+            self._actualizar_botones_lote()
+            self._actualizar_panel_organizacion()
+            return
+        if os.getenv("VISOR_DEBUG_DRAG") == "1":
+            print(f"[B7.13C] prevalidación iniciada ids={ids_ok!r} dest={dest!r}", flush=True)
+
+    def _iniciar_lote_drop_real(self, ids, dest):
+        """Inicia TareaLoteOperaciones mover tras prevalidación exitosa (intimo B7.13C)."""
+        try:
+            tarea = TareaLoteOperaciones("mover", ids, self._ruta_db, carpeta_destino=dest)
+        except (TypeError, ValueError, AttributeError, RuntimeError, OSError) as exc:
+            print(f"[B7.13C] crear TareaLoteOperaciones tras prevalidacion error: {exc}")
+            try:
+                self.mensaje_carpeta.setText(f"Drop rechazado tras validación: {exc}")
+            except (AttributeError, RuntimeError) as exc2:
+                print(f"[B7.13C] mensaje post-prevalidacion error: {exc2}")
+            return False
+        try:
+            ok = self.gestor_lote.iniciar(tarea)
+        except (AttributeError, TypeError, RuntimeError, ValueError, OSError) as exc:
+            print(f"[B7.13C] gestor_lote.iniciar tras prevalidacion error: {exc}")
+            return False
+        if not ok:
+            try:
+                motivo = getattr(self.gestor_lote, "ultimo_rechazo", "")
+                self.mensaje_carpeta.setText(f"No se pudo iniciar mover por drop: {motivo}")
+            except (AttributeError, TypeError, RuntimeError) as exc:
+                print(f"[B7.13C] mensaje rechazo lote post-prevalidacion error: {exc}")
+            if os.getenv("VISOR_DEBUG_DRAG") == "1":
+                print(f"[B7.13C] rechazo lote tras prevalidacion: gestor_lote.iniciar False motivo={getattr(self.gestor_lote,'ultimo_rechazo','')!r}", flush=True)
+            return False
+        self._lote_en_curso = True
+        self._lote_operacion = "mover"
+        self._lote_video_ids = list(ids)
+        self._lote_carpeta_destino = dest
+        try:
+            self.barra_progreso.setVisible(True)
+            self.barra_progreso.setRange(0, len(ids))
+            self.barra_progreso.setValue(0)
+            self.mensaje_carpeta.setText(f"Moviendo {len(ids)} videos…")
+        except (AttributeError, TypeError, RuntimeError) as exc:
+            print(f"[B7.13C] ui progress post-prevalidacion error: {exc}")
+        try:
+            self._actualizar_botones_lote()
+            self._actualizar_panel_organizacion()
+        except (AttributeError, TypeError, RuntimeError, ValueError) as exc:
+            print(f"[B7.13C] actualizar panel post-lote error: {exc}")
+        if os.getenv("VISOR_DEBUG_DRAG") == "1":
+            print(f"[B7.13C] lote mover iniciado tras prevalidación ids={ids!r} dest={dest!r}", flush=True)
+        return True
+
+    def _al_prevalidacion_drop_resultado(self, resultado):
+        """Callback background prevalidación B7.13C: si ok inicia lote, si no rechaza con cero movimiento."""
+        # Preservar ids/dest guardados; ignorar resultados obsoletos si ya no en curso
+        if not getattr(self, "_prevalidacion_drop_en_curso", False):
+            if os.getenv("VISOR_DEBUG_DRAG") == "1":
+                print("[B7.13C] _al_prevalidacion_drop_resultado ignorado (no en curso)", flush=True)
+            return
+        ids_guardados = getattr(self, "_prevalidacion_drop_ids", None)
+        dest_guardado = getattr(self, "_prevalidacion_drop_dest", None)
+        # Limpiar flag antes de decidir lote para evitar doble activación en callbacks reentrantes
+        self._prevalidacion_drop_en_curso = False
+        # Validar formato resultado
+        try:
+            if not isinstance(resultado, dict):
+                raise ValueError("resultado no es dict")
+            ok = bool(resultado.get("ok"))
+        except (AttributeError, TypeError, ValueError, RuntimeError) as exc:
+            print(f"[B7.13C] _al_prevalidacion_drop_resultado formato error: {exc} resultado={resultado!r}")
+            try:
+                self.mensaje_carpeta.setText(f"Drop rechazado: validación inválida ({exc})")
+            except (AttributeError, RuntimeError) as exc2:
+                print(f"[B7.13C] mensaje formato error: {exc2}")
+            self._prevalidacion_drop_ids = None
+            self._prevalidacion_drop_dest = None
+            self._actualizar_botones_lote()
+            self._actualizar_panel_organizacion()
+            return
+        if not ok:
+            err = resultado.get("error") if isinstance(resultado, dict) else "error desconocido"
+            try:
+                self.mensaje_carpeta.setText(f"Drop rechazado: {err}")
+                self.mensaje_carpeta.setToolTip(str(err))
+            except (AttributeError, TypeError, RuntimeError) as exc:
+                print(f"[B7.13C] mensaje rechazo prevalidacion error: {exc}")
+            if os.getenv("VISOR_DEBUG_DRAG") == "1":
+                print(f"[B7.13C] prevalidación fallida ids={ids_guardados!r} dest={dest_guardado!r} error={err!r}", flush=True)
+            self._prevalidacion_drop_ids = None
+            self._prevalidacion_drop_dest = None
+            self._actualizar_botones_lote()
+            self._actualizar_panel_organizacion()
+            return
+        # Éxito: verificar coherencia ids/dest con resultado
+        try:
+            ids_res = resultado.get("ids")
+            dest_res = resultado.get("destino")
+            if ids_res is not None and ids_guardados is not None and list(ids_res) != list(ids_guardados):
+                print(f"[B7.13C] incoherencia ids prevalidacion guardados {ids_guardados!r} vs resultado {ids_res!r}")
+            if dest_res is not None and dest_guardado is not None and dest_res != dest_guardado:
+                print(f"[B7.13C] incoherencia dest prevalidacion guardado {dest_guardado!r} vs resultado {dest_res!r}")
+        except (AttributeError, TypeError, ValueError, RuntimeError) as exc:
+            print(f"[B7.13C] coherencia check error: {exc}")
+        # Estado ocupado puede haber cambiado entre prevalidación y ahora; re-validar lote ocupado
+        # Nota: gestor_prevalidacion aún puede reportar activo en tarea_resultado (antes de finalizada),
+        # por lo que se chequea solo lote/gestor general, no la propia prevalidación
+        try:
+            ocupado_post = False
+            if getattr(self, "gestor_lote", None) is not None and self.gestor_lote.activo:
+                ocupado_post = True
+            elif getattr(self, "gestor", None) is not None and self.gestor.activo:
+                ocupado_post = True
+            elif getattr(self, "_lote_en_curso", False):
+                ocupado_post = True
+            elif getattr(self, "gestor_renombrar_masivo", None) is not None and self.gestor_renombrar_masivo.activo:
+                ocupado_post = True
+            elif getattr(self, "gestor_mover", None) is not None and self.gestor_mover.activo:
+                ocupado_post = True
+            elif getattr(self, "gestor_copiar", None) is not None and self.gestor_copiar.activo:
+                ocupado_post = True
+            elif getattr(self, "gestor_eliminar", None) is not None and self.gestor_eliminar.activo:
+                ocupado_post = True
+            if ocupado_post:
+                try:
+                    self.mensaje_carpeta.setText("Drop rechazado: operación en curso tras validación")
+                except (AttributeError, RuntimeError) as exc:
+                    print(f"[B7.13C] mensaje ocupado post-prevalidacion error: {exc}")
+                if os.getenv("VISOR_DEBUG_DRAG") == "1":
+                    print("[B7.13C] rechazo post-prevalidación: lote ocupado", flush=True)
+                self._prevalidacion_drop_ids = None
+                self._prevalidacion_drop_dest = None
+                self._actualizar_botones_lote()
+                self._actualizar_panel_organizacion()
+                return
+        except (AttributeError, TypeError, RuntimeError) as exc:
+            print(f"[B7.13C] ocupado post-prevalidacion check error: {exc}")
+        # Iniciar lote real
+        ids_final = ids_guardados if isinstance(ids_guardados, list) else resultado.get("ids")
+        dest_final = dest_guardado if isinstance(dest_guardado, str) else resultado.get("destino")
+        if not isinstance(ids_final, list) or not ids_final or not isinstance(dest_final, str) or not dest_final.strip():
+            print(f"[B7.13C] _al_prevalidacion_drop_resultado ids/dest finales inválidos ids={ids_final!r} dest={dest_final!r}")
+            try:
+                self.mensaje_carpeta.setText("Drop rechazado: datos validados inválidos")
+            except (AttributeError, RuntimeError) as exc:
+                print(f"[B7.13C] mensaje datos finales error: {exc}")
+            self._prevalidacion_drop_ids = None
+            self._prevalidacion_drop_dest = None
+            self._actualizar_botones_lote()
+            self._actualizar_panel_organizacion()
+            return
+        # Limpiar pendientes antes de iniciar lote (el lote guarda su propio estado)
+        self._prevalidacion_drop_ids = None
+        self._prevalidacion_drop_dest = None
+        ok_lote = self._iniciar_lote_drop_real(ids_final, dest_final)
+        if not ok_lote:
+            self._actualizar_botones_lote()
+            self._actualizar_panel_organizacion()
+
+    def _al_prevalidacion_drop_error(self, mensaje):
+        if not getattr(self, "_prevalidacion_drop_en_curso", False):
+            return
+        self._prevalidacion_drop_en_curso = False
+        try:
+            self.mensaje_carpeta.setText(f"Drop rechazado: error validación ({mensaje})")
+            self.mensaje_carpeta.setToolTip(str(mensaje))
+        except (AttributeError, TypeError, RuntimeError) as exc:
+            print(f"[B7.13C] _al_prevalidacion_drop_error mensaje error: {exc}")
+        if os.getenv("VISOR_DEBUG_DRAG") == "1":
+            print(f"[B7.13C] prevalidación error mensaje={mensaje!r}", flush=True)
+        self._prevalidacion_drop_ids = None
+        self._prevalidacion_drop_dest = None
+        try:
+            self._actualizar_botones_lote()
+            self._actualizar_panel_organizacion()
+        except (AttributeError, TypeError, RuntimeError, ValueError) as exc:
+            print(f"[B7.13C] _al_prevalidacion_drop_error actualizar error: {exc}")
+
+    def _al_prevalidacion_drop_finalizada(self):
+        # Si quedó en curso sin resultado (cancel), limpiar
+        if getattr(self, "_prevalidacion_drop_en_curso", False):
+            # si gestor ya no activo y no se recibió resultado, limpiar y actualizar
+            try:
+                if getattr(self, "gestor_prevalidacion_drop", None) is not None and not self.gestor_prevalidacion_drop.activo:
+                    self._prevalidacion_drop_en_curso = False
+                    self._prevalidacion_drop_ids = None
+                    self._prevalidacion_drop_dest = None
+                    self._actualizar_botones_lote()
+                    self._actualizar_panel_organizacion()
+            except (AttributeError, TypeError, RuntimeError, ValueError) as exc:
+                print(f"[B7.13C] _al_prevalidacion_drop_finalizada error: {exc}")
+                self._prevalidacion_drop_en_curso = False
 
     def _cargar_navegacion_destino(self):
         """Inicia carga background de subcarpetas del destino (B7.10).
@@ -6331,6 +7441,8 @@ class VisorVideos(QMainWindow):
             self._organizacion_subcarpetas = []
             self._organizacion_error = None
             self._organizacion_cargando = False
+            self._organizacion_objetivo_nombre = None
+            self._organizacion_objetivo_completo = None
             self._actualizar_panel_organizacion()
             return
         # Si hay tarea en curso, no duplicar; esperar
@@ -6411,9 +7523,20 @@ class VisorVideos(QMainWindow):
         if not self._organizacion_destino_valido:
             self._organizacion_subcarpetas = []
             self._organizacion_error = error or "destino no disponible"
+            # B7.12: destino inválido resetea objetivo estable
+            self._organizacion_objetivo_nombre = None
+            self._organizacion_objetivo_completo = None
         else:
             self._organizacion_subcarpetas = list(subcarpetas)
             self._organizacion_error = None
+            # B7.12: si objetivo previo ya no existe en nueva lista, resetear
+            try:
+                obj = getattr(self, "_organizacion_objetivo_nombre", None)
+                if obj is not None and obj not in subcarpetas:
+                    self._organizacion_objetivo_nombre = None
+                    self._organizacion_objetivo_completo = None
+            except (AttributeError, TypeError, ValueError) as exc:
+                print(f"[B7.12] objetivo reset error post-result: {exc}")
         self._actualizar_panel_organizacion()
         if scroll_previo is not None and barra_previa is not None:
             try:
@@ -6436,6 +7559,9 @@ class VisorVideos(QMainWindow):
         self._organizacion_destino_valido = False
         self._organizacion_subcarpetas = []
         self._organizacion_error = mensaje or "error al listar destino"
+        # B7.12: error resetea objetivo estable
+        self._organizacion_objetivo_nombre = None
+        self._organizacion_objetivo_completo = None
         self._actualizar_panel_organizacion()
         if scroll_previo is not None and barra_previa is not None:
             try:
@@ -6512,6 +7638,9 @@ class VisorVideos(QMainWindow):
                 except (RuntimeError, AttributeError, TypeError) as exc2: print(f"[B7.11] restore scroll error: {exc2}")
             return
         # Actualizar destino y cargar background (sin recarga catálogo)
+        # B7.12: navegación resetea objetivo estable (destino nuevo -> objetivo raíz)
+        self._organizacion_objetivo_nombre = None
+        self._organizacion_objetivo_completo = None
         self._organizacion_destino = nueva
         # No tocar carpeta_seleccionada, filtros, orden, selección
         self._cargar_navegacion_destino()
@@ -6577,6 +7706,9 @@ class VisorVideos(QMainWindow):
                 try: barra_previa.setValue(scroll_previo)
                 except (RuntimeError, AttributeError, TypeError) as exc: print(f"[B7.11] restore scroll error: {exc}")
             return
+        # B7.12: subir resetea objetivo estable
+        self._organizacion_objetivo_nombre = None
+        self._organizacion_objetivo_completo = None
         self._organizacion_destino = padre
         self._cargar_navegacion_destino()
         if scroll_previo is not None and barra_previa is not None:
@@ -6619,6 +7751,9 @@ class VisorVideos(QMainWindow):
         else:
             carpeta_str = carpeta
         if isinstance(carpeta_str, str) and carpeta_str:
+            # B7.12: selección nueva resetea objetivo estable
+            self._organizacion_objetivo_nombre = None
+            self._organizacion_objetivo_completo = None
             self._organizacion_destino = carpeta_str
         else:
             if scroll_previo is not None and barra_previa is not None:
@@ -9105,6 +10240,13 @@ class VisorVideos(QMainWindow):
             self._renombrar_masivo_ids_a_restaurar = None
             self._renombrar_masivo_scroll_previo = None
             self._renombrar_masivo_orden_previo = None
+        if getattr(self, "gestor_navegacion_destino", None) is not None:
+            self.gestor_navegacion_destino.cerrar()
+        if getattr(self, "gestor_prevalidacion_drop", None) is not None:
+            self.gestor_prevalidacion_drop.cerrar()
+            self._prevalidacion_drop_en_curso = False
+            self._prevalidacion_drop_ids = None
+            self._prevalidacion_drop_dest = None
         super().closeEvent(event)
 
 

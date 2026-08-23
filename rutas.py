@@ -165,3 +165,70 @@ def carpeta_padre(carpeta):
         print(f"[B7.10] carpeta_padre normcase error: {exc}")
         return None
     return padre
+
+
+def resolver_destino_drop(destino, objetivo_nombre):
+    """B7.12 — resuelve destino efectivo para futuro soltado sin FS duplicado.
+
+    Si objetivo_nombre es None/vacío retorna destino normalizado.
+    Si objetivo_nombre es subcarpeta hija válida, retorna join normalizado.
+    Valida que nombre no contenga separadores ni sea '.'/'..' ni vacío.
+    No verifica existencia en disco; solo normaliza ruta pura.
+    Retorna None si destino inválido o nombre inválido con separadores.
+    Reutilizable por futuro gesto de arrastre sin tocar PanelOrganizacion.
+    """
+    if not isinstance(destino, str) or not destino.strip():
+        return None
+    destino_norm = destino.strip()
+    try:
+        destino_norm = os.path.normpath(destino_norm)
+    except (TypeError, ValueError, OSError, AttributeError) as exc:
+        print(f"[B7.12] resolver_destino_drop destino norm error: {exc}")
+        return None
+    if objetivo_nombre is None:
+        return destino_norm
+    if not isinstance(objetivo_nombre, str):
+        try:
+            objetivo_nombre = str(objetivo_nombre)
+        except (ValueError, TypeError, RuntimeError) as exc:
+            print(f"[B7.12] resolver_destino_drop conversión error: {exc}")
+            return None
+    objetivo_nombre = objetivo_nombre.strip()
+    if not objetivo_nombre:
+        return destino_norm
+    if objetivo_nombre in (".", ".."):
+        return None
+    if "/" in objetivo_nombre or "\\" in objetivo_nombre:
+        return None
+    if objetivo_nombre in ("(vacío)", "(cargando…)"):
+        return None
+    try:
+        combinado = os.path.join(destino_norm, objetivo_nombre)
+        combinado = os.path.normpath(combinado)
+    except (TypeError, ValueError, OSError, AttributeError) as exc:
+        print(f"[B7.12] resolver_destino_drop join error: {exc}")
+        return None
+    # Seguridad: debe ser hijo directo (no traversal que salga)
+    try:
+        padre_combinado = os.path.dirname(combinado)
+        if os.path.normcase(padre_combinado) != os.path.normcase(destino_norm):
+            # si no es hijo directo, rechazar (posible nombre con .. encubierto ya filtrado)
+            return None
+    except (TypeError, ValueError, AttributeError, OSError) as exc:
+        print(f"[B7.12] resolver_destino_drop padre check error: {exc}")
+        return None
+    return combinado
+
+
+def validar_destino_drop_completo(destino_completo):
+    """B7.12 — valida destino completo puro (sin FS): no vacío y no contiene ilegales.
+
+    No verifica existencia en disco; la validez FS la resuelve TareaListarSubcarpetasDestino.
+    Retorna True si es ruta plausible (str no vacío, no None).
+    """
+    if not isinstance(destino_completo, str) or not destino_completo.strip():
+        return False
+    # Rechazar rutas con caracteres nulos; delegar resto a FS
+    if "\x00" in destino_completo:
+        return False
+    return True
