@@ -58,8 +58,10 @@ def _crear_bd(filas):
     return temp, ruta_db
 
 
-def _datos(nombre, ruta="C:\\v\\a.mp4", extension=".mp4", fecha="2026-08-02T00:00:00",
+def _datos(nombre, ruta=None, extension=".mp4", fecha="2026-08-02T00:00:00",
            duracion=None, ancho=None, alto=None, codec=None, miniaturas=None):
+    if ruta is None:
+        ruta = f"C:\\v\\{nombre}"
     return {
         "nombre": nombre,
         "ruta": ruta,
@@ -135,7 +137,7 @@ def test_02():
         ok = (
             ok
             and not fl["timeout"]
-            and cap.resultado == {"guardado": True, "nombre": "a.mp4"}
+            and (cap.resultado.get("guardado") is True and cap.resultado.get("nombre") == "a.mp4" and isinstance(cap.resultado.get("video_id"), int))
             and len(filas) == 1
             and filas[0] == esperado
         )
@@ -170,8 +172,8 @@ def test_03():
             and ok2
             and not fl1["timeout"]
             and not fl2["timeout"]
-            and cap1.resultado == {"guardado": True, "nombre": "a.mp4"}
-            and cap2.resultado == {"guardado": True, "nombre": "a.mp4"}
+            and (cap1.resultado.get("guardado") is True and cap1.resultado.get("nombre") == "a.mp4" and isinstance(cap1.resultado.get("video_id"), int))
+            and (cap2.resultado.get("guardado") is True and cap2.resultado.get("nombre") == "a.mp4" and isinstance(cap2.resultado.get("video_id"), int))
             and len(filas) == 1
             and filas[0] == esperado
         )
@@ -196,7 +198,7 @@ def test_04():
             conn.close()
         esperado = ("full.mp4", "C:\\full\\video.mp4", ".mp4", "2026-08-02T12:00:00", 12.5, 1280, 720, "hevc", 5)
         ok = (
-            resultado == {"guardado": True, "nombre": "full.mp4"}
+            (resultado.get("guardado") is True and resultado.get("nombre") == "full.mp4" and isinstance(resultado.get("video_id"), int))
             and fila == esperado
         )
         return ok, f"resultado={resultado} fila={fila}"
@@ -272,7 +274,7 @@ def test_06():
             ok
             and not fl["timeout"]
             and cap.eventos == ["inicio", "resultado", "finalizada"]
-            and cap.resultado == {"guardado": True, "nombre": "a.mp4"}
+            and (cap.resultado.get("guardado") is True and cap.resultado.get("nombre") == "a.mp4" and isinstance(cap.resultado.get("video_id"), int))
             and len(filas) == 1
             and set(cap.ids) == {"inicio", "resultado", "finalizada"}
             and all(py == id_main and qt for py, qt in cap.ids.values())
@@ -308,7 +310,7 @@ def test_07():
             and not hasattr(tarea, "_conexion")
             and not hasattr(tarea, "conn")
             and not any(isinstance(v, sqlite3.Connection) for v in vars(tarea).values())
-            and cap.resultado == {"guardado": True, "nombre": "a.mp4"}
+            and (cap.resultado.get("guardado") is True and cap.resultado.get("nombre") == "a.mp4" and isinstance(cap.resultado.get("video_id"), int))
         )
         return (
             ok,
@@ -529,7 +531,7 @@ def test_13():
         ok = (
             ok
             and not fl["timeout"]
-            and cap.resultado == {"guardado": True, "nombre": "a.mp4"}
+            and (cap.resultado.get("guardado") is True and cap.resultado.get("nombre") == "a.mp4" and isinstance(cap.resultado.get("video_id"), int))
             and llamadas == {"escaneo": 0, "ffprobe": 0, "ffmpeg": 0, "subprocess": 0}
         )
         return ok, f"llamadas={llamadas}"
@@ -562,7 +564,7 @@ def test_14():
     ok = (
         ok
         and not fl["timeout"]
-        and cap.resultado == {"guardado": True, "nombre": "x.mp4"}
+        and (cap.resultado.get("guardado") is True and cap.resultado.get("nombre") == "x.mp4" and isinstance(cap.resultado.get("video_id"), int))
         and antes == despues
     )
     return ok, f"datos_reales_sin_cambios={antes == despues}"
@@ -589,7 +591,7 @@ def test_15():
         ok = (
             ok
             and not fl["timeout"]
-            and cap.resultado == {"guardado": True, "nombre": "a.mp4"}
+            and (cap.resultado.get("guardado") is True and cap.resultado.get("nombre") == "a.mp4" and isinstance(cap.resultado.get("video_id"), int))
             and fila == esperado
         )
         return ok, f"fila={fila} esperado={esperado}"
@@ -689,7 +691,7 @@ def test_18():
         ok = (
             ok
             and not fl["timeout"]
-            and cap.resultado == {"guardado": True, "nombre": "basico.mp4"}
+            and (cap.resultado.get("guardado") is True and cap.resultado.get("nombre") == "basico.mp4" and isinstance(cap.resultado.get("video_id"), int))
             and fila == ("basico.mp4", None, None, None, None, None)
         )
         return ok, f"fila={fila}"

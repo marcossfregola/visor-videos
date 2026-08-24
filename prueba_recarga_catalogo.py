@@ -258,15 +258,16 @@ def test_02():
             "TareaEscaneo",
             "TareaTamanosArchivos",
             "TareaFFprobe",
-            "TareaMiniaturas",
             "TareaGuardarVideos",
+            "TareaMiniaturas",
+            "TareaActualizarCantidadMiniaturas",
             "TareaSincronizacionCatalogo",
             "TareaLecturaCatalogoPaginada",
         ]
         ok = (
             tipos == esperados
-            and len(tareas_vistas) == 7
-            and len(set(tareas_vistas)) == 7
+            and len(tareas_vistas) == 8
+            and len(set(tareas_vistas)) == 8
             and mismo_gestor
             and es_recarga
             and misma_tarea

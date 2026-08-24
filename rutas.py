@@ -220,6 +220,33 @@ def resolver_destino_drop(destino, objetivo_nombre):
     return combinado
 
 
+def normalizar_ruta_clave(ruta):
+    """B8.1 — normalización centralizada de ruta para identidad del catálogo.
+
+    Contrato estable en Windows:
+    - elimina espacios exteriores del texto de entrada;
+    - convierte a absoluta;
+    - aplica normpath;
+    - aplica normcase;
+    - devuelve representación estable apta para identidad.
+
+    Única función oficial para clave técnica `ruta_normalizada`.
+    La ruta real/original sigue almacenándose en `videos.ruta`.
+    """
+    if not isinstance(ruta, str):
+        raise TypeError("ruta debe ser texto")
+    texto = ruta.strip()
+    if not texto:
+        raise ValueError("ruta no puede estar vacía")
+    try:
+        absoluta = os.path.abspath(texto)
+        normal = os.path.normpath(absoluta)
+        estable = os.path.normcase(normal)
+    except Exception as exc:
+        raise ValueError(f"no se pudo normalizar ruta {ruta!r}: {exc}") from None
+    return estable
+
+
 def validar_destino_drop_completo(destino_completo):
     """B7.12 — valida destino completo puro (sin FS): no vacío y no contiene ilegales.
 

@@ -5,7 +5,7 @@ import sqlite3
 import subprocess
 from datetime import datetime
 
-from rutas import ruta_biblioteca, ruta_carpeta_miniaturas, ruta_carpeta_videos
+from rutas import normalizar_ruta_clave, ruta_biblioteca, ruta_carpeta_miniaturas, ruta_carpeta_videos
 
 _ARGS_SIN_CONSOLA = (
     {"creationflags": subprocess.CREATE_NO_WINDOW}
@@ -332,6 +332,119 @@ def _asegurar_columnas_videos(conn):
             conn.execute(f"ALTER TABLE videos ADD COLUMN {nombre_col} {tipo}")
 
 
+def _asegurar_ruta_normalizada(conn):
+    """Migración B8.1: columna `ruta_normalizada` + población + UNIQUE.
+
+    Aditiva e idempotente. Crea `ruta_normalizada TEXT`, puebla para filas
+    existentes usando exclusivamente `rutas.normalizar_ruta_clave`, valida
+    explícitamente rutas NULL/vacías/relativas/colisiones (GROUP BY
+    `ruta_normalizada HAVING COUNT(*) > 1`) y crea `UNIQUE(ruta_normalizada)`
+    sin eliminar todavía `UNIQUE(nombre)`. Preserva `videos.id`,
+    `sqlite_sequence`, marcadores/segmentos/derivados y FK.
+
+    Ante colisión real preserves datos y lanza error diagnóstico sin
+    correcciones destructivas.
+
+    B8.1 auditoría A: rutas relativas heredadas se detectan explícitamente y
+    no se convierten silenciosamente con abspath.
+
+    B8.1 auditoría C: una vez migrada (columna existe + índice único + sin NULL),
+    la apertura posterior no recorre globalmente la tabla.
+    """
+    existentes = {fila[1] for fila in conn.execute("PRAGMA table_info(videos)")}
+    col_existed = "ruta_normalizada" in existentes
+    if not col_existed:
+        conn.execute("ALTER TABLE videos ADD COLUMN ruta_normalizada TEXT")
+    else:
+        # Camino rápido: si columna ya existía y el índice único ya existe, no hacer scan global
+        # Comprobación de esquema necesaria pero sin SELECT global
+        try:
+            idx_list = conn.execute("PRAGMA index_list(videos)").fetchall()
+        except Exception:
+            idx_list = []
+        idx_names = {row[1] for row in idx_list} if idx_list else set()
+        if "idx_videos_ruta_normalizada" in idx_names:
+            # Si el índice ya existe, asumimos migración ya completada; evitar scan global
+            # No validar contenido fila por fila en cada conectar_bd
+            return
+    # Camino de migración: poblar y validar (solo cuando columna nueva o índice faltante)
+    filas = conn.execute("SELECT id, ruta, ruta_normalizada FROM videos").fetchall()
+    # Validación explícita: NULL / vacías / relativas (auditoría A)
+    for vid, ruta, _rn in filas:
+        if ruta is None:
+            raise ValueError(
+                f"B8.1 precondición: video id={vid} tiene ruta NULL, "
+                "no se puede crear ruta_normalizada sin pérdida"
+            )
+        if not isinstance(ruta, str) or not ruta.strip():
+            raise ValueError(
+                f"B8.1 precondición: video id={vid} tiene ruta vacía, "
+                "no se puede crear ruta_normalizada sin pérdida"
+            )
+        ruta_stripped = ruta.strip()
+        if not os.path.isabs(ruta_stripped):
+            raise ValueError(
+                f"B8.1 precondición: video id={vid} tiene ruta relativa {ruta!r}, "
+                "no se puede migrar silenciosamente con abspath (depende de CWD). "
+                "Corrija la ruta a absoluta antes de migrar. Se preservan todos los datos."
+            )
+    norm_por_id = {}
+    colisiones = {}
+    for vid, ruta, _rn in filas:
+        try:
+            norm = normalizar_ruta_clave(ruta)
+        except Exception as exc:
+            raise ValueError(
+                f"B8.1 no se pudo normalizar ruta id={vid} ruta={ruta!r}: {exc}"
+            ) from None
+        if norm is None or not norm.strip():
+            raise ValueError(f"B8.1 ruta_normalizada vacía para id={vid} ruta={ruta!r}")
+        norm_por_id[vid] = norm
+        colisiones.setdefault(norm, []).append(vid)
+    duplicados = {k: v for k, v in colisiones.items() if len(v) > 1}
+    if duplicados:
+        detalle = "; ".join(f"{norm!r} -> ids {ids}" for norm, ids in duplicados.items())
+        raise ValueError(
+            "B8.1 colisión de ruta_normalizada: distintas representaciones "
+            f"normalizan igual sin pérdida automática: {detalle}. Se preservan todos los datos."
+        )
+    # Poblar valores faltantes o desactualizados
+    for vid, norm in norm_por_id.items():
+        current = next((rn for i, _r, rn in filas if i == vid), None)
+        if current != norm:
+            conn.execute(
+                "UPDATE videos SET ruta_normalizada = ? WHERE id = ?", (norm, vid)
+            )
+    # Crear unicidad para ruta_normalizada sin eliminar UNIQUE(nombre)
+    try:
+        idx_list2 = conn.execute("PRAGMA index_list(videos)").fetchall()
+    except Exception:
+        idx_list2 = []
+    idx_names2 = {row[1] for row in idx_list2} if idx_list2 else set()
+    if "idx_videos_ruta_normalizada" not in idx_names2:
+        # Verificación pre-CREATE por GROUP BY en estado ya poblado
+        filas_dup = conn.execute("""
+            SELECT ruta_normalizada, COUNT(*) c FROM videos
+            WHERE ruta_normalizada IS NOT NULL
+            GROUP BY ruta_normalizada HAVING c > 1
+        """).fetchall()
+        if filas_dup:
+            detalle = "; ".join(f"{rn!r} x{c}" for rn, c in filas_dup)
+            raise ValueError(
+                "B8.1 colisión GROUP BY ruta_normalizada HAVING COUNT(*) > 1: "
+                f"{detalle}. Se preservan todos los datos."
+            )
+        try:
+            conn.execute(
+                "CREATE UNIQUE INDEX idx_videos_ruta_normalizada ON videos(ruta_normalizada)"
+            )
+        except sqlite3.IntegrityError as exc:
+            raise ValueError(
+                f"B8.1 no se pudo crear UNIQUE(ruta_normalizada) por colisión: {exc}. "
+                "Se preservan todos los datos."
+            ) from None
+
+
 def _asegurar_tablas_derivados(conn):
     """Migración aditiva e idempotente para trazabilidad B6.11 (videos derivados).
 
@@ -400,6 +513,7 @@ def conectar_bd(ruta_db=None):
         )
     """)
     _asegurar_columnas_videos(conn)
+    _asegurar_ruta_normalizada(conn)
     _asegurar_tabla_marcadores(conn)
     _asegurar_tabla_segmentos(conn)
     _asegurar_tablas_derivados(conn)
@@ -1329,12 +1443,16 @@ def _validar_registro_video(datos):
 
 
 def _upsert_video(conn, datos):
+    # B8.1 dual-write: ruta + ruta_normalizada siempre conjuntas vía normalizar_ruta_clave
+    ruta = datos["ruta"]
+    ruta_normalizada = normalizar_ruta_clave(ruta)
     conn.execute(
         """
-        INSERT INTO videos (nombre, ruta, extension, fecha_importacion, duracion_segundos, ancho, alto, codec_video, cantidad_miniaturas, tamano_bytes, mtime_ns)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO videos (nombre, ruta, ruta_normalizada, extension, fecha_importacion, duracion_segundos, ancho, alto, codec_video, cantidad_miniaturas, tamano_bytes, mtime_ns)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(nombre) DO UPDATE SET
             ruta = excluded.ruta,
+            ruta_normalizada = excluded.ruta_normalizada,
             extension = excluded.extension,
             fecha_importacion = excluded.fecha_importacion,
             duracion_segundos = excluded.duracion_segundos,
@@ -1347,7 +1465,8 @@ def _upsert_video(conn, datos):
         """,
         (
             datos["nombre"],
-            datos["ruta"],
+            ruta,
+            ruta_normalizada,
             datos["extension"],
             datos["fecha_importacion"],
             datos.get("duracion_segundos"),
@@ -1368,17 +1487,25 @@ def guardar_video(datos, ruta_db=None):
     if not os.path.isfile(ruta_db):
         raise FileNotFoundError(f"Base de datos no encontrada: {ruta_db}")
     conn = sqlite3.connect(ruta_db)
+    video_id = None
     try:
         conn.execute("BEGIN")
         _asegurar_columnas_videos(conn)
+        _asegurar_ruta_normalizada(conn)
         _upsert_video(conn, datos)
+        # B8.1: obtener id inequívocamente vía ruta_normalizada
+        ruta_norm = normalizar_ruta_clave(datos["ruta"])
+        fila = conn.execute(
+            "SELECT id FROM videos WHERE ruta_normalizada = ?", (ruta_norm,)
+        ).fetchone()
+        video_id = fila[0] if fila else None
         conn.commit()
     except Exception:
         conn.rollback()
         raise
     finally:
         conn.close()
-    return {"guardado": True, "nombre": datos["nombre"]}
+    return {"guardado": True, "nombre": datos["nombre"], "video_id": video_id, "id": video_id}
 
 
 def guardar_videos(datos_videos, ruta_db=None, on_progreso=None):
@@ -1398,11 +1525,24 @@ def guardar_videos(datos_videos, ruta_db=None, on_progreso=None):
         raise FileNotFoundError(f"Base de datos no encontrada: {ruta_db}")
     conn = sqlite3.connect(ruta_db)
     total = len(registros)
+    ids = []
+    por_nombre = {}
+    por_ruta_normalizada = {}
     try:
         conn.execute("BEGIN")
         _asegurar_columnas_videos(conn)
+        _asegurar_ruta_normalizada(conn)
         for indice, datos in enumerate(registros):
             _upsert_video(conn, datos)
+            # B8.1: obtener id inequívocamente vía ruta_normalizada (dual-write ya aseguró valor)
+            ruta_norm = normalizar_ruta_clave(datos["ruta"])
+            fila = conn.execute(
+                "SELECT id FROM videos WHERE ruta_normalizada = ?", (ruta_norm,)
+            ).fetchone()
+            vid = fila[0] if fila else None
+            ids.append(vid)
+            por_nombre[datos["nombre"]] = vid
+            por_ruta_normalizada[ruta_norm] = vid
             if on_progreso is not None:
                 on_progreso(indice + 1, total)
         conn.commit()
@@ -1411,7 +1551,14 @@ def guardar_videos(datos_videos, ruta_db=None, on_progreso=None):
         raise
     finally:
         conn.close()
-    return {"guardados": len(registros), "nombres": [d["nombre"] for d in registros]}
+    return {
+        "guardados": len(registros),
+        "nombres": [d["nombre"] for d in registros],
+        "ids": ids,
+        "video_ids": list(ids),
+        "por_nombre": dict(por_nombre),
+        "por_ruta_normalizada": dict(por_ruta_normalizada),
+    }
 
 def _conectar_repositorio_marcadores(ruta_db):
     if ruta_db is None:
@@ -2271,14 +2418,17 @@ def incorporar_video_derivado_al_catalogo(derivado_ruta, original_video_id, segm
 def actualizar_nombre_video(video_id, nuevo_nombre, nueva_ruta, ruta_db=None):
     """Helper explícito B7.1 — actualiza nombre y ruta en transacción corta.
 
-    Valida video_id y persiste en una única transacción. No toca filesystem.
-    Lanza sqlite3.IntegrityError si viola UNIQUE(nombre).
+    B8.1 dual-write: actualiza conjuntamente ruta_normalizada vía
+    normalizar_ruta_clave. Valida video_id y persiste en una única transacción.
+    No toca filesystem. Lanza sqlite3.IntegrityError si viola UNIQUE(nombre)
+    o UNIQUE(ruta_normalizada).
     """
     _validar_video_id(video_id)
     if not isinstance(nuevo_nombre, str) or not nuevo_nombre:
         raise ValueError("nuevo_nombre debe ser texto no vacío")
     if not isinstance(nueva_ruta, str) or not nueva_ruta:
         raise ValueError("nueva_ruta debe ser texto no vacío")
+    ruta_normalizada = normalizar_ruta_clave(nueva_ruta)
     if ruta_db is None:
         ruta_db = ruta_biblioteca()
     if not os.path.isfile(ruta_db):
@@ -2286,9 +2436,11 @@ def actualizar_nombre_video(video_id, nuevo_nombre, nueva_ruta, ruta_db=None):
     conn = sqlite3.connect(ruta_db)
     try:
         conn.execute("BEGIN")
+        _asegurar_columnas_videos(conn)
+        _asegurar_ruta_normalizada(conn)
         cur = conn.execute(
-            "UPDATE videos SET nombre = ?, ruta = ? WHERE id = ?",
-            (nuevo_nombre, nueva_ruta, video_id),
+            "UPDATE videos SET nombre = ?, ruta = ?, ruta_normalizada = ? WHERE id = ?",
+            (nuevo_nombre, nueva_ruta, ruta_normalizada, video_id),
         )
         if cur.rowcount == 0:
             conn.rollback()
@@ -2311,12 +2463,15 @@ def actualizar_nombre_video(video_id, nuevo_nombre, nueva_ruta, ruta_db=None):
 def actualizar_ruta_video(video_id, nueva_ruta, ruta_db=None):
     """Helper corto B7.2 — actualiza únicamente ruta en transacción.
 
+    B8.1 dual-write: actualiza conjuntamente ruta_normalizada.
     Valida video_id y persiste en una única transacción. No toca filesystem.
     Lanza ValueError si video_id no existe.
     """
     _validar_video_id(video_id)
     if not isinstance(nueva_ruta, str) or not nueva_ruta.strip():
         raise ValueError("nueva_ruta debe ser texto no vacío")
+    ruta_abs = os.path.abspath(nueva_ruta)
+    ruta_normalizada = normalizar_ruta_clave(nueva_ruta)
     if ruta_db is None:
         ruta_db = ruta_biblioteca()
     if not os.path.isfile(ruta_db):
@@ -2324,15 +2479,17 @@ def actualizar_ruta_video(video_id, nueva_ruta, ruta_db=None):
     conn = sqlite3.connect(ruta_db)
     try:
         conn.execute("BEGIN")
+        _asegurar_columnas_videos(conn)
+        _asegurar_ruta_normalizada(conn)
         cur = conn.execute(
-            "UPDATE videos SET ruta = ? WHERE id = ?",
-            (os.path.abspath(nueva_ruta), video_id),
+            "UPDATE videos SET ruta = ?, ruta_normalizada = ? WHERE id = ?",
+            (ruta_abs, ruta_normalizada, video_id),
         )
         if cur.rowcount == 0:
             conn.rollback()
             raise ValueError(f"video_id {video_id} no existe")
         conn.commit()
-        return {"ok": True, "video_id": video_id, "ruta": os.path.abspath(nueva_ruta)}
+        return {"ok": True, "video_id": video_id, "ruta": ruta_abs}
     except Exception:
         try:
             conn.rollback()
@@ -2344,6 +2501,116 @@ def actualizar_ruta_video(video_id, nueva_ruta, ruta_db=None):
             conn.close()
         except Exception:
             pass
+
+
+def actualizar_cantidad_miniaturas(video_id, cantidad, ruta_db=None):
+    """B8.1 — actualiza exclusivamente `cantidad_miniaturas` por `video_id`.
+
+    Usa `UPDATE ... WHERE id = ?` con semántica `COALESCE` para preservar el
+    valor existente cuando `cantidad` no es válido (None/no-int). No modifica
+    nombre, ruta, ruta_normalizada, metadata ni relaciones.
+    """
+    _validar_video_id(video_id)
+    if ruta_db is None:
+        ruta_db = ruta_biblioteca()
+    if not os.path.isfile(ruta_db):
+        raise FileNotFoundError(f"Base de datos no encontrada: {ruta_db}")
+    # Normalizar cantidad: solo int >=0 es válido; otros se preservan (COALESCE con NULL)
+    cantidad_valida = cantidad if isinstance(cantidad, int) and not isinstance(cantidad, bool) and cantidad >= 0 else None
+    conn = sqlite3.connect(ruta_db)
+    try:
+        conn.execute("BEGIN")
+        _asegurar_columnas_videos(conn)
+        # ruta_normalizada no se toca, pero asegurar migración por si DB vieja
+        try:
+            _asegurar_ruta_normalizada(conn)
+        except Exception:
+            pass
+        # COALESCE: si cantidad_valida es None, conserva existente
+        cur = conn.execute(
+            "UPDATE videos SET cantidad_miniaturas = COALESCE(?, cantidad_miniaturas) WHERE id = ?",
+            (cantidad_valida, video_id),
+        )
+        if cur.rowcount == 0:
+            conn.rollback()
+            raise ValueError(f"video_id {video_id} no existe")
+        conn.commit()
+        # Devolver valor persistido (para verificación)
+        fila = conn.execute(
+            "SELECT cantidad_miniaturas FROM videos WHERE id = ?", (video_id,)
+        ).fetchone()
+        return {"ok": True, "video_id": video_id, "cantidad_miniaturas": fila[0] if fila else None}
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        raise
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def actualizar_cantidad_miniaturas_batch(actualizaciones, ruta_db=None):
+    """B8.1 — actualización batch de `cantidad_miniaturas` por `video_id`.
+
+    `actualizaciones`: iterable de dicts `{video_id, cantidad}` o tuplas `(video_id, cantidad)`.
+    Aplica `UPDATE ... WHERE id = ?` por fila con `COALESCE` idéntico a
+    `actualizar_cantidad_miniaturas`. No modifica otros campos. Retorna
+    `{"actualizados": n, "detalles": [...]}`.
+    """
+    if isinstance(actualizaciones, (str, bytes, bytearray)):
+        raise TypeError("actualizaciones debe ser colección iterable")
+    try:
+        lista = list(actualizaciones)
+    except TypeError:
+        raise TypeError("actualizaciones debe ser colección iterable") from None
+    if ruta_db is None:
+        ruta_db = ruta_biblioteca()
+    if not os.path.isfile(ruta_db):
+        raise FileNotFoundError(f"Base de datos no encontrada: {ruta_db}")
+    conn = sqlite3.connect(ruta_db)
+    actualizados = 0
+    detalles = []
+    try:
+        conn.execute("BEGIN")
+        _asegurar_columnas_videos(conn)
+        try:
+            _asegurar_ruta_normalizada(conn)
+        except Exception:
+            pass
+        for item in lista:
+            if isinstance(item, dict):
+                vid = item.get("video_id", item.get("id"))
+                cant = item.get("cantidad_miniaturas", item.get("cantidad"))
+            elif isinstance(item, (list, tuple)) and len(item) >= 2:
+                vid, cant = item[0], item[1]
+            else:
+                raise TypeError("cada actualización debe ser dict o tupla (video_id, cantidad)")
+            _validar_video_id(vid)
+            cant_valida = cant if isinstance(cant, int) and not isinstance(cant, bool) and cant >= 0 else None
+            cur = conn.execute(
+                "UPDATE videos SET cantidad_miniaturas = COALESCE(?, cantidad_miniaturas) WHERE id = ?",
+                (cant_valida, vid),
+            )
+            if cur.rowcount:
+                actualizados += 1
+                detalles.append({"video_id": vid, "cantidad_miniaturas": cant_valida})
+        conn.commit()
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        raise
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+    return {"actualizados": actualizados, "detalles": detalles}
 
 
 def obtener_video_por_id(video_id, ruta_db=None):

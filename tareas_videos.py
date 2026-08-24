@@ -8,6 +8,7 @@ from escanear_videos import (
     CANTIDAD_PREVIEWS,
     _es_archivo_preview,
     _metadata_reutilizable,
+    actualizar_cantidad_miniaturas_batch,
     actualizar_segmento,
     asignar_color_marcador,
     asignar_color_segmento,
@@ -397,6 +398,41 @@ class TareaGuardarVideos(TareaBase):
             raise TypeError(f"colección inválida: {self._datos_invalidos}")
         return guardar_videos(
             self._datos, self._ruta_db, self.reportar_progreso
+        )
+
+
+class TareaActualizarCantidadMiniaturas(TareaBase):
+    """B8.1 — actualiza exclusivamente cantidad_miniaturas por video_id en batch.
+
+    Ejecuta `actualizar_cantidad_miniaturas_batch` fuera del hilo principal.
+    No modifica nombre/ruta/ruta_normalizada/metadata/relaciones.
+    """
+
+    def __init__(self, actualizaciones, ruta_db=None, parent=None):
+        super().__init__(parent)
+        try:
+            if isinstance(actualizaciones, (str, bytes, bytearray)):
+                raise TypeError("actualizaciones debe ser colección")
+            self._actualizaciones = list(actualizaciones)
+            self._invalidas = None
+        except Exception as exc:
+            self._actualizaciones = []
+            self._invalidas = exc
+        self._ruta_db = ruta_db
+
+    @property
+    def actualizaciones(self):
+        return list(self._actualizaciones)
+
+    @property
+    def ruta_db(self):
+        return self._ruta_db
+
+    def _trabajo(self):
+        if self._invalidas is not None:
+            raise TypeError(f"actualizaciones inválidas: {self._invalidas}")
+        return actualizar_cantidad_miniaturas_batch(
+            self._actualizaciones, self._ruta_db
         )
 
 

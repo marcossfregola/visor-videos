@@ -77,6 +77,7 @@ from escanear_videos import (
     FILTRO_MARCADOR_SIN_CLASIFICAR,
     FILTRO_SEGMENTO_SIN_CLASIFICAR,
     _nombre_seguro,
+    actualizar_cantidad_miniaturas_batch,
     calcular_tiempo_preview,
     color_rgb,
     configurar_cantidad_previews,
@@ -85,6 +86,7 @@ from escanear_videos import (
 from rutas import (
     carpeta_padre,
     carpetas_iguales,
+    normalizar_ruta_clave,
     resolver_destino_drop,
     ruta_carpeta_miniaturas,
     ruta_configuracion,
@@ -117,6 +119,7 @@ from panel_organizacion import (
     _serializar_ids_videos_para_mime,
 )
 from tareas_videos import (
+    TareaActualizarCantidadMiniaturas,
     TareaActualizarSegmento,
     TareaAsignarColorMarcador,
     TareaAsignarColorSegmento,
@@ -2869,16 +2872,20 @@ class VisorVideos(QMainWindow):
         self._ffprobe_pendiente = False
         self._miniaturas_pendiente = False
         self._guardado_pendiente = False
+        self._actualizar_miniaturas_pendiente = False
         self.tarea_escaneo = None
         self.tarea_tamanos = None
         self.tarea_ffprobe = None
         self.tarea_miniaturas = None
         self.tarea_guardado = None
+        self.tarea_actualizar_miniaturas = None
         self.resultado_tamanos = None
         self.resultado_ffprobe = None
         self.resultado_miniaturas = None
+        self.resultado_actualizar_miniaturas = None
         self.videos_detectados = None
         self.registros_guardados = None
+        self._guardado_por_ruta_normalizada = None
         self._sincronizacion_pendiente = False
         self.tarea_sincronizacion = None
         self.resultado_sincronizacion = None
@@ -8383,23 +8390,27 @@ class VisorVideos(QMainWindow):
         self._ffprobe_pendiente = False
         self._miniaturas_pendiente = False
         self._guardado_pendiente = False
+        self._actualizar_miniaturas_pendiente = False
         self._sincronizacion_pendiente = False
         self._recarga_catalogo_pendiente = False
         self._pagina_pendiente = False
         self._carpeta_sincronizacion = carpeta
         self.registros_guardados = None
+        self._guardado_por_ruta_normalizada = None
         self.resultado_sincronizacion = None
         self.tarea_escaneo = None
         self.tarea_tamanos = None
         self.tarea_ffprobe = None
         self.tarea_miniaturas = None
         self.tarea_guardado = None
+        self.tarea_actualizar_miniaturas = None
         self.tarea_sincronizacion = None
         self.tarea_recarga_catalogo = None
         self.tarea_pagina = None
         self.resultado_tamanos = None
         self.resultado_ffprobe = None
         self.resultado_miniaturas = None
+        self.resultado_actualizar_miniaturas = None
         if not self.gestor.iniciar(tarea):
             self._escaneo_pendiente = False
             self._cola_carpetas_escaneo = []
@@ -8416,6 +8427,7 @@ class VisorVideos(QMainWindow):
         self._ffprobe_pendiente = False
         self._miniaturas_pendiente = False
         self._guardado_pendiente = False
+        self._actualizar_miniaturas_pendiente = False
         self._sincronizacion_pendiente = False
         self._recarga_catalogo_pendiente = False
         self._pagina_pendiente = False
@@ -8427,7 +8439,10 @@ class VisorVideos(QMainWindow):
         self.tarea_ffprobe = None
         self.tarea_miniaturas = None
         self.tarea_guardado = None
+        self.tarea_actualizar_miniaturas = None
         self.tarea_sincronizacion = None
+        self._guardado_por_ruta_normalizada = None
+        self.resultado_actualizar_miniaturas = None
         self.tarea_recarga_catalogo = None
         self.tarea_pagina = None
         self.resultado_tamanos = None
@@ -8467,11 +8482,14 @@ class VisorVideos(QMainWindow):
         if self._ffprobe_pendiente:
             self._al_resultado_ffprobe(resultado)
             return
+        if self._guardado_pendiente:
+            self._al_resultado_guardado(resultado)
+            return
         if self._miniaturas_pendiente:
             self._al_resultado_miniaturas(resultado)
             return
-        if self._guardado_pendiente:
-            self._al_resultado_guardado(resultado)
+        if self._actualizar_miniaturas_pendiente:
+            self._al_resultado_actualizar_miniaturas(resultado)
             return
         if self._sincronizacion_pendiente:
             self._al_resultado_sincronizacion(resultado)
@@ -8543,7 +8561,7 @@ class VisorVideos(QMainWindow):
 
     def _al_resultado_ffprobe(self, resultado):
         self._ffprobe_pendiente = False
-        self._miniaturas_pendiente = True
+        self._guardado_pendiente = True
         self.tarea_ffprobe = None
         self.resultado_ffprobe = resultado
         self._actualizar_botones_carpeta()
@@ -8589,7 +8607,7 @@ class VisorVideos(QMainWindow):
 
     def _al_resultado_miniaturas(self, resultado):
         self._miniaturas_pendiente = False
-        self._guardado_pendiente = True
+        self._actualizar_miniaturas_pendiente = True
         self.tarea_miniaturas = None
         self.resultado_miniaturas = resultado
         self._actualizar_botones_carpeta()
@@ -8600,12 +8618,12 @@ class VisorVideos(QMainWindow):
         self._actualizar_botones_carpeta()
 
     def _iniciar_guardado(self):
+        # B8.1: guardado antes de miniaturas; solo ffprobe + tamanos, no miniaturas
         if (
             self.tarea_escaneo is None
             or self.videos_detectados is None
             or self.resultado_tamanos is None
             or self.resultado_ffprobe is None
-            or self.resultado_miniaturas is None
         ):
             self._limpiar_cadena()
             self._actualizar_botones_carpeta()
@@ -8613,9 +8631,7 @@ class VisorVideos(QMainWindow):
         registros = combinar_registros_con_ffprobe(
             self.videos_detectados, self.tarea_escaneo.carpeta, self.resultado_ffprobe
         )
-        registros = combinar_registros_con_miniaturas(
-            registros, self.resultado_miniaturas
-        )
+        # B8.1: no combinar con miniaturas aquí; cantidad_miniaturas se actualizará por id después
         registros = combinar_registros_con_tamanos(
             registros, self.resultado_tamanos
         )
@@ -8639,11 +8655,14 @@ class VisorVideos(QMainWindow):
         if self._ffprobe_pendiente:
             self._iniciar_ffprobe()
             return
+        if self._guardado_pendiente:
+            self._iniciar_guardado()
+            return
         if self._miniaturas_pendiente:
             self._iniciar_miniaturas()
             return
-        if self._guardado_pendiente:
-            self._iniciar_guardado()
+        if self._actualizar_miniaturas_pendiente:
+            self._iniciar_actualizar_miniaturas()
             return
         if self._sincronizacion_pendiente:
             self._iniciar_sincronizacion()
@@ -9160,11 +9179,75 @@ class VisorVideos(QMainWindow):
     def _al_resultado_guardado(self, resultado):
         self._guardado_pendiente = False
         self.tarea_guardado = None
+        # B8.1: conservar ids para actualizar miniaturas por video_id; no limpiar ffprobe aún
+        self.registros_guardados = resultado.get("guardados")
+        # guardar mapeo ruta_normalizada -> video_id para correspondencia inequívoca
+        try:
+            self._guardado_por_ruta_normalizada = dict(resultado.get("por_ruta_normalizada") or {})
+        except Exception:
+            self._guardado_por_ruta_normalizada = {}
+        # También guardar ids list para referencia
+        try:
+            self._guardado_ids = list(resultado.get("ids") or resultado.get("video_ids") or [])
+        except Exception:
+            self._guardado_ids = []
+        self._miniaturas_pendiente = True
+        self._actualizar_botones_carpeta()
+
+    def _iniciar_actualizar_miniaturas(self):
+        # B8.1: actualizar exclusivamente cantidad_miniaturas por video_id después de miniaturas
+        if self.resultado_miniaturas is None or self._guardado_por_ruta_normalizada is None:
+            self._limpiar_cadena()
+            self._actualizar_botones_carpeta()
+            return
+        actualizaciones = []
+        for item in (self.resultado_miniaturas.get("resultados") or []):
+            if not isinstance(item, dict):
+                continue
+            ruta = item.get("ruta")
+            cantidad = item.get("cantidad_miniaturas")
+            if not isinstance(ruta, str) or not ruta:
+                continue
+            try:
+                norm = normalizar_ruta_clave(ruta)
+            except Exception:
+                continue
+            vid = self._guardado_por_ruta_normalizada.get(norm)
+            if vid is None:
+                # fallback: intentar por nombre si ruta no mapeada (compat)
+                continue
+            actualizaciones.append((vid, cantidad))
+        # Si no hay actualizaciones, ir directo a sincronización sin tarea
+        if not actualizaciones:
+            self._actualizar_miniaturas_pendiente = False
+            self.resultado_actualizar_miniaturas = {"actualizados": 0}
+            self._sincronizacion_pendiente = True
+            self._actualizar_botones_carpeta()
+            return
+        tarea = TareaActualizarCantidadMiniaturas(actualizaciones, self._ruta_db)
+        if not self.gestor.iniciar(tarea):
+            self._limpiar_cadena()
+            self._actualizar_botones_carpeta()
+            return
+        self.tarea_actualizar_miniaturas = tarea
+        self._mostrar_progreso("Actualizando miniaturas…")
+
+    def _al_resultado_actualizar_miniaturas(self, resultado):
+        self._actualizar_miniaturas_pendiente = False
+        self.tarea_actualizar_miniaturas = None
+        self.resultado_actualizar_miniaturas = resultado
+        # Limpiar temporales de guardado/miniaturas antes de sincronización
         self.resultado_tamanos = None
         self.resultado_ffprobe = None
         self.resultado_miniaturas = None
-        self.registros_guardados = resultado.get("guardados")
+        self._guardado_por_ruta_normalizada = None
+        self._guardado_ids = None
         self._sincronizacion_pendiente = True
+        self._actualizar_botones_carpeta()
+
+    def _al_error_actualizar_miniaturas(self, mensaje):
+        self._limpiar_cadena()
+        self.estado_escaneo.setText("No se pudo actualizar miniaturas")
         self._actualizar_botones_carpeta()
 
     def _al_error(self, mensaje):
@@ -9177,11 +9260,14 @@ class VisorVideos(QMainWindow):
         if self._ffprobe_pendiente:
             self._al_error_ffprobe(mensaje)
             return
+        if self._guardado_pendiente:
+            self._al_error_guardado(mensaje)
+            return
         if self._miniaturas_pendiente:
             self._al_error_miniaturas(mensaje)
             return
-        if self._guardado_pendiente:
-            self._al_error_guardado(mensaje)
+        if self._actualizar_miniaturas_pendiente:
+            self._al_error_actualizar_miniaturas(mensaje)
             return
         if self._sincronizacion_pendiente:
             self._al_error_sincronizacion(mensaje)

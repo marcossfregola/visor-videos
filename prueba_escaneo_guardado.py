@@ -311,8 +311,9 @@ def test_06():
                 "TareaEscaneo",
                 "TareaTamanosArchivos",
                 "TareaFFprobe",
-                "TareaMiniaturas",
                 "TareaGuardarVideos",
+                "TareaMiniaturas",
+                "TareaActualizarCantidadMiniaturas",
                 "TareaSincronizacionCatalogo",
                 "TareaLecturaCatalogoPaginada",
             ]
@@ -449,8 +450,9 @@ def test_09():
                 "TareaEscaneo",
                 "TareaTamanosArchivos",
                 "TareaFFprobe",
-                "TareaMiniaturas",
                 "TareaGuardarVideos",
+                "TareaMiniaturas",
+                "TareaActualizarCantidadMiniaturas",
                 "TareaSincronizacionCatalogo",
                 "TareaLecturaCatalogoPaginada",
             ]
@@ -1244,12 +1246,12 @@ def test_23():
         _limpiar(ventana)
         ok = (
             estado_error == MENSAJE_ERROR_MINIATURAS
-            and guardado_error is None
+            and guardado_error == 1
             and gestor_error == Estado.INACTIVO
             and flags_error == (False, False, None, None)
             and detectados_error == ["x.mp4"]
             and hab_tras_error
-            and filas_antes == []
+            and [f[0] for f in filas_antes] == ["x.mp4"]
             and guardado_final == 1
             and [f[0] for f in filas_despues] == ["x.mp4"]
         )

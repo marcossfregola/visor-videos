@@ -58,8 +58,10 @@ def _crear_bd(filas):
     return temp, ruta_db
 
 
-def _datos(nombre, ruta="C:\\v\\a.mp4", extension=".mp4", fecha="2026-08-02T00:00:00",
+def _datos(nombre, ruta=None, extension=".mp4", fecha="2026-08-02T00:00:00",
            duracion=None, ancho=None, alto=None, codec=None, miniaturas=None):
+    if ruta is None:
+        ruta = f"C:\\v\\{nombre}"
     return {
         "nombre": nombre,
         "ruta": ruta,
@@ -173,7 +175,7 @@ def test_01():
         resultado = guardar_videos([], ruta_db)
         filas = _dump(ruta_db)
         ok = (
-            resultado == {"guardados": 0, "nombres": []}
+            (resultado.get("guardados") == 0 and resultado.get("nombres") == [] and isinstance(resultado.get("ids"), list))
             and filas == []
         )
         return ok, f"resultado={resultado} filas={filas}"
@@ -191,7 +193,7 @@ def test_02():
         filas = _dump(ruta_db)
         esperado = [(1, "a.mp4", "C:\\v\\a.mp4", ".mp4", "2026-08-02T00:00:00", 3.5, 640, 360, "h264", 2, None)]
         ok = (
-            resultado == {"guardados": 1, "nombres": ["a.mp4"]}
+            (resultado.get("guardados") == 1 and resultado.get("nombres") == ["a.mp4"] and isinstance(resultado.get("ids"), list))
             and filas == esperado
         )
         return ok, f"resultado={resultado} filas={filas}"
@@ -206,7 +208,7 @@ def test_03():
         resultado = guardar_videos(coleccion, ruta_db)
         nombres = [f[1] for f in _dump(ruta_db)]
         ok = (
-            resultado == {"guardados": 3, "nombres": ["a.mp4", "b.mp4", "c.mp4"]}
+            (resultado.get("guardados") == 3 and resultado.get("nombres") == ["a.mp4", "b.mp4", "c.mp4"] and isinstance(resultado.get("ids"), list))
             and nombres == ["a.mp4", "b.mp4", "c.mp4"]
         )
         return ok, f"resultado={resultado} nombres={nombres}"
@@ -232,7 +234,7 @@ def test_04():
             (2, "b.mp4", "C:\\nueva\\b.mp4", ".mp4", "2026-08-02T00:00:00", 8.0, 80, 40, "y", 6, None),
         ]
         ok = (
-            resultado == {"guardados": 2, "nombres": ["a.mp4", "b.mp4"]}
+            (resultado.get("guardados") == 2 and resultado.get("nombres") == ["a.mp4", "b.mp4"] and isinstance(resultado.get("ids"), list))
             and filas_db == esperado
         )
         return ok, f"resultado={resultado} filas={filas_db}"
@@ -263,7 +265,7 @@ def test_05():
             ("b.mp4", "C:\\nueva\\b.mp4", ".mp4", "2026-08-02T00:00:00", 6.5, None, None, None, None),
         ]
         ok = (
-            resultado == {"guardados": 2, "nombres": ["a.mp4", "b.mp4"]}
+            (resultado.get("guardados") == 2 and resultado.get("nombres") == ["a.mp4", "b.mp4"] and isinstance(resultado.get("ids"), list))
             and len(filas_db) == 2
             and filas_db == esperado
         )
@@ -281,7 +283,7 @@ def test_06():
         filas = _dump(ruta_db)
         esperado = [(1, "full.mp4", "C:\\full\\video.mp4", ".mp4", "2026-08-02T12:00:00", 12.5, 1280, 720, "hevc", 5, None)]
         ok = (
-            resultado == {"guardados": 1, "nombres": ["full.mp4"]}
+            (resultado.get("guardados") == 1 and resultado.get("nombres") == ["full.mp4"] and isinstance(resultado.get("ids"), list))
             and filas == esperado
         )
         return ok, f"resultado={resultado} filas={filas}"
@@ -310,7 +312,7 @@ def test_07():
             ("nulo2.mp4", None, None, None, None, None),
         ]
         ok = (
-            resultado == {"guardados": 2, "nombres": ["nulo1.mp4", "nulo2.mp4"]}
+            (resultado.get("guardados") == 2 and resultado.get("nombres") == ["nulo1.mp4", "nulo2.mp4"] and isinstance(resultado.get("ids"), list))
             and extras == esperado
         )
         return ok, f"resultado={resultado} extras={extras}"
@@ -325,7 +327,7 @@ def test_08():
         resultado = guardar_videos(coleccion, ruta_db)
         nombres_bd = [f[1] for f in _dump(ruta_db)]
         ok = (
-            resultado == {"guardados": 3, "nombres": ["c.mp4", "a.mp4", "b.mp4"]}
+            (resultado.get("guardados") == 3 and resultado.get("nombres") == ["c.mp4", "a.mp4", "b.mp4"] and isinstance(resultado.get("ids"), list))
             and nombres_bd == ["a.mp4", "b.mp4", "c.mp4"]
         )
         return ok, f"resultado={resultado} nombres_bd={nombres_bd}"
@@ -344,7 +346,7 @@ def test_09():
         finally:
             sqlite3.connect = original_connect
         ok = (
-            resultado == {"guardados": 3, "nombres": ["a.mp4", "b.mp4", "c.mp4"]}
+            (resultado.get("guardados") == 3 and resultado.get("nombres") == ["a.mp4", "b.mp4", "c.mp4"] and isinstance(resultado.get("ids"), list))
             and len(registro["connect"]) == 1
             and len(registro["commit"]) == 1
             and len(registro["rollback"]) == 0
@@ -373,7 +375,7 @@ def test_10():
         ok = (
             ok
             and not fl["timeout"]
-            and cap.resultado == {"guardados": 2, "nombres": ["a.mp4", "b.mp4"]}
+            and (cap.resultado.get("guardados") == 2 and cap.resultado.get("nombres") == ["a.mp4", "b.mp4"] and isinstance(cap.resultado.get("ids"), list))
             and len(registro["connect"]) == 1
             and len(registro["commit"]) == 1
             and len(registro["rollback"]) == 0
@@ -416,7 +418,7 @@ def test_11():
             and sin_conexion
             and not hasattr(tarea, "_conexion")
             and not hasattr(tarea, "conn")
-            and cap.resultado == {"guardados": 2, "nombres": ["a.mp4", "b.mp4"]}
+            and (cap.resultado.get("guardados") == 2 and cap.resultado.get("nombres") == ["a.mp4", "b.mp4"] and isinstance(cap.resultado.get("ids"), list))
         )
         return (
             ok,
@@ -439,7 +441,7 @@ def test_12():
             and cap.eventos == ["inicio", "resultado", "finalizada"]
             and set(cap.ids) == {"inicio", "resultado", "finalizada"}
             and all(py == id_main and qt for py, qt in cap.ids.values())
-            and cap.resultado == {"guardados": 1, "nombres": ["a.mp4"]}
+            and (cap.resultado.get("guardados") == 1 and cap.resultado.get("nombres") == ["a.mp4"] and isinstance(cap.resultado.get("ids"), list))
         )
         return ok, f"ids={cap.ids} resultado={cap.resultado}"
     finally:
@@ -460,7 +462,7 @@ def test_13():
         ok = (
             ok
             and not fl["timeout"]
-            and cap.resultado == {"guardados": 2, "nombres": ["a.mp4", "b.mp4"]}
+            and (cap.resultado.get("guardados") == 2 and cap.resultado.get("nombres") == ["a.mp4", "b.mp4"] and isinstance(cap.resultado.get("ids"), list))
             and nombres == ["a.mp4", "b.mp4"]
         )
         return ok, f"resultado={cap.resultado} nombres={nombres}"
@@ -495,7 +497,7 @@ def test_14():
         ok = (
             ok
             and not fl["timeout"]
-            and cap.resultado == {"guardados": 2, "nombres": ["a.mp4", "b.mp4"]}
+            and (cap.resultado.get("guardados") == 2 and cap.resultado.get("nombres") == ["a.mp4", "b.mp4"] and isinstance(cap.resultado.get("ids"), list))
             and filas == esperado
         )
         return ok, f"resultado={cap.resultado} filas={filas}"
@@ -830,7 +832,7 @@ def test_25():
             and not fl["timeout"]
             and cap.eventos == ["inicio", "resultado", "finalizada"]
             and fin == 1
-            and cap.resultado == {"guardados": 2, "nombres": ["a.mp4", "b.mp4"]}
+            and (cap.resultado.get("guardados") == 2 and cap.resultado.get("nombres") == ["a.mp4", "b.mp4"] and isinstance(cap.resultado.get("ids"), list))
         )
         return ok, f"eventos={cap.eventos} finalizada={fin} resultado={cap.resultado}"
     finally:
@@ -907,7 +909,7 @@ def test_27():
         ok = (
             ok
             and not fl["timeout"]
-            and cap.resultado == {"guardados": 1, "nombres": ["a.mp4"]}
+            and (cap.resultado.get("guardados") == 1 and cap.resultado.get("nombres") == ["a.mp4"] and isinstance(cap.resultado.get("ids"), list))
             and llamadas == {"escaneo": 0, "ffprobe": 0, "ffmpeg": 0, "subprocess": 0}
         )
         return ok, f"llamadas={llamadas}"
@@ -940,7 +942,7 @@ def test_28():
     ok = (
         ok
         and not fl["timeout"]
-        and cap.resultado == {"guardados": 1, "nombres": ["x.mp4"]}
+        and (cap.resultado.get("guardados") == 1 and cap.resultado.get("nombres") == ["x.mp4"] and isinstance(cap.resultado.get("ids"), list))
         and antes == despues
     )
     return ok, f"datos_reales_sin_cambios={antes == despues}"
@@ -956,7 +958,7 @@ def test_29():
         filas = _dump(ruta_db)
         esperado = [(1, "a.mp4", "C:\\v\\a.mp4", ".mp4", "2026-08-02T00:00:00", 3.5, 640, 360, "h264", 2, None)]
         ok = (
-            resultado == {"guardado": True, "nombre": "a.mp4"}
+            (resultado.get("guardado") is True and resultado.get("nombre") == "a.mp4" and isinstance(resultado.get("video_id"), int))
             and filas == esperado
         )
         return ok, f"resultado={resultado} filas={filas}"
@@ -981,7 +983,7 @@ def test_30():
             ok
             and not fl["timeout"]
             and cap.eventos == ["inicio", "resultado", "finalizada"]
-            and cap.resultado == {"guardado": True, "nombre": "a.mp4"}
+            and (cap.resultado.get("guardado") is True and cap.resultado.get("nombre") == "a.mp4" and isinstance(cap.resultado.get("video_id"), int))
             and filas == esperado
         )
         return ok, f"resultado={cap.resultado} filas={filas}"
