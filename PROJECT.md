@@ -23,17 +23,16 @@ El proposito central es permitir identificar rapidamente el contenido de un vide
 - Conservar una interfaz fluida con trabajo pesado fuera del hilo principal.
 - Preservar los datos del usuario como prioridad absoluta.
 
-## Alcance vigente (Beta 7 — B7.13 cerrada y publicada)
+## Alcance vigente (Beta 8 — cerrada funcionalmente `97cb2f7`)
 
-Producto evolucionado hasta:
+Producto evolucionado hasta Beta 8 (Beta 7 + B8.1–B8.4):
 
-- Exploración temporal interactiva (B4.1–B4.3): superficie temporal 0-100%, marcadores temporales y caché densa de exploración.
-- Persistencia de marcadores y segmentos por video (B4.2, B5).
-- Clasificación visual por color de marcadores/segmentos (B6.3) y resumen colapsado (B6.4).
-- Filtros estructurados y ordenamiento configurable del catálogo (B6.5, B6.2).
-- Exportación de material: extracción de un segmento (B6.7), lote de segmentos (B6.9), unión de segmentos (B6.10) con motor de nombres reutilizable (B6.8).
-- Trazabilidad de videos derivados e integración robusta (B6.11–B6.12) con validación de reescaneo preservando metadatos.
-- Organización de archivos (Beta 7 B7.1–B7.13): renombrado individual y masivo (motor `nombres.py`), mover/copiar/eliminar por lote, crear carpetas, modo Organización/Explorer con doble panel, navegación destino, objetivo drop estable y drag & drop interno con prevalidación atómica y actualización vía recarga paginada B7.8.
+- Exploración temporal interactiva (B4.1–B4.3), persistencia marcadores/segmentos (B4.2, B5), clasificación por color (B6.3) y resumen colapsado (B6.4).
+- Filtros estructurados y ordenamiento configurable (B6.5, B6.2).
+- Exportación de material: extracción de un segmento (B6.7), lote (B6.9), unión (B6.10) con motor `nombres.py` (B6.8).
+- Trazabilidad de videos derivados e integración robusta (B6.11–B6.12).
+- Organización de archivos (Beta 7 B7.1–B7.13): renombrado individual/masivo, mover/copiar/eliminar por lote, crear carpetas, modo Organización/Explorer con doble panel y drag & drop.
+- **Beta 8 — Identidad e integridad del catálogo (B8.1–B8.4 cerradas):** `video_id` autoridad lógica, `ruta_normalizada` (`abspath+normpath+normcase`) autoridad física `UNIQUE(ruta_normalizada)`, `nombre` no único (homónimos `AAAA.mp4` en `A/B` con `video_id` distinto), cache normal `v<id>`, `preparar_registros_basicos` con `basename`, navegación `MADRE/A/B` y descarte lecturas obsoletas por generación.
 
 ## Alcance base (heredado)
 

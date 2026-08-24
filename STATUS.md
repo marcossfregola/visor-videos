@@ -2,19 +2,20 @@
 
 ## Fase actual
 
-**Beta 8 — EN CURSO (beta8 local, no publicada).**
+**Beta 8 — CERRADA FUNCIONALMENTE (beta8 local, validación humana aprobada).**
 
 - B8.1 cerrada localmente: `d43c1b8e9c38d132c346933967e8e8bac7fdae9f` (2026-08-23).
 - B8.2 cerrada localmente: `33da65066867026d9a72bb333216bfd9fdc4b626` (2026-08-24).
-- Rama `beta8` HEAD `33da65066867026d9a72bb333216bfd9fdc4b626`; parent B8.1 `d43c1b8e9c38d132c346933967e8e8bac7fdae9f`.
+- B8.3 cerrada localmente: `e4104ae53cf205811e57e582350733552aaa8740` (2026-08-24).
+- B8.4 cerrada localmente: `97cb2f7f30853ed3a80ac310b7112cac80440158` (2026-08-24).
+- Rama `beta8` HEAD `97cb2f7f30853ed3a80ac310b7112cac80440158`; parent B8.3 `e4104ae53cf205811e57e582350733552aaa8740`.
 - `beta8` **NO publicada**: sin `origin/beta8`, sin tag `v8.0-beta` ni Release B8.
-- Próximo paso exacto: **B8.3 — Cutover de identidad** (elimina `UNIQUE(nombre)`, habilita homónimos).
-- Posterior: **B8.4 — Regresión y cierre**.
-- `T09` (identidad `UNIQUE(nombre)`) **sigue incompleto hasta B8.3**; B8.1/B8.2 solo prepararon identidad y cache (no habilitan homónimos).
+- Próximo paso exacto: **Beta 9 — Exploración visual avanzada** (según ROADMAP).
+- `T09` (identidad `UNIQUE(nombre)`) **cerrado en B8.3** (cutover `ruta_normalizada` `UNIQUE`).
 - Baseline publicado estable sigue `v7.0-beta` / `f9976d3b3b68a197bf8e9d29a4ecc670f48a9709` y `main` documental `d04a7124dcb7741d16c015d88909d12851c58289`.
-- Validación instalador Beta 7: contrato 8/8 y build/artefacto Beta 7 aprobados; ciclo instalación/desinstalación no ejecutado por seguridad, no bloquea.
+- Validación humana final B8.4 aprobada: `MADRE→A→MADRE→B→MADRE` sin escanear, navegación, homónimos, operaciones y FFmpeg real verificados; **sin tag/push**.
 
-Para el historial completo ver `HISTORIAL_PROYECTO.md` (123/122/121).
+Para el historial completo ver `HISTORIAL_PROYECTO.md` (124/123/122/121).
 
 ## Último baseline aprobado
 
@@ -23,22 +24,21 @@ Para el historial completo ver `HISTORIAL_PROYECTO.md` (123/122/121).
 - `main` reconciliada documental `d04a712` como base de esta rama `beta8` local.
 - `main` matriz documental definitiva `PROJECT/STATUS/ARCHITECTURE/ENVIRONMENT/RULES/ROADMAP/BACKLOG/HISTORIAL/EMPACADO/METODOLOGIA` (V1.3).
 
-## Estado funcional (Beta 7 + avances B8.1/B8.2 locales)
+## Estado funcional (Beta 8 cerrada)
 
 - Aplicación abre sin crash; catálogo SQLite con metadatos FFprobe, miniaturas/previews FFmpeg, exploración temporal densa, marcadores/segmentos persistentes y clasificación por color (Beta 7).
 - Centro de Navegación, operaciones de organización, exportación y trazabilidad de derivados (Beta 7) operativos.
-- **B8.1 (local)**: tabla `videos` con `ruta_normalizada` (`rutas.normalizar_ruta_clave` = `abspath+normpath+normcase+strip`) + `UNIQUE(ruta_normalizada)`; mantiene `UNIQUE(nombre)` transicional; `guardar_video`/`guardar_videos` dual-write `ruta`+`ruta_normalizada` y retorno por `ruta_normalizada`/`video_id`; pipeline guarda antes de miniaturas; `cantidad_miniaturas` se actualiza puntualmente por `video_id`.
-- **B8.2 (local)**: cache normal por `video_id` (`v<video_id>_<NN>.jpg` y `v<video_id>_preview_<NN>.jpg` vía `ruta_miniatura_id`/`ruta_preview_id`); migración legacy no destructiva por copia (`migrar_cache_legacy_a_id`) sin borrar legacy, sin fallback ambiguo por nombre; renombrar/mover dejan de depender del nombre para cache normal; `TareaMiniaturasPorId`/`TareaPreviewsPorId`/`TareaMigrarCacheLegacy` y `asegurar_miniaturas_por_id`/`generar_previews_faltantes_por_id` operativos; UI resuelve cache por id fuera de UI.
-- `UNIQUE(nombre)` todavía vigente; homónimos aún no habilitados (requiere B8.3).
-- Cache densa `miniaturas/exploracion` (B4.x) permanece separada por `video_id`/fingerprint, no afectada por B8.2.
-- Suites B8.1/B8.2 aprobadas y validación manual real previa al commit (evidencia local); B8 sin push/tag/release.
+- **B8.1**: tabla `videos` con `ruta_normalizada` (`rutas.normalizar_ruta_clave` = `abspath+normpath+normcase+strip`) + `UNIQUE(ruta_normalizada)`; `guardar_videos` dual-write y retorno por `ruta_normalizada`/`video_id`; pipeline guarda antes de miniaturas.
+- **B8.2**: cache normal por `video_id` (`v<video_id>_<NN>.jpg` vía `ruta_miniatura_id`/`ruta_preview_id`), migración legacy no destructiva por copia, `TareaMiniaturasPorId`/`TareaPreviewsPorId` operativos.
+- **B8.3**: `UNIQUE(nombre)` eliminado, `UNIQUE(ruta_normalizada)` vigente, homónimos `AAAA.mp4` en `A`/`B` coexisten con `video_id` distinto y `ruta_normalizada` distinta, `nombre` no único, `video_id` autoridad lógica, `ruta_normalizada` autoridad física, `AUTOINCREMENT` preservado, `guardar/upsert` por `ruta_normalizada`, sincronización y reutilización FFprobe por `ruta_normalizada`, cache canónica `v<id>` independiente.
+- **B8.4**: migración DB existente cerrada, navegación `MADRE/A/B` sin `shrink` ancestro, descarte lecturas obsoletas por `generación`, `preparar_registros_basicos` con `basename` para `nombre`, `escanear_videos` recursivo corrige `A\AAAA.mp4` → `AAAA.mp4`, regresión 149 pruebas y validación humana `MADRE→A→MADRE→B→MADRE` aprobadas; `beta8` HEAD `97cb2f7` sin publicación.
+- Suites B8.1–B8.4 y B8.4A/B/C/D verificadas; `beta8` sin push/tag/release.
 
 ## Trabajo pendiente real
 
-- **B8.3 — Cutover de identidad** — próximo paso inmediato (eliminar `UNIQUE(nombre)`, `UNIQUE` por `ruta_normalizada`, homónimos, upsert por ruta, sincronización y reutilización por ruta normalizada).
-- **B8.4 — Regresión y cierre** (migración DB, homónimos, cache, FFprobe, sincronización, lote/drag&drop, marcadores/segmentos/derivados).
-- `T09` núcleo técnico de Beta 8 incompleto hasta B8.3.
-- Beta 8 definida y priorizada (B8.1–B8.4), B8.1/B8.2 cerradas localmente, sin publicación.
+- **Beta 9 — Exploración visual avanzada** — próximo paso (P01–P09, P18, P23, T04).
+- **Beta 10/11** según `ROADMAP.md`.
+- Beta 8 cerrada, sin pendientes de identidad/cache.
 
 ## Deuda técnica conocida
 
@@ -46,7 +46,7 @@ Para el historial completo ver `HISTORIAL_PROYECTO.md` (123/122/121).
 - Estado de "escaneada" por sesión vive en memoria y se pierde al reiniciar.
 - Crecimiento acumulativo de miniaturas (nuevas ranuras sin limpieza; requiere autorización).
 - Criterio de reutilización por `mtime` sin hash de integridad.
-- Coincidencia de miniaturas por prefijo (`startswith`) en cache legacy (mitigada por B8.2 al pasar a `video_id` para cache normal).
+- Coincidencia de miniaturas por prefijo (`startswith`) en cache legacy (mitigada por B8.2).
 
 ## Problemas conocidos
 
@@ -56,11 +56,11 @@ Para el historial completo ver `HISTORIAL_PROYECTO.md` (123/122/121).
 
 ## Entorno pendiente relacionado
 
-- No requiere instalar dependencias para consolidación/auditorías/definición Beta 8.
-- Instalador Beta 7: build/artefacto aprobado; validación real no ejecutada por seguridad y no bloquea (ver Fase actual).
+- No requiere instalar dependencias para consolidación/auditorías.
+- Instalador Beta 7: build/artefacto aprobado; validación real no ejecutada por seguridad y no bloquea.
 
 ## Próximos focos
 
-1. **B8.3 — Cutover de identidad** — próximo paso exacto.
-2. **B8.4 — Regresión y cierre**.
-3. Posterior: Beta 9–11 según `ROADMAP.md`.
+1. **Beta 9 — Exploración visual avanzada**.
+2. **Beta 10 — Vistas, navegación y organización personal**.
+3. **Beta 11 — Relaciones y segmentos multivideo**.

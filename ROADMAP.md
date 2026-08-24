@@ -87,14 +87,16 @@ Lo no listado arriba permanece en `BACKLOG.md` como **quizá**: selección intel
 
 ## Beta 8 — progreso
 
-- **B8.1 — Preparación de identidad — COMPLETADA localmente** `d43c1b8e9c38d132c346933967e8e8bac7fdae9f` (2026-08-23): `ruta_normalizada` + helper central + `UNIQUE(ruta_normalizada)` + dual-write + `video_id` + pipeline antes de cache, mantiene `UNIQUE(nombre)` transicional.
-- **B8.2 — Cache por video_id — COMPLETADA localmente** `33da65066867026d9a72bb333216bfd9fdc4b626` (2026-08-24): cache normal por `video_id` (`v<id>`), migración legacy no destructiva por copia, `TareaMiniaturasPorId`/`TareaPreviewsPorId`/`TareaMigrarCacheLegacy`.
-- **B8.3 — Cutover de identidad — PENDIENTE** — próximo paso exacto (elimina `UNIQUE(nombre)`, habilita homónimos). `T09` incompleto hasta B8.3.
-- **B8.4 — Regresión y cierre — posterior**.
+- **B8.1 — Preparación de identidad — COMPLETADA** `d43c1b8e9c38d132c346933967e8e8bac7fdae9f` (2026-08-23): `ruta_normalizada` + `UNIQUE(ruta_normalizada)` + dual-write.
+- **B8.2 — Cache por video_id — COMPLETADA** `33da65066867026d9a72bb333216bfd9fdc4b626` (2026-08-24): cache normal `v<id>`, migración legacy por copia.
+- **B8.3 — Cutover de identidad — COMPLETADA** `e4104ae53cf205811e57e582350733552aaa8740` (2026-08-24): elimina `UNIQUE(nombre)`, `UNIQUE(ruta_normalizada)` vigente, homónimos `AAAA.mp4` en `A/B` con `video_id` distinto, `ruta_normalizada` única, `nombre` no único.
+- **B8.4 — Regresión y cierre — COMPLETADA** `97cb2f7f30853ed3a80ac310b7112cac80440158` (2026-08-24): migración DB, navegación `MADRE/A/B` sin `shrink` ancestro, descarte lecturas obsoletas por generación, `preparar_registros_basicos` `basename`, validación humana `MADRE→A→MADRE→B→MADRE` aprobada.
+
+**Beta 8 — CERRADA FUNCIONALMENTE** `beta8` `97cb2f7` sin `origin/beta8` ni tag `v8.0-beta` (validación humana aprobada, pendiente `push/tag` si se decide publicar).
 
 ## Próximo paso exacto
 
-**B8.3 — Cutover de identidad** (eliminar `UNIQUE(nombre)`, `UNIQUE` por `ruta_normalizada`, homónimos; B8.4 posterior). `T09` sigue incompleto hasta B8.3; B8.1/B8.2 solo prepararon identidad/cache. `beta8` no publicada, sin `origin/beta8`, sin tag/release.
+**Beta 9 — Exploración visual avanzada** (P01–P09, P18, P23, T04). `beta8` cerrada, sin pendientes de identidad/cache.
 
 ## Criterio
 

@@ -4,7 +4,7 @@ Arquitectura vigente del proyecto (condensada del documento tecnico heredado y d
 
 ## 1. Estructura general
 
-Workspace: `C:\prueba` (repo Git, rama `beta8` local, HEAD `33da65066867026d9a72bb333216bfd9fdc4b626`; parent B8.1 `d43c1b8e9c38d132c346933967e8e8bac7fdae9f`; `main@d04a712` base documental; `beta8` no publicada, sin `origin/beta8`, sin tag/release).
+Workspace: `C:\prueba` (repo Git, rama `beta8` local, HEAD `97cb2f7f30853ed3a80ac310b7112cac80440158`; parent B8.3 `e4104ae53cf205811e57e582350733552aaa8740`; `main@d04a712` base documental; `beta8` no publicada, sin `origin/beta8`, sin tag/release).
 
 ```text
 visor_videos.py          Interfaz grafica PySide6 (ventana, tarjetas, previews, navegacion, organización)
@@ -63,7 +63,7 @@ Mantenidos como ajenos al visor: `main.py` (script de prueba de operaciones), `o
 
 ## 4. Catalogos y sincronizacion (SQLite)
 
-- Tabla `videos` con columnas base y extras (`duracion_segundos`, `ancho`, `alto`, `codec_video`, `cantidad_miniaturas`, `tamano_bytes`, `ruta`, `mtime_ns`) + `ruta_normalizada` (B8.1, `TEXT`, poblada vía `normalizar_ruta_clave`, `UNIQUE(ruta_normalizada)` via `idx_videos_ruta_normalizada`). **Todavía conserva `UNIQUE(nombre)` transicional hasta B8.3** (`nombre TEXT UNIQUE`); ambas unicidades coexisten en B8.2.
+- Tabla `videos` con columnas base y extras (`duracion_segundos`, `ancho`, `alto`, `codec_video`, `cantidad_miniaturas`, `tamano_bytes`, `ruta`, `mtime_ns`) + `ruta_normalizada` (`TEXT NOT NULL`, `UNIQUE(ruta_normalizada)` `idx_videos_ruta_normalizada`). Desde B8.3 `nombre TEXT NOT NULL` **sin** `UNIQUE` (`B8.3 cutover`), homónimos `AAAA.mp4` en `A/B` coexisten con `video_id` distinto y `ruta_normalizada` distinta (`video_id` lógica, `ruta_normalizada` física, `nombre` no único). `AUTOINCREMENT` preservado.
 - Helper oficial `rutas.normalizar_ruta_clave(ruta)` — única función para clave técnica `ruta_normalizada` (`strip` → `abspath` → `normpath` → `normcase`); `videos.ruta` conserva ruta original.
 - `guardar_video`/`guardar_videos` dual-write: escriben conjuntamente `ruta` + `ruta_normalizada` (`INSERT ... ON CONFLICT(nombre) DO UPDATE` y actualización de `ruta_normalizada`); `video_id` se resuelve por `ruta_normalizada` (`SELECT id WHERE ruta_normalizada = ?`) — libros de migración B8.1.
 - Migracion idempotente por `PRAGMA table_info` + `ALTER TABLE` + creación de índice único sin destruir datos ni eliminar `UNIQUE(nombre)`.

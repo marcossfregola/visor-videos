@@ -5,6 +5,26 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 125. B8.4 — Regresión y cierre — navegación homónimos y validación humana
+
+- **Fecha:** 2026-08-24
+- **Tipo:** cierre técnico **B8.4 completada y validada manualmente** (sin push/tag/release; rama `beta8` local `97cb2f7f30853ed3a80ac310b7112cac80440158`; parent `e4104ae`).
+- **Alcance factual:** `preparar_registros_basicos` con `basename` (`AAAA.mp4` no `A\AAAA.mp4`) para que `MADRE` recursivo deje `video_id`/`ruta_normalizada` correctos y `A`/`B` se lean sin reescanear; `TareaLectura` con `ruta`/`ruta_normalizada` y `generación` para descartar lecturas obsoletas `MADRE→A→MADRE`; `sincronización` con `shrink` ancestro (`_ruta_contiene` skip) para no borrar `A` al escanear `MADRE`; validación humana `MADRE 2 → A 1 → MADRE 2 → B 1 → MADRE 2` aprobada; `prueba_b84_lectura_subcarpeta_catalogada.py` 12 pasos.
+- **Suites:** `b83_ui 66/66`, `b83_navegacion OK`, `b83_transicion OK`, `recarga 20/20`, `lectura_paginada 32/32`, `sincronizacion_multicarpeta 22/22`, `b83_sincronizacion 63/63`, `marcadores_b42 17/17`, `segmentos_tareas 20/20` tras adaptar `P02`/`P08`/`P11`/`P20` a contrato vigente.
+- **Sin push/tag/release.**
+
+---
+
+## 124. B8.3 — Cutover de identidad
+
+- **Fecha:** 2026-08-24
+- **Tipo:** cierre técnico **B8.3 completada y validada manualmente** (sin push/tag/release; rama `beta8` local `e4104ae53cf205811e57e582350733552aaa8740`; parent `b47ef3e`).
+- **Alcance factual:** elimina `UNIQUE(nombre)` (`nombre TEXT NOT NULL` sin `UNIQUE`), `ruta_normalizada TEXT NOT NULL UNIQUE(idx_videos_ruta_normalizada)`, `nombre` no único, homónimos `AAAA.mp4` en `A/B` con `video_id` distinto y `ruta_normalizada` distinta, `video_id` autoridad UI (`_es_video_id_valido`, `_tarjeta_por_id` estricto, sin fallback por nombre), `AUTOINCREMENT` preservado, `guardar/upsert` por `ruta_normalizada`, cache `v<id>`, `sincronización` por `ruta_normalizada`, `reutilización FFprobe` por `ruta_normalizada`, operaciones `copiar/mover/renombrar/lote` por `video_id`.
+- **Evidencia:** `b83_cutover 26/26`, `b83_operaciones_homonimos TODOS`, `b83_renombrar_masivo 48/48`, `b83_sincronizacion 63/63`, `b83_ui 66/66` con `O` AST anti-fallback y `P` arquitectura sin `sqlite3`.
+- **Sin push/tag/release.**
+
+---
+
 ## 123. B8.2 — Cache por video_id
 
 - **Fecha:** 2026-08-24
