@@ -8,12 +8,12 @@
 - B8.2 cerrada localmente: `33da65066867026d9a72bb333216bfd9fdc4b626` (2026-08-24).
 - B8.3 cerrada localmente: `e4104ae53cf205811e57e582350733552aaa8740` (2026-08-24).
 - B8.4 cerrada localmente: `97cb2f7f30853ed3a80ac310b7112cac80440158` (2026-08-24).
-- Rama `beta8` HEAD `97cb2f7f30853ed3a80ac310b7112cac80440158`; parent B8.3 `e4104ae53cf205811e57e582350733552aaa8740`.
-- `beta8` **NO publicada**: sin `origin/beta8`, sin tag `v8.0-beta` ni Release B8.
+- Rama de versión: `beta8`. Tag de versión: `v8.0-beta`. HEAD técnico B8.4: `97cb2f7f30853ed3a80ac310b7112cac80440158` (commit documental `38fbc88`); parent B8.3 `e4104ae53cf205811e57e582350733552aaa8740`.
+- Publicación GitHub mediante rama `beta8` + tag `v8.0-beta` (sin GitHub Release ni instalador público).
 - Próximo paso exacto: **Beta 9 — Exploración visual avanzada** (según ROADMAP).
 - `T09` (identidad `UNIQUE(nombre)`) **cerrado en B8.3** (cutover `ruta_normalizada` `UNIQUE`).
 - Baseline publicado estable sigue `v7.0-beta` / `f9976d3b3b68a197bf8e9d29a4ecc670f48a9709` y `main` documental `d04a7124dcb7741d16c015d88909d12851c58289`.
-- Validación humana final B8.4 aprobada: `MADRE→A→MADRE→B→MADRE` sin escanear, navegación, homónimos, operaciones y FFmpeg real verificados; **sin tag/push**.
+- Validación humana final B8.4 aprobada: `MADRE→A→MADRE→B→MADRE` sin escanear, navegación, homónimos, operaciones y FFmpeg real verificados.
 
 Para el historial completo ver `HISTORIAL_PROYECTO.md` (124/123/122/121).
 
@@ -31,8 +31,8 @@ Para el historial completo ver `HISTORIAL_PROYECTO.md` (124/123/122/121).
 - **B8.1**: tabla `videos` con `ruta_normalizada` (`rutas.normalizar_ruta_clave` = `abspath+normpath+normcase+strip`) + `UNIQUE(ruta_normalizada)`; `guardar_videos` dual-write y retorno por `ruta_normalizada`/`video_id`; pipeline guarda antes de miniaturas.
 - **B8.2**: cache normal por `video_id` (`v<video_id>_<NN>.jpg` vía `ruta_miniatura_id`/`ruta_preview_id`), migración legacy no destructiva por copia, `TareaMiniaturasPorId`/`TareaPreviewsPorId` operativos.
 - **B8.3**: `UNIQUE(nombre)` eliminado, `UNIQUE(ruta_normalizada)` vigente, homónimos `AAAA.mp4` en `A`/`B` coexisten con `video_id` distinto y `ruta_normalizada` distinta, `nombre` no único, `video_id` autoridad lógica, `ruta_normalizada` autoridad física, `AUTOINCREMENT` preservado, `guardar/upsert` por `ruta_normalizada`, sincronización y reutilización FFprobe por `ruta_normalizada`, cache canónica `v<id>` independiente.
-- **B8.4**: migración DB existente cerrada, navegación `MADRE/A/B` sin `shrink` ancestro, descarte lecturas obsoletas por `generación`, `preparar_registros_basicos` con `basename` para `nombre`, `escanear_videos` recursivo corrige `A\AAAA.mp4` → `AAAA.mp4`, regresión 149 pruebas y validación humana `MADRE→A→MADRE→B→MADRE` aprobadas; `beta8` HEAD `97cb2f7` sin publicación.
-- Suites B8.1–B8.4 y B8.4A/B/C/D verificadas; `beta8` sin push/tag/release.
+- **B8.4**: migración DB existente cerrada, navegación `MADRE/A/B` sin `shrink` ancestro, descarte lecturas obsoletas por `generación`, `preparar_registros_basicos` con `basename` para `nombre`, `escanear_videos` recursivo corrige `A\AAAA.mp4` → `AAAA.mp4`, regresión 149 pruebas y validación humana `MADRE→A→MADRE→B→MADRE` aprobadas; HEAD técnico `97cb2f7`, cierre documental `38fbc88`.
+- Suites B8.1–B8.4 y B8.4A/B/C/D verificadas.
 
 ## Trabajo pendiente real
 

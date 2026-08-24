@@ -92,7 +92,7 @@ Lo no listado arriba permanece en `BACKLOG.md` como **quizá**: selección intel
 - **B8.3 — Cutover de identidad — COMPLETADA** `e4104ae53cf205811e57e582350733552aaa8740` (2026-08-24): elimina `UNIQUE(nombre)`, `UNIQUE(ruta_normalizada)` vigente, homónimos `AAAA.mp4` en `A/B` con `video_id` distinto, `ruta_normalizada` única, `nombre` no único.
 - **B8.4 — Regresión y cierre — COMPLETADA** `97cb2f7f30853ed3a80ac310b7112cac80440158` (2026-08-24): migración DB, navegación `MADRE/A/B` sin `shrink` ancestro, descarte lecturas obsoletas por generación, `preparar_registros_basicos` `basename`, validación humana `MADRE→A→MADRE→B→MADRE` aprobada.
 
-**Beta 8 — CERRADA FUNCIONALMENTE** `beta8` `97cb2f7` sin `origin/beta8` ni tag `v8.0-beta` (validación humana aprobada, pendiente `push/tag` si se decide publicar).
+**Beta 8 — CERRADA FUNCIONALMENTE** `beta8` HEAD técnico `97cb2f7` / cierre documental `38fbc88`. Rama de versión `beta8`, tag `v8.0-beta`, publicación GitHub mediante `beta8` + `v8.0-beta` (validación humana aprobada).
 
 ## Próximo paso exacto
 

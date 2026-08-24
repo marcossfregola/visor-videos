@@ -4,7 +4,7 @@ Arquitectura vigente del proyecto (condensada del documento tecnico heredado y d
 
 ## 1. Estructura general
 
-Workspace: `C:\prueba` (repo Git, rama `beta8` local, HEAD `97cb2f7f30853ed3a80ac310b7112cac80440158`; parent B8.3 `e4104ae53cf205811e57e582350733552aaa8740`; `main@d04a712` base documental; `beta8` no publicada, sin `origin/beta8`, sin tag/release).
+Workspace: `C:\prueba` (repo Git, rama `beta8` local, HEAD técnico `97cb2f7f30853ed3a80ac310b7112cac80440158` / cierre documental `38fbc88e30c892b75b3bf66d752c49ba4c057c33`; parent B8.3 `e4104ae53cf205811e57e582350733552aaa8740`; `main@d04a712` base documental; rama de versión `beta8`, tag `v8.0-beta`).
 
 ```text
 visor_videos.py          Interfaz grafica PySide6 (ventana, tarjetas, previews, navegacion, organización)
