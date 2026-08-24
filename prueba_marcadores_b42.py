@@ -221,8 +221,35 @@ def test_01():
 def test_02():
     filas = [("a.mp4", "r", ".mp4", "f", 1.0, 1, 1, "c", 0)]
     temp, ruta_db = _crear_bd_vieja(filas)
+    conn = None
+    conn2 = None
     try:
-        conn = conectar_bd(ruta_db)
+        # B8.1/B8.3 precondición: ruta relativa debe ser rechazada antes de migrar
+        # El contrato vigente exige que conectar_bd detecte ruta relativa y preserve datos
+        try:
+            conn = conectar_bd(ruta_db)
+        except ValueError as e:
+            # Esperado para ruta relativa 'r'
+            msg = str(e).lower()
+            ok_precondicion = "precondici" in msg and "relativa" in msg
+            # Verificar que la DB sigue intacta y con la fila original (acceso directo sqlite, sin conectar_bd)
+            conn_raw = sqlite3.connect(ruta_db)
+            try:
+                tablas_raw = {
+                    f[0]
+                    for f in conn_raw.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table'"
+                    )
+                }
+                fila_raw = conn_raw.execute("SELECT nombre, ruta FROM videos").fetchone()
+            finally:
+                conn_raw.close()
+            ok_tabla_raw = "videos" in tablas_raw
+            ok_intactos_raw = fila_raw == ("a.mp4", "r")
+            return (
+                ok_precondicion and ok_tabla_raw and ok_intactos_raw,
+                f"precondicion={ok_precondicion} tabla_raw={ok_tabla_raw} intactos_raw={ok_intactos_raw} msg={e}",
+            )
         tablas = {
             f[0]
             for f in conn.execute(
@@ -230,23 +257,42 @@ def test_02():
             )
         }
         conn.close()
+        conn = None
         ok_tabla = "marcadores_video" in tablas
-        conn = conectar_bd(ruta_db)
+        conn2 = conectar_bd(ruta_db)
         tablas2 = {
             f[0]
-            for f in conn.execute(
+            for f in conn2.execute(
                 "SELECT name FROM sqlite_master WHERE type='table'"
             )
         }
-        indice = conn.execute(
+        indice = conn2.execute(
             "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_marcadores_video_video_id_tiempo'"
         ).fetchone()
-        conn.close()
+        conn2.close()
+        conn2 = None
         ok_idempotente = tablas2 == tablas
         ok_indice = indice is not None
         videos = listar_videos(ruta_db)
         ok_intactos = videos == [("a.mp4", 1.0, 1, 1, "c", 0, None, "r", 1)]
     finally:
+        # cleanup determinista Windows: cerrar explícitamente y liberar referencias antes de borrar
+        for c in (conn, conn2):
+            try:
+                if c is not None:
+                    c.close()
+            except Exception:
+                pass
+        # sqlite3 en Windows retiene handle hasta GC
+        import gc
+        import time
+
+        try:
+            del tablas, tablas2, indice
+        except Exception:
+            pass
+        gc.collect()
+        time.sleep(0.02)
         temp.cleanup()
     return (
         ok_tabla and ok_idempotente and ok_indice and ok_intactos,

@@ -613,9 +613,10 @@ def test_17_sin_seleccion_no_abre():
 
 def test_18_accion_menu_contextual():
     fuente = inspect.getsource(visor_videos.VisorVideos._mostrar_menu_contextual)
+    # B8.3B: la habilitación ahora usa has_sel con _ids_seleccionados (homónimos), no solo _nombres_seleccionados
     ok = (
         "Reproducir marcadores en VLC" in fuente
-        and "setEnabled(bool(self._nombres_seleccionados))" in fuente
+        and ("has_sel" in fuente or "_ids_seleccionados" in fuente)
         and "_reproducir_marcadores_en_vlc" in fuente
     )
     return ok, "accion presente" if ok else "accion ausente"

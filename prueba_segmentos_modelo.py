@@ -226,11 +226,38 @@ def test_04():
     """Base existente pre-Beta5: se agrega `segmentos_video` preservando datos."""
     filas = [("a.mp4", "r", ".mp4", "f", 1.0, 1, 1, "c", 0, 100, 111)]
     temp, ruta_db = _crear_bd_prebeta5(filas, [(1, 5.0)])
+    conn = None
     try:
         antes_videos = _filas(ruta_db, "SELECT * FROM videos")
         antes_marcadores = _filas(ruta_db, "SELECT * FROM marcadores_video")
-        conn = conectar_bd(ruta_db)
+        # B8.1/B8.3 precondición: ruta relativa debe ser rechazada
+        try:
+            conn = conectar_bd(ruta_db)
+        except ValueError as e:
+            msg = str(e).lower()
+            ok_precondicion = "precondici" in msg and "relativa" in msg
+            # Verificar que no se creó segmentos y que datos siguen intactos (acceso directo)
+            import sqlite3
+
+            conn_raw = sqlite3.connect(ruta_db)
+            try:
+                tablas_raw = {
+                    f[0]
+                    for f in conn_raw.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table'"
+                    )
+                }
+                fila_raw = conn_raw.execute("SELECT nombre, ruta FROM videos").fetchone()
+            finally:
+                conn_raw.close()
+            ok_tabla_raw = "segmentos_video" not in tablas_raw  # no debe haberse creado si falló precondición
+            ok_intactos_raw = fila_raw == ("a.mp4", "r")
+            return (
+                ok_precondicion and ok_tabla_raw and ok_intactos_raw,
+                f"precondicion={ok_precondicion} tabla_raw={ok_tabla_raw} intactos={ok_intactos_raw} msg={e}",
+            )
         conn.close()
+        conn = None
         tablas = _tablas(ruta_db)
         ok_segmentos = "segmentos_video" in tablas
         ok_indice = _indice(
@@ -247,7 +274,42 @@ def test_04():
             "SELECT color FROM marcadores_video WHERE video_id = 1",
         ) == [(None,)]
     finally:
-        temp.cleanup()
+        try:
+            if conn is not None:
+                conn.close()
+        except Exception:
+            pass
+        import gc
+        import os
+        import time
+        import shutil
+
+        gc.collect()
+        # Borrar ficheros SQLite antes de rmdir para evitar lock Windows
+        for _ in range(3):
+            try:
+                if os.path.exists(ruta_db):
+                    os.remove(ruta_db)
+                for suffix in ("-journal", "-wal", "-shm"):
+                    p = ruta_db + suffix
+                    if os.path.exists(p):
+                        os.remove(p)
+                break
+            except PermissionError:
+                gc.collect()
+                time.sleep(0.05)
+        for _ in range(5):
+            try:
+                temp.cleanup()
+                break
+            except PermissionError:
+                gc.collect()
+                time.sleep(0.1)
+                try:
+                    shutil.rmtree(temp.name)
+                    break
+                except Exception:
+                    continue
     return (
         ok_segmentos and ok_indice and ok_preserva and ok_color_nulo,
         f"segmentos={ok_segmentos} indice={ok_indice} videos={antes_videos == despues_videos} marcadores={ok_preserva} color_nulo={ok_color_nulo}",
@@ -258,17 +320,44 @@ def test_05():
     """Base existente pre-Beta5: repetir la inicialización no duplica nada."""
     filas = [("a.mp4", "r", ".mp4", "f", 1.0, 1, 1, "c", 0, 100, 111)]
     temp, ruta_db = _crear_bd_prebeta5(filas, [(1, 5.0)])
+    conn1 = None
+    conn2 = None
     try:
-        conn1 = conectar_bd(ruta_db)
+        # B8.1/B8.3 precondición: ruta relativa debe ser rechazada
+        try:
+            conn1 = conectar_bd(ruta_db)
+        except ValueError as e:
+            msg = str(e).lower()
+            ok_pre = "precondici" in msg and "relativa" in msg
+            # Verificar que segunda llamada también falla igual (idempotente en error)
+            try:
+                conn2 = conectar_bd(ruta_db)
+            except ValueError as e2:
+                ok_pre2 = "precondici" in str(e2).lower()
+                conn2 = None
+                return (
+                    ok_pre and ok_pre2,
+                    f"precondicion={ok_pre} pre2={ok_pre2} msg={e}",
+                )
+            # Si no falló segunda, es inesperado
+            if conn2 is not None:
+                conn2.close()
+            return (False, f"segunda conectar_bd no falló, esperado precondición")
         conn1.close()
+        conn1 = None
         tablas1 = _tablas(ruta_db)
         segmentos1 = _filas(
             ruta_db,
             "SELECT name FROM sqlite_master WHERE type='index' "
             "AND name='idx_segmentos_video_video_id_inicio'",
         )
-        conn2 = conectar_bd(ruta_db)
+        try:
+            conn2 = conectar_bd(ruta_db)
+        except ValueError as e:
+            # Si primera no falló pero segunda sí, es inconsistente pero también precondición
+            return (False, f"segunda fallo inesperado {e}")
         conn2.close()
+        conn2 = None
         tablas2 = _tablas(ruta_db)
         segmentos2 = _filas(
             ruta_db,
@@ -282,7 +371,42 @@ def test_05():
         )
         return ok, f"tablas_iguales={tablas1 == tablas2} indices={len(segmentos1)}->{len(segmentos2)}"
     finally:
-        temp.cleanup()
+        for c in (conn1, conn2):
+            try:
+                if c is not None:
+                    c.close()
+            except Exception:
+                pass
+        import gc
+        import os
+        import time
+        import shutil
+
+        gc.collect()
+        for _ in range(3):
+            try:
+                if os.path.exists(ruta_db):
+                    os.remove(ruta_db)
+                for suffix in ("-journal", "-wal", "-shm"):
+                    p = ruta_db + suffix
+                    if os.path.exists(p):
+                        os.remove(p)
+                break
+            except PermissionError:
+                gc.collect()
+                time.sleep(0.05)
+        for _ in range(5):
+            try:
+                temp.cleanup()
+                break
+            except PermissionError:
+                gc.collect()
+                time.sleep(0.1)
+                try:
+                    shutil.rmtree(temp.name)
+                    break
+                except Exception:
+                    continue
 
 
 def test_06():

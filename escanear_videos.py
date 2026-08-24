@@ -145,11 +145,15 @@ def preparar_registros_basicos(videos, carpeta):
     fecha = datetime.now().isoformat()
     registros = []
     for nombre in lista:
+        # B8.4 fix: nombre debe ser basename (no relpath con subcarpeta) para que
+        # un video incorporado vía escaneo recursivo de MADRE quede con nombre=AAAA.mp4
+        # y ruta_normalizada sea autoridad física; así la lectura de A (carpeta A) lo encuentra
+        nombre_base = os.path.basename(nombre)
         registros.append(
             {
-                "nombre": nombre,
+                "nombre": nombre_base,
                 "ruta": os.path.join(carpeta, nombre),
-                "extension": os.path.splitext(nombre)[1].lower(),
+                "extension": os.path.splitext(nombre_base)[1].lower(),
                 "fecha_importacion": fecha,
             }
         )
