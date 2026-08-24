@@ -7,14 +7,14 @@ auditoría del proyecto, incluyendo la operación del Bridge/MCP/Telegram, la
 persistencia de la infraestructura y las condiciones de retorno al flujo
 automático.
 
-Complementa y desarrolla las normas permanentes de `REGLAS_PROYECTO.md`.
-Mientras que `REGLAS_PROYECTO.md` reúne las reglas normativas obligatorias en
+Complementa y desarrolla las normas permanentes de `RULES.md` (reglas permanentes vigentes; `REGLAS_PROYECTO.md` es histórico).
+Mientras que `RULES.md` reúne las reglas normativas obligatorias en
 todo momento, este documento describe **cómo** se ejecuta el protocolo en la
 práctica: actores, flujo, estados, evidencia, auditoría y protección de datos.
 
-No es una copia de `ESTADO_PROYECTO.md` (estado vigente) ni de
-`HISTORIAL_PROYECTO.md` (hitos cronológicos). Ver "Límites documentales"
-(sección 16) para el reparto de responsabilidades.
+No es una copia de `STATUS.md` (estado vigente; `ESTADO_PROYECTO.md` es histórico) ni de
+`HISTORIAL_PROYECTO.md` (hitos cronológicos), ni de `ARCHITECTURE.md` (arquitectura; `PROJECT.md` es producto/alcance). Ver "Límites documentales"
+(sección 16) para el reparto de responsabilidades. Este documento es autoridad detallada del protocolo; no se inventa protocolo externo.
 
 ## 2. Actores y responsabilidades
 
@@ -210,12 +210,11 @@ autorización humana explícita:
 
 Cada tipo de información tiene un único documento propietario:
 
-- `REGLAS_PROYECTO.md` — **normas permanentes** (obligatorias siempre).
-- `ESTADO_PROYECTO.md` — **estado vigente** (no contrato detallado ni historia
-  extensa).
-- `HISTORIAL_PROYECTO.md` — **hitos** cronológicos (no especificación
-  operativa).
-- `METODOLOGIA_DESARROLLO.md` — **protocolo detallado** (este documento).
+- `RULES.md` — **normas permanentes vigentes** (obligatorias siempre); `REGLAS_PROYECTO.md` es histórico.
+- `STATUS.md` — **estado vigente** (no contrato detallado ni historia extensa); `ESTADO_PROYECTO.md` es histórico.
+- `ARCHITECTURE.md` — **arquitectura vigente**; `PROJECT.md` — **producto/alcance**; `DOCUMENTO_TECNICO.md` es histórico/de referencia.
+- `HISTORIAL_PROYECTO.md` — **hitos** cronológicos (no especificación operativa).
+- `METODOLOGIA_DESARROLLO.md` — **protocolo detallado** (este documento, autoridad detallada del protocolo).
 
 No se duplica aquí arquitectura/producto (`DOCUMENTO_TECNICO.md`, `ROADMAP.md`,
 `VISION_PRODUCTO.md`) ni se convierten incidentes históricos en reglas atadas a

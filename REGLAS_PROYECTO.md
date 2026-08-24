@@ -1,5 +1,7 @@
 # REGLAS DEL PROYECTO
 
+> **DOCUMENTO HISTÓRICO (sustituido durante la adopción documental).** La fuente oficial vigente de reglas y políticas del proyecto es `RULES.md`. Este documento se conserva únicamente como referencia histórica; su contenido puede estar desactualizado y no debe usarse para determinar el estado vigente.
+
 ## Objetivo
 
 Este documento contiene las reglas permanentes de desarrollo del

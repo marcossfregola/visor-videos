@@ -5,6 +5,98 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 123. B8.2 — Cache por video_id
+
+- **Fecha:** 2026-08-24
+- **Tipo:** implementación técnica de **B8.2 completada y cerrada localmente** (sin push/tag/release; rama `beta8` local).
+- **Commit local:** `33da65066867026d9a72bb333216bfd9fdc4b626`; parent B8.1 `d43c1b8e9c38d132c346933967e8e8bac7fdae9f`.
+- **Alcance factual:** cache normal por `video_id` (`v<video_id>_<NN>.jpg` y `v<video_id>_preview_<NN>.jpg` vía `ruta_miniatura_id`/`ruta_preview_id`/`contar_miniaturas_por_id`), migración legacy no destructiva por copia (`migrar_cache_legacy_a_id` → `v<id>_*.jpg`, sin borrar legacy, sin fallback ambiguo por nombre, idempotente), integración background/UI (`TareaMiniaturasPorId`, `TareaPreviewsPorId`, `TareaMigrarCacheLegacy`, `asegurar_miniaturas_por_id`, `generar_previews_faltantes_por_id`, `actualizar_cantidad_miniaturas` por `video_id`), `UNIQUE(nombre)` aún no eliminado (transicional hasta B8.3).
+- **Evidencia:** suites B8.2 aprobadas y validación manual real del usuario previa al commit (no se inventan counts).
+- **Sin push/tag/release;** `beta8` local no publicada.
+
+---
+
+## 122. B8.1 — Preparación de identidad
+
+- **Fecha:** 2026-08-23
+- **Tipo:** implementación técnica de **B8.1 completada y cerrada localmente** (sin push/tag/release; rama `beta8` local).
+- **Commit local:** `d43c1b8e9c38d132c346933967e8e8bac7fdae9f`.
+- **Alcance factual:** `ruta_normalizada` (`rutas.normalizar_ruta_clave` = `abspath+normpath+normcase+strip`), poblada y `UNIQUE(ruta_normalizada)` (`idx_videos_ruta_normalizada`), dual-write `ruta`+`ruta_normalizada`, `guardar_videos`/`guardar_video` devuelven `video_id` por `ruta_normalizada`, pipeline reordenado (guardar antes de miniaturas normales), `cantidad_miniaturas` puntual por `video_id`; mantiene `UNIQUE(nombre)` transicional.
+- **Pruebas aprobadas;** sin push/tag/release.
+
+---
+
+## 121. Planificación post-Beta 7 — roadmap Beta 8–11 y deuda transversal
+
+- **Fecha:** 2026-08-23
+- **Tipo:** planificación documental post-Beta 7 (sin implementación de código).
+- **Consolidación de mejoras del propietario:** P01–P24 revisadas y consolidadas como insumo para Beta 9–11.
+- **Inventario técnico interno:** deuda técnica vigente auditada en `STATUS.md`/`ARCHITECTURE.md` (T01 crecimiento cache/miniaturas, T02 reutilización mtime sin hash, T03 prefijo `startswith`, T04 retención pixmaps, T05 carpetas escaneadas solo memoria, T06 duplicación tests, T07 cancelación escaneo, T08 filtrado árbol 2.10, T09 identidad global por nombre, T11 tests no aislados, T12 fallo transitorio, T15 coexistencia FFmpeg, **T16 reutilización de previews normales obsoletas basada solo en existencia / falta de validación de vigencia**).
+- **Auditorías externas:** Grok y Claude — dos auditorías independientes sobre deuda, bugs y arquitectura; hallazgos convergentes en identidad `UNIQUE(nombre)` y fragilidad caché por nombre.
+- **Identificación/priorización T09:** `videos.nombre UNIQUE` impide coexistencia `C:\A\video.mp4` + `D:\B\video.mp4` (segundo sobrescribe primero, `listar_videos` 1 fila); `ruta_miniatura` por nombre colisiona `video_01.jpg`.
+- **Hallazgo adicional de colisión de cache por nombre:** confirmada vía `tempfile` + `escanear_videos` y `exploracion_cache` por `video_id` no afectada; miniaturas/previews normales sí colisionan y requieren migración a `video_id`.
+- **Diseño B8.0:** `video_id` identidad lógica estable, `nombre` no único, `ruta_normalizada` (`abspath+normpath+normcase+strip`) clave física `UNIQUE(ruta_normalizada)`, cache normal por `video_id`, fingerprint/hash fuera de alcance inmediato para T09, `B8.1` preparación con `ruta_normalizada` + `UNIQUE(ruta_normalizada)` dual-write, `B8.2` cache por `video_id` con copia legacy no destructiva, `B8.3` cutover eliminando `UNIQUE(nombre)` habilitando homónimos, `B8.4` regresión.
+- **Aprobación del plan Beta 8–11:**
+  - **Beta 8 — Identidad e integridad del catálogo** (B8.1 preparación, B8.2 cache, B8.3 cutover, B8.4 cierre; movimientos/renombres externos quedan deuda futura)
+  - **Beta 9 — Exploración visual avanzada** (P01–P09, P18, P23, requisito T04 RAM)
+  - **Beta 10 — Vistas, navegación y organización personal** (P10, P11, P22, P12, P13, P14, P24, T08, T07, T05)
+  - **Beta 11 — Relaciones y segmentos multivideo** (P15, P16, P17, P19, P20, P21 con compatibilidad codec/resolución/FPS)
+- **Deuda transversal mantenida:** T01, T02, T06, T11, T12, T15 (T04 a Beta 9, T03/T16 a Beta 8, T05/T07/T08 a Beta 10, T09 núcleo Beta 8).
+- **BACKLOG reconciliado:** elementos promovidos a ROADMAP marcados como promovidos (`Tarjetas expandibles`→P01, `Reproducción desde preview`→P23, `Hover`→P07/P08, `Unión múltiples videos`→P21, `Favoritos/etiquetas`→P12–P14) para evitar duplicación.
+- **Próximo paso:** **B8.1 — Preparación de identidad** (agregar `ruta_normalizada`, helper central, poblarla, `UNIQUE(ruta_normalizada)`, `guardar_videos` devuelve `video_id`, reordenar pipeline).
+
+---
+
+## 120. Decisión definitiva de alcance — uso exclusivamente personal
+
+- **Fecha:** 2026-08-23
+- **Tipo:** decisión definitiva de alcance de producto.
+- **Decisión del propietario:** Visor de Videos es una aplicación de **uso exclusivamente personal** del propietario.
+- **Alcance de distribución:** **no se proyecta distribución pública** de la aplicación; la publicación de instaladores/binarios para terceros queda **fuera de alcance**.
+- **Instalador:** deja de ser requisito de cierre o de avance entre betas; el empaquetado existe como capacidad técnica opcional para comodidad personal. No se dedicará trabajo adicional al instalador salvo pedido explícito del propietario.
+- **Evidencia de build Beta 7:** ya demostró generación correcta de portable `dist\VisorVideos\VisorVideos.exe`, DB seed `dist\VisorVideos\biblioteca.db` 61440 bytes `PRAGMA integrity_check=ok` vacía (`videos/marcadores/segmentos/derivados=0`, SHA256 `890CB0218DEE8CEBAE7A6DE88EC8E0F507CB4DD067009C926722D06E3B5EE9B3`), y Setup `Distribucion/Beta7/VisorVideos_Beta7_Setup.exe` 33755374 bytes SHA256 `14A0D4D062AE44E3B4A9CD244869D866F1C9238952CF293D0A26CC25F084A471` (Inno Setup 6.7.3).
+- **Ciclo real instalación/desinstalación/reinstalación:** **no se ejecutó** por seguridad — preflight encontró instalación existente en `%LOCALAPPDATA%\Programs\VisorVideos` con `VisorVideos.exe`/`biblioteca.db`/`configuracion.json`/`unins000.exe`/`_internal/`; la prueba se detuvo correctamente para no tocar datos del usuario.
+- **No se continuará** esa validación salvo necesidad personal explícita del propietario.
+- **Siguiente trabajo:** consolidación de mejoras pendientes, auditorías externas y definición/priorización de Beta 8 (instalador no bloquea).
+- **Repositorio GitHub:** permanece **PUBLIC**; esta decisión es de distribución de la aplicación, no de visibilidad del repositorio.
+
+---
+
+## 119. Reconciliación de main con Beta 7 y adopción documental vigente
+
+- **Fecha:** 2026-08-23
+- **Tipo:** reconciliación de `main` con `beta7` y adopción definitiva de la matriz documental V1.3.
+- **Líneas históricas reconciliadas:**
+  - `main` previo `918cf67fa6b02b4506f08bbb2af351702239161d` (estructura documental V1.3)
+  - `beta7` `97e6fcf1489c3999fbf1c82222ce584862970f5b` (producto Beta 7 B7.13 + reconciliación post-publicación)
+- **Método:** merge normal no destructivo `beta7 → main` (`--no-ff`), preservando ambas historias sin reescritura ni force push.
+- **Producto funcional:** equivalente a `beta7`. Los archivos funcionales son idénticos a `beta7` salvo cuatro correcciones exclusivamente de whitespace, sin efecto semántico:
+  - `prueba_copiar_miniatura_reinicio_b74_fix.py`
+  - `prueba_lote_b76.py`
+  - `prueba_mover_b72.py`
+  - `renombrar_masivo.py`
+- **Higiene/documentación:** además se corrigieron whitespace documental en `DOCUMENTO_TECNICO.md` / `ESTADO_PROYECTO.md` y se realizó la reconciliación semántica V1.3 en `PROJECT.md` / `STATUS.md` / `ARCHITECTURE.md` / `ENVIRONMENT.md` / `BACKLOG.md` / `ROADMAP.md` / etc. (no son whitespace).
+- **Matriz documental adoptada:**
+  - `PROJECT.md` — identidad/visión/alcance
+  - `STATUS.md` — estado actual
+  - `ARCHITECTURE.md` — arquitectura
+  - `ENVIRONMENT.md` — entorno
+  - `RULES.md` — reglas
+  - `ROADMAP.md` — trabajo futuro decidido
+  - `BACKLOG.md` — ideas no comprometidas
+  - `HISTORIAL_PROYECTO.md` — historia
+  - `EMPACADO.md` — empaquetado
+  - `METODOLOGIA_DESARROLLO.md` — metodología
+- **Documentos heredados conservados como históricos (referencia, no autoridad):** `DOCUMENTO_TECNICO.md` → `ARCHITECTURE.md`, `ESTADO_PROYECTO.md` → `STATUS.md`, `REGLAS_PROYECTO.md` → `RULES.md`, `VISION_PRODUCTO.md` → `PROJECT.md`.
+- **Cierre funcional Beta 7 permanece:** `f9976d3b3b68a197bf8e9d29a4ecc670f48a9709` (`B7 Cerrar Beta 7 B7.13`); `v7.0-beta` debe permanecer asociado a ese cierre (no mover tag).
+- **Repositorio:** PUBLIC, default branch `main`.
+- **Release:** `v7.0-beta` prerelease PUBLIC sin instalador (asociada a `f9976d3`).
+- **Validación específica del instalador Beta 7:** sigue PENDIENTE.
+- **Beta 8:** aún no definida ni priorizada; queda pendiente de auditoría final, validación instalador, consolidación y priorización.
+- **Nota:** Este merge establece `main` como rama vigente/canónica. El SHA de este merge no se registra dentro de esta misma entrada para evitar una referencia circular; queda determinado por Git al crear el commit.
+
+---
+
 ## 118. Publicación Beta 7 — B7.13 publicada (commit/tag/push/Release)
 
 - **Fecha:** 2026-08-23
