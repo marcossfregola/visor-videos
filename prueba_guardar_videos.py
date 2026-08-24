@@ -123,6 +123,10 @@ class ConectorConHilo:
         self._registro = registro
         self._registro["connect"].append(threading.get_ident())
 
+    @property
+    def in_transaction(self):
+        return self._real.in_transaction
+
     def execute(self, *args, **kwargs):
         return self._real.execute(*args, **kwargs)
 
@@ -141,6 +145,9 @@ class ConectorConHilo:
         self._registro["close"].append(threading.get_ident())
         return self._real.close()
 
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
 
 class ConectorConFallo:
     def __init__(self, real, registro=None, falla_en_ejecucion=2):
@@ -148,6 +155,10 @@ class ConectorConFallo:
         self._registro = registro if registro is not None else {}
         self._falla_en = falla_en_ejecucion
         self._ejecuciones = 0
+
+    @property
+    def in_transaction(self):
+        return self._real.in_transaction
 
     def execute(self, *args, **kwargs):
         self._ejecuciones += 1
@@ -167,6 +178,9 @@ class ConectorConFallo:
 
     def close(self):
         return self._real.close()
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
 
 
 def test_01():
@@ -217,6 +231,7 @@ def test_03():
 
 
 def test_04():
+    # B8.3: identidad por ruta_normalizada, mismo nombre en ruta distinta es fila nueva (homónimo permitido)
     filas = [
         ("a.mp4", "C:\\v\\a.mp4", ".mp4", "f", 1.0, 1, 1, "c", 0),
         ("b.mp4", "C:\\v\\b.mp4", ".mp4", "f", 2.0, 2, 2, "d", 1),
@@ -229,13 +244,19 @@ def test_04():
         ]
         resultado = guardar_videos(coleccion, ruta_db)
         filas_db = _dump(ruta_db)
+        # B8.3: las filas originales en C:\v\ se preservan; las nuevas en C:\nueva\ se insertan como homónimos (total 4)
         esperado = [
-            (1, "a.mp4", "C:\\nueva\\a.mp4", ".mp4", "2026-08-02T00:00:00", 9.0, 90, 50, "x", 7, None),
-            (2, "b.mp4", "C:\\nueva\\b.mp4", ".mp4", "2026-08-02T00:00:00", 8.0, 80, 40, "y", 6, None),
+            (1, "a.mp4", "C:\\v\\a.mp4", ".mp4", "f", 1.0, 1, 1, "c", 0, None),
+            (3, "a.mp4", "C:\\nueva\\a.mp4", ".mp4", "2026-08-02T00:00:00", 9.0, 90, 50, "x", 7, None),
+            (2, "b.mp4", "C:\\v\\b.mp4", ".mp4", "f", 2.0, 2, 2, "d", 1, None),
+            (4, "b.mp4", "C:\\nueva\\b.mp4", ".mp4", "2026-08-02T00:00:00", 8.0, 80, 40, "y", 6, None),
         ]
+        # Orden por nombre (a,a,b,b) con id estable
         ok = (
             (resultado.get("guardados") == 2 and resultado.get("nombres") == ["a.mp4", "b.mp4"] and isinstance(resultado.get("ids"), list))
             and filas_db == esperado
+            and len(resultado.get("ids")) == 2
+            and resultado.get("ids")[0] != 1 and resultado.get("ids")[1] != 2
         )
         return ok, f"resultado={resultado} filas={filas_db}"
     finally:
@@ -243,6 +264,7 @@ def test_04():
 
 
 def test_05():
+    # B8.3: mismo nombre en ruta distinta no colapsa, se preserva original y se crean homónimos
     filas = [
         ("a.mp4", "C:\\v\\a.mp4", ".mp4", "f", 1.0, 1, 1, "c", 0),
     ]
@@ -256,18 +278,18 @@ def test_05():
         conn = sqlite3.connect(ruta_db)
         try:
             filas_db = conn.execute(
-                "SELECT nombre, ruta, extension, fecha_importacion, duracion_segundos, ancho, alto, codec_video, cantidad_miniaturas FROM videos ORDER BY nombre"
+                "SELECT nombre, ruta, extension, fecha_importacion, duracion_segundos, ancho, alto, codec_video, cantidad_miniaturas FROM videos ORDER BY ruta"
             ).fetchall()
         finally:
             conn.close()
-        esperado = [
-            ("a.mp4", "C:\\nueva\\a.mp4", ".mp4", "2026-08-02T00:00:00", 5.5, None, None, None, None),
-            ("b.mp4", "C:\\nueva\\b.mp4", ".mp4", "2026-08-02T00:00:00", 6.5, None, None, None, None),
-        ]
+        # B8.3: 3 filas totales: original a en C:\v\ + nuevos a en C:\nueva\ y b en C:\nueva\
+        # Orden por ruta para determinismo
+        esperado_rutas = {"C:\\v\\a.mp4", "C:\\nueva\\a.mp4", "C:\\nueva\\b.mp4"}
+        filas_rutas = {r[1] for r in filas_db}
         ok = (
             (resultado.get("guardados") == 2 and resultado.get("nombres") == ["a.mp4", "b.mp4"] and isinstance(resultado.get("ids"), list))
-            and len(filas_db) == 2
-            and filas_db == esperado
+            and len(filas_db) == 3
+            and filas_rutas == esperado_rutas
         )
         return ok, f"resultado={resultado} filas={filas_db}"
     finally:

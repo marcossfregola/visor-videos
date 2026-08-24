@@ -17,7 +17,7 @@ import sqlite3
 import nombres as nombres_mod
 import rutas as rutas_mod
 
-from rutas import ruta_biblioteca
+from rutas import normalizar_ruta_clave, ruta_biblioteca
 
 
 class RenombradoError(Exception):
@@ -288,37 +288,38 @@ def renombrar_video(video_id, nuevo_nombre, ruta_db=None):
             # Si original era relativa, mantener relativa
             nueva_ruta = os.path.join(os.path.dirname(ruta_actual), nombre_nuevo)
 
-    # Prevalidaciones antes de tocar FS
-    # 1) FS colisión: no sobrescribir
+    # B8.3A — contrato único de colisión: destino físico normalizado
+    try:
+        ruta_destino_normalizada = normalizar_ruta_clave(nueva_ruta)
+    except Exception as exc:
+        raise ValidacionError(f"no se pudo normalizar ruta destino {nueva_ruta!r}: {exc}") from exc
+    try:
+        # ruta_actual para normalización: usar la absoluta si existe, si no la cruda
+        ruta_actual_para_norm = ruta_actual_abs if os.path.isabs(ruta_actual_abs) else ruta_actual
+        ruta_actual_normalizada = normalizar_ruta_clave(ruta_actual_para_norm)
+    except Exception as exc:
+        raise RenombradoError(f"no se pudo normalizar ruta actual {ruta_actual!r}: {exc}") from exc
+    # Si es mismo destino físico (no-op) — ya fue rechazado como nombre idéntico, pero por seguridad
+    if ruta_destino_normalizada == ruta_actual_normalizada:
+        raise ValidacionError("el nuevo nombre es idéntico al actual (misma ruta normalizada)")
+
+    # 1) FS colisión: nunca sobrescribir archivo/directorio existente
     if os.path.exists(nueva_ruta):
-        # En Windows normcase para evitar colisión case-insensitive
-        try:
-            if os.path.normcase(os.path.normpath(nueva_ruta)) != os.path.normcase(os.path.normpath(ruta_actual_abs)):
-                raise ColisionError(f"ya existe un archivo en destino: {nueva_ruta!r}")
-            else:
-                # Es el mismo archivo (mismo path normalizado) — ya validado como idéntico
-                raise ValidacionError("el nuevo nombre es idéntico al actual")
-        except ColisionError:
-            raise
-        except ValidacionError:
-            raise
-        # Si es el mismo archivo exacto, ya se rechazó arriba
+        # destino existe y no es el mismo archivo (ya verificado normalizada distinta) -> colisión
         raise ColisionError(f"ya existe un archivo en destino: {nueva_ruta!r}")
 
-    # 2) DB UNIQUE(nombre) colisión
+    # 2) Catálogo colisión por ruta_normalizada exacta (otro video_id)
     conn_chk = sqlite3.connect(ruta_db)
     try:
         fila_dup = conn_chk.execute(
-            "SELECT id FROM videos WHERE nombre = ? AND id != ?", (nombre_nuevo, video_id)
+            "SELECT id FROM videos WHERE ruta_normalizada = ? AND id != ?", (ruta_destino_normalizada, video_id)
         ).fetchone()
         if fila_dup is not None:
             raise ColisionError(
-                f"ya existe otro video con nombre {nombre_nuevo!r} (id {fila_dup[0]})"
+                f"ya existe otro video con la misma ruta destino {nueva_ruta!r} (id {fila_dup[0]}, ruta_normalizada {ruta_destino_normalizada!r})"
             )
         # También verificar si el archivo origen existe
         if not os.path.isfile(ruta_actual_abs):
-            # Si la ruta en DB es absoluta y existe check con esa ruta
-            # Si no existe, aún podemos intentar rename pero fallará; reportar antes
             if not os.path.isfile(ruta_actual):
                 raise RenombradoError(f"archivo origen no encontrado: {ruta_actual!r}")
     finally:
@@ -380,13 +381,13 @@ def renombrar_video(video_id, nuevo_nombre, ruta_db=None):
     # Si usamos ruta_actual_abs, el filesystem ya movió ese archivo.
     # La nueva_ruta es la que corresponde.
 
-    # 4) Persistencia DB (transacción corta)
+    # 4) Persistencia DB (transacción corta) — valida ruta_normalizada
     conn = sqlite3.connect(ruta_db)
     try:
         conn.execute("BEGIN")
-        # Verificar nuevamente UNIQUE dentro de la transacción (carrera)
+        # Verificar nuevamente colisión ruta_normalizada dentro de la transacción (carrera)
         fila_dup2 = conn.execute(
-            "SELECT id FROM videos WHERE nombre = ? AND id != ?", (nombre_nuevo, video_id)
+            "SELECT id FROM videos WHERE ruta_normalizada = ? AND id != ?", (ruta_destino_normalizada, video_id)
         ).fetchone()
         if fila_dup2 is not None:
             conn.rollback()
@@ -404,14 +405,14 @@ def renombrar_video(video_id, nuevo_nombre, ruta_db=None):
                     f"fallo SQLite (colisión) y la compensación también falló: {exc_comp}",
                     ruta_original=ruta_actual_abs if os.path.isabs(ruta_actual_abs) else ruta_actual,
                     ruta_nueva=nueva_ruta,
-                    error_db=f"colisión UNIQUE nombre {nombre_nuevo!r}",
+                    error_db=f"colisión ruta_normalizada {ruta_destino_normalizada!r}",
                     error_compensacion=str(exc_comp),
                 ) from exc_comp
-            raise ColisionError(f"ya existe otro video con nombre {nombre_nuevo!r} (carrera)")
+            raise ColisionError(f"ya existe otro video con la misma ruta destino {nueva_ruta!r} (carrera, id {fila_dup2[0]})")
 
         cur = conn.execute(
-            "UPDATE videos SET nombre = ?, ruta = ? WHERE id = ?",
-            (nombre_nuevo, nueva_ruta, video_id),
+            "UPDATE videos SET nombre = ?, ruta = ?, ruta_normalizada = ? WHERE id = ?",
+            (nombre_nuevo, nueva_ruta, ruta_destino_normalizada, video_id),
         )
         if cur.rowcount == 0:
             conn.rollback()

@@ -12,6 +12,7 @@ from PySide6.QtCore import QByteArray, Qt
 from PySide6.QtGui import QDragEnterEvent
 
 from escanear_videos import conectar_bd
+import rutas
 import visor_videos as vv
 import panel_organizacion as po
 from tareas_videos import TareaLoteOperaciones, TareaPrevalidarDrop
@@ -109,8 +110,8 @@ def _crear_visor_con_videos():
         open(ruta, "wb").write(b"x" * 2048)
         st = os.stat(ruta)
         c = conectar_bd(db)
-        c.execute("INSERT INTO videos (nombre,ruta,extension,fecha_importacion,tamano_bytes,mtime_ns) VALUES (?,?,?,?,?,?)",
-                  (name, os.path.abspath(ruta), ".mp4", "2026-01-01", st.st_size, st.st_mtime_ns))
+        c.execute("INSERT INTO videos (nombre,ruta,ruta_normalizada,extension,fecha_importacion,tamano_bytes,mtime_ns) VALUES (?,?,?,?,?,?,?)",
+                  (name, os.path.abspath(ruta), rutas.normalizar_ruta_clave(os.path.abspath(ruta)), ".mp4", "2026-01-01", st.st_size, st.st_mtime_ns))
         row = c.execute("SELECT id FROM videos WHERE nombre=?", (name,)).fetchone()
         vid = row[0]
         vids.append((name, vid, os.path.abspath(ruta)))

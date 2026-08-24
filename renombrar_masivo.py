@@ -19,7 +19,7 @@ import uuid
 import datetime
 
 import nombres as nombres_mod
-from rutas import ruta_biblioteca
+from rutas import normalizar_ruta_clave, ruta_biblioteca
 
 
 class RenombradoMasivoError(Exception):
@@ -83,6 +83,7 @@ def _validar_video_infos(video_infos):
 
 
 def _cargar_nombres_db(ruta_db):
+    # legacy B8.2/B8.3 — se mantiene por compatibilidad pero no se usa como fuente de colisiones
     if ruta_db is None:
         ruta_db = ruta_biblioteca()
     if not os.path.isfile(ruta_db):
@@ -97,6 +98,27 @@ def _cargar_nombres_db(ruta_db):
         except Exception as _b77_exc:
             import warnings as _b77_warnings
             _b77_warnings.warn(f"_cargar_nombres_db cerrar conexión falló: {_b77_exc}", RuntimeWarning)
+
+
+def _cargar_rutas_db(ruta_db):
+    """B8.3A helper mínimo: retorna lista [(id, ruta_normalizada)] por ruta exacta."""
+    if ruta_db is None:
+        ruta_db = ruta_biblioteca()
+    if not os.path.isfile(ruta_db):
+        raise FileNotFoundError(f"Base de datos no encontrada: {ruta_db}")
+    conn = sqlite3.connect(ruta_db)
+    try:
+        filas = conn.execute("SELECT id, ruta_normalizada FROM videos").fetchall()
+        for vid, rn in filas:
+            if rn is None or (isinstance(rn, str) and not rn.strip()):
+                raise ValueError(f"ruta_normalizada NULL/vacía para id={vid}, se preservan datos intactos")
+        return [(int(r[0]), r[1]) for r in filas]
+    finally:
+        try:
+            conn.close()
+        except Exception as _b77_exc:
+            import warnings as _b77_warnings
+            _b77_warnings.warn(f"_cargar_rutas_db cerrar conexión falló: {_b77_exc}", RuntimeWarning)
 
 
 def _cargar_rutas_db_por_id(video_ids, ruta_db):
@@ -165,38 +187,36 @@ def construir_plan(video_infos, plantilla, texto=None, fecha_hoy=None, ruta_db=N
     if isinstance(fecha_ref, datetime.datetime):
         fecha_ref = fecha_ref.date()
 
-    # Cargar DB nombres existentes
+    # Cargar DB rutas normalizadas existentes (B8.3A colisión por ruta exacta)
     try:
-        db_nombres = _cargar_nombres_db(ruta_db)
+        rutas_db = _cargar_rutas_db(ruta_db)
     except Exception as exc:
         return {"ok": False, "plan": [], "errores": [f"no se pudo leer DB: {exc}"], "plantilla": plantilla}
+    db_norm_all = {rn for _vid, rn in rutas_db}
+    # rutas actuales del lote que se liberarán (exacta) — B8.3A cero silencio: fallo de normalización es error visible
+    lote_actual_norms = set()
+    for info in infos:
+        try:
+            lote_actual_norms.add(normalizar_ruta_clave(info["ruta"]))
+        except Exception as exc_ruta:
+            # Error visible por item: ruta actual no normalizable impide decidir identidad; abortar plan con error por item
+            return {"ok": False, "plan": [{"video_id": info["video_id"], "nombre_actual": info["nombre"], "nombre_final": None, "ruta_actual": info["ruta"], "ruta_final": None, "directorio": info["directorio"], "extension": info["extension"], "stem": None, "error": f"ruta no normalizable: {exc_ruta}", "indice": info["indice"]}], "errores": [f"ruta_actual no normalizable id {info['video_id']}: {exc_ruta}"], "plantilla": plantilla}
+    db_restante_norms = db_norm_all - lote_actual_norms
 
-    # Mapa de nombres actuales del lote (lower) para excluir de colisión externa
-    lote_actual_lower = {info["nombre"].lower(): info["video_id"] for info in infos}
-    # DB restantes = todos menos los del lote (lower set)
-    db_lower_all = {n.lower() for n in db_nombres}
-    db_restante_lower = db_lower_all - set(lote_actual_lower.keys())
-    # También necesitamos mapa nombre->id para mensajes, pero no esencial
-
-    # FS por directorio: listado
-    # Agrupar por directorio normalizado
+    # FS por directorio: conjunto de rutas normalizadas reales no liberables (B8.3A)
     dirs = {}
     for info in infos:
         d = info["directorio"]
-        # normalizar para FS check case-insensitive
         norm = os.path.normcase(os.path.normpath(os.path.abspath(d))) if os.path.isabs(d) or os.path.isdir(d) else os.path.normcase(os.path.normpath(d))
         dirs.setdefault(norm, []).append(info)
-    # Construir FS sets por directorio (lower nombres existentes excluyendo batch fuentes en ese dir)
-    fs_sets = {}
+    # fs_normalizados por directorio norm -> set(ruta_normalizada)
+    fs_sets_norm = {}
     for norm_dir, lista in dirs.items():
-        # obtener directorio real (primer info)
         dir_real = lista[0]["directorio"]
-        # os.path.abspath puede fallar si dir_relativo; usar dir_real tal cual
         try:
             if os.path.isdir(dir_real):
                 archivos = os.listdir(dir_real)
             else:
-                # intentar abspath version
                 abs_dir = os.path.abspath(dir_real)
                 if os.path.isdir(abs_dir):
                     archivos = os.listdir(abs_dir)
@@ -205,17 +225,27 @@ def construir_plan(video_infos, plantilla, texto=None, fecha_hoy=None, ruta_db=N
                     archivos = []
         except OSError:
             archivos = []
-        # lower set de archivos en ese directorio
-        lower_fs_all = {f.lower() for f in archivos if isinstance(f, str)}
-        # excluir fuentes del lote en ese directorio
-        fuentes_en_dir_lower = {info["nombre"].lower() for info in lista}
-        fs_sets[norm_dir] = lower_fs_all - fuentes_en_dir_lower
-        # guardar también dir_real para referencia
-        # actualizar dirs mapping to keep real
-    # Mapa de directorio norm -> set restantes
+        # construir set de rutas normalizadas completas para archivos en ese directorio
+        fs_norm_all = set()
+        for fname in archivos:
+            if not isinstance(fname, str):
+                continue
+            try:
+                ruta_completa = os.path.join(dir_real, fname)
+                fs_norm_all.add(normalizar_ruta_clave(ruta_completa))
+            except Exception:
+                continue
+        # excluir fuentes del lote en ese directorio (rutas que se liberarán) — cero silencio
+        fuentes_norms_en_dir = set()
+        for info in lista:
+            try:
+                fuentes_norms_en_dir.add(normalizar_ruta_clave(info["ruta"]))
+            except Exception as exc_f:
+                return {"ok": False, "plan": [{"video_id": info["video_id"], "nombre_actual": info["nombre"], "nombre_final": None, "ruta_actual": info["ruta"], "ruta_final": None, "directorio": info["directorio"], "extension": info["extension"], "stem": None, "error": f"ruta fuente no normalizable: {exc_f}", "indice": info["indice"]}], "errores": [f"ruta fuente no normalizable id {info['video_id']}: {exc_f}"], "plantilla": plantilla}
+        fs_sets_norm[norm_dir] = fs_norm_all - fuentes_norms_en_dir
 
-    # Generación secuencial con resolución de colisiones
-    lote_final_lower = set()
+    # Generación secuencial con resolución de colisiones por ruta exacta
+    lote_final_norms = set()
     plan = []
     errores_globales = []
     tiene_error_item = False
@@ -321,22 +351,28 @@ def construir_plan(video_infos, plantilla, texto=None, fecha_hoy=None, ruta_db=N
             tiene_error_item = True
             continue
 
-        # Resolver colisión determinística con sufijo
-        # existe_fn debe verificar db_restante, fs_sets[norm_dir], y lote_final_lower (case-insensitive)
+        # Resolver colisión determinística con sufijo por ruta exacta (B8.3A)
         def existe_fn(candidato):
-            cand_lower = candidato.lower()
-            if cand_lower in lote_final_lower:
+            # construir ruta candidata exacta y normalizar
+            ruta_candidata = os.path.join(directorio, candidato)
+            try:
+                norm_cand = normalizar_ruta_clave(ruta_candidata)
+            except Exception:
+                # si no normalizable, considerar ocupado para forzar sufijo
                 return True
-            if cand_lower in db_restante_lower:
+            if norm_cand in lote_final_norms:
                 return True
-            # FS check per directorio
-            fs_set = fs_sets.get(norm_dir, set())
-            if cand_lower in fs_set:
+            if norm_cand in db_restante_norms:
+                return True
+            fs_set = fs_sets_norm.get(norm_dir, set())
+            if norm_cand in fs_set:
                 return True
             return False
 
         try:
-            nombre_final = nombres_mod.resolver_colision(stem, ext_original, existe_fn=existe_fn, nombres_en_lote=lote_final_lower)
+            # resolver_colision sigue generando sufijo cuando existe_fn dice ocupado; mantener set compatible con API (pasamos set vacío auxiliar)
+            # el segundo parámetro nombres_en_lote ya no se usa como fuente de verdad, pero debe ser pasado para compatibilidad
+            nombre_final = nombres_mod.resolver_colision(stem, ext_original, existe_fn=existe_fn, nombres_en_lote=set())
         except nombres_mod.NombreVacioError as exc:
             plan.append({
                 "video_id": vid,
@@ -390,8 +426,24 @@ def construir_plan(video_infos, plantilla, texto=None, fecha_hoy=None, ruta_db=N
         # Si nombre_final lower == nombre_actual lower, lo dejamos como está (sin cambio) - no añadirá suffix diferente, pero resolver_colision ya habría devuelto base si no colisionaba con otros.
         # Si es idéntico, no hay necesidad de renombrar; lo dejamos.
 
-        # Añadir a lote set
-        lote_final_lower.add(nombre_final.lower())
+        # Añadir a lote set por ruta exacta — cero silencio: fallo de normalización de ruta_final es error visible
+        try:
+            lote_final_norms.add(normalizar_ruta_clave(os.path.join(directorio, nombre_final)))
+        except Exception as exc_fin:
+            plan.append({
+                "video_id": vid,
+                "nombre_actual": nombre_actual,
+                "nombre_final": None,
+                "ruta_actual": ruta_actual,
+                "ruta_final": None,
+                "directorio": directorio,
+                "extension": ext_original,
+                "stem": stem,
+                "error": f"ruta_final no normalizable: {exc_fin}",
+                "indice": info["indice"],
+            })
+            tiene_error_item = True
+            continue
         ruta_final = os.path.join(directorio, nombre_final)
         # Si ruta_actual es absoluta, hacer ruta_final absoluta para ejecución
         if os.path.isabs(ruta_actual):
@@ -475,16 +527,26 @@ def _calcular_renombres_cache(nombre_actual, nombre_nuevo, carpeta_mini=None):
 
 
 def _renombrar_un_video_atomico(video_id, nombre_actual, nombre_final, ruta_actual, ruta_final, ruta_db):
-    """Renombra un único video de forma segura (reutiliza lógica B7.1 mínima).
+    """Renombra un único video de forma segura (B8.3A ruta_normalizada exacta, sin cache por nombre).
 
-    Realiza FS rename + cache + DB UPDATE con compensación.
+    Realiza FS rename + DB UPDATE con compensación. Cache canónica permanece por id.
     Lanza excepciones tipadas en fallo. Retorna dict ok en éxito.
     No valida plantilla; asume plan ya validado.
     """
-    import renombrar_video as svc_ren  # reutilizar validaciones mínimas pero no su validar_nuevo_nombre estricto (ya sanitizado)
-    # Prevalidar que nombres no sean idénticos case-insensitive -> no-op
-    if nombre_actual.lower() == nombre_final.lower():
-        # No-op skip
+    import renombrar_video as svc_ren
+    # Prevalidar que rutas destino no sea idéntica exacta (case-insensitive via normalizar)
+    try:
+        norm_actual = normalizar_ruta_clave(ruta_actual)
+        norm_final = normalizar_ruta_clave(ruta_final)
+    except Exception:
+        # fallback a comparación lower si no normalizable
+        if nombre_actual.lower() == nombre_final.lower() and os.path.normcase(os.path.normpath(ruta_actual)) == os.path.normcase(os.path.normpath(ruta_final)):
+            return {"ok": True, "video_id": video_id, "nombre": nombre_final, "ruta": ruta_actual, "nombre_anterior": nombre_actual, "ruta_anterior": ruta_actual, "omitido": True}
+        norm_actual = None
+        norm_final = None
+    if norm_actual is not None and norm_final is not None and norm_actual == norm_final:
+        return {"ok": True, "video_id": video_id, "nombre": nombre_final, "ruta": ruta_actual, "nombre_anterior": nombre_actual, "ruta_anterior": ruta_actual, "omitido": True}
+    if nombre_actual.lower() == nombre_final.lower() and norm_actual is None:
         return {"ok": True, "video_id": video_id, "nombre": nombre_final, "ruta": ruta_actual, "nombre_anterior": nombre_actual, "ruta_anterior": ruta_actual, "omitido": True}
 
     # Determinar rutas absolutas para FS
@@ -496,27 +558,31 @@ def _renombrar_un_video_atomico(video_id, nombre_actual, nombre_final, ruta_actu
         ruta_final_abs = os.path.abspath(ruta_final)
     else:
         ruta_final_abs = ruta_final
+    # ruta_normalizada destino para DB
+    try:
+        ruta_final_normalizada = normalizar_ruta_clave(ruta_final_abs)
+    except Exception as exc:
+        raise svc_ren.ValidacionError(f"ruta destino no normalizable {ruta_final_abs!r}: {exc}") from None
 
     # Verificar origen existe
     if not os.path.isfile(ruta_actual_abs):
         if not os.path.isfile(ruta_actual):
             raise svc_ren.RenombradoError(f"archivo origen no encontrado: {ruta_actual!r}")
-        ruta_actual_abs = ruta_actual  # usar relativa si es la que existe
+        ruta_actual_abs = ruta_actual
 
     # Verificar destino no existe (case-insensitive Windows semantics via normcase)
     if os.path.exists(ruta_final_abs):
-        # en Windows normcase
         if os.path.normcase(os.path.normpath(ruta_final_abs)) != os.path.normcase(os.path.normpath(ruta_actual_abs)):
             raise svc_ren.ColisionError(f"ya existe archivo en destino: {ruta_final_abs!r}")
         else:
             raise svc_ren.ValidacionError("destino idéntico al origen")
 
-    # DB UNIQUE pre-check (excluir self)
+    # DB colisión pre-check por ruta_normalizada exacta (excluir self)
     conn_chk = sqlite3.connect(ruta_db if ruta_db else ruta_biblioteca())
     try:
-        fila_dup = conn_chk.execute("SELECT id FROM videos WHERE nombre = ? COLLATE NOCASE AND id != ?", (nombre_final, video_id)).fetchone()
+        fila_dup = conn_chk.execute("SELECT id FROM videos WHERE ruta_normalizada = ? AND id != ?", (ruta_final_normalizada, video_id)).fetchone()
         if fila_dup is not None:
-            raise svc_ren.ColisionError(f"ya existe otro video con nombre {nombre_final!r} (id {fila_dup[0]})")
+            raise svc_ren.ColisionError(f"ya existe otro video con ruta destino {ruta_final_abs!r} (id {fila_dup[0]})")
     finally:
         try:
             conn_chk.close()
@@ -524,12 +590,7 @@ def _renombrar_un_video_atomico(video_id, nombre_actual, nombre_final, ruta_actu
             import warnings as _b77_warnings
             _b77_warnings.warn(f"_renombrar_un_video_atomico conn_chk cerrar falló: {_b77_exc}", RuntimeWarning)
 
-    # Cache colisión
-    renombres_cache = _calcular_renombres_cache(nombre_actual, nombre_final)
-    for _src, _dst in renombres_cache:
-        if os.path.exists(_dst):
-            if os.path.normcase(os.path.normpath(_dst)) != os.path.normcase(os.path.normpath(_src)):
-                raise svc_ren.ColisionError(f"colisión en cache destino ya existe: {_dst!r}")
+    # B8.3A: sin movimiento de miniaturas/previews por nombre — cache canónica permanece en misma ruta
 
     # FS rename video
     try:
@@ -538,63 +599,24 @@ def _renombrar_un_video_atomico(video_id, nombre_actual, nombre_final, ruta_actu
         raise svc_ren.RenombradoError(f"fallo al renombrar en filesystem: {exc}") from exc
 
     cache_renombrados = []
-    try:
-        for src, dst in renombres_cache:
-            if not os.path.isfile(src):
-                continue
-            if os.path.exists(dst):
-                continue
-            os.rename(src, dst)
-            cache_renombrados.append((src, dst))
-    except OSError as exc:
-        _b77_cache_comp_errs = []
-        for s, d in reversed(cache_renombrados):
-            try:
-                if os.path.isfile(d) and not os.path.exists(s):
-                    os.rename(d, s)
-            except OSError as _b77_exc:
-                _b77_cache_comp_errs.append(f"{d!r}->{s!r}: {_b77_exc}")
-        _b77_cache_detalle = f" | compensación cache falló: {'; '.join(_b77_cache_comp_errs)}" if _b77_cache_comp_errs else ""
-        try:
-            os.rename(ruta_final_abs, ruta_actual_abs if os.path.isabs(ruta_actual_abs) else ruta_actual)
-        except OSError as exc_comp:
-            raise svc_ren.CompensacionFalloError(
-                f"fallo al renombrar cache tras rename video y compensación video también falló: {exc}{_b77_cache_detalle} | compensación video: {exc_comp}",
-                ruta_original=ruta_actual_abs, ruta_nueva=ruta_final_abs, error_db=str(exc)+_b77_cache_detalle, error_compensacion=str(exc_comp),
-            ) from exc_comp
-        if _b77_cache_comp_errs:
-            raise svc_ren.RenombradoError(f"fallo al renombrar cache de miniaturas: {exc}{_b77_cache_detalle}") from exc
-        raise svc_ren.RenombradoError(f"fallo al renombrar cache de miniaturas: {exc}") from exc
+    # B8.3A: no renombrado de cache por nombre
 
-    # DB update
+    # DB update por ruta_normalizada
     conn = sqlite3.connect(ruta_db if ruta_db else ruta_biblioteca())
     try:
         conn.execute("BEGIN")
-        fila_dup2 = conn.execute("SELECT id FROM videos WHERE nombre = ? COLLATE NOCASE AND id != ?", (nombre_final, video_id)).fetchone()
+        fila_dup2 = conn.execute("SELECT id FROM videos WHERE ruta_normalizada = ? AND id != ?", (ruta_final_normalizada, video_id)).fetchone()
         if fila_dup2 is not None:
             conn.rollback()
-            _b77_cache_comp_errs = []
-            for s, d in reversed(cache_renombrados):
-                try:
-                    if os.path.isfile(d) and not os.path.exists(s):
-                        os.rename(d, s)
-                except OSError as _b77_exc:
-                    _b77_cache_comp_errs.append(f"{d!r}->{s!r}: {_b77_exc}")
-            _b77_cache_detalle = f" | compensación cache falló: {'; '.join(_b77_cache_comp_errs)}" if _b77_cache_comp_errs else ""
             try:
                 os.rename(ruta_final_abs, ruta_actual_abs if os.path.isabs(ruta_actual_abs) else ruta_actual)
             except OSError as exc_comp:
                 raise svc_ren.CompensacionFalloError(
-                    f"fallo SQLite (colisión) y compensación también falló: {exc_comp}{_b77_cache_detalle}",
-                    ruta_original=ruta_actual_abs, ruta_nueva=ruta_final_abs, error_db=f"colisión UNIQUE {nombre_final!r}{_b77_cache_detalle}", error_compensacion=str(exc_comp),
+                    f"colisión de ruta destino {ruta_final_abs!r} y compensación también falló: {exc_comp}",
+                    ruta_original=ruta_actual_abs, ruta_nueva=ruta_final_abs, error_db=f"colisión ruta {ruta_final_abs!r}", error_compensacion=str(exc_comp),
                 ) from exc_comp
-            if _b77_cache_comp_errs:
-                raise svc_ren.CompensacionFalloError(
-                    f"compensación cache falló tras colisión: {'; '.join(_b77_cache_comp_errs)}",
-                    ruta_original=ruta_actual_abs, ruta_nueva=ruta_final_abs, error_db=f"colisión UNIQUE {nombre_final!r}", error_compensacion='; '.join(_b77_cache_comp_errs),
-                )
-            raise svc_ren.ColisionError(f"ya existe otro video con nombre {nombre_final!r} (carrera)")
-        cur = conn.execute("UPDATE videos SET nombre = ?, ruta = ? WHERE id = ?", (nombre_final, ruta_final_abs, video_id))
+            raise svc_ren.ColisionError(f"ya existe otro video con ruta destino {ruta_final_abs!r} (carrera)")
+        cur = conn.execute("UPDATE videos SET nombre = ?, ruta = ?, ruta_normalizada = ? WHERE id = ?", (nombre_final, ruta_final_abs, ruta_final_normalizada, video_id))
         if cur.rowcount == 0:
             conn.rollback()
             _b77_cache_comp_errs2 = []
@@ -724,27 +746,25 @@ def ejecutar_plan(plan, ruta_db=None, cancel_check=None, progreso_callback=None)
         if item.get("error"):
             raise ValidacionError(f"plan contiene error en video_id {item.get('video_id')}: {item.get('error')}")
 
-    # Detectar ciclos/intercambios: mapear source lower -> item, target lower -> items
-    source_lower_to_item = {}
+    # Detectar ciclos/intercambios por ruta_normalizada exacta (B8.3A) — cero silencio
+    source_norm_to_item = {}
     for item in plan:
-        source_lower_to_item[item["nombre_actual"].lower()] = item
-    # items cuya target lower está en source_lower (potencial ciclo/cadena)
+        try:
+            src_norm = normalizar_ruta_clave(item["ruta_actual"])
+        except Exception as exc_src:
+            raise RenombradoMasivoError(f"ruta_actual no normalizable para video_id {item.get('video_id')}: {exc_src}") from exc_src
+        source_norm_to_item[src_norm] = item
     necesita_temp = set()
     for item in plan:
         tgt = item["nombre_final"]
         if tgt is None:
             continue
-        if tgt.lower() in source_lower_to_item:
-            # solo si mismo directorio? Para FS, check directorio; para DB global, cualquier dir cuenta
-            # Si directorios distintos, FS no colisiona pero DB sí, igual necesita temp para DB
+        try:
+            tgt_norm = normalizar_ruta_clave(item["ruta_final"])
+        except Exception as exc_tgt:
+            raise RenombradoMasivoError(f"ruta_final no normalizable para video_id {item.get('video_id')}: {exc_tgt}") from exc_tgt
+        if tgt_norm in source_norm_to_item:
             necesita_temp.add(item["video_id"])
-            # también marcar el item fuente que es target de este?
-            # El source item que tiene ese nombre también debería ir a temp para liberar
-            # Pero eso se detectará cuando ese source item sea evaluado como necesita_temp si su target también está en source set
-            # Para swap A->B, B->A ambos tienen target en source set, ambos marcados
-            # Para cadena A->B, B->C, A target B está en source, B target C no está en source si C no es fuente, entonces solo A marcado
-            # A necesita temp, B no necesariamente, pero si ejecutamos A->temp luego B->C luego temp->B funciona
-            pass
 
     # Para swap, ambos necesitan temp. Para cadena, solo el que apunta a fuente necesita temp.
     # Construir conjunto de video_ids que participan en cualquier ciclo (SCC)
@@ -757,67 +777,93 @@ def ejecutar_plan(plan, ruta_db=None, cancel_check=None, progreso_callback=None)
     # Para evitar colisión intra-lote no cíclica, el orden ya está dado y ya resolvimos suffixes, no hay colisión.
     # Para ciclos, usaremos fase temp.
 
-    # Generar temporales únicos para los que necesitan
-    temp_map = {}  # video_id -> {temp_nombre, temp_ruta}
+    # Generar temporales únicos (B8.3A): libres solo en directorio del item y vs destinos reservados del mismo scope
+    temp_map = {}
+    # conjuntos para validación por ruta exacta — cero silencio
+    finales_norms = set()
+    for p in plan:
+        if p.get("ruta_final"):
+            try:
+                finales_norms.add(normalizar_ruta_clave(p["ruta_final"]))
+            except Exception as exc_fin:
+                raise RenombradoMasivoError(f"ruta_final no normalizable para video_id {p.get('video_id')}: {exc_fin}") from exc_fin
+    # cargar DB restante por ruta exacta para validación temp — fallo visible, no set() silencioso
+    try:
+        db_rutas_all = {rn for _vid, rn in _cargar_rutas_db(ruta_db)}
+    except Exception as exc_db:
+        raise RenombradoMasivoError(f"no se pudo leer DB para temporales: {exc_db}") from exc_db
+    # batch actuales liberables
+    batch_norms = set(source_norm_to_item.keys())
+    db_restante_for_temp = db_rutas_all - batch_norms
     for vid in necesita_temp:
-        # buscar item
         item = next((x for x in plan if x["video_id"] == vid), None)
         if item is None:
             continue
         ext = item["extension"]
         directorio = item["directorio"]
-        # generar temp único que no colisione con ningún nombre existente (DB, FS, lote finales, temporales)
         for _ in range(5):
             tmp_name = f"__tmp_mass_{vid}_{uuid.uuid4().hex[:8]}{ext}"
-            tmp_lower = tmp_name.lower()
-            # verificar no colisione con lote finales ni fuentes ni db restantes ni fs
-            # simple: si tmp_lower no está en source_lower ni en lote finales ni db ni fs, aceptable
-            # comprobar contra fuentes y finales
-            if tmp_lower in source_lower_to_item:
-                continue
-            # finales lower set
-            finales_lower = {p["nombre_final"].lower() for p in plan if p.get("nombre_final")}
-            if tmp_lower in finales_lower:
-                continue
-            # db restantes (reconsultar) - fallo de verificación impide asumir temporal seguro
+            tmp_ruta = os.path.join(directorio, tmp_name)
+            if os.path.isabs(item["ruta_actual"]):
+                tmp_ruta = os.path.abspath(tmp_ruta)
             try:
-                db_nombres = _cargar_nombres_db(ruta_db)
-                if tmp_lower in {n.lower() for n in db_nombres}:
-                    continue
-            except Exception as _b77_exc:
-                raise ColisionError(f"no se pudo verificar colisión DB para temporal {tmp_name!r}: {_b77_exc}") from _b77_exc
-            # fs check per dir: verificar no existe archivo con ese nombre en dir
+                tmp_norm = normalizar_ruta_clave(tmp_ruta)
+            except Exception:
+                continue
+            if tmp_norm in source_norm_to_item:
+                continue
+            if tmp_norm in finales_norms:
+                continue
+            if tmp_norm in db_restante_for_temp:
+                continue
+            # fs check solo en directorio del item
             dir_real = directorio
             try:
                 if os.path.isdir(dir_real):
-                    existing = {f.lower() for f in os.listdir(dir_real)}
-                    if tmp_lower in existing:
-                        continue
+                    archivos = os.listdir(dir_real)
                 else:
                     abs_dir = os.path.abspath(dir_real)
-                    if os.path.isdir(abs_dir):
-                        existing = {f.lower() for f in os.listdir(abs_dir)}
-                        if tmp_lower in existing:
-                            continue
+                    archivos = os.listdir(abs_dir) if os.path.isdir(abs_dir) else []
+                fs_norms_dir = set()
+                base_dir = dir_real if os.path.isdir(dir_real) else os.path.abspath(dir_real)
+                for fname in archivos:
+                    try:
+                        fs_norms_dir.add(normalizar_ruta_clave(os.path.join(base_dir, fname)))
+                    except Exception:
+                        continue
+                if tmp_norm in fs_norms_dir:
+                    continue
+                # también excluir otros temporales ya reservados en mismo directorio (misma ruta exacta)
+                if tmp_norm in {normalizar_ruta_clave(v["temp_ruta"]) for v in temp_map.values() if "temp_ruta" in v}:
+                    continue
             except Exception as _b77_exc:
                 raise ColisionError(f"no se pudo verificar FS para temporal {tmp_name!r} en {dir_real!r}: {_b77_exc}") from _b77_exc
-            # ok
-            temp_ruta = os.path.join(directorio, tmp_name)
-            if os.path.isabs(item["ruta_actual"]):
-                temp_ruta = os.path.abspath(temp_ruta)
-            temp_map[vid] = {"temp_nombre": tmp_name, "temp_ruta": temp_ruta, "item": item}
+            temp_map[vid] = {"temp_nombre": tmp_name, "temp_ruta": tmp_ruta, "item": item}
             break
         if vid not in temp_map:
             raise ColisionError(f"no se pudo generar temporal único para video_id {vid}")
 
-    # --- Detección de ciclos/SCC para rollback determinista ---
+    # --- Detección de ciclos/SCC para rollback determinista (B8.3A por ruta exacta) ---
     def _encontrar_ciclos(plan_local, source_map):
-        lower_to_vid = {it["nombre_actual"].lower(): it["video_id"] for it in plan_local}
+        # source_map es source_norm_to_item, pero reconstruimos mapping norm->vid por plan_local — cero silencio
+        norm_to_vid = {}
+        for it in plan_local:
+            try:
+                norm_src = normalizar_ruta_clave(it["ruta_actual"])
+            except Exception as exc_src:
+                raise RenombradoMasivoError(f"ruta_actual no normalizable en ciclo para video_id {it.get('video_id')}: {exc_src}") from exc_src
+            norm_to_vid[norm_src] = it["video_id"]
         vid_to_target = {}
         for it in plan_local:
-            tgt = it.get("nombre_final")
-            lower = tgt.lower() if isinstance(tgt, str) else None
-            vid_to_target[it["video_id"]] = lower_to_vid.get(lower) if lower else None
+            tgt = it.get("ruta_final")
+            if not isinstance(tgt, str):
+                vid_to_target[it["video_id"]] = None
+                continue
+            try:
+                norm_tgt = normalizar_ruta_clave(tgt)
+            except Exception as exc_tgt:
+                raise RenombradoMasivoError(f"ruta_final no normalizable en ciclo para video_id {it.get('video_id')}: {exc_tgt}") from exc_tgt
+            vid_to_target[it["video_id"]] = norm_to_vid.get(norm_tgt)
         visited_global = set()
         ciclos = []
         for start in list(vid_to_target.keys()):
@@ -843,7 +889,7 @@ def ejecutar_plan(plan, ruta_db=None, cancel_check=None, progreso_callback=None)
                 visited_global.add(n)
         return ciclos
 
-    ciclos = _encontrar_ciclos(plan, source_lower_to_item)
+    ciclos = _encontrar_ciclos(plan, source_norm_to_item)
     # Mapear vid -> ciclo idx
     vid_a_ciclo = {}
     grupos_temp = []  # lista de sets (ciclos)

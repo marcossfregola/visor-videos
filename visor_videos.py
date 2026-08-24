@@ -263,6 +263,12 @@ def crear_mime_data_drag(ids):
     return _crear_mime_data_drag_b713b(ids)
 
 
+# ── B8.3B — helper identidad estricta por video_id (única autoridad) ──
+def _es_video_id_valido(vid):
+    """Retorna True solo si vid es int positivo no-bool (ID válido B8.3B)."""
+    return isinstance(vid, int) and not isinstance(vid, bool) and vid > 0
+
+
 MENSAJE_CARGANDO = "Cargando catálogo…"
 MENSAJE_ERROR = "No se pudo cargar el catálogo"
 MENSAJE_SIN_CARPETA = "Ninguna carpeta seleccionada"
@@ -1277,14 +1283,14 @@ class TareaEliminarArchivos(TareaBase):
 
 
 class Tarjeta(QFrame):
-    doble_clic = Signal(str)
-    seleccionada = Signal(str, bool)
-    seleccion_por_rango = Signal(str)
-    menu_contextual = Signal(str)
+    doble_clic = Signal(object)
+    seleccionada = Signal(object, bool)
+    seleccion_por_rango = Signal(object)
+    menu_contextual = Signal(object)
     vista_solicitada = Signal(object)
     vista_abandonada = Signal()
-    seleccion_check = Signal(str, bool)
-    expansion_cambiada = Signal(str, bool)
+    seleccion_check = Signal(object, bool)
+    expansion_cambiada = Signal(object, bool)
     marcador_creado = Signal(object)
     marcador_eliminado = Signal(object)
     marcadores_solicitados = Signal()
@@ -1295,7 +1301,7 @@ class Tarjeta(QFrame):
     segmento_reproduccion_solicitada = Signal(object)
     segmento_bucle_solicitado = Signal(object)
     reproduccion_temporal_solicitada = Signal(float)
-    densidad_cambiada = Signal(str, object)
+    densidad_cambiada = Signal(object, object)
     marcador_color_solicitado = Signal(object, object)
     segmento_color_solicitado = Signal(object, object)
     segmento_exportacion_solicitada = Signal(object)
@@ -1365,6 +1371,14 @@ class Tarjeta(QFrame):
         self._nombre = nombre
         self._duracion = duracion
         self._seleccionada = False
+        # B8.3B — tooltip con ruta para distinguir homónimos (display mínimo, sin rediseño)
+        try:
+            if isinstance(ruta_video_registro, str) and ruta_video_registro:
+                self.setToolTip(ruta_video_registro)
+            elif isinstance(carpeta_video, str) and carpeta_video:
+                self.setToolTip(os.path.join(carpeta_video, nombre) if isinstance(nombre, str) else carpeta_video)
+        except Exception:
+            pass
         self._etiquetas_previews = []
         self._imagen_miniatura = None
         self._miniatura_original = None
@@ -1495,6 +1509,14 @@ class Tarjeta(QFrame):
                     break
         except Exception:
             pass
+        # B8.3B: actualizar tooltip para homónimos
+        try:
+            if isinstance(nueva_ruta, str) and nueva_ruta:
+                self.setToolTip(nueva_ruta)
+            elif isinstance(self._carpeta_video, str) and self._nombre:
+                self.setToolTip(os.path.join(self._carpeta_video, self._nombre))
+        except Exception:
+            pass
 
     def actualizar_ruta(self, nueva_ruta):
         """Actualiza únicamente la ruta/carpeta tras mover (B7.2).
@@ -1530,6 +1552,11 @@ class Tarjeta(QFrame):
         carpeta_norm = carpeta.rstrip(os.sep) or carpeta
         # Solo después de validar se actualiza el estado
         self._carpeta_video = carpeta_norm
+        # B8.3B: actualizar tooltip
+        try:
+            self.setToolTip(nueva_ruta)
+        except Exception:
+            pass
 
     @property
     def nombre(self):
@@ -1730,12 +1757,20 @@ class Tarjeta(QFrame):
             if visor is not None and getattr(visor, "_modo_organizacion", False):
                 if getattr(self, "_seleccionada", False):
                     try:
-                        sel = getattr(visor, "_nombres_seleccionados", set())
-                        if isinstance(sel, set) and len(sel) > 1 and self._nombre in sel:
+                        # B8.3B: usar ids para homónimos
+                        sel_ids = getattr(visor, "_ids_seleccionados", set())
+                        if isinstance(sel_ids, set) and len(sel_ids) > 1 and isinstance(self._video_id, int) and self._video_id in sel_ids:
                             shift = bool(event.modifiers() & Qt.ShiftModifier)
                             ctrl = bool(event.modifiers() & Qt.ControlModifier)
                             if not shift and not ctrl:
                                 defer = True
+                        else:
+                            sel = getattr(visor, "_nombres_seleccionados", set())
+                            if isinstance(sel, set) and len(sel) > 1 and self._nombre in sel:
+                                shift = bool(event.modifiers() & Qt.ShiftModifier)
+                                ctrl = bool(event.modifiers() & Qt.ControlModifier)
+                                if not shift and not ctrl:
+                                    defer = True
                     except (AttributeError, TypeError, RuntimeError):
                         defer = False
             if defer:
@@ -1745,16 +1780,16 @@ class Tarjeta(QFrame):
             self._drag_deferred = False
             shift = bool(event.modifiers() & Qt.ShiftModifier)
             if shift:
-                self.seleccion_por_rango.emit(self._nombre)
+                self.seleccion_por_rango.emit(self._video_id if _es_video_id_valido(self._video_id) else self._nombre)
             else:
                 ctrl = bool(event.modifiers() & Qt.ControlModifier)
-                self.seleccionada.emit(self._nombre, ctrl)
+                self.seleccionada.emit(self._video_id if _es_video_id_valido(self._video_id) else self._nombre, ctrl)
         elif event.button() == Qt.RightButton:
             self._drag_start_pos = None
             self._drag_deferred = False
             if not self._seleccionada:
-                self.seleccionada.emit(self._nombre, False)
-            self.menu_contextual.emit(self._nombre)
+                self.seleccionada.emit(self._video_id if _es_video_id_valido(self._video_id) else self._nombre, False)
+            self.menu_contextual.emit(self._video_id if _es_video_id_valido(self._video_id) else self._nombre)
         else:
             self._drag_start_pos = None
             self._drag_deferred = False
@@ -1849,7 +1884,7 @@ class Tarjeta(QFrame):
                 # Si no se inició drag (start_pos aún existe => no hubo drag), emitir selección single
                 if getattr(self, "_drag_start_pos", None) is not None:
                     # Simular click sin modificadores: limpiar y seleccionar solo este
-                    self.seleccionada.emit(self._nombre, False)
+                    self.seleccionada.emit(self._video_id if _es_video_id_valido(self._video_id) else self._nombre, False)
         except (AttributeError, TypeError, RuntimeError) as exc:
             print(f"[B7.13B] mouseRelease deferred error: {exc}")
         self._drag_start_pos = None
@@ -1864,7 +1899,7 @@ class Tarjeta(QFrame):
         # Qt puede re-entrar a mousePressEvent via super, restablecer definitivamente
         self._drag_start_pos = None
         self._drag_deferred = False
-        self.doble_clic.emit(self._nombre)
+        self.doble_clic.emit(self._video_id if _es_video_id_valido(self._video_id) else self._nombre)
 
     def marcar_seleccionada(self, valor):
         self._seleccionada = valor
@@ -1874,7 +1909,7 @@ class Tarjeta(QFrame):
             self.setStyleSheet("")
 
     def _al_check_cambiar(self, _estado):
-        self.seleccion_check.emit(self._nombre, self._check.isChecked())
+        self.seleccion_check.emit(self._video_id if _es_video_id_valido(self._video_id) else self._nombre, self._check.isChecked())
 
     def mostrar_check(self, visible):
         self._check.setVisible(visible)
@@ -2204,7 +2239,7 @@ class Tarjeta(QFrame):
     def _al_cambiar_densidad(self):
         valor = self._selector_densidad.currentData()
         self.aplicar_densidad(valor)
-        self.densidad_cambiada.emit(self._nombre, valor)
+        self.densidad_cambiada.emit(self._video_id if _es_video_id_valido(self._video_id) else self._nombre, valor)
 
     def aplicar_densidad(self, valor):
         """Aplica una densidad manual (None = Auto) y filtra los densos en RAM.
@@ -2273,7 +2308,7 @@ class Tarjeta(QFrame):
             if barra is not None:
                 barra.setVisible(True)
                 self._sincronizar_barra_colapsada()
-        self.expansion_cambiada.emit(self._nombre, valor)
+        self.expansion_cambiada.emit(self._video_id if _es_video_id_valido(self._video_id) else self._nombre, valor)
 
     def _preparar_exploracion(self):
         self._franja.set_duracion(self._duracion)
@@ -3022,7 +3057,9 @@ class VisorVideos(QMainWindow):
         self._texto_progreso = ""
         self._progreso_detallado = False
         self._nombres_seleccionados = set()
+        self._ids_seleccionados = set()
         self._ancla_seleccion = None
+        self._ancla_seleccion_id = None
         self._modo_seleccion = False
         self._portapapeles = []
         self._operacion_archivos = None
@@ -3899,10 +3936,10 @@ class VisorVideos(QMainWindow):
         """
         if getattr(self, "_filtro_catalogo", "todos") == "todos":
             return
+        self._orden_generacion += 1
         if self.gestor.activo:
             self._reordenamiento_pendiente = True
             return
-        self._orden_generacion += 1
         self._pagina_pendiente = False
         self.tarea_pagina = None
         self._recarga_catalogo_pendiente = False
@@ -3958,6 +3995,15 @@ class VisorVideos(QMainWindow):
                     if validas_sel:
                         # Usar lista completa como filtro OR, respetando incluir_sub actual (recursivo para SELECCION)
                         carpeta_param = validas_sel
+        except Exception:
+            pass
+        # B8.3A — lectura multicarpeta por _alcance_sincronizacion (unión A∪B, padre+subcarpeta sin duplicados, sin SQLite directo)
+        try:
+            alcance = getattr(self, "_alcance_sincronizacion", None)
+            if isinstance(alcance, (list, tuple, set)) and alcance:
+                validas_alcance = [c for c in alcance if isinstance(c, str) and c.strip() and os.path.isdir(c)]
+                if validas_alcance:
+                    carpeta_param = validas_alcance
         except Exception:
             pass
         return TareaLecturaCatalogoPaginada(
@@ -4023,11 +4069,12 @@ class VisorVideos(QMainWindow):
         filtra en SQL antes de LIMIT/OFFSET (no post-filtro). Si el gestor
         está activo, deja pendiente el reordenamiento.
         """
-        # Si la carga inicial aún no completó y gestor activo, postergar
+        # FIX B8.3 navegación: incrementar generación incluso si queda pendiente
+        # para invalidar resultados obsoletos de la carpeta anterior
+        self._orden_generacion += 1
         if self.gestor.activo:
             self._reordenamiento_pendiente = True
             return
-        self._orden_generacion += 1
         self._pagina_pendiente = False
         self.tarea_pagina = None
         self._recarga_catalogo_pendiente = False
@@ -4194,23 +4241,108 @@ class VisorVideos(QMainWindow):
         self._pipeline_activo = False
         self.barra_progreso.setVisible(False)
 
-    def _al_seleccionar_tarjeta(self, nombre, ctrl):
+    def _al_seleccionar_tarjeta(self, ident, ctrl):
+        # B8.3B — identidad por video_id; compat legado: ident puede ser nombre str
+        vid = ident if _es_video_id_valido(ident) else None
+        if vid is not None:
+            if not ctrl:
+                self._limpiar_seleccion()
+            if vid in getattr(self, "_ids_seleccionados", set()):
+                self._ids_seleccionados.discard(vid)
+                tarjeta = self._tarjeta_por_id(vid)
+                nombre = getattr(tarjeta, "nombre", None) if tarjeta else None
+                if nombre is not None:
+                    if not any(getattr(self._tarjeta_por_id(x), "nombre", None) == nombre for x in self._ids_seleccionados):
+                        self._nombres_seleccionados.discard(nombre)
+                self._marcar_tarjeta_por_id(vid, False)
+            else:
+                self._ids_seleccionados.add(vid)
+                tarjeta = self._tarjeta_por_id(vid)
+                if tarjeta is not None:
+                    self._nombres_seleccionados.add(tarjeta.nombre)
+                self._marcar_tarjeta_por_id(vid, True)
+            self._ancla_seleccion_id = vid if self._ids_seleccionados else None
+            if self._ancla_seleccion_id is not None:
+                t = self._tarjeta_por_id(self._ancla_seleccion_id)
+                self._ancla_seleccion = getattr(t, "nombre", None) if t else None
+            else:
+                self._ancla_seleccion = None
+            return
+        nombre = ident
         if not ctrl:
             self._limpiar_seleccion()
         if nombre in self._nombres_seleccionados:
             self._nombres_seleccionados.discard(nombre)
+            tarjeta = self._tarjeta_por_nombre(nombre)
+            if tarjeta is not None:
+                v = getattr(tarjeta, "_video_id", None)
+                if isinstance(v, int):
+                    self._ids_seleccionados.discard(v)
             self._marcar_tarjeta(nombre, False)
         else:
             self._nombres_seleccionados.add(nombre)
+            tarjeta = self._tarjeta_por_nombre(nombre)
+            if tarjeta is not None:
+                v = getattr(tarjeta, "_video_id", None)
+                if isinstance(v, int):
+                    self._ids_seleccionados.add(v)
             self._marcar_tarjeta(nombre, True)
         self._ancla_seleccion = nombre if self._nombres_seleccionados else None
+        self._ancla_seleccion_id = getattr(self._tarjeta_por_nombre(nombre), "_video_id", None) if self._nombres_seleccionados and nombre in self._nombres_seleccionados else None
 
-    def _al_seleccion_por_rango(self, nombre):
+    def _al_seleccion_por_rango(self, ident):
+        vid = ident if _es_video_id_valido(ident) else None
+        if vid is not None:
+            if self._ancla_seleccion_id is None or self._ancla_seleccion_id not in [getattr(t, "_video_id", None) for _, t in self.tarjetas]:
+                self._limpiar_seleccion()
+                self._ids_seleccionados.add(vid)
+                t = self._tarjeta_por_id(vid)
+                if t:
+                    self._nombres_seleccionados.add(t.nombre)
+                self._marcar_tarjeta_por_id(vid, True)
+                self._ancla_seleccion_id = vid
+                self._ancla_seleccion = getattr(self._tarjeta_por_id(vid), "nombre", None)
+                return
+            ids_orden = [getattr(t, "_video_id", None) for _, t in self.tarjetas]
+            try:
+                idx_ancla = ids_orden.index(self._ancla_seleccion_id)
+                idx_objetivo = ids_orden.index(vid)
+            except ValueError:
+                self._limpiar_seleccion()
+                self._ids_seleccionados.add(vid)
+                t = self._tarjeta_por_id(vid)
+                if t:
+                    self._nombres_seleccionados.add(t.nombre)
+                self._marcar_tarjeta_por_id(vid, True)
+                self._ancla_seleccion_id = vid
+                return
+            inicio = min(idx_ancla, idx_objetivo)
+            fin = max(idx_ancla, idx_objetivo)
+            self._limpiar_seleccion()
+            for idx in range(inicio, fin + 1):
+                _, tarjeta = self.tarjetas[idx]
+                v = getattr(tarjeta, "_video_id", None)
+                if isinstance(v, int):
+                    self._ids_seleccionados.add(v)
+                    self._nombres_seleccionados.add(tarjeta.nombre)
+                    self._marcar_tarjeta_por_id(v, True)
+            return
+        nombre = ident
         visibles = self.tarjetas_visibles()
         if self._ancla_seleccion is None or self._ancla_seleccion not in visibles:
             self._limpiar_seleccion()
             self._nombres_seleccionados.add(nombre)
             self._marcar_tarjeta(nombre, True)
+            try:
+                t0 = self._tarjeta_por_nombre(nombre)
+                if t0 is not None:
+                    v0 = getattr(t0, "_video_id", None)
+                    if _es_video_id_valido(v0):
+                        self._ids_seleccionados.add(v0)
+                        self._ancla_seleccion_id = v0
+            except (AttributeError, TypeError, ValueError, RuntimeError) as _exc_sync_ids:
+                # B8.3B: no-op seguro — sync de id es best-effort, no debe propagar
+                print(f"[B8.3B] _al_seleccion_por_rango sync ancla error: {_exc_sync_ids}")
             self._ancla_seleccion = nombre
             return
         idx_ancla = visibles.index(self._ancla_seleccion)
@@ -4222,11 +4354,25 @@ class VisorVideos(QMainWindow):
             n = visibles[idx]
             self._nombres_seleccionados.add(n)
             self._marcar_tarjeta(n, True)
+            # B8.3B sync ids for legacy path — Best-effort, no silencia Exception genérica
+            try:
+                t = self._tarjeta_por_nombre(n)
+                if t is not None:
+                    v = getattr(t, "_video_id", None)
+                    if _es_video_id_valido(v):
+                        self._ids_seleccionados.add(v)
+            except (AttributeError, TypeError, ValueError, RuntimeError) as _exc_sync_ids2:
+                print(f"[B8.3B] _al_seleccion_por_rango sync rango error: {_exc_sync_ids2}")
 
     def _limpiar_seleccion(self):
+        for vid in list(getattr(self, "_ids_seleccionados", set())):
+            self._marcar_tarjeta_por_id(vid, False)
         for nombre in list(self._nombres_seleccionados):
             self._marcar_tarjeta(nombre, False)
         self._nombres_seleccionados.clear()
+        if hasattr(self, "_ids_seleccionados"):
+            self._ids_seleccionados.clear()
+        self._ancla_seleccion_id = None
         self._actualizar_resumen_seleccion()
 
     def _marcar_tarjeta(self, nombre, valor):
@@ -4237,7 +4383,37 @@ class VisorVideos(QMainWindow):
                 self._actualizar_resumen_seleccion()
                 return
 
-    def _al_check_tarjeta(self, nombre, marcado):
+    def _marcar_tarjeta_por_id(self, video_id, valor):
+        tarjeta = self._tarjeta_por_id(video_id)
+        if tarjeta is not None:
+            tarjeta.marcar_seleccionada(valor)
+            tarjeta.set_check(valor)
+            self._actualizar_resumen_seleccion()
+            return
+        for _, t in self.tarjetas:
+            if getattr(t, "_video_id", None) == video_id:
+                t.marcar_seleccionada(valor)
+                t.set_check(valor)
+                self._actualizar_resumen_seleccion()
+                return
+
+    def _al_check_tarjeta(self, ident, marcado):
+        vid = ident if _es_video_id_valido(ident) else None
+        if vid is not None:
+            if marcado:
+                self._ids_seleccionados.add(vid)
+                t = self._tarjeta_por_id(vid)
+                if t:
+                    self._nombres_seleccionados.add(t.nombre)
+                self._marcar_tarjeta_por_id(vid, True)
+            else:
+                self._ids_seleccionados.discard(vid)
+                t = self._tarjeta_por_id(vid)
+                if t and not any(getattr(self._tarjeta_por_id(x), "nombre", None) == t.nombre for x in self._ids_seleccionados):
+                    self._nombres_seleccionados.discard(t.nombre)
+                self._marcar_tarjeta_por_id(vid, False)
+            return
+        nombre = ident
         if marcado:
             self._nombres_seleccionados.add(nombre)
             self._marcar_tarjeta(nombre, True)
@@ -4245,16 +4421,32 @@ class VisorVideos(QMainWindow):
             self._nombres_seleccionados.discard(nombre)
             self._marcar_tarjeta(nombre, False)
 
-    def _al_expansion_tarjeta(self, nombre, expandida):
+    def _al_expansion_tarjeta(self, ident, expandida):
+        vid = ident if _es_video_id_valido(ident) else None
+        nombre = None
+        tarjeta_exp = None
+        if vid is not None:
+            tarjeta_exp = self._tarjeta_por_id(vid)
+            nombre = getattr(tarjeta_exp, "nombre", None) if tarjeta_exp else None
+        else:
+            nombre = ident
+            tarjeta_exp = self._tarjeta_por_nombre(nombre)
+            vid = getattr(tarjeta_exp, "_video_id", None) if tarjeta_exp else None
         if not expandida:
-            if self._exploracion_objetivo == nombre:
+            if self._exploracion_objetivo == nombre or getattr(self, "_exploracion_objetivo_id", None) == vid:
                 self._exploracion_objetivo = None
+                self._exploracion_objetivo_id = None
                 self._cancelar_exploracion_en_curso()
             return
         for candidato, tarjeta in self.tarjetas:
-            if candidato != nombre:
-                tarjeta.colapsar()
+            if vid is not None:
+                if getattr(tarjeta, "_video_id", None) != vid:
+                    tarjeta.colapsar()
+            else:
+                if candidato != nombre:
+                    tarjeta.colapsar()
         self._exploracion_objetivo = nombre
+        self._exploracion_objetivo_id = vid
         self._encolar_exploracion(nombre)
 
     def _encolar_exploracion(self, nombre):
@@ -4266,11 +4458,12 @@ class VisorVideos(QMainWindow):
         self._cancelar_exploracion_en_curso()
         self._procesar_siguiente_exploracion()
 
-    def _al_densidad_cambiada(self, nombre, _valor):
-        tarjeta = self._tarjeta_por_nombre(nombre)
+    def _al_densidad_cambiada(self, ident, _valor):
+        vid = ident if _es_video_id_valido(ident) else None
+        tarjeta = self._tarjeta_por_id(vid) if _es_video_id_valido(vid) else self._tarjeta_por_nombre(ident)
         if tarjeta is None or not tarjeta._expandida:
             return
-        self._encolar_exploracion(nombre)
+        self._encolar_exploracion(tarjeta.nombre)
 
     def _cancelar_exploracion_en_curso(self):
         tarea = self.tarea_exploracion
@@ -4284,9 +4477,21 @@ class VisorVideos(QMainWindow):
             if not self._cola_exploracion:
                 return
             nombre = self._cola_exploracion.pop(0)
-            if nombre != self._exploracion_objetivo:
-                continue
-            tarjeta = self._tarjeta_por_nombre(nombre)
+            objetivo_id = getattr(self, "_exploracion_objetivo_id", None)
+            if _es_video_id_valido(objetivo_id):
+                # B8.3B: identidad estricta por video_id — si no existe tarjeta para ese ID, no-op (no caer por nombre)
+                tarjeta = self._tarjeta_por_id(objetivo_id)
+                if tarjeta is None:
+                    continue
+                if getattr(tarjeta, "_video_id", None) != objetivo_id:
+                    continue
+                if nombre != self._exploracion_objetivo and getattr(tarjeta, "nombre", None) != self._exploracion_objetivo:
+                    if getattr(tarjeta, "_video_id", None) != objetivo_id:
+                        continue
+            else:
+                if nombre != self._exploracion_objetivo:
+                    continue
+                tarjeta = self._tarjeta_por_nombre(nombre)
             if tarjeta is None or not tarjeta._expandida:
                 continue
             video_id = getattr(tarjeta, "_video_id", None)
@@ -4325,11 +4530,20 @@ class VisorVideos(QMainWindow):
         op = self._exploracion_op_actual
         if op is None:
             return
-        if op.get("nombre") != self._exploracion_objetivo:
+        if op.get("video_id") is not None and op.get("video_id") != getattr(self, "_exploracion_objetivo_id", None) and op.get("nombre") != self._exploracion_objetivo:
+            return
+        elif op.get("video_id") is None and op.get("nombre") != self._exploracion_objetivo:
             return
         if resultado.get("cancelado"):
             return
-        tarjeta = self._tarjeta_por_nombre(op.get("nombre"))
+        vid = op.get("video_id")
+        # B8.3B: identidad estricta — si vid válido, solo _tarjeta_por_id; si no existe, no-op
+        if _es_video_id_valido(vid):
+            tarjeta = self._tarjeta_por_id(vid)
+            if tarjeta is None:
+                return
+        else:
+            tarjeta = self._tarjeta_por_nombre(op.get("nombre"))
         if tarjeta is None or not tarjeta._expandida:
             return
         self._aplicar_exploracion_densa(tarjeta, op, resultado)
@@ -4338,11 +4552,21 @@ class VisorVideos(QMainWindow):
         op = self._exploracion_op_actual
         if op is None:
             return
-        if op.get("nombre") != self._exploracion_objetivo:
+        if op.get("video_id") is not None and op.get("video_id") != getattr(self, "_exploracion_objetivo_id", None) and op.get("nombre") != self._exploracion_objetivo:
+            if parcial.get("video_id") != op.get("video_id"):
+                return
+        elif op.get("nombre") != self._exploracion_objetivo:
             return
         if parcial.get("video_id") != op.get("video_id"):
             return
-        tarjeta = self._tarjeta_por_nombre(op.get("nombre"))
+        vid = op.get("video_id")
+        # B8.3B: identidad estricta — si vid válido, solo _tarjeta_por_id; si no existe, no-op
+        if _es_video_id_valido(vid):
+            tarjeta = self._tarjeta_por_id(vid)
+            if tarjeta is None:
+                return
+        else:
+            tarjeta = self._tarjeta_por_nombre(op.get("nombre"))
         if tarjeta is None or not tarjeta._expandida:
             return
         fotogramas = parcial.get("fotogramas") or []
@@ -4490,7 +4714,15 @@ class VisorVideos(QMainWindow):
             registro = op.get("registro")
             if registro is not None:
                 registro["color"] = op.get("color_previo")
-                tarjeta = self._tarjeta_por_nombre(op.get("nombre"))
+                vid = op.get("video_id")
+                if _es_video_id_valido(vid):
+                    tarjeta = self._tarjeta_por_id(vid)
+                    if tarjeta is None:
+                        # B8.3B: ID válido inexistente -> no-op seguro (no caer por nombre)
+                        self.mensaje_carpeta.setText(f"No se pudo asignar el color del marcador: {mensaje}")
+                        return
+                else:
+                    tarjeta = self._tarjeta_por_nombre(op.get("nombre"))
                 if tarjeta is not None:
                     tarjeta._franja.set_marcadores(
                         *tarjeta._tiempos_y_colores_marcadores()
@@ -4503,7 +4735,13 @@ class VisorVideos(QMainWindow):
             self.mensaje_carpeta.setText(
                 f"No se pudieron cargar los marcadores: {mensaje}"
             )
-            tarjeta = self._tarjeta_por_nombre(op["nombre"])
+            vid = op.get("video_id")
+            if _es_video_id_valido(vid):
+                tarjeta = self._tarjeta_por_id(vid)
+                if tarjeta is None:
+                    return
+            else:
+                tarjeta = self._tarjeta_por_nombre(op["nombre"])
             if tarjeta is not None:
                 tarjeta._marcadores_eliminados_carga.clear()
 
@@ -4625,7 +4863,13 @@ class VisorVideos(QMainWindow):
         return None
 
     def _aplicar_marcadores_cargados(self, op, filas):
-        tarjeta = self._tarjeta_por_nombre(op["nombre"])
+        vid = op.get("video_id")
+        if _es_video_id_valido(vid):
+            tarjeta = self._tarjeta_por_id(vid)
+            if tarjeta is None:
+                return
+        else:
+            tarjeta = self._tarjeta_por_nombre(op["nombre"])
         if tarjeta is None:
             return
         tarjeta._marcadores_cargados = True
@@ -4740,7 +4984,23 @@ class VisorVideos(QMainWindow):
             registro = op["registro"]
             seg_id, inicio, fin = resultado
             registro["id"] = seg_id
-            tarjeta = self._tarjeta_por_nombre(op["nombre"])
+            vid = op.get("video_id")
+            if _es_video_id_valido(vid):
+                tarjeta = self._tarjeta_por_id(vid)
+                if tarjeta is None:
+                    # B8.3B: no caer por nombre cuando ID válido no existe
+                    if registro.get("eliminada"):
+                        self._encolar_segmento(
+                            {
+                                "tipo": "eliminar",
+                                "segmento_id": seg_id,
+                                "video_id": op["video_id"],
+                                "nombre": op["nombre"],
+                            }
+                        )
+                    return
+            else:
+                tarjeta = self._tarjeta_por_nombre(op["nombre"])
             if tarjeta is not None:
                 tarjeta._segmentos.sort(
                     key=lambda s: (
@@ -4769,7 +5029,18 @@ class VisorVideos(QMainWindow):
             # optimista; se reordena y se reaplica. Si el segmento ya no
             # existía en la base (resultado None), se restaura lo previo.
             registro = op["registro"]
-            tarjeta = self._tarjeta_por_nombre(op["nombre"])
+            vid = op.get("video_id")
+            if _es_video_id_valido(vid):
+                tarjeta = self._tarjeta_por_id(vid)
+                if tarjeta is None:
+                    # B8.3B: ID válido inexistente -> no-op seguro (no caer por nombre)
+                    if resultado is None:
+                        registro["inicio"] = op["previo"]["inicio"]
+                        registro["fin"] = op["previo"]["fin"]
+                        self.mensaje_carpeta.setText("No se pudo actualizar el segmento: ya no existe.")
+                    return
+            else:
+                tarjeta = self._tarjeta_por_nombre(op["nombre"])
             if resultado is None:
                 registro["inicio"] = op["previo"]["inicio"]
                 registro["fin"] = op["previo"]["fin"]
@@ -4807,7 +5078,14 @@ class VisorVideos(QMainWindow):
         if tipo == "crear":
             registro = op["registro"]
             registro["eliminada"] = False
-            tarjeta = self._tarjeta_por_nombre(op["nombre"])
+            vid = op.get("video_id")
+            if _es_video_id_valido(vid):
+                tarjeta = self._tarjeta_por_id(vid)
+                if tarjeta is None:
+                    self.mensaje_carpeta.setText(f"No se pudo guardar el segmento: {mensaje}")
+                    return
+            else:
+                tarjeta = self._tarjeta_por_nombre(op["nombre"])
             if tarjeta is not None:
                 tarjeta._segmentos = [
                     seg
@@ -4836,7 +5114,14 @@ class VisorVideos(QMainWindow):
             registro = op.get("registro")
             if registro is not None:
                 registro["color"] = op.get("color_previo")
-            tarjeta = self._tarjeta_por_nombre(op["nombre"])
+            vid = op.get("video_id")
+            if _es_video_id_valido(vid):
+                tarjeta = self._tarjeta_por_id(vid)
+                if tarjeta is None:
+                    self.mensaje_carpeta.setText(f"No se pudo asignar el color del segmento: {mensaje}")
+                    return
+            else:
+                tarjeta = self._tarjeta_por_nombre(op["nombre"])
             if tarjeta is not None:
                 tarjeta._franja.set_segmentos(tarjeta._segmentos)
                 tarjeta._sincronizar_barra_colapsada()
@@ -4848,7 +5133,13 @@ class VisorVideos(QMainWindow):
                 f"No se pudieron cargar los segmentos: {mensaje}"
             )
             # Permitir reintento en una futura expansión.
-            tarjeta = self._tarjeta_por_nombre(op["nombre"])
+            vid = op.get("video_id")
+            if _es_video_id_valido(vid):
+                tarjeta = self._tarjeta_por_id(vid)
+                if tarjeta is None:
+                    return
+            else:
+                tarjeta = self._tarjeta_por_nombre(op["nombre"])
             if tarjeta is not None:
                 tarjeta._segmentos_cargados = False
                 tarjeta._segmentos_eliminados_carga.clear()
@@ -4857,7 +5148,14 @@ class VisorVideos(QMainWindow):
             registro = op["registro"]
             registro["inicio"] = op["previo"]["inicio"]
             registro["fin"] = op["previo"]["fin"]
-            tarjeta = self._tarjeta_por_nombre(op["nombre"])
+            vid = op.get("video_id")
+            if _es_video_id_valido(vid):
+                tarjeta = self._tarjeta_por_id(vid)
+                if tarjeta is None:
+                    self.mensaje_carpeta.setText(f"No se pudo actualizar el segmento: {mensaje}")
+                    return
+            else:
+                tarjeta = self._tarjeta_por_nombre(op["nombre"])
             if tarjeta is not None:
                 tarjeta._segmentos.sort(
                     key=lambda s: (
@@ -5739,7 +6037,13 @@ class VisorVideos(QMainWindow):
         No reemplaza el snapshot: conserva los segmentos creados localmente
         (id `None`) y no reintroduce los eliminados durante la carga.
         """
-        tarjeta = self._tarjeta_por_nombre(op["nombre"])
+        vid = op.get("video_id")
+        if _es_video_id_valido(vid):
+            tarjeta = self._tarjeta_por_id(vid)
+            if tarjeta is None:
+                return
+        else:
+            tarjeta = self._tarjeta_por_nombre(op["nombre"])
         if tarjeta is None:
             return
         # Un resultado de carga solo se aplica al card que la solicitó: si el
@@ -5818,9 +6122,17 @@ class VisorVideos(QMainWindow):
         self._seleccionar_todo_visible()
 
     def _seleccionar_todo_visible(self):
-        for nombre in self.visibles:
-            self._nombres_seleccionados.add(nombre)
-            self._marcar_tarjeta(nombre, True)
+        for _, tarjeta in self.tarjetas:
+            vid = getattr(tarjeta, "_video_id", None)
+            if _es_video_id_valido(vid):
+                if tarjeta.nombre in self.visibles:
+                    self._ids_seleccionados.add(vid)
+                    self._nombres_seleccionados.add(tarjeta.nombre)
+                    self._marcar_tarjeta_por_id(vid, True)
+                continue
+            if tarjeta.nombre in self.visibles:
+                self._nombres_seleccionados.add(tarjeta.nombre)
+                self._marcar_tarjeta(tarjeta.nombre, True)
         self._actualizar_resumen_seleccion()
 
     def _atajo_salir_modo_seleccion(self):
@@ -5848,22 +6160,35 @@ class VisorVideos(QMainWindow):
     def _atajo_renombrar(self):
         if self.busqueda.hasFocus():
             return
+        if getattr(self, "_ids_seleccionados", set()) and len(self._ids_seleccionados) == 1:
+            vid = next(iter(self._ids_seleccionados))
+            self._iniciar_renombrar(vid)
+            return
         if len(self._nombres_seleccionados) != 1:
             return
         nombre = next(iter(self._nombres_seleccionados))
         self._iniciar_renombrar(nombre)
 
-    def _iniciar_renombrar(self, nombre):
+    def _iniciar_renombrar(self, ident):
         if self.gestor_renombrado.activo or self.gestor.activo:
             self.mensaje_carpeta.setText("Hay una operación en curso")
             return
-        tarjeta = self._tarjeta_por_nombre(nombre)
-        if tarjeta is None:
-            return
-        video_id = getattr(tarjeta, "_video_id", None)
-        if video_id is None:
-            self.mensaje_carpeta.setText("No se pudo identificar el video")
-            return
+        vid = ident if _es_video_id_valido(ident) else None
+        if vid is not None:
+            tarjeta = self._tarjeta_por_id(vid)
+            if tarjeta is None:
+                return
+            video_id = vid
+            nombre = getattr(tarjeta, "nombre", None) or str(vid)
+        else:
+            nombre = ident
+            tarjeta = self._tarjeta_por_nombre(nombre)
+            if tarjeta is None:
+                return
+            video_id = getattr(tarjeta, "_video_id", None)
+            if video_id is None:
+                self.mensaje_carpeta.setText("No se pudo identificar el video")
+                return
         dialogo = DialogoRenombrar(nombre, self)
         if dialogo.exec() != QDialog.Accepted:
             return
@@ -5965,12 +6290,21 @@ class VisorVideos(QMainWindow):
         # Deshabilitar botones durante renombrado si fuese necesario; por ahora solo barra
         pass
 
-    def _iniciar_mover(self, nombre):
+    def _iniciar_mover(self, ident):
         """Inicia movimiento B7.2 — selector de carpeta existente y tarea background."""
         if self.gestor_mover.activo or self.gestor_renombrado.activo or self.gestor.activo:
             self.mensaje_carpeta.setText("Hay una operación en curso")
             return
-        tarjeta = self._tarjeta_por_nombre(nombre)
+        vid = ident if _es_video_id_valido(ident) else None
+        if vid is not None:
+            tarjeta = self._tarjeta_por_id(vid)
+            if tarjeta is None:
+                return
+            video_id = vid
+            nombre = getattr(tarjeta, "nombre", str(vid))
+        else:
+            nombre = ident
+            tarjeta = self._tarjeta_por_nombre(nombre)
         if tarjeta is None:
             return
         video_id = getattr(tarjeta, "_video_id", None)
@@ -6261,13 +6595,22 @@ class VisorVideos(QMainWindow):
         pass
 
     # B7.4 copia individual segura
-    def _iniciar_copiar(self, nombre):
+    def _iniciar_copiar(self, ident):
         """Inicia copia B7.4 — selector de carpeta existente y tarea background."""
         # Bloqueo si hay operación en curso (mover/renombrar/crear/copiar/escaneo)
         if self.gestor_copiar.activo or self.gestor_mover.activo or self.gestor_renombrado.activo or self.gestor.activo or (getattr(self, "gestor_crear_carpeta", None) and self.gestor_crear_carpeta.activo):
             self.mensaje_carpeta.setText("Hay una operación en curso")
             return
-        tarjeta = self._tarjeta_por_nombre(nombre)
+        vid = ident if _es_video_id_valido(ident) else None
+        if vid is not None:
+            tarjeta = self._tarjeta_por_id(vid)
+            if tarjeta is None:
+                return
+            video_id = vid
+            nombre = getattr(tarjeta, "nombre", str(vid))
+        else:
+            nombre = ident
+            tarjeta = self._tarjeta_por_nombre(nombre)
         if tarjeta is None:
             return
         video_id = getattr(tarjeta, "_video_id", None)
@@ -6579,7 +6922,7 @@ class VisorVideos(QMainWindow):
         self._actualizar_boton_eliminar()
 
     # B7.5 eliminación individual a Papelera vía video_id
-    def _iniciar_eliminar_video(self, nombre):
+    def _iniciar_eliminar_video(self, ident):
         """Inicia eliminación individual segura a Papelera (B7.5).
 
         Flujo: resuelve video_id via tarjeta, confirma con QMessageBox
@@ -6602,7 +6945,17 @@ class VisorVideos(QMainWindow):
         if getattr(self, "gestor_copiar", None) and self.gestor_copiar.activo:
             self.mensaje_carpeta.setText("Hay una operación en curso")
             return
-        tarjeta = self._tarjeta_por_nombre(nombre)
+        vid = ident if _es_video_id_valido(ident) else None
+        if vid is not None:
+            tarjeta = self._tarjeta_por_id(vid)
+            if tarjeta is None:
+                self.mensaje_carpeta.setText("No se pudo identificar el video")
+                return
+            video_id = vid
+            nombre = getattr(tarjeta, "nombre", str(vid))
+        else:
+            nombre = ident
+            tarjeta = self._tarjeta_por_nombre(nombre)
         if tarjeta is None:
             self.mensaje_carpeta.setText("No se pudo identificar el video")
             return
@@ -6750,6 +7103,14 @@ class VisorVideos(QMainWindow):
 
     # B7.6 lote masivo seguro (sin FS/SQLite directo desde UI, un solo selector, una sola confirmación)
     def _video_ids_seleccionados_ordenados(self):
+        ids_set = getattr(self, "_ids_seleccionados", set())
+        if ids_set:
+            ids = []
+            for _, tarjeta in self.tarjetas:
+                vid = getattr(tarjeta, "_video_id", None)
+                if vid in ids_set and vid not in ids:
+                    ids.append(vid)
+            return ids
         ids = []
         for nombre in self.tarjetas_visibles():
             if nombre not in self._nombres_seleccionados:
@@ -6759,7 +7120,8 @@ class VisorVideos(QMainWindow):
                 continue
             vid = getattr(tarjeta, "_video_id", None)
             if isinstance(vid, int) and not isinstance(vid, bool) and vid > 0:
-                ids.append(vid)
+                if vid not in ids:
+                    ids.append(vid)
         return ids
 
     def _lote_esta_ocupado(self):
@@ -8284,7 +8646,7 @@ class VisorVideos(QMainWindow):
                 for lst in (exitosos, fallidos, cancelados):
                     for it in lst:
                         vid = it.get("video_id") if isinstance(it, dict) else None
-                        if isinstance(vid, int) and vid > 0:
+                        if _es_video_id_valido(vid):
                             cand.append(vid)
                 if cand:
                     ids_a_restaurar = set(cand)
@@ -8475,6 +8837,17 @@ class VisorVideos(QMainWindow):
         x = sum(
             1 for nombre in visibles if nombre in self._nombres_seleccionados
         )
+        # B8.3B: para homónimos, si ids tiene 2 entradas con mismo nombre, el conteo por nombre ya da 2 (visibles duplicados), pero si ids tiene selección más precisa, asegurar conteo por ids cuando nombre colapsa
+        try:
+            ids = getattr(self, "_ids_seleccionados", set())
+            if ids and len(ids) != len(self._nombres_seleccionados):
+                # homónimo: ids distingue, usar conteo por tarjetas visibles cuyo id está en ids
+                x_id = sum(1 for _, t in self.tarjetas if getattr(t, "_video_id", None) in ids and t.nombre in visibles)
+                # si visibles tiene duplicados, x_id puede ser 2 mientras x por nombre también 2; tomar max para no subcontar
+                if x_id > x:
+                    x = x_id
+        except Exception:
+            pass
         self.resumen_seleccion.setText(
             f"{x} de {len(visibles)} seleccionados"
         )
@@ -8721,13 +9094,22 @@ class VisorVideos(QMainWindow):
 
     def _iniciar_miniaturas(self):
         # B8.2: miniaturas por video_id (requiere guardado previo)
+        # B8.3A: si no hay videos nuevos, no limpiar — ir directo a sincronización
         if self._guardado_ids is None or not self._guardado_ids:
-            self._limpiar_cadena()
+            self._miniaturas_pendiente = False
+            self._actualizar_miniaturas_pendiente = False
+            self._sincronizacion_pendiente = True
             self._actualizar_botones_carpeta()
+            if not self.gestor.activo:
+                self._iniciar_sincronizacion()
             return
         if self._guardado_rutas_por_id is None or self._guardado_nombres_por_id is None:
-            self._limpiar_cadena()
+            self._miniaturas_pendiente = False
+            self._actualizar_miniaturas_pendiente = False
+            self._sincronizacion_pendiente = True
             self._actualizar_botones_carpeta()
+            if not self.gestor.activo:
+                self._iniciar_sincronizacion()
             return
         duraciones = self._duraciones_desde_ffprobe()
         tarea = TareaMiniaturasPorId(
@@ -8849,10 +9231,45 @@ class VisorVideos(QMainWindow):
         protegidas = None
         if self._alcance_sincronizacion:
             protegidas = [
-                c for c in self._alcance_sincronizacion if c != carpeta
+                c for c in self._alcance_sincronizacion if not carpetas_iguales(c, carpeta)
             ]
+        # B8.3A — retiradas solo en último tramo, solo previamente escaneadas ya no en alcance; delegar shrink a backend
+        # FIX B8.3: no retirar ancestro/descendiente de la carpeta actual (evita borrar A al escanear A tras MADRE)
+        retiradas = None
+        if not self._cola_carpetas_escaneo:
+            try:
+                escaneadas = getattr(self, "carpetas_escaneadas", set()) or set()
+                if self._alcance_sincronizacion:
+                    alcance_set = list(self._alcance_sincronizacion)
+                    candidatas = []
+                    for esc in escaneadas:
+                        if not any(carpetas_iguales(esc, a) for a in alcance_set):
+                            # B8.3 FIX: si esc es ancestro o descendiente de la carpeta actual, no es retirada
+                            try:
+                                if _ruta_contiene(esc, carpeta) or _ruta_contiene(carpeta, esc):
+                                    continue
+                            except Exception:
+                                pass
+                            candidatas.append(esc)
+                    if candidatas:
+                        retiradas = candidatas
+                else:
+                    candidatas = []
+                    for esc in escaneadas:
+                        if not carpetas_iguales(esc, carpeta):
+                            try:
+                                if _ruta_contiene(esc, carpeta) or _ruta_contiene(carpeta, esc):
+                                    continue
+                            except Exception:
+                                pass
+                            candidatas.append(esc)
+                    if candidatas:
+                        retiradas = candidatas
+            except Exception as exc:
+                print(f"[B8.3A] _iniciar_sincronizacion retiradas error: {exc}")
+                retiradas = None
         tarea = TareaSincronizacionCatalogo(
-            carpeta, self._ruta_db, carpetas_protegidas=protegidas
+            carpeta, self._ruta_db, carpetas_protegidas=protegidas, carpetas_retiradas=retiradas
         )
         if not self.gestor.iniciar(tarea):
             self._limpiar_cadena()
@@ -9032,7 +9449,17 @@ class VisorVideos(QMainWindow):
                     scroll_val = int(self.area.verticalScrollBar().value())
                     if vp_h > 0:
                         for n in nombres_orden_nuevo:
-                            t = self._tarjeta_por_nombre(n)
+                            t = None
+                            try:
+                                for vid in (orden_nuevo or []):
+                                    cand = self._tarjeta_por_id(vid)
+                                    if cand is not None and cand.nombre == n:
+                                        t = cand
+                                        break
+                            except Exception:
+                                t = None
+                            if t is None:
+                                t = self._tarjeta_por_nombre(n)
                             if t is None:
                                 continue
                             try:
@@ -9056,7 +9483,20 @@ class VisorVideos(QMainWindow):
                 scroll_previo_vp = getattr(self, "_renombrar_masivo_scroll_previo", None)
                 if cambiaron:
                     primero = nombres_orden_nuevo[0]
-                    t_prim = self._tarjeta_por_nombre(primero)
+                    t_prim = None
+                    try:
+                        vid_prim = None
+                        for vid in (orden_nuevo or []):
+                            cand = self._tarjeta_por_id(vid)
+                            if cand is not None and cand.nombre == primero:
+                                vid_prim = vid
+                                break
+                        if vid_prim is not None:
+                            t_prim = self._tarjeta_por_id(vid_prim)
+                    except Exception:
+                        t_prim = None
+                    if t_prim is None:
+                        t_prim = self._tarjeta_por_nombre(primero)
                     if t_prim is not None:
                         try:
                             self.area.ensureWidgetVisible(t_prim, 0, 0)
@@ -9074,7 +9514,20 @@ class VisorVideos(QMainWindow):
                                 _diag_ens_fallback = str(_exc_diag_ens)
                 elif not alguna_visible:
                     primero = nombres_orden_nuevo[0]
-                    t_prim = self._tarjeta_por_nombre(primero)
+                    t_prim = None
+                    try:
+                        vid_prim2 = None
+                        for vid in (orden_nuevo or []):
+                            cand = self._tarjeta_por_id(vid)
+                            if cand is not None and cand.nombre == primero:
+                                vid_prim2 = vid
+                                break
+                        if vid_prim2 is not None:
+                            t_prim = self._tarjeta_por_id(vid_prim2)
+                    except Exception:
+                        t_prim = None
+                    if t_prim is None:
+                        t_prim = self._tarjeta_por_nombre(primero)
                     if t_prim is not None:
                         try:
                             self.area.ensureWidgetVisible(t_prim, 0, 0)
@@ -9341,7 +9794,7 @@ class VisorVideos(QMainWindow):
 
     def _aplicar_previews(self, resultado):
         for item in resultado.get("resultados", []):
-            # B8.2: soporta tanto por video_id como por nombre
+            # B8.3B: identidad estricta — si vid válido, solo por ID (no caer a homónimo por nombre)
             vid = item.get("video_id")
             nombre = item.get("nombre")
             rutas = item.get("previews")
@@ -9349,14 +9802,16 @@ class VisorVideos(QMainWindow):
             if not rutas:
                 continue
             tarjeta = None
-            if isinstance(vid, int):
+            if _es_video_id_valido(vid):
                 tarjeta = self._tarjeta_por_id(vid)
-            if tarjeta is None and isinstance(nombre, str):
+                if tarjeta is None:
+                    continue
+            elif isinstance(nombre, str):
                 tarjeta = self._tarjeta_por_nombre(nombre)
             if tarjeta is None:
                 continue
             # validación de carpeta solo si ambos son strs y no vacíos (para evitar falso negativo con id)
-            if isinstance(vid, int):
+            if _es_video_id_valido(vid):
                 tarjeta.actualizar_previews(rutas)
                 continue
             carpeta_esperada = getattr(tarjeta, "_carpeta_video", None)
@@ -9504,7 +9959,7 @@ class VisorVideos(QMainWindow):
                 continue
             vid = item.get("video_id")
             cantidad = item.get("cantidad_miniaturas")
-            if isinstance(vid, int) and vid>0:
+            if _es_video_id_valido(vid):
                 actualizaciones.append((vid, cantidad))
                 continue
             # fallback legacy por ruta
@@ -9673,7 +10128,21 @@ class VisorVideos(QMainWindow):
         except Exception as exc:
             print(f"[B8.2] _crear_tarjetas migracion error: {exc}")
 
-    def _abrir_video(self, nombre):
+    def _abrir_video(self, ident):
+        vid = ident if _es_video_id_valido(ident) else None
+        if vid is not None:
+            tarjeta = self._tarjeta_por_id(vid)
+            if tarjeta is not None:
+                nombre = getattr(tarjeta, "nombre", None) or str(vid)
+                carpeta = getattr(tarjeta, "_carpeta_video", None) or self.carpeta_seleccionada
+                try:
+                    abrir_video_con_aplicacion_predeterminada(nombre, carpeta)
+                except (ValueError, FileNotFoundError, OSError):
+                    self.mensaje_carpeta.setText(MENSAJE_ERROR_ABRIR)
+                    return
+                self.mensaje_carpeta.clear()
+                return
+        nombre = ident
         carpeta = self.carpeta_seleccionada
         try:
             abrir_video_con_aplicacion_predeterminada(nombre, carpeta)
@@ -9769,7 +10238,15 @@ class VisorVideos(QMainWindow):
             return
         self.mensaje_carpeta.clear()
 
-    def _mostrar_menu_contextual(self, nombre):
+    def _mostrar_menu_contextual(self, ident):
+        vid = ident if _es_video_id_valido(ident) else None
+        if vid is not None:
+            tarjeta_ctx = self._tarjeta_por_id(vid)
+            nombre = getattr(tarjeta_ctx, "nombre", str(vid)) if tarjeta_ctx else str(vid)
+        else:
+            nombre = ident
+            tarjeta_ctx = self._tarjeta_por_nombre(nombre)
+            vid = getattr(tarjeta_ctx, "_video_id", None) if tarjeta_ctx else None
         menu = QMenu(self)
         accion_abrir = menu.addAction("Abrir")
         accion_abrir_carpeta = menu.addAction("Abrir carpeta")
@@ -9784,17 +10261,18 @@ class VisorVideos(QMainWindow):
         accion_reproducir_segmentos = menu.addAction(
             "Reproducir segmentos en VLC"
         )
-        accion_abrir.triggered.connect(lambda: self._abrir_video(nombre))
-        accion_abrir_carpeta.triggered.connect(lambda: self._abrir_carpeta(nombre))
-        accion_copiar_ruta.triggered.connect(lambda: self._copiar_ruta(nombre))
+        ident_uso = vid if _es_video_id_valido(vid) else nombre
+        accion_abrir.triggered.connect(lambda: self._abrir_video(ident_uso))
+        accion_abrir_carpeta.triggered.connect(lambda: self._abrir_carpeta(ident_uso))
+        accion_copiar_ruta.triggered.connect(lambda: self._copiar_ruta(ident_uso))
         accion_copiar_seleccionados.triggered.connect(self._copiar_rutas_seleccionados)
         accion_abrir_seleccionados.triggered.connect(self._abrir_carpetas_seleccionados)
-        accion_renombrar.triggered.connect(lambda: self._iniciar_renombrar(nombre))
-        accion_mover.triggered.connect(lambda: self._iniciar_mover(nombre))
+        accion_renombrar.triggered.connect(lambda: self._iniciar_renombrar(ident_uso))
+        accion_mover.triggered.connect(lambda: self._iniciar_mover(ident_uso))
         accion_copiar = menu.addAction("Copiar a…")
-        accion_copiar.triggered.connect(lambda: self._iniciar_copiar(nombre))
+        accion_copiar.triggered.connect(lambda: self._iniciar_copiar(ident_uso))
         accion_eliminar_ind = menu.addAction("Eliminar…")
-        accion_eliminar_ind.triggered.connect(lambda: self._iniciar_eliminar_video(nombre))
+        accion_eliminar_ind.triggered.connect(lambda: self._iniciar_eliminar_video(ident_uso))
         accion_mover_sel = menu.addAction("Mover seleccionados…")
         accion_mover_sel.triggered.connect(self._iniciar_lote_mover)
         accion_copiar_sel = menu.addAction("Copiar seleccionados…")
@@ -9804,29 +10282,59 @@ class VisorVideos(QMainWindow):
         accion_renombrar_sel = menu.addAction("Renombrar seleccionados…")
         accion_renombrar_sel.triggered.connect(self._iniciar_renombrar_masivo)
         # Coherente con botones lote B7.6/B7.7: habilitado con selección y sin operación en curso
-        accion_renombrar_sel.setEnabled(bool(self._nombres_seleccionados) and not self._lote_esta_ocupado())
-        accion_reproducir_marcadores.setEnabled(bool(self._nombres_seleccionados))
+        has_sel = bool(getattr(self, "_ids_seleccionados", set()) or self._nombres_seleccionados)
+        accion_renombrar_sel.setEnabled(has_sel and not self._lote_esta_ocupado())
+        accion_reproducir_marcadores.setEnabled(has_sel)
         accion_reproducir_marcadores.triggered.connect(
             self._reproducir_marcadores_en_vlc
         )
-        accion_reproducir_segmentos.setEnabled(bool(self._nombres_seleccionados))
+        accion_reproducir_segmentos.setEnabled(has_sel)
         accion_reproducir_segmentos.triggered.connect(
             self._reproducir_segmentos_en_vlc
         )
         menu.exec(QCursor.pos())
 
-    def _abrir_carpeta(self, nombre):
+    def _abrir_carpeta(self, ident):
+        vid = ident if _es_video_id_valido(ident) else None
+        if vid is not None:
+            tarjeta = self._tarjeta_por_id(vid)
+            if tarjeta is not None:
+                carpeta = getattr(tarjeta, "_carpeta_video", None)
+                if carpeta and os.path.isdir(carpeta):
+                    os.startfile(carpeta)
+                    return
         carpeta = self.carpeta_seleccionada
         if carpeta and os.path.isdir(carpeta):
             os.startfile(carpeta)
 
-    def _copiar_ruta(self, nombre):
+    def _copiar_ruta(self, ident):
+        vid = ident if _es_video_id_valido(ident) else None
+        if vid is not None:
+            tarjeta = self._tarjeta_por_id(vid)
+            if tarjeta is not None:
+                ruta = self._ruta_video_de(tarjeta)
+                if ruta:
+                    QApplication.clipboard().setText(os.path.abspath(ruta))
+                    return
+        nombre = ident
         carpeta = self.carpeta_seleccionada
         if carpeta and os.path.isdir(carpeta):
             ruta = os.path.abspath(os.path.join(carpeta, nombre))
             QApplication.clipboard().setText(ruta)
 
     def _copiar_rutas_seleccionados(self):
+        ids = getattr(self, "_ids_seleccionados", set())
+        if ids:
+            rutas = []
+            for vid in self._video_ids_seleccionados_ordenados():
+                tarjeta = self._tarjeta_por_id(vid)
+                if tarjeta is not None:
+                    ruta = self._ruta_video_de(tarjeta)
+                    if ruta:
+                        rutas.append(os.path.abspath(ruta))
+            if rutas:
+                QApplication.clipboard().setText("\n".join(rutas))
+            return
         carpeta = self.carpeta_seleccionada
         if not carpeta or not os.path.isdir(carpeta):
             return
@@ -9838,6 +10346,19 @@ class VisorVideos(QMainWindow):
             QApplication.clipboard().setText("\n".join(rutas))
 
     def _abrir_carpetas_seleccionados(self):
+        ids = getattr(self, "_ids_seleccionados", set())
+        if ids:
+            carpetas = []
+            for vid in self._video_ids_seleccionados_ordenados():
+                tarjeta = self._tarjeta_por_id(vid)
+                if tarjeta is not None:
+                    ruta = self._ruta_video_de(tarjeta)
+                    if ruta:
+                        carpetas.append(os.path.dirname(os.path.abspath(ruta)))
+            for c in dict.fromkeys(carpetas):
+                if os.path.isdir(c):
+                    os.startfile(c)
+            return
         carpeta = self.carpeta_seleccionada
         if not carpeta or not os.path.isdir(carpeta):
             return
@@ -9888,6 +10409,21 @@ class VisorVideos(QMainWindow):
             self._reproduccion_modo = None
 
     def _seleccionados_para_reproduccion(self):
+        ids = getattr(self, "_ids_seleccionados", set())
+        if ids:
+            seleccionados = []
+            for vid in self._video_ids_seleccionados_ordenados():
+                tarjeta = self._tarjeta_por_id(vid)
+                if tarjeta is None:
+                    continue
+                seleccionados.append(
+                    {
+                        "nombre": getattr(tarjeta, "nombre", str(vid)),
+                        "video_id": vid,
+                        "ruta": self._ruta_video_de(tarjeta),
+                    }
+                )
+            return seleccionados
         seleccionados = []
         for nombre in self.tarjetas_visibles():
             if nombre not in self._nombres_seleccionados:

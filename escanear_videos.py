@@ -1,5 +1,6 @@
 import math
 import os
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -447,6 +448,297 @@ def _asegurar_ruta_normalizada(conn):
             ) from None
 
 
+def _estado_cutover_identidad_b83(conn):
+    """Detector estructural B8.3 por PRAGMA index_list/index_info/table_info.
+
+    Clasificación mínima:
+      - `pre`: UNIQUE(nombre) de una sola columna, UNIQUE idx_videos_ruta_normalizada sobre ruta_normalizada, ruta_normalizada nullable
+      - `post`: sin UNIQUE(nombre), idx_videos_ruta_normalizada UNIQUE sobre ruta_normalizada, ruta_normalizada NOT NULL
+      - `invalido`: cualquier otra combinación relevante -> ValueError
+
+    No asume nombre exacto de sqlite_autoindex; usa index_list+index_info.
+    Si `origin` está disponible se usa como señal adicional no exclusiva.
+    """
+    # tabla videos debe existir
+    try:
+        table_info = conn.execute("PRAGMA table_info('videos')").fetchall()
+    except Exception as exc:
+        raise ValueError(f"B8.3 detector: no se pudo leer PRAGMA table_info(videos): {exc}") from None
+    if not table_info:
+        raise ValueError("B8.3 detector: tabla videos no existe")
+    col_por_nombre = {row[1]: row for row in table_info}
+    if "ruta_normalizada" not in col_por_nombre:
+        raise ValueError("B8.3 estado invalido: falta columna ruta_normalizada")
+    # notnull flag es row[3] (1 = NOT NULL)
+    ruta_notnull = col_por_nombre["ruta_normalizada"][3] == 1
+    # index_list: seq, name, unique, origin, partial
+    try:
+        idx_list = conn.execute("PRAGMA index_list('videos')").fetchall()
+    except Exception as exc:
+        raise ValueError(f"B8.3 detector: no se pudo leer PRAGMA index_list: {exc}") from None
+    unique_single_nombre = []
+    has_idx_ruta_unique = False
+    has_composite_nombre = False
+    unique_indexes_detalle = []
+    for row in idx_list:
+        try:
+            seq, name, unique, origin, partial = row
+        except ValueError:
+            # fallback si columnas difieren
+            if len(row) >= 3:
+                name = row[1]
+                unique = row[2]
+                origin = row[3] if len(row) > 3 else None
+            else:
+                continue
+        if unique != 1:
+            continue
+        # obtener columnas del índice
+        try:
+            info = conn.execute(f"PRAGMA index_info('{name}')").fetchall()
+        except Exception:
+            info = []
+        if not info:
+            try:
+                xinfo = conn.execute(f"PRAGMA index_xinfo('{name}')").fetchall()
+                # filtrar columnas ocultas si existen (cid <0)
+                # xinfo: seqno, cid, name
+                info = [r for r in xinfo if len(r) > 2 and r[2] is not None]
+            except Exception:
+                info = []
+        cols = []
+        for r in info:
+            # r: seqno, cid, name
+            if len(r) >= 3:
+                cname = r[2]
+                if cname is not None:
+                    cols.append(cname)
+        unique_indexes_detalle.append((name, unique, origin, cols))
+        if "nombre" in cols:
+            if len(cols) == 1 and cols[0] == "nombre":
+                unique_single_nombre.append(name)
+            else:
+                has_composite_nombre = True
+        if name == "idx_videos_ruta_normalizada" and len(cols) == 1 and cols[0] == "ruta_normalizada":
+            has_idx_ruta_unique = True
+        # también detectar UNIQUE sobre ruta_normalizada con otro nombre (no debería existir)
+        # pero la clasificación exige exactamente idx_videos_ruta_normalizada
+    if has_composite_nombre:
+        raise ValueError("B8.3 estado invalido: existe UNIQUE compuesto que incluye nombre")
+    if len(unique_single_nombre) > 1:
+        raise ValueError(f"B8.3 estado invalido: múltiples UNIQUE sobre nombre: {unique_single_nombre}")
+    if not has_idx_ruta_unique:
+        raise ValueError("B8.3 estado invalido: falta índice UNIQUE idx_videos_ruta_normalizada sobre ruta_normalizada")
+    has_unique_nombre = len(unique_single_nombre) == 1
+    if has_unique_nombre:
+        if ruta_notnull:
+            raise ValueError("B8.3 estado invalido: UNIQUE(nombre) presente pero ruta_normalizada es NOT NULL (mezcla pre/post)")
+        return "pre"
+    else:
+        if not ruta_notnull:
+            raise ValueError("B8.3 estado invalido: sin UNIQUE(nombre) pero ruta_normalizada es nullable (post requiere NOT NULL)")
+        return "post"
+
+
+def _ejecutar_cutover_identidad_b83_en_transaccion(conn):
+    """Núcleo único B8.3: rebuild dentro de transacción existente.
+
+    Contrato:
+    - REQUIERE conn.in_transaction == True; si no, ValueError claro.
+    - Asume que _asegurar_columnas_videos y _asegurar_ruta_normalizada ya dejaron
+      la DB en estado estructural pre o post detectable.
+    - Si detector post: devuelve False / no hace rebuild.
+    - Si pre: ejecuta TODO el rebuild B8.3 dentro de la transacción EXISTENTE,
+      SIN BEGIN, SIN commit, SIN rollback, SIN tocar PRAGMA foreign_keys.
+    - Toda la lógica duplicada (prevalidación rutas, duplicados, residual table,
+      seq_anterior, CREATE nueva, copy explícita, count/MAX/nulos, DROP/RENAME,
+      índice, seq_final) vive SOLO aquí.
+    - Si falla, lanza; el caller dueño de la transacción hace rollback.
+    - No muta atributos en sqlite3.Connection.
+    """
+    if not conn.in_transaction:
+        raise ValueError("B8.3 _ejecutar_cutover_identidad_b83_en_transaccion: requiere transacción abierta (conn.in_transaction==True)")
+    estado = _estado_cutover_identidad_b83(conn)
+    if estado == "post":
+        return False
+    # estado == "pre" -> validaciones y rebuild inline
+    filas = conn.execute("SELECT id, ruta, ruta_normalizada FROM videos").fetchall()
+    for vid, ruta, rn in filas:
+        if rn is None or (isinstance(rn, str) and not rn.strip()):
+            raise ValueError(f"B8.3 precondición: ruta_normalizada NULL/vacía para id={vid}, se preservan datos intactos")
+        if ruta is None or (isinstance(ruta, str) and not ruta.strip()):
+            raise ValueError(f"B8.3 precondición: ruta NULL/vacía para id={vid}")
+        try:
+            esperada = normalizar_ruta_clave(ruta)
+        except Exception as exc:
+            raise ValueError(f"B8.3 precondición: no se pudo normalizar ruta id={vid} ruta={ruta!r}: {exc}") from None
+        if rn != esperada:
+            raise ValueError(f"B8.3 precondición: ruta_normalizada incorrecta para id={vid}: got {rn!r} esperado {esperada!r}")
+    vistos = {}
+    duplicados = {}
+    for vid, ruta, rn in filas:
+        if rn in vistos:
+            duplicados.setdefault(rn, []).append(vid)
+            if rn not in duplicados or vistos[rn] not in duplicados[rn]:
+                duplicados[rn].insert(0, vistos[rn])
+        else:
+            vistos[rn] = vid
+    dup_db = conn.execute("""
+        SELECT ruta_normalizada, COUNT(*) c FROM videos
+        WHERE ruta_normalizada IS NOT NULL
+        GROUP BY ruta_normalizada HAVING c > 1
+    """).fetchall()
+    if dup_db or duplicados:
+        detalle_db = "; ".join(f"{rn!r} x{c}" for rn, c in dup_db) if dup_db else ""
+        detalle_mem = "; ".join(f"{rn!r} -> ids {ids}" for rn, ids in duplicados.items()) if duplicados else ""
+        detalle = "; ".join(filter(None, [detalle_db, detalle_mem]))
+        raise ValueError(f"B8.3 colisión ruta_normalizada detectada, abortando sin modificar schema: {detalle}")
+    existe_new = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='videos_b83_new'").fetchone()
+    if existe_new is not None:
+        raise ValueError("B8.3 abortado: existe tabla videos_b83_new residual; se requiere intervención manual, no se eliminará a ciegas")
+    seq_anterior = None
+    try:
+        row_seq = conn.execute("SELECT seq FROM sqlite_sequence WHERE name='videos'").fetchone()
+        if row_seq:
+            seq_anterior = row_seq[0]
+    except sqlite3.OperationalError as exc:
+        if "no such table: sqlite_sequence" in str(exc).lower():
+            seq_anterior = None
+        else:
+            raise
+    # Rebuild SIN tocar PRAGMA foreign_keys ni BEGIN/commit
+    conn.execute("""
+        CREATE TABLE videos_b83_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nombre TEXT NOT NULL,
+            ruta TEXT NOT NULL,
+            extension TEXT NOT NULL,
+            fecha_importacion TEXT NOT NULL,
+            duracion_segundos REAL,
+            ancho INTEGER,
+            alto INTEGER,
+            codec_video TEXT,
+            cantidad_miniaturas INTEGER,
+            tamano_bytes INTEGER,
+            mtime_ns INTEGER,
+            ruta_normalizada TEXT NOT NULL
+        )
+    """)
+    conn.execute("""
+        INSERT INTO videos_b83_new (id, nombre, ruta, extension, fecha_importacion, duracion_segundos, ancho, alto, codec_video, cantidad_miniaturas, tamano_bytes, mtime_ns, ruta_normalizada)
+        SELECT id, nombre, ruta, extension, fecha_importacion, duracion_segundos, ancho, alto, codec_video, cantidad_miniaturas, tamano_bytes, mtime_ns, ruta_normalizada
+        FROM videos
+    """)
+    cnt_orig = conn.execute("SELECT COUNT(*) FROM videos").fetchone()[0]
+    cnt_new = conn.execute("SELECT COUNT(*) FROM videos_b83_new").fetchone()[0]
+    if cnt_orig != cnt_new:
+        raise ValueError(f"B8.3 validación count mismatch origen={cnt_orig} destino={cnt_new}")
+    max_orig = conn.execute("SELECT MAX(id) FROM videos").fetchone()[0]
+    max_new = conn.execute("SELECT MAX(id) FROM videos_b83_new").fetchone()[0]
+    if max_orig != max_new:
+        raise ValueError(f"B8.3 validación MAX(id) mismatch origen={max_orig} destino={max_new}")
+    nulos = conn.execute("SELECT COUNT(*) FROM videos_b83_new WHERE ruta_normalizada IS NULL").fetchone()[0]
+    if nulos != 0:
+        raise ValueError(f"B8.3 validación: {nulos} filas con ruta_normalizada NULL en destino")
+    conn.execute("DROP TABLE videos")
+    conn.execute("ALTER TABLE videos_b83_new RENAME TO videos")
+    conn.execute("CREATE UNIQUE INDEX idx_videos_ruta_normalizada ON videos(ruta_normalizada)")
+    max_id_actual = max_new if max_new is not None else 0
+    seq_prev_val = seq_anterior if isinstance(seq_anterior, int) else 0
+    seq_final = max(seq_prev_val, max_id_actual)
+    try:
+        conn.execute("DELETE FROM sqlite_sequence WHERE name='videos'")
+        if seq_final > 0 or cnt_new > 0:
+            conn.execute("INSERT INTO sqlite_sequence(name, seq) VALUES('videos', ?)", (seq_final,))
+    except sqlite3.OperationalError as exc:
+        if "no such table: sqlite_sequence" in str(exc).lower():
+            if seq_final == 0:
+                pass
+            else:
+                raise RuntimeError(f"B8.3 no se pudo preservar sqlite_sequence seq={seq_final}: {exc!r}") from exc
+        else:
+            raise
+    return True
+
+
+def _asegurar_cutover_identidad_b83(conn):
+    """Wrapper autónomo B8.3 para conectar_bd/migración explícita.
+
+    - detector post => return rápido sin commits.
+    - si pre, exigir conexión fuera de transacción.
+    - leer PRAGMA foreign_keys ANTES de BEGIN.
+    - si se decide desactivar, hacerlo ANTES de BEGIN; confirmar con PRAGMA
+      foreign_keys que tomó efecto. Si no puede, abortar antes del rebuild.
+    - BEGIN IMMEDIATE, llamar al núcleo único, commit; ante error rollback.
+    - restaurar foreign_keys DESPUÉS de terminar la transacción al valor original
+      y verificarlo.
+    - integrity_check / foreign_key_check post-commit.
+    - sin except Exception: pass que oculte fallos.
+    """
+    estado = _estado_cutover_identidad_b83(conn)
+    if estado == "post":
+        return False
+    if conn.in_transaction:
+        raise ValueError("B8.3 _asegurar_cutover_identidad_b83: se invocó con transacción abierta (conn.in_transaction=True); el caller debe preparar la conexión fuera de transacción sin commit sorpresa")
+    fk_antes = conn.execute("PRAGMA foreign_keys").fetchone()
+    if fk_antes is None or not isinstance(fk_antes, (list, tuple)) or len(fk_antes) < 1:
+        raise ValueError(f"B8.3 no se pudo leer PRAGMA foreign_keys: retorno inesperado {fk_antes!r}")
+    fk_val = fk_antes[0]
+    if fk_val not in (0, 1):
+        raise ValueError(f"B8.3 PRAGMA foreign_keys valor inesperado {fk_val!r}")
+    original_fk = fk_val
+    restaurar_fk = bool(fk_val)
+    if restaurar_fk:
+        conn.execute("PRAGMA foreign_keys=OFF")
+        chk = conn.execute("PRAGMA foreign_keys").fetchone()
+        if chk is None or not isinstance(chk, (list, tuple)) or len(chk) < 1:
+            raise ValueError(f"B8.3 no se pudo verificar PRAGMA foreign_keys tras OFF: {chk!r}")
+        if chk[0] != 0:
+            try:
+                conn.execute("PRAGMA foreign_keys=ON" if original_fk else "PRAGMA foreign_keys=OFF")
+            except Exception as exc_try:
+                raise RuntimeError(f"B8.3 no se pudo desactivar foreign_keys y restore inicial falló: {exc_try!r}") from exc_try
+            raise ValueError(f"B8.3 no se pudo desactivar foreign_keys antes de rebuild, PRAGMA sigue {chk[0]}")
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        _ejecutar_cutover_identidad_b83_en_transaccion(conn)
+        conn.commit()
+    except Exception as exc_orig:
+        try:
+            conn.rollback()
+        except Exception as exc_rb:
+            if restaurar_fk:
+                try:
+                    conn.execute("PRAGMA foreign_keys=ON")
+                    chk_rb = conn.execute("PRAGMA foreign_keys").fetchone()
+                    if chk_rb is None or chk_rb[0] != original_fk:
+                        raise ValueError(f"B8.3 no se pudo restaurar foreign_keys tras rollback fallido, quedó {chk_rb}")
+                except Exception as exc_fk:
+                    raise RuntimeError(f"B8.3 rollback falló tras error original {exc_orig!r}: {exc_rb!r}; restore FK falló: {exc_fk!r}") from exc_orig
+            raise RuntimeError(f"B8.3 rollback falló tras error original {exc_orig!r}: {exc_rb!r}") from exc_orig
+        if restaurar_fk:
+            try:
+                conn.execute("PRAGMA foreign_keys=ON")
+                chk2 = conn.execute("PRAGMA foreign_keys").fetchone()
+                if chk2 is None or chk2[0] != original_fk:
+                    raise ValueError(f"B8.3 no se pudo restaurar foreign_keys a {original_fk}, quedó {chk2}")
+            except Exception as exc_restore:
+                raise RuntimeError(f"B8.3 restore foreign_keys falló tras error original {exc_orig!r}: {exc_restore!r}") from exc_orig
+        raise
+    if restaurar_fk:
+        conn.execute("PRAGMA foreign_keys=ON")
+        chk2 = conn.execute("PRAGMA foreign_keys").fetchone()
+        if chk2 is None or chk2[0] != original_fk:
+            raise ValueError(f"B8.3 no se pudo restaurar foreign_keys a {original_fk}, quedó {chk2}")
+    chk = conn.execute("PRAGMA integrity_check").fetchone()
+    if chk and chk[0] != "ok":
+        raise ValueError(f"B8.3 integrity_check falló post-migración: {chk[0]!r}")
+    fk_check = conn.execute("PRAGMA foreign_key_check").fetchall()
+    if fk_check:
+        raise ValueError(f"B8.3 foreign_key_check no vacío post-migración: {fk_check}")
+    return True
+
+
 def _asegurar_tablas_derivados(conn):
     """Migración aditiva e idempotente para trazabilidad B6.11 (videos derivados).
 
@@ -508,17 +800,36 @@ def conectar_bd(ruta_db=None):
     conn.execute("""
         CREATE TABLE IF NOT EXISTS videos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            nombre TEXT NOT NULL UNIQUE,
+            nombre TEXT NOT NULL,
             ruta TEXT NOT NULL,
             extension TEXT NOT NULL,
-            fecha_importacion TEXT NOT NULL
+            fecha_importacion TEXT NOT NULL,
+            duracion_segundos REAL,
+            ancho INTEGER,
+            alto INTEGER,
+            codec_video TEXT,
+            cantidad_miniaturas INTEGER,
+            tamano_bytes INTEGER,
+            mtime_ns INTEGER,
+            ruta_normalizada TEXT NOT NULL
         )
     """)
     _asegurar_columnas_videos(conn)
     _asegurar_ruta_normalizada(conn)
+    # DB nueva nace post-cutover con índice único explícito (si _asegurar_ruta no lo creó por fast-path, crear aquí)
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_videos_ruta_normalizada ON videos(ruta_normalizada)")
+    # Confirmar migraciones previas para permitir BEGIN IMMEDIATE limpio en B8.3
+    if conn.in_transaction:
+        conn.commit()
+    _asegurar_cutover_identidad_b83(conn)
+    # Si el cutover hizo COMMIT interno, la conexión queda fuera de transacción; asegurar que tablas auxiliares se crean en autocommit
+    if conn.in_transaction:
+        conn.commit()
     _asegurar_tabla_marcadores(conn)
     _asegurar_tabla_segmentos(conn)
     _asegurar_tablas_derivados(conn)
+    if conn.in_transaction:
+        conn.commit()
     return conn
 
 
@@ -974,12 +1285,56 @@ def miniatura_reutilizable_por_id(video_id, ruta_video):
         return ruta
     return None
 
-def previews_existentes_por_id(video_id):
+def _previews_canonicos_reales_por_id(video_id):
+    """B8.3A enumerador privado — todos los previews canónicos reales v<id>_preview_<NN>.jpg.
+
+    - Valida video_id.
+    - Obtiene carpeta cache; si no existe retorna [] (no es fallo).
+    - Enumera exclusivamente con regex exacta ^v<id>_preview_(\\d+)\\.jpg$ case-insensitive.
+    - v1 no captura v10 (regex anclada con id exacto).
+    - Ignora legacy por nombre.
+    - Ordena por índice numérico.
+    - No depende de CANTIDAD_PREVIEWS.
+    - Si os.listdir falla por OSError en carpeta existente, PROPAGA OSError para que
+      el caller (replicar_cache_por_id) reporte fallo determinista.
+    - Errores al comprobar archivo individual pueden ignorar solo ese archivo.
+    """
     _validar_video_id_cache(video_id)
     carpeta = ruta_carpeta_miniaturas()
     if not os.path.isdir(carpeta):
         return []
-    return [ruta_preview_id(video_id, i) for i in range(1, CANTIDAD_PREVIEWS+1) if os.path.isfile(ruta_preview_id(video_id, i))]
+    # Si carpeta existe y listdir falla, propagar OSError (no silenciar como vacío)
+    archivos = os.listdir(carpeta)  # propaga OSError
+    pat = re.compile(rf"^v{re.escape(str(video_id))}_preview_(\d+)\.jpg$", re.IGNORECASE)
+    pares = []
+    for fname in archivos:
+        m = pat.match(fname)
+        if not m:
+            continue
+        try:
+            idx = int(m.group(1))
+        except ValueError:
+            continue
+        if idx < 1:
+            continue
+        ruta = os.path.join(carpeta, fname)
+        try:
+            if not os.path.isfile(ruta):
+                continue
+        except OSError:
+            continue
+        pares.append((idx, ruta))
+    pares.sort(key=lambda x: x[0])
+    return [p for _, p in pares]
+
+
+def previews_existentes_por_id(video_id):
+    """B8.2 — previews existentes configurados 1..CANTIDAD_PREVIEWS (contrato compartido).
+
+    Solo los previews configurados que existen en FS. No enumera todos los reales.
+    """
+    _validar_video_id_cache(video_id)
+    return [ruta_preview_id(video_id, i) for i in range(1, CANTIDAD_PREVIEWS + 1) if os.path.isfile(ruta_preview_id(video_id, i))]
 
 def previews_faltantes_por_id(video_id):
     _validar_video_id_cache(video_id)
@@ -1306,6 +1661,160 @@ def migrar_cache_legacy_a_id(video_id, nombre):
     # limpieza huérfanos: ningún tmp_mig_* debe quedar (defensivo, ya limpiados)
     return {"copiados": copiados, "ya_existentes": ya_existentes, "fallos": fallos, "detalles": detalles}
 
+
+def replicar_cache_por_id(video_id_origen, video_id_destino):
+    """B8.3A — réplica canónica de caché entre dos video_id distintos (no destructiva).
+
+    Copia miniatura v<origen>_01.jpg -> v<destino>_01.jpg y cada preview
+    v<origen>_preview_<NN>.jpg -> v<destino>_preview_<NN>.jpg si origen existe
+    y destino no existe. Usa temporales adyacentes + os.replace para carrera
+    segura, no borra origen, no sobrescribe destino existente. No genera FFmpeg.
+
+    Retorna dict {copiados, ya_existentes, fallos, detalles} con listas por archivo.
+    Si origen == destino retorna sin operación (0 copiados).
+    """
+    _validar_video_id_cache(video_id_origen)
+    _validar_video_id_cache(video_id_destino)
+    if video_id_origen == video_id_destino:
+        return {"copiados": 0, "ya_existentes": 0, "fallos": 0, "detalles": [], "mini_copiadas": 0, "preview_copiadas": 0}
+    carpeta = ruta_carpeta_miniaturas()
+    if not isinstance(carpeta, str) or not carpeta or not os.path.isdir(carpeta):
+        return {"copiados": 0, "ya_existentes": 0, "fallos": 0, "detalles": [], "mini_copiadas": 0, "preview_copiadas": 0}
+    pares = []
+    # miniatura 01 canónica
+    src_mini = ruta_miniatura_id(video_id_origen, 1)
+    dst_mini = ruta_miniatura_id(video_id_destino, 1)
+    if os.path.isfile(src_mini):
+        pares.append((src_mini, dst_mini, False, 1))
+    # B8.3A — previews REALES via enumerador privado aislado, no limitado por CANTIDAD_PREVIEWS
+    fallo_enumeracion = None
+    previews_reales = []
+    try:
+        previews_reales = _previews_canonicos_reales_por_id(video_id_origen)
+    except OSError as exc:
+        fallo_enumeracion = exc
+        previews_reales = []
+    if fallo_enumeracion is None:
+        for src_p in previews_reales:
+            fname = os.path.basename(src_p)
+            m = re.match(rf"^v{re.escape(str(video_id_origen))}_preview_(\d+)\.jpg$", fname, re.IGNORECASE)
+            if not m:
+                continue
+            try:
+                idx = int(m.group(1))
+            except ValueError:
+                continue
+            if idx < 1:
+                continue
+            if not os.path.isfile(src_p):
+                continue
+            dst_p = ruta_preview_id(video_id_destino, idx)
+            pares.append((src_p, dst_p, True, idx))
+    if not pares:
+        if fallo_enumeracion is not None:
+            return {"copiados": 0, "ya_existentes": 0, "fallos": 1, "detalles": [{"src": "", "dst": "", "estado": f"fallo_enumeracion_previews:{fallo_enumeracion}", "preview": True}], "mini_copiadas": 0, "preview_copiadas": 0}
+        return {"copiados": 0, "ya_existentes": 0, "fallos": 0, "detalles": [], "mini_copiadas": 0, "preview_copiadas": 0}
+    copiados = ya_existentes = 0
+    fallos = 1 if fallo_enumeracion is not None else 0
+    mini_copiadas = preview_copiadas = 0
+    detalles = []
+    if fallo_enumeracion is not None:
+        detalles.append({"src": "", "dst": "", "estado": f"fallo_enumeracion_previews:{fallo_enumeracion}", "preview": True})
+    for src, dst, es_preview, idx in pares:
+        if os.path.isfile(dst):
+            ya_existentes += 1
+            detalles.append({"src": os.path.basename(src), "dst": os.path.basename(dst), "estado": "ya_existe", "preview": es_preview})
+            continue
+        tmp_dst = None
+        try:
+            fd, tmp_dst = tempfile.mkstemp(suffix=EXTENSION_MINIATURA, prefix=f"tmp_rep_v{video_id_destino}_", dir=carpeta)
+            os.close(fd)
+            try:
+                shutil.copyfile(src, tmp_dst)
+            except OSError as exc:
+                fallos += 1
+                detalles.append({"src": os.path.basename(src), "dst": os.path.basename(dst), "estado": f"fallo_copy:{exc}", "preview": es_preview})
+                try:
+                    if tmp_dst and os.path.isfile(tmp_dst):
+                        os.remove(tmp_dst)
+                except OSError:
+                    pass
+                continue
+            try:
+                if not os.path.isfile(tmp_dst) or os.path.getsize(tmp_dst) == 0:
+                    fallos += 1
+                    detalles.append({"src": os.path.basename(src), "dst": os.path.basename(dst), "estado": "fallo_validacion_tmp", "preview": es_preview})
+                    try:
+                        if tmp_dst and os.path.isfile(tmp_dst):
+                            os.remove(tmp_dst)
+                    except OSError:
+                        pass
+                    continue
+            except OSError as exc:
+                fallos += 1
+                detalles.append({"src": os.path.basename(src), "dst": os.path.basename(dst), "estado": f"fallo_stat:{exc}", "preview": es_preview})
+                try:
+                    if tmp_dst and os.path.isfile(tmp_dst):
+                        os.remove(tmp_dst)
+                except OSError:
+                    pass
+                continue
+            if os.path.isfile(dst):
+                ya_existentes += 1
+                detalles.append({"src": os.path.basename(src), "dst": os.path.basename(dst), "estado": "ya_existe_carrera", "preview": es_preview})
+                try:
+                    if tmp_dst and os.path.isfile(tmp_dst):
+                        os.remove(tmp_dst)
+                except OSError:
+                    pass
+                continue
+            try:
+                os.replace(tmp_dst, dst)
+            except OSError as exc:
+                fallos += 1
+                detalles.append({"src": os.path.basename(src), "dst": os.path.basename(dst), "estado": f"fallo_replace:{exc}", "preview": es_preview})
+                try:
+                    if tmp_dst and os.path.isfile(tmp_dst):
+                        os.remove(tmp_dst)
+                except OSError:
+                    pass
+                continue
+            try:
+                if os.path.isfile(dst) and os.path.getsize(dst) > 0:
+                    copiados += 1
+                    if es_preview:
+                        preview_copiadas += 1
+                    else:
+                        mini_copiadas += 1
+                    detalles.append({"src": os.path.basename(src), "dst": os.path.basename(dst), "estado": "copiado", "preview": es_preview})
+                else:
+                    fallos += 1
+                    detalles.append({"src": os.path.basename(src), "dst": os.path.basename(dst), "estado": "fallo_validacion_dst", "preview": es_preview})
+            except OSError as exc:
+                fallos += 1
+                detalles.append({"src": os.path.basename(src), "dst": os.path.basename(dst), "estado": f"fallo_validacion2:{exc}", "preview": es_preview})
+        except OSError as exc:
+            fallos += 1
+            detalles.append({"src": os.path.basename(src) if 'src' in locals() else str(src), "dst": os.path.basename(dst) if 'dst' in locals() else str(dst), "estado": f"fallo_tmp:{exc}", "preview": es_preview})
+            try:
+                if tmp_dst and os.path.isfile(tmp_dst):
+                    os.remove(tmp_dst)
+            except OSError:
+                pass
+        except (ValueError, TypeError) as exc:
+            fallos += 1
+            detalles.append({"src": os.path.basename(src), "dst": os.path.basename(dst), "estado": f"fallo:{exc}", "preview": es_preview})
+            try:
+                if tmp_dst and os.path.isfile(tmp_dst):
+                    os.remove(tmp_dst)
+            except OSError:
+                pass
+    return {"copiados": copiados, "ya_existentes": ya_existentes, "fallos": fallos, "detalles": detalles, "mini_copiadas": mini_copiadas, "preview_copiadas": preview_copiadas}
+
+
+# alias histórico B8.2 si existe para compatibilidad externa
+copiar_cache_entre_ids = replicar_cache_por_id
+
 def migrar_toda_cache_legacy(ruta_db=None):
     """Migra toda la caché legacy para todos los videos (batch)."""
     if ruta_db is None:
@@ -1327,38 +1836,78 @@ def insertar_video(conn, carpeta, nombre):
     extension = os.path.splitext(nombre)[1].lower()
     ruta = os.path.join(carpeta, nombre)
     fecha = datetime.now().isoformat()
+    try:
+        ruta_norm = normalizar_ruta_clave(ruta)
+    except Exception as exc:
+        raise ValueError(f"B8.3 insertar_video: no se pudo normalizar ruta {ruta!r}: {exc}") from exc
+    if not ruta_norm or not ruta_norm.strip():
+        raise ValueError(f"B8.3 insertar_video: ruta_normalizada vacía para {ruta!r}")
     conn.execute(
-        "INSERT OR IGNORE INTO videos (nombre, ruta, extension, fecha_importacion) VALUES (?, ?, ?, ?)",
-        (nombre, ruta, extension, fecha),
+        "INSERT OR IGNORE INTO videos (nombre, ruta, ruta_normalizada, extension, fecha_importacion) VALUES (?, ?, ?, ?, ?)",
+        (nombre, ruta, ruta_norm, extension, fecha),
     )
 
 def actualizar_datos(conn, carpeta, nombre):
     ruta = os.path.join(carpeta, nombre)
+    try:
+        ruta_norm = normalizar_ruta_clave(ruta)
+    except Exception as exc:
+        raise ValueError(f"B8.3 actualizar_datos: no se pudo normalizar ruta {ruta!r}: {exc}") from exc
+    if not ruta_norm or not ruta_norm.strip():
+        raise ValueError(f"B8.3 actualizar_datos: ruta_normalizada vacía para {ruta!r}")
     es_vacio = os.path.getsize(ruta) == 0
     datos = None if es_vacio else obtener_datos_ffprobe(ruta)
     miniaturas = contar_miniaturas(nombre)
     tamano_bytes = os.path.getsize(ruta)
     if datos is None:
         conn.execute(
-            "UPDATE videos SET duracion_segundos = NULL, ancho = NULL, alto = NULL, codec_video = NULL, cantidad_miniaturas = ?, tamano_bytes = ? WHERE nombre = ?",
-            (miniaturas, tamano_bytes, nombre),
+            "UPDATE videos SET duracion_segundos = NULL, ancho = NULL, alto = NULL, codec_video = NULL, cantidad_miniaturas = ?, tamano_bytes = ? WHERE ruta_normalizada = ?",
+            (miniaturas, tamano_bytes, ruta_norm),
         )
     else:
         conn.execute(
-            "UPDATE videos SET duracion_segundos = ?, ancho = ?, alto = ?, codec_video = ?, cantidad_miniaturas = ?, tamano_bytes = ? WHERE nombre = ?",
-            (datos["duracion_segundos"], datos["ancho"], datos["alto"], datos["codec_video"], miniaturas, tamano_bytes, nombre),
+            "UPDATE videos SET duracion_segundos = ?, ancho = ?, alto = ?, codec_video = ?, cantidad_miniaturas = ?, tamano_bytes = ? WHERE ruta_normalizada = ?",
+            (datos["duracion_segundos"], datos["ancho"], datos["alto"], datos["codec_video"], miniaturas, tamano_bytes, ruta_norm),
         )
 
 def sincronizar_bd(conn, carpeta):
+    # B8.3A: scope-segura por ruta_normalizada + _es_subcarpeta; nunca borra fuera del árbol objetivo
+    carpeta_abs = os.path.abspath(carpeta)
+    try:
+        carpeta_norm = normalizar_ruta_clave(carpeta_abs)
+    except Exception as exc:
+        raise ValueError(f"B8.3 sincronizar_bd: no se pudo normalizar carpeta {carpeta!r}: {exc}") from exc
+    if not carpeta_norm or not carpeta_norm.strip():
+        raise ValueError(f"B8.3 sincronizar_bd: carpeta_norm vacía para {carpeta!r}")
     en_disco = set(escanear_videos(carpeta))
-    en_bd = {fila[0] for fila in conn.execute("SELECT nombre FROM videos")}
+    en_disco_norm = {}
     for nombre in en_disco:
+        ruta = os.path.join(carpeta, nombre)
+        try:
+            norm = normalizar_ruta_clave(ruta)
+        except Exception as exc:
+            raise ValueError(f"B8.3 sincronizar_bd: no se pudo normalizar ruta en disco {ruta!r}: {exc}") from exc
+        if not norm or not norm.strip():
+            raise ValueError(f"B8.3 sincronizar_bd: ruta_normalizada vacía para {ruta!r}")
+        en_disco_norm[norm] = nombre
+    filas = conn.execute("SELECT id, ruta, ruta_normalizada FROM videos").fetchall()
+    en_bd_norm_scope = set()
+    # validar y colectar solo filas dentro del scope
+    for fid, ruta, ruta_norm in filas:
+        if ruta_norm is None or (isinstance(ruta_norm, str) and not ruta_norm.strip()):
+            raise ValueError(f"B8.3 sincronizar_bd: ruta_normalizada NULL/vacía para id={fid}, se preservan datos")
+        norm = ruta_norm
+        # solo considerar para eliminación las que están dentro del árbol objetivo
+        if _es_subcarpeta(carpeta_norm, norm):
+            en_bd_norm_scope.add(norm)
+    for norm, nombre in en_disco_norm.items():
         insertar_video(conn, carpeta, nombre)
-    for nombre in en_disco:
+    for norm, nombre in en_disco_norm.items():
         asegurar_miniatura(nombre, os.path.join(carpeta, nombre))
         actualizar_datos(conn, carpeta, nombre)
-    for nombre in en_bd - en_disco:
-        conn.execute("DELETE FROM videos WHERE nombre = ?", (nombre,))
+    # borrar solo dentro del scope, por ruta_normalizada exacta
+    for norm in en_bd_norm_scope - set(en_disco_norm.keys()):
+        conn.execute("DELETE FROM videos WHERE ruta_normalizada = ?", (norm,))
 
 def listar_videos(ruta_db=None):
     if ruta_db is None:
@@ -1426,6 +1975,137 @@ def listar_registros_por_nombres(nombres, ruta_db=None):
         conn.close()
 
 
+def listar_registros_por_rutas(rutas, ruta_db=None):
+    """Registros por ruta_normalizada (B8.3), inequívoco para homónimos.
+
+    `rutas` es colección de rutas absolutas (o relativas). Devuelve dict
+    `{ruta_normalizada: {id, nombre, ruta, ruta_normalizada, duracion_segundos, ancho, alto, codec_video, tamano_bytes, mtime_ns}}`.
+    Búsqueda por `ruta_normalizada` (identidad física única). `rutas` vacío -> {}.
+    """
+    if isinstance(rutas, (str, bytes, bytearray)):
+        raise TypeError("rutas debe ser una colección, no texto")
+    try:
+        lista = list(rutas)
+    except TypeError:
+        raise TypeError("rutas debe ser una colección iterable") from None
+    if not lista:
+        return {}
+    norms = []
+    for r in lista:
+        if not isinstance(r, str) or not r:
+            continue
+        try:
+            n = normalizar_ruta_clave(r)
+        except Exception:
+            continue
+        norms.append(n)
+    if not norms:
+        return {}
+    # deduplicar para consulta
+    norms_unicos = list(dict.fromkeys(norms))
+    if ruta_db is None:
+        ruta_db = ruta_biblioteca()
+    if not os.path.isfile(ruta_db):
+        raise FileNotFoundError(f"Base de datos no encontrada: {ruta_db}")
+    conn = conectar_bd(ruta_db)
+    try:
+        por_norm = {}
+        filas = conn.execute(
+            """
+            SELECT id, nombre, ruta, ruta_normalizada, duracion_segundos, ancho, alto, codec_video, tamano_bytes, mtime_ns
+            FROM videos
+            WHERE ruta_normalizada IN ({})
+            """.format(",".join("?" * len(norms_unicos))),
+            norms_unicos,
+        ).fetchall()
+        for fila in filas:
+            por_norm[fila[3]] = {
+                "id": fila[0],
+                "nombre": fila[1],
+                "ruta": fila[2],
+                "ruta_normalizada": fila[3],
+                "duracion_segundos": fila[4],
+                "ancho": fila[5],
+                "alto": fila[6],
+                "codec_video": fila[7],
+                "tamano_bytes": fila[8],
+                "mtime_ns": fila[9],
+            }
+        return por_norm
+    finally:
+        conn.close()
+
+
+# alias para compatibilidad con spec (ruta_normalizada -> clave)
+listar_registros_por_rutas_normalizadas = listar_registros_por_rutas
+
+
+def obtener_video_por_ruta_normalizada(ruta, ruta_db=None):
+    """Helper B8.3A — lookup inequívoco por ruta física normalizada.
+
+    Normaliza `ruta` vía `normalizar_ruta_clave`, busca por `ruta_normalizada`
+    (identidad física única) y devuelve dict `{id, nombre, ruta, ruta_normalizada,
+    extension, duracion_segundos, ancho, alto, codec_video, tamano_bytes, mtime_ns}`
+    o None si no existe. No busca por `nombre`. Propaga errores de
+    normalización/schema (ValueError, FileNotFoundError) sin silenciar.
+    """
+    if not isinstance(ruta, str) or not ruta.strip():
+        raise ValueError("ruta debe ser texto no vacío")
+    ruta_norm = normalizar_ruta_clave(ruta)
+    if not ruta_norm or not ruta_norm.strip():
+        raise ValueError(f"B8.3 ruta_normalizada vacía para {ruta!r}")
+    if ruta_db is None:
+        ruta_db = ruta_biblioteca()
+    if not os.path.isfile(ruta_db):
+        raise FileNotFoundError(f"Base de datos no encontrada: {ruta_db}")
+    conn = conectar_bd(ruta_db)
+    try:
+        fila = conn.execute(
+            """
+            SELECT id, nombre, ruta, ruta_normalizada, extension, duracion_segundos, ancho, alto, codec_video, tamano_bytes, mtime_ns
+            FROM videos WHERE ruta_normalizada = ?
+            """,
+            (ruta_norm,),
+        ).fetchone()
+        if fila is None:
+            return None
+        return {
+            "id": fila[0],
+            "nombre": fila[1],
+            "ruta": fila[2],
+            "ruta_normalizada": fila[3],
+            "extension": fila[4],
+            "duracion_segundos": fila[5],
+            "ancho": fila[6],
+            "alto": fila[7],
+            "codec_video": fila[8],
+            "tamano_bytes": fila[9],
+            "mtime_ns": fila[10],
+        }
+    finally:
+        conn.close()
+
+
+def buscar_colision_ruta_video(ruta, ruta_db=None, excluir_id=None):
+    """Helper B8.3A — detecta colisión exacta de destino físico normalizado.
+
+    Normaliza `ruta`, busca fila con misma `ruta_normalizada`. Si `excluir_id`
+    no es None, ignora esa fila (mismo video, no-op válido). Devuelve dict del
+    video colisionante o None si destino libre. No busca por nombre.
+    """
+    if excluir_id is not None:
+        if isinstance(excluir_id, bool) or not isinstance(excluir_id, int):
+            raise TypeError("excluir_id debe ser entero o None")
+        if excluir_id <= 0:
+            raise ValueError("excluir_id debe ser positivo")
+    rec = obtener_video_por_ruta_normalizada(ruta, ruta_db)
+    if rec is None:
+        return None
+    if excluir_id is not None and rec["id"] == excluir_id:
+        return None
+    return rec
+
+
 def _es_subcarpeta(padre, ruta):
     if not isinstance(ruta, str) or not ruta:
         return False
@@ -1433,6 +2113,84 @@ def _es_subcarpeta(padre, ruta):
         return os.path.commonpath([padre, ruta]) == padre
     except ValueError:
         return False
+
+
+def eliminar_registros_de_carpetas_retiradas(ruta_db, carpetas_retiradas):
+    """Helper puro backend B8.3A — elimina solo filas bajo carpetas retiradas.
+
+    - Valida colección de carpetas strings.
+    - Normaliza cada carpeta con normalizar_ruta_clave(os.path.abspath(...)).
+    - Abre DB en capa backend, no UI.
+    - SELECT id,ruta_normalizada; si NULL/vacía -> error visible, no adivinar por nombre.
+    - Elimina SOLO filas cuya ruta_normalizada esté bajo alguna carpeta retirada usando _es_subcarpeta.
+    - DELETE por id o ruta_normalizada exacta.
+    - Transacción única, rollback visible en error, commit único.
+    - Devuelve resumen determinista {eliminados, ids, rutas, carpetas_retiradas}.
+    - No toca carpetas activas ni filas bajo carpetas nunca declaradas retiradas.
+    """
+    import threading
+    if isinstance(carpetas_retiradas, (str, bytes, bytearray)):
+        raise TypeError("carpetas_retiradas debe ser colección, no texto")
+    try:
+        lista = list(carpetas_retiradas) if carpetas_retiradas else []
+    except TypeError:
+        raise TypeError("carpetas_retiradas debe ser colección iterable") from None
+    if not lista:
+        return {"eliminados": 0, "ids": [], "rutas": [], "carpetas_retiradas": [], "thread_id": threading.get_ident(), "is_main_thread": threading.current_thread() is threading.main_thread()}
+    carpetas_norm = []
+    for c in lista:
+        if not isinstance(c, str) or not c.strip():
+            raise ValueError(f"carpeta retirada inválida: {c!r}")
+        try:
+            norm = normalizar_ruta_clave(os.path.abspath(c))
+        except Exception as exc:
+            raise ValueError(f"no se pudo normalizar carpeta retirada {c!r}: {exc}") from exc
+        if not norm or not norm.strip():
+            raise ValueError(f"carpeta retirada normalizada vacía: {c!r}")
+        carpetas_norm.append(norm)
+    # deduplicar
+    carpetas_norm = list(dict.fromkeys(carpetas_norm))
+    if ruta_db is None:
+        ruta_db = ruta_biblioteca()
+    if not os.path.isfile(ruta_db):
+        raise FileNotFoundError(f"Base de datos no encontrada: {ruta_db}")
+    conn = sqlite3.connect(ruta_db)
+    try:
+        # Validar que ninguna fila tenga ruta_normalizada NULL/vacía antes de borrar
+        filas = conn.execute("SELECT id, ruta_normalizada FROM videos").fetchall()
+        for fid, rn in filas:
+            if rn is None or (isinstance(rn, str) and not rn.strip()):
+                raise ValueError(f"ruta_normalizada NULL/vacía para id={fid}, no se puede decidir identidad exacta")
+        borrar_ids = []
+        borrar_rutas = []
+        for fid, rn in filas:
+            if not isinstance(rn, str) or not rn:
+                continue
+            for p in carpetas_norm:
+                if _es_subcarpeta(p, rn):
+                    borrar_ids.append(fid)
+                    borrar_rutas.append(rn)
+                    break
+        if not borrar_ids:
+            return {"eliminados": 0, "ids": [], "rutas": [], "carpetas_retiradas": list(lista), "thread_id": threading.get_ident(), "is_main_thread": threading.current_thread() is threading.main_thread()}
+        # Transacción única
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            for fid in borrar_ids:
+                conn.execute("DELETE FROM videos WHERE id = ?", (fid,))
+            conn.commit()
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            raise
+        return {"eliminados": len(borrar_ids), "ids": borrar_ids, "rutas": borrar_rutas, "carpetas_retiradas": list(lista), "thread_id": threading.get_ident(), "is_main_thread": threading.current_thread() is threading.main_thread()}
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 
 def detectar_diferencias(carpeta, ruta_db=None, carpetas_protegidas=None):
@@ -1455,38 +2213,117 @@ def detectar_diferencias(carpeta, ruta_db=None, carpetas_protegidas=None):
             raise TypeError(
                 "carpetas_protegidas debe ser una colección iterable"
             ) from None
-    en_disco = set(escanear_videos(carpeta))
-    carpeta_normalizada = os.path.normcase(os.path.normpath(carpeta))
+    # B8.3: comparar por ruta_normalizada / normalizar_ruta_clave
+    en_disco_nombres = set(escanear_videos(carpeta))
+    en_disco_norm = {}
+    en_disco_norm_set = set()
+    for nombre in en_disco_nombres:
+        ruta = os.path.join(carpeta, nombre)
+        try:
+            norm = normalizar_ruta_clave(ruta)
+        except Exception:
+            continue
+        en_disco_norm[norm] = nombre
+        en_disco_norm_set.add(norm)
+    try:
+        carpeta_norm = normalizar_ruta_clave(carpeta)
+    except Exception:
+        carpeta_norm = os.path.normcase(os.path.normpath(os.path.abspath(carpeta)))
     conn = sqlite3.connect(ruta_db)
     try:
-        filas = conn.execute("SELECT nombre, ruta FROM videos").fetchall()
+        try:
+            filas = conn.execute("SELECT nombre, ruta, ruta_normalizada FROM videos").fetchall()
+        except sqlite3.OperationalError as e:
+            if "no such column" in str(e).lower() and "ruta_normalizada" in str(e).lower():
+                filas_raw = conn.execute("SELECT nombre, ruta FROM videos").fetchall()
+                filas = [(n, r, None) for n, r in filas_raw]
+            else:
+                raise
     finally:
         conn.close()
-    nombres_en_bd = set()
+    # construir sets por ruta_normalizada
+    db_norm_to_info = {}
+    db_norm_set = set()
+    for nombre, ruta, ruta_norm in filas:
+        norm = None
+        if isinstance(ruta_norm, str) and ruta_norm:
+            norm = ruta_norm
+        elif isinstance(ruta, str) and ruta:
+            try:
+                norm = normalizar_ruta_clave(ruta)
+            except Exception:
+                continue
+        if not norm:
+            continue
+        db_norm_set.add(norm)
+        # guardar nombre para reporte (puede haber homónimos con mismo nombre pero distinto norm, mapeamos por norm)
+        db_norm_to_info[norm] = nombre
+    # B8.3A — protección por ruta_normalizada exacta, no por nombre
+    protegidas_norm = []
+    if carpetas_protegidas is not None:
+        for c in list(carpetas_protegidas):
+            if not isinstance(c, str) or not c.strip():
+                continue
+            try:
+                pn = normalizar_ruta_clave(os.path.abspath(c))
+            except Exception:
+                try:
+                    pn = os.path.normcase(os.path.normpath(os.path.abspath(c)))
+                except Exception:
+                    continue
+            if pn:
+                protegidas_norm.append(pn)
+    # Filtrar protegidas que son ancestros de la carpeta actual: no deben proteger filas bajo la carpeta actual
+    # Ej: procesando B con protegidas=[A] donde A es padre de B, filas bajo B también están bajo A pero deben considerarse ausentes de B
+    protegidas_filtradas = []
+    for pn in protegidas_norm:
+        try:
+            if _es_subcarpeta(pn, carpeta_norm):
+                continue
+        except Exception:
+            pass
+        protegidas_filtradas.append(pn)
+    protegidas_norm = protegidas_filtradas
     presentes = []
     ausentes = []
-    for nombre, ruta in filas:
-        if not isinstance(nombre, str):
+    ausentes_rutas_normalizadas = []
+    for nombre, ruta, ruta_norm in filas:
+        norm = None
+        if isinstance(ruta_norm, str) and ruta_norm:
+            norm = ruta_norm
+        elif isinstance(ruta, str) and ruta:
+            try:
+                norm = normalizar_ruta_clave(ruta)
+            except Exception:
+                continue
+        if not norm:
             continue
-        nombres_en_bd.add(nombre)
-        if nombre in en_disco:
+        if norm in en_disco_norm_set:
             presentes.append(nombre)
             continue
-        if carpetas_protegidas is None:
-            ausentes.append(nombre)
+        # Solo candidatos dentro del scope de carpeta
+        if not _es_subcarpeta(carpeta_norm, norm):
             continue
-        ruta_normalizada = (
-            os.path.normcase(os.path.normpath(ruta))
-            if isinstance(ruta, str) and ruta
-            else None
-        )
-        if _es_subcarpeta(carpeta_normalizada, ruta_normalizada):
-            ausentes.append(nombre)
+        # Si está bajo alguna protegida, no es ausente de este scope
+        protegido = False
+        for pn in protegidas_norm:
+            if _es_subcarpeta(pn, norm):
+                protegido = True
+                break
+        if protegido:
+            continue
+        ausentes.append(nombre)
+        ausentes_rutas_normalizadas.append(norm)
+    nuevos = []
+    for norm, nombre in en_disco_norm.items():
+        if norm not in db_norm_set:
+            nuevos.append(nombre)
     return {
         "carpeta": carpeta,
         "presentes_en_ambos": sorted(presentes),
-        "nuevos": sorted(en_disco - nombres_en_bd),
+        "nuevos": sorted(nuevos),
         "ausentes_del_disco": sorted(ausentes),
+        "ausentes_rutas_normalizadas": sorted(ausentes_rutas_normalizadas),
     }
 
 
@@ -1511,11 +2348,31 @@ def preparar_plan_sincronizacion(diferencias):
     nuevos = _coleccion_nombres(diferencias["nuevos"], "nuevos")
     presentes = _coleccion_nombres(diferencias["presentes_en_ambos"], "presentes_en_ambos")
     ausentes = _coleccion_nombres(diferencias["ausentes_del_disco"], "ausentes_del_disco")
+    # B8.3A identidad exacta: transportar rutas normalizadas aditivas si existen
+    candidatos_rutas = None
+    if "ausentes_rutas_normalizadas" in diferencias:
+        val = diferencias["ausentes_rutas_normalizadas"]
+        if isinstance(val, (str, bytes, bytearray)):
+            raise TypeError("ausentes_rutas_normalizadas debe ser colección, no texto")
+        try:
+            lista_r = list(val)
+        except TypeError:
+            raise TypeError("ausentes_rutas_normalizadas debe ser colección iterable") from None
+        # validar strings
+        candidatos_rutas = []
+        for r in lista_r:
+            if not isinstance(r, str) or not r.strip():
+                raise ValueError(f"ruta normalizada inválida en ausentes_rutas_normalizadas: {r!r}")
+            candidatos_rutas.append(r)
+        candidatos_rutas = sorted(set(candidatos_rutas))
+    else:
+        candidatos_rutas = []
     return {
         "carpeta": carpeta,
         "a_incorporar": preparar_registros_basicos(nuevos, carpeta),
         "ya_sincronizados": presentes,
         "candidatos_a_eliminar": ausentes,
+        "candidatos_a_eliminar_rutas": candidatos_rutas,
     }
 
 
@@ -1550,6 +2407,7 @@ def aplicar_incorporaciones(plan, ruta_db=None):
 
 def eliminar_candidatos(plan, ruta_db=None):
     candidatos = _validar_plan_sincronizacion(plan)
+    carpeta = plan.get("carpeta")
     try:
         incorporados = len(plan["a_incorporar"])
     except TypeError:
@@ -1558,22 +2416,82 @@ def eliminar_candidatos(plan, ruta_db=None):
         ruta_db = ruta_biblioteca()
     if not os.path.isfile(ruta_db):
         raise FileNotFoundError(f"Base de datos no encontrada: {ruta_db}")
+    # B8.3A — identidad exacta por ruta_normalizada, nunca por nombre global
+    # Si plan no trae candidatos_a_eliminar_rutas, no se puede decidir identidad exacta -> error visible / cero borrados
+    rutas_exactas = plan.get("candidatos_a_eliminar_rutas")
+    if rutas_exactas is None:
+        # Compatibilidad: si no hay rutas exactas y candidatos no vacío, exigir identidad exacta
+        if candidatos:
+            raise ValueError("eliminar_candidatos requiere candidatos_a_eliminar_rutas con identidad exacta por ruta_normalizada; no se permite borrar por nombre global (homónimos inequívocos)")
+        rutas_exactas = []
+    if isinstance(rutas_exactas, (str, bytes, bytearray)):
+        raise TypeError("candidatos_a_eliminar_rutas debe ser colección, no texto")
+    try:
+        lista_rutas = list(rutas_exactas) if rutas_exactas else []
+    except TypeError:
+        raise TypeError("candidatos_a_eliminar_rutas debe ser colección iterable") from None
+    # Validar y normalizar cada ruta exacta (ya deberían estar normalizadas, pero validar)
+    rutas_norm = []
+    for r in lista_rutas:
+        if not isinstance(r, str) or not r.strip():
+            raise ValueError(f"ruta normalizada candidata inválida: {r!r}")
+        # Si ya parece normalizada (viene de detectar_diferencias), usar tal cual tras validar no vacía
+        # Para robustez, si no está normalizada, intentar normalizar
+        try:
+            # Intentar verificar que es subcarpeta o al menos ruta válida; no re-normalizar ciegamente si ya es norm
+            # Si r es absoluta, normalizar; si es relativa, error visible
+            if os.path.isabs(r):
+                # Si r ya es normalizada, normalizar de nuevo debe ser idempotente
+                nr = normalizar_ruta_clave(r)
+                rutas_norm.append(nr)
+            else:
+                # Puede ser ruta normalizada que incluye unidad en Windows pero isabs False en linux? Caso raro
+                # Tratar como error visible si no es absoluta ni normalizada
+                nr = normalizar_ruta_clave(os.path.abspath(r))
+                rutas_norm.append(nr)
+        except Exception as exc:
+            raise ValueError(f"no se pudo validar ruta candidata {r!r}: {exc}") from exc
+    rutas_norm = list(dict.fromkeys(rutas_norm))
     conn = sqlite3.connect(ruta_db)
     try:
         eliminados = []
-        for nombre in candidatos:
-            cursor = conn.execute("DELETE FROM videos WHERE nombre = ?", (nombre,))
+        eliminados_rutas = []
+        # Validar que no haya filas con ruta_normalizada NULL/vacía (integridad)
+        # Si hay, error visible, no adivinar
+        filas_check = conn.execute("SELECT id, ruta_normalizada FROM videos").fetchall()
+        for fid, rn in filas_check:
+            if rn is None or (isinstance(rn, str) and not rn.strip()):
+                raise ValueError(f"ruta_normalizada NULL/vacía para id={fid}, no se puede eliminar por identidad exacta")
+        for norm in rutas_norm:
+            cursor = conn.execute("DELETE FROM videos WHERE ruta_normalizada = ?", (norm,))
             if cursor.rowcount:
-                eliminados.append(nombre)
+                eliminados.append(norm)
+                eliminados_rutas.append(norm)
         conn.commit()
     except Exception:
-        conn.rollback()
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         raise
     finally:
-        conn.close()
+        try:
+            conn.close()
+        except Exception:
+            pass
+    # Mantener compatibilidad de retorno: "nombres" sigue siendo lista de identificadores eliminados (ahora rutas)
+    # Para consumidores históricos que esperaban basenames, devolvemos basenames derivados de rutas eliminadas + lista legacy candidatos que coincidían
+    # Pero la eliminación real fue por ruta exacta
+    nombres_eliminados = []
+    for rn in eliminados_rutas:
+        try:
+            nombres_eliminados.append(os.path.basename(rn))
+        except Exception:
+            nombres_eliminados.append(rn)
     return {
         "eliminados": len(eliminados),
-        "nombres": eliminados,
+        "nombres": nombres_eliminados,
+        "rutas": eliminados_rutas,
         "incorporados": incorporados,
         "restantes": len(candidatos) - len(eliminados),
     }
@@ -1861,16 +2779,16 @@ def _validar_registro_video(datos):
 
 
 def _upsert_video(conn, datos):
-    # B8.1 dual-write: ruta + ruta_normalizada siempre conjuntas vía normalizar_ruta_clave
+    # B8.3 identidad por ruta_normalizada: ON CONFLICT(ruta_normalizada) con nombre mutable
     ruta = datos["ruta"]
     ruta_normalizada = normalizar_ruta_clave(ruta)
     conn.execute(
         """
         INSERT INTO videos (nombre, ruta, ruta_normalizada, extension, fecha_importacion, duracion_segundos, ancho, alto, codec_video, cantidad_miniaturas, tamano_bytes, mtime_ns)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(nombre) DO UPDATE SET
+        ON CONFLICT(ruta_normalizada) DO UPDATE SET
+            nombre = excluded.nombre,
             ruta = excluded.ruta,
-            ruta_normalizada = excluded.ruta_normalizada,
             extension = excluded.extension,
             fecha_importacion = excluded.fecha_importacion,
             duracion_segundos = excluded.duracion_segundos,
@@ -1907,22 +2825,30 @@ def guardar_video(datos, ruta_db=None):
     conn = sqlite3.connect(ruta_db)
     video_id = None
     try:
-        conn.execute("BEGIN")
+        # B8.3A: única transacción observable para T07/T09; NO tocar PRAGMA foreign_keys aquí.
+        # El esquema actual no tiene FKs físicas hacia videos; el rebuild inline es seguro con FK ON.
+        conn.execute("BEGIN IMMEDIATE")
         _asegurar_columnas_videos(conn)
         _asegurar_ruta_normalizada(conn)
+        _ejecutar_cutover_identidad_b83_en_transaccion(conn)
         _upsert_video(conn, datos)
-        # B8.1: obtener id inequívocamente vía ruta_normalizada
         ruta_norm = normalizar_ruta_clave(datos["ruta"])
         fila = conn.execute(
             "SELECT id FROM videos WHERE ruta_normalizada = ?", (ruta_norm,)
         ).fetchone()
         video_id = fila[0] if fila else None
         conn.commit()
-    except Exception:
-        conn.rollback()
+    except Exception as exc_orig:
+        try:
+            conn.rollback()
+        except Exception as exc_rb:
+            raise RuntimeError(f"B8.3 guardar_video rollback falló tras error original {exc_orig!r}: {exc_rb!r}") from exc_orig
         raise
     finally:
-        conn.close()
+        try:
+            conn.close()
+        except Exception:
+            pass
     return {"guardado": True, "nombre": datos["nombre"], "video_id": video_id, "id": video_id}
 
 
@@ -1947,12 +2873,12 @@ def guardar_videos(datos_videos, ruta_db=None, on_progreso=None):
     por_nombre = {}
     por_ruta_normalizada = {}
     try:
-        conn.execute("BEGIN")
+        conn.execute("BEGIN IMMEDIATE")
         _asegurar_columnas_videos(conn)
         _asegurar_ruta_normalizada(conn)
+        _ejecutar_cutover_identidad_b83_en_transaccion(conn)
         for indice, datos in enumerate(registros):
             _upsert_video(conn, datos)
-            # B8.1: obtener id inequívocamente vía ruta_normalizada (dual-write ya aseguró valor)
             ruta_norm = normalizar_ruta_clave(datos["ruta"])
             fila = conn.execute(
                 "SELECT id FROM videos WHERE ruta_normalizada = ?", (ruta_norm,)
@@ -1964,11 +2890,17 @@ def guardar_videos(datos_videos, ruta_db=None, on_progreso=None):
             if on_progreso is not None:
                 on_progreso(indice + 1, total)
         conn.commit()
-    except Exception:
-        conn.rollback()
+    except Exception as exc_orig:
+        try:
+            conn.rollback()
+        except Exception as exc_rb:
+            raise RuntimeError(f"B8.3 guardar_videos rollback falló tras error original {exc_orig!r}: {exc_rb!r}") from exc_orig
         raise
     finally:
-        conn.close()
+        try:
+            conn.close()
+        except Exception:
+            pass
     return {
         "guardados": len(registros),
         "nombres": [d["nombre"] for d in registros],
@@ -2504,11 +3436,7 @@ def _conectar_derivados(ruta_db=None):
         raise FileNotFoundError(f"Base de datos no encontrada: {ruta_db}")
     conn = sqlite3.connect(ruta_db)
     _asegurar_tablas_derivados(conn)
-    # también asegurar columnas/videos para consistencia
-    try:
-        _asegurar_columnas_videos(conn)
-    except Exception:
-        pass
+    _asegurar_columnas_videos(conn)
     return conn
 
 
@@ -2701,16 +3629,26 @@ def incorporar_video_derivado_al_catalogo(derivado_ruta, original_video_id, segm
         ).fetchone()
         if fila_es_der is not None:
             return {"ok": False, "derivado_video_id": None, "derivacion_id": None, "error": "bloqueado: el original es a su vez un derivado (derivado-de-derivado no permitido en B6.11)", "catalog_error": False}
-        fila_dup_nombre = conn.execute(
-            "SELECT id, ruta FROM videos WHERE nombre = ?",
-            (derivado_nombre,),
+        # B8.3: validación por ruta_normalizada, homónimo en otra ruta permitido
+        try:
+            derivado_norm = normalizar_ruta_clave(derivado_ruta_abs)
+        except Exception as exc:
+            return {"ok": False, "derivado_video_id": None, "derivacion_id": None, "error": f"B8.3 no se pudo normalizar ruta derivada {derivado_ruta_abs!r}: {exc}", "catalog_error": False}
+        if not derivado_norm or not derivado_norm.strip():
+            return {"ok": False, "derivado_video_id": None, "derivacion_id": None, "error": f"B8.3 ruta_normalizada vacía para {derivado_ruta_abs!r}", "catalog_error": False}
+        fila_dup_ruta = conn.execute(
+            "SELECT id, nombre, ruta FROM videos WHERE ruta_normalizada = ?",
+            (derivado_norm,),
         ).fetchone()
-        if fila_dup_nombre is not None:
-            dup_id, dup_ruta = fila_dup_nombre
-            if os.path.normcase(os.path.normpath(os.path.abspath(dup_ruta))) == os.path.normcase(os.path.normpath(derivado_ruta_abs)):
-                return {"ok": False, "derivado_video_id": dup_id, "derivacion_id": None, "error": "derivado ya existe en catálogo (nombre duplicado)", "catalog_error": True}
-            return {"ok": False, "derivado_video_id": None, "derivacion_id": None, "error": f"nombre duplicado en catálogo: {derivado_nombre!r} ya existe", "catalog_error": True}
-        if os.path.normcase(os.path.normpath(os.path.abspath(orig_ruta))) == os.path.normcase(os.path.normpath(derivado_ruta_abs)):
+        if fila_dup_ruta is not None:
+            dup_id = fila_dup_ruta[0]
+            return {"ok": False, "derivado_video_id": dup_id, "derivacion_id": None, "error": "derivado ya existe en catálogo (ruta duplicada)", "catalog_error": True}
+        # mismo archivo que original (comparación normalizada)
+        try:
+            orig_norm = normalizar_ruta_clave(orig_ruta)
+        except Exception as exc:
+            return {"ok": False, "derivado_video_id": None, "derivacion_id": None, "error": f"B8.3 no se pudo normalizar ruta original {orig_ruta!r}: {exc}", "catalog_error": False}
+        if derivado_norm == orig_norm:
             return {"ok": False, "derivado_video_id": None, "derivacion_id": None, "error": "derivado no puede ser el mismo archivo que el original", "catalog_error": False}
         for seg in segmentos_val:
             sid = seg["segmento_id"]
@@ -2748,18 +3686,26 @@ def incorporar_video_derivado_al_catalogo(derivado_ruta, original_video_id, segm
         mtime_ns = st.st_mtime_ns
     except OSError as exc:
         return {"ok": False, "derivado_video_id": None, "derivacion_id": None, "error": f"no se pudo stat derivado: {exc}", "catalog_error": True}
-    # Transacción de alta atómica: video + derivación + segmentos
+    # Transacción de alta atómica: video + derivación + segmentos (B8.3 por ruta_normalizada)
     conn2 = None
     try:
         conn2 = _conectar_derivados(ruta_db)
         conn2.execute("BEGIN")
+        try:
+            derivado_norm2 = normalizar_ruta_clave(derivado_ruta_abs)
+        except Exception as exc:
+            conn2.rollback()
+            return {"ok": False, "derivado_video_id": None, "derivacion_id": None, "error": f"B8.3 no se pudo normalizar ruta derivada {derivado_ruta_abs!r}: {exc}", "catalog_error": False}
+        if not derivado_norm2 or not derivado_norm2.strip():
+            conn2.rollback()
+            return {"ok": False, "derivado_video_id": None, "derivacion_id": None, "error": f"B8.3 ruta_normalizada vacía para {derivado_ruta_abs!r}", "catalog_error": False}
         fila_dup2 = conn2.execute(
-            "SELECT id FROM videos WHERE nombre = ?",
-            (derivado_nombre,),
+            "SELECT id FROM videos WHERE ruta_normalizada = ?",
+            (derivado_norm2,),
         ).fetchone()
         if fila_dup2 is not None:
             conn2.rollback()
-            return {"ok": False, "derivado_video_id": fila_dup2[0], "derivacion_id": None, "error": "nombre duplicado (carrera)", "catalog_error": True}
+            return {"ok": False, "derivado_video_id": fila_dup2[0], "derivacion_id": None, "error": "ruta duplicada (carrera)", "catalog_error": True}
         fecha_imp = datetime.now().isoformat()
         datos_video = {
             "nombre": derivado_nombre,
@@ -2776,9 +3722,17 @@ def incorporar_video_derivado_al_catalogo(derivado_ruta, original_video_id, segm
         }
         _asegurar_columnas_videos(conn2)
         _upsert_video(conn2, datos_video)
+        try:
+            derivado_norm_new = normalizar_ruta_clave(derivado_ruta_abs)
+        except Exception as exc:
+            conn2.rollback()
+            return {"ok": False, "derivado_video_id": None, "derivacion_id": None, "error": f"B8.3 no se pudo normalizar ruta derivada {derivado_ruta_abs!r}: {exc}", "catalog_error": False}
+        if not derivado_norm_new or not derivado_norm_new.strip():
+            conn2.rollback()
+            return {"ok": False, "derivado_video_id": None, "derivacion_id": None, "error": f"B8.3 ruta_normalizada vacía para {derivado_ruta_abs!r}", "catalog_error": False}
         fila_new = conn2.execute(
-            "SELECT id FROM videos WHERE nombre = ?",
-            (derivado_nombre,),
+            "SELECT id FROM videos WHERE ruta_normalizada = ?",
+            (derivado_norm_new,),
         ).fetchone()
         if fila_new is None:
             conn2.rollback()
@@ -2939,11 +3893,7 @@ def actualizar_cantidad_miniaturas(video_id, cantidad, ruta_db=None):
     try:
         conn.execute("BEGIN")
         _asegurar_columnas_videos(conn)
-        # ruta_normalizada no se toca, pero asegurar migración por si DB vieja
-        try:
-            _asegurar_ruta_normalizada(conn)
-        except Exception:
-            pass
+        _asegurar_ruta_normalizada(conn)
         # COALESCE: si cantidad_valida es None, conserva existente
         cur = conn.execute(
             "UPDATE videos SET cantidad_miniaturas = COALESCE(?, cantidad_miniaturas) WHERE id = ?",
@@ -2995,10 +3945,7 @@ def actualizar_cantidad_miniaturas_batch(actualizaciones, ruta_db=None):
     try:
         conn.execute("BEGIN")
         _asegurar_columnas_videos(conn)
-        try:
-            _asegurar_ruta_normalizada(conn)
-        except Exception:
-            pass
+        _asegurar_ruta_normalizada(conn)
         for item in lista:
             if isinstance(item, dict):
                 vid = item.get("video_id", item.get("id"))

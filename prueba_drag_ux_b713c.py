@@ -9,6 +9,7 @@ from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import QByteArray, QPoint, Qt, QMimeData
 from PySide6.QtGui import QDragEnterEvent, QDragMoveEvent, QDropEvent, QDragLeaveEvent, QPixmap
 from escanear_videos import conectar_bd
+import rutas
 import visor_videos as vv
 import panel_organizacion as po
 
@@ -50,7 +51,7 @@ for name in ["video_a.mp4","video_b.mp4","video_c.mp4"]:
     open(ruta,"wb").write(b"x"*1024)
     st=os.stat(ruta)
     c=conectar_bd(db)
-    c.execute("INSERT INTO videos (nombre,ruta,extension,fecha_importacion,tamano_bytes,mtime_ns) VALUES (?,?,?,?,?,?)",(name,os.path.abspath(ruta),".mp4","2026-01-01",st.st_size,st.st_mtime_ns))
+    c.execute("INSERT INTO videos (nombre,ruta,ruta_normalizada,extension,fecha_importacion,tamano_bytes,mtime_ns) VALUES (?,?,?,?,?,?,?)",(name,os.path.abspath(ruta),rutas.normalizar_ruta_clave(os.path.abspath(ruta)),".mp4","2026-01-01",st.st_size,st.st_mtime_ns))
     row=c.execute("SELECT id FROM videos WHERE nombre=?",(name,)).fetchone()
     vids.append((name,row[0],os.path.abspath(ruta)))
     c.commit(); c.close()

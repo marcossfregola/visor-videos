@@ -14,7 +14,7 @@ import inspect
 
 from escanear_videos import conectar_bd
 import visor_videos
-from rutas import carpetas_iguales
+from rutas import carpetas_iguales, normalizar_ruta_clave
 
 _CONT = 0
 _FAIL = 0
@@ -51,14 +51,16 @@ def _ins(db, carpeta, nombre, contenido=b"x" * 1024):
         f.write(contenido)
     st = os.stat(ruta)
     conn = conectar_bd(db)
+    ruta_abs = os.path.abspath(ruta)
+    ruta_norm = normalizar_ruta_clave(ruta_abs)
     conn.execute(
-        "INSERT INTO videos (nombre,ruta,extension,fecha_importacion,tamano_bytes,mtime_ns) VALUES (?,?,?,?,?,?)",
-        (nombre, os.path.abspath(ruta), os.path.splitext(nombre)[1].lower(), "2026-01-01", st.st_size, st.st_mtime_ns),
+        "INSERT INTO videos (nombre,ruta,ruta_normalizada,extension,fecha_importacion,tamano_bytes,mtime_ns) VALUES (?,?,?,?,?,?,?)",
+        (nombre, ruta_abs, ruta_norm, os.path.splitext(nombre)[1].lower(), "2026-01-01", st.st_size, st.st_mtime_ns),
     )
-    vid = conn.execute("SELECT id FROM videos WHERE nombre=?", (nombre,)).fetchone()[0]
+    vid = conn.execute("SELECT id FROM videos WHERE ruta_normalizada=?", (ruta_norm,)).fetchone()[0]
     conn.commit()
     conn.close()
-    return vid, os.path.abspath(ruta)
+    return vid, ruta_abs
 
 def _crear_visor(tmp, db):
     from PySide6.QtWidgets import QApplication

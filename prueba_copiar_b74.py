@@ -23,6 +23,7 @@ from escanear_videos import (
     listar_videos_paginado,
     obtener_video_por_id,
 )
+from rutas import normalizar_ruta_clave
 import copiar_video as svc
 from copiar_video import (
     ValidacionError,
@@ -53,13 +54,15 @@ def _insertar_video(ruta_db, carpeta, nombre, contenido=b"x" * 2048):
     st = os.stat(ruta)
     conn = conectar_bd(ruta_db)
     try:
+        ruta_abs = os.path.abspath(ruta)
+        ruta_norm = normalizar_ruta_clave(ruta_abs)
         conn.execute(
-            "INSERT INTO videos (nombre, ruta, extension, fecha_importacion, tamano_bytes, mtime_ns) VALUES (?, ?, ?, ?, ?, ?)",
-            (nombre, os.path.abspath(ruta), os.path.splitext(nombre)[1].lower(), "2026-01-01T00:00:00", st.st_size, st.st_mtime_ns),
+            "INSERT INTO videos (nombre, ruta, ruta_normalizada, extension, fecha_importacion, tamano_bytes, mtime_ns) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (nombre, ruta_abs, ruta_norm, os.path.splitext(nombre)[1].lower(), "2026-01-01T00:00:00", st.st_size, st.st_mtime_ns),
         )
-        vid = conn.execute("SELECT id FROM videos WHERE nombre=? COLLATE NOCASE", (nombre,)).fetchone()[0]
+        vid = conn.execute("SELECT id FROM videos WHERE ruta_normalizada=?", (ruta_norm,)).fetchone()[0]
         conn.commit()
-        return vid, os.path.abspath(ruta)
+        return vid, ruta_abs
     finally:
         conn.close()
 
@@ -436,6 +439,13 @@ def test_14_fallo_DB_post_publicacion_inconsistencia():
                 self._real = orig_conectar(*a, **k)
                 self._in_tx = False
 
+            @property
+            def in_transaction(self):
+                return self._real.in_transaction
+
+            def __getattr__(self, name):
+                return getattr(self._real, name)
+
             def execute(self, *a, **k):
                 sql = a[0] if a else ""
                 if "INSERT INTO videos" in sql:
@@ -511,16 +521,21 @@ def test_15_case_insensitive_windows():
             assert False, "case-insensitive debe rechazar"
         except ColisionError:
             pass
-        # Verificar que copiar con nombre no colisionante case sí genera sufijo si UNIQUE
-        # Limpiar colisión y probar que copia genera _001 y no considera colisión case como éxito
+        # B8.3A: homónimo en otra carpeta permitido, sin sufijo UNIQUE
+        # Limpiar colisión y probar que copia conserva mismo nombre visible (homónimo)
         os.remove(os.path.join(B, "video15.mp4"))
-        # Ahora copiar debe generar Video15_001.MP4 (suffix) por UNIQUE, no por FS
+        # Ahora copiar debe conservar exactamente mismo nombre (video15.mp4) con nuevo ID, no sufijo
         res = svc.copiar_video(vid, B, ruta_db)
-        assert res["nombre"].lower() != "video15.mp4".lower() or res["nombre"] == "Video15.MP4"  # puede ser con sufijo
-        # Pero al menos no debe ser exactamente Video15.MP4 si UNIQUE bloquea
-        # Con UNIQUE vigente, debe ser distinto
-        assert res["nombre"].lower() != "video15.mp4".lower() or os.path.exists(res["ruta"])
-        print("test_15 OK")
+        # B8.3A: mismo nombre en otra carpeta = permitido, sin sufijo
+        assert res["nombre"].lower() == "video15.mp4".lower(), f"B8.3A debe conservar mismo nombre, got {res['nombre']!r}"
+        assert os.path.isfile(res["ruta"])
+        # Verificar que catálogo permite dos filas con mismo nombre pero distinta ruta_normalizada
+        conn = sqlite3.connect(ruta_db)
+        filas = conn.execute("SELECT nombre, ruta, ruta_normalizada FROM videos WHERE lower(nombre)=lower(?)", ("video15.mp4",)).fetchall()
+        conn.close()
+        assert len(filas) == 2, f"deben coexistir 2 filas homónimas, got {filas}"
+        assert filas[0][2] != filas[1][2], "ruta_normalizada debe diferir"
+        print("test_15 OK — B8.3A homónimo case-insensitive permitido sin sufijo")
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
 
@@ -652,6 +667,7 @@ def test_19_actividad_progreso_error():
 
 
 def test_20_unique_constraint_sufijo():
+    """B8.3A adaptado: homónimo permitido, sin sufijo UNIQUE — conserva mismo nombre visible."""
     tmpdir, ruta_db = _crear_db_temporal()
     A = os.path.join(tmpdir, "A")
     B = os.path.join(tmpdir, "B")
@@ -659,29 +675,36 @@ def test_20_unique_constraint_sufijo():
     os.makedirs(B, exist_ok=True)
     try:
         vid, _ = _insertar_video(ruta_db, A, "dup20.mp4", contenido=b"dup20" * 600)
-        # Con UNIQUE vigente, copiar debe generar nombre con sufijo _001
+        # B8.3A: copiar a otra carpeta debe conservar exactamente mismo nombre (homónimo), sin sufijo
         res = svc.copiar_video(vid, B, ruta_db)
         assert res["ok"]
-        # Nombre final debe ser distinto al original por UNIQUE
-        assert res["nombre"].lower() != "dup20.mp4".lower(), f"debe generar sufijo por UNIQUE, got {res['nombre']}"
-        assert "_001" in res["nombre"] or "_002" in res["nombre"] or "_00" in res["nombre"], f"sufijo esperado, got {res['nombre']}"
-        # Verificar que ambos existen en DB con nombres distintos
+        # Nombre final debe ser idéntico al original (homónimo en otra carpeta permitido)
+        assert res["nombre"].lower() == "dup20.mp4".lower(), f"B8.3A debe conservar mismo nombre, got {res['nombre']}"
+        # Verificar que ambos existen en DB con mismo nombre pero distinta ruta_normalizada
         conn = sqlite3.connect(ruta_db)
-        filas = conn.execute("SELECT nombre, ruta FROM videos ORDER BY id").fetchall()
+        filas = conn.execute("SELECT nombre, ruta, ruta_normalizada FROM videos ORDER BY id").fetchall()
         conn.close()
         assert len(filas) == 2
-        nombres = [f[0] for f in filas]
-        assert nombres[0].lower() == "dup20.mp4".lower()
-        assert nombres[1].lower() != nombres[0].lower()
-        # Archivo en B con nombre suffix existe y hash igual al original
+        assert filas[0][0].lower() == "dup20.mp4".lower()
+        assert filas[1][0].lower() == "dup20.mp4".lower()
+        assert filas[0][2] != filas[1][2], "ruta_normalizada debe diferir para homónimos"
+        # Archivo en B con mismo nombre existe y hash igual al original
         assert os.path.isfile(res["ruta"])
         assert _hash(os.path.join(A, "dup20.mp4")) == _hash(res["ruta"])
-        # Segunda copia debe generar _002 si _001 ya está ocupado (FS+DB)
+        # Segunda copia a mismo destino B con mismo nombre debe RECHAZAR por destino exacto ocupado (no generar _002)
         vid2 = vid
-        res2 = svc.copiar_video(vid2, B, ruta_db)
-        assert res2["nombre"] != res["nombre"]
-        assert os.path.isfile(res2["ruta"])
-        print("test_20 OK")
+        try:
+            res2 = svc.copiar_video(vid2, B, ruta_db)
+            assert False, "segunda copia a mismo destino exacto debe rechazar por colisión ruta_normalizada/FS"
+        except ColisionError:
+            pass
+        # Copiar a carpeta distinta C debe permitir nuevamente mismo nombre con nuevo ID
+        C = os.path.join(tmpdir, "C")
+        os.makedirs(C, exist_ok=True)
+        res3 = svc.copiar_video(vid, C, ruta_db)
+        assert res3["nombre"].lower() == "dup20.mp4".lower() and res3["video_id"] != vid and res3["video_id"] != res["video_id"]
+        assert os.path.isfile(res3["ruta"])
+        print("test_20 OK — B8.3A homónimo sin sufijo, colisión destino exacto rechazada, distinta carpeta permitida")
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
 

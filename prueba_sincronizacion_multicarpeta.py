@@ -114,11 +114,22 @@ def _esperar_escaneo(ventana, timeout_ms=30000):
     fin = time.monotonic() + timeout_ms / 1000
     while time.monotonic() < fin:
         QApplication.processEvents()
-        if (
-            ventana.gestor.hilo is None
-            and not ventana.gestor.activo
-            and ventana._cola_carpetas_escaneo == []
-        ):
+        # Determinista: esperar cola vacía + gestor inactivo + sin pipeline pendiente (escaneo/sync/recarga)
+        cola_vacia = ventana._cola_carpetas_escaneo == []
+        gestor_quieto = ventana.gestor.hilo is None and not ventana.gestor.activo
+        sin_pipeline = not (
+            getattr(ventana, "_escaneo_pendiente", False)
+            or getattr(ventana, "_tamanos_pendiente", False)
+            or getattr(ventana, "_ffprobe_pendiente", False)
+            or getattr(ventana, "_guardado_pendiente", False)
+            or getattr(ventana, "_miniaturas_pendiente", False)
+            or getattr(ventana, "_actualizar_miniaturas_pendiente", False)
+            or getattr(ventana, "_sincronizacion_pendiente", False)
+            or getattr(ventana, "_recarga_catalogo_pendiente", False)
+            or getattr(ventana, "_pagina_pendiente", False)
+        )
+        if gestor_quieto and cola_vacia and sin_pipeline:
+            # también asegurar carga inicial completada al menos una recarga pasó
             return True
         time.sleep(0.02)
     QApplication.processEvents()
@@ -176,10 +187,12 @@ def main():
     # en disco: A tiene v01 (v02 existe), B tiene v03; v03_eliminado no existe en disco
     try:
         sin_proteger = detectar_diferencias(carpeta_a, ruta_db)
+        # B8.3A scope-seguro: incluso sin protección explícita, registros de otras carpetas no son ausentes (aislamiento por ruta_normalizada)
         verifica(
-            "v03.mp4" in sin_proteger["ausentes_del_disco"]
-            and "v03_eliminado.mp4" in sin_proteger["ausentes_del_disco"],
-            "sin protección, los registros de otras carpetas son ausentes (modo tradicional)",
+            "v03.mp4" not in sin_proteger["ausentes_del_disco"]
+            and "v03_eliminado.mp4" not in sin_proteger["ausentes_del_disco"],
+            "B8.3A sin protección scope-seguro: otras carpetas no son ausentes",
+            extra=sin_proteger["ausentes_del_disco"],
         )
         protegido = detectar_diferencias(
             carpeta_a, ruta_db, carpetas_protegidas=[carpeta_b]
@@ -218,16 +231,19 @@ def main():
         ventana.iniciar_escaneo([carpeta_a, carpeta_b])
         _esperar_escaneo(ventana)
         verifica(
-            sorted(_nombres(ventana))
-            == ["v01.mp4", "v02.mp4", "v03.mp4", "v04.mkv"],
+            sorted(_nombres(ventana)) == ["v01.mp4", "v02.mp4", "v03.mp4", "v04.mkv"],
             "escaneo multicarpeta inicial (unión)",
+        )
+        verifica(
+            _nombres_bd(ruta_db) == ["v01.mp4", "v02.mp4", "v03.mp4", "v04.mkv"],
+            "BD unión inicial A+B",
+            extra=_nombres_bd(ruta_db),
         )
         os.remove(os.path.join(carpeta_a, "v02.mp4"))
         ventana.iniciar_escaneo([carpeta_a, carpeta_b])
         _esperar_escaneo(ventana)
         verifica(
-            sorted(_nombres(ventana))
-            == ["v01.mp4", "v03.mp4", "v04.mkv"],
+            sorted(_nombres(ventana)) == ["v01.mp4", "v03.mp4", "v04.mkv"],
             "el ausente de una carpeta del conjunto se elimina y se conserva la otra carpeta",
             extra=sorted(_nombres(ventana)),
         )
@@ -264,9 +280,13 @@ def main():
         ventana.iniciar_escaneo([carpeta_a, carpeta_b])
         _esperar_escaneo(ventana)
         verifica(
-            sorted(_nombres(ventana))
-            == ["v01.mp4", "v02.mp4", "v03.mp4", "v04.mkv"],
+            sorted(_nombres(ventana)) == ["v01.mp4", "v02.mp4", "v03.mp4", "v04.mkv"],
             "transición paso 2: A+B",
+        )
+        verifica(
+            _nombres_bd(ruta_db) == ["v01.mp4", "v02.mp4", "v03.mp4", "v04.mkv"],
+            "transición paso 2 BD unión",
+            extra=_nombres_bd(ruta_db),
         )
         ventana.iniciar_escaneo()
         _esperar_escaneo(ventana)
@@ -308,6 +328,11 @@ def main():
                 "fase [A] final -> BD exactamente {a.mp4} (b desaparece)",
                 extra=_nombres_bd(ruta_db),
             )
+            verifica(
+                sorted(_nombres(ventana)) == ["a.mp4"],
+                "fase [A] final vista exactamente {a.mp4}",
+                extra=sorted(_nombres(ventana)),
+            )
     finally:
         base_f.cleanup()
 
@@ -329,6 +354,11 @@ def main():
                 "solapadas A>B: la unión sin duplicados ni cruces",
                 extra=_nombres_bd(ruta_db),
             )
+            verifica(
+                sorted(_nombres(ventana)) == ["a.mp4", "b.mp4"],
+                "solapadas vista unión",
+                extra=sorted(_nombres(ventana)),
+            )
             os.remove(os.path.join(carpeta_b_g, "b.mp4"))
             ventana.iniciar_escaneo([carpeta_a_g, carpeta_b_g])
             _esperar_escaneo(ventana)
@@ -336,6 +366,11 @@ def main():
                 _nombres_bd(ruta_db) == ["a.mp4"],
                 "solapadas A>B: el archivo borrado en B desaparece y A se conserva",
                 extra=_nombres_bd(ruta_db),
+            )
+            verifica(
+                sorted(_nombres(ventana)) == ["a.mp4"],
+                "solapadas vista tras borrar B",
+                extra=sorted(_nombres(ventana)),
             )
     finally:
         base_g.cleanup()

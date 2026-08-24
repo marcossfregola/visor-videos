@@ -28,10 +28,13 @@ def _ins(db, carpeta, nombre, contenido=b"x"*1024):
     open(ruta,"wb").write(contenido)
     st=os.stat(ruta)
     conn=conectar_bd(db)
-    conn.execute("INSERT INTO videos (nombre,ruta,extension,fecha_importacion,tamano_bytes,mtime_ns) VALUES (?,?,?,?,?,?)",(nombre, os.path.abspath(ruta), os.path.splitext(nombre)[1].lower(),"2026-01-01", st.st_size, st.st_mtime_ns))
-    vid=conn.execute("SELECT id FROM videos WHERE nombre=?",(nombre,)).fetchone()[0]
+    from rutas import normalizar_ruta_clave
+    ruta_abs=os.path.abspath(ruta)
+    ruta_norm=normalizar_ruta_clave(ruta_abs)
+    conn.execute("INSERT INTO videos (nombre,ruta,ruta_normalizada,extension,fecha_importacion,tamano_bytes,mtime_ns) VALUES (?,?,?,?,?,?,?)",(nombre, ruta_abs, ruta_norm, os.path.splitext(nombre)[1].lower(),"2026-01-01", st.st_size, st.st_mtime_ns))
+    vid=conn.execute("SELECT id FROM videos WHERE ruta_normalizada=?",(ruta_norm,)).fetchone()[0]
     conn.commit(); conn.close()
-    return vid, os.path.abspath(ruta)
+    return vid, ruta_abs
 
 def test_01_plantilla_tokens_validos():
     tmp,db=_db()
@@ -364,6 +367,7 @@ def test_14_preservacion_video_id_marcadores_segmentos():
     finally: shutil.rmtree(tmp,ignore_errors=True)
 
 def test_15_reasociacion_miniaturas():
+    # B8.3A: cache canónica por video_id permanece, cero movimiento por nombre
     tmp,db=_db()
     A=os.path.join(tmp,"A"); os.makedirs(A,exist_ok=True)
     mini=os.path.join(tmp,"mini"); os.makedirs(mini,exist_ok=True)
@@ -372,25 +376,26 @@ def test_15_reasociacion_miniaturas():
     orig_esc=esc.ruta_carpeta_miniaturas
     rutas.ruta_carpeta_miniaturas=lambda: mini
     esc.ruta_carpeta_miniaturas=lambda: mini
-    # también visor
     import visor_videos as vis
     orig_vis=vis.ruta_carpeta_miniaturas
     vis.ruta_carpeta_miniaturas=lambda: mini
     try:
         vid,_=_ins(db,A,"orig15.mp4", contenido=b"x"*128)
-        pref=esc._nombre_seguro(os.path.splitext("orig15.mp4")[0])
-        open(os.path.join(mini,f"{pref}_01.jpg"),"wb").write(b"\xff\xd8fake")
+        # crear cache canónica por id (B8.2)
+        ruta_mini_id=esc.ruta_miniatura_id(vid,1)
+        open(ruta_mini_id,"wb").write(b"\xff\xd8fake")
         for i in range(1, esc.CANTIDAD_PREVIEWS+1):
-            open(os.path.join(mini,f"{pref}_preview_{i:02d}.jpg"),"wb").write(b"\xff\xd8prev")
+            open(esc.ruta_preview_id(vid,i),"wb").write(b"\xff\xd8prev")
+        antes=set(os.listdir(mini))
         infos=[{"video_id":vid,"nombre":"orig15.mp4","ruta":os.path.join(A,"orig15.mp4")}]
         plan_res=rm.construir_plan(infos, "{texto}", texto="nuevo15", ruta_db=db)
         verifica(plan_res["ok"],"plan mini ok")
         res=rm.ejecutar_plan(plan_res["plan"], ruta_db=db)
         verifica(res["exitosos_count"]==1,"reasociación exitosa")
-        # verificar mini nueva existe y vieja no
-        verifica(vis.miniatura_principal("nuevo15.mp4") is not None,"mini nueva existe")
-        verifica(not os.path.isfile(os.path.join(mini,f"{pref}_01.jpg")),"mini vieja movida")
-        verifica(len(esc.previews_existentes("nuevo15.mp4"))==esc.CANTIDAD_PREVIEWS,"previews reasociadas")
+        despues=set(os.listdir(mini))
+        verifica(antes==despues,"cache por id sin movimiento por nombre")
+        verifica(os.path.isfile(ruta_mini_id),"mini canónica permanece")
+        verifica(len(esc.previews_existentes_por_id(vid))==esc.CANTIDAD_PREVIEWS,"previews por id intactas")
     finally:
         rutas.ruta_carpeta_miniaturas=orig_mini
         esc.ruta_carpeta_miniaturas=orig_esc
@@ -718,9 +723,25 @@ def test_26_acceso_ui_renombrar_seleccionados():
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
+def test_27_estructural_b83():
+    src=open("renombrar_masivo.py",encoding="utf-8").read()
+    verifica(src.count("WHERE nombre")==0,"estructural WHERE nombre 0")
+    verifica(src.count("COLLATE NOCASE")==0,"estructural COLLATE NOCASE 0")
+    # contar llamadas productivas fuera de def
+    import re
+    # find def position
+    def_pos=src.find("def _calcular_renombres_cache")
+    after=src[def_pos+ len("def _calcular_renombres_cache"): ] if def_pos!=-1 else src
+    # contar en area previa a def y posterior excluyendo def línea
+    # simple: contar total -1 (def)
+    total_calls=src.count("_calcular_renombres_cache(")
+    prod=total_calls -1  # una es def
+    verifica(prod==0,f"estructural cero llamadas productivas cache {prod}")
+    verifica("UPDATE videos SET nombre = ?, ruta = ?, ruta_normalizada" in src,"UPDATE incluye ruta_normalizada")
+
 def main():
     print("=== B7.7 prueba_renombrar_masivo_b77 ===")
-    for fn in [test_01_plantilla_tokens_validos,test_02_plantilla_tokens_invalidos,test_03_sanitizacion_visible_en_preview,test_04_reservados_longitud,test_05_preservacion_extension,test_06_orden_estable,test_07_colisiones_intra_lote_sufijos,test_08_colisiones_fs,test_09_colisiones_db_unique,test_10_case_insensitive,test_11_swap_AB,test_12_ciclo_3,test_13_fallo_durante_ciclo_recuperacion,test_14_preservacion_video_id_marcadores_segmentos,test_15_reasociacion_miniaturas,test_16_cancelacion_parcial,test_17_progreso,test_18_cero_reescaneo,test_19_cero_ffmpeg,test_20_preview_plan_exacto,test_21_errores_visibles,test_22_tarea_fuera_hilo,test_23_ui_sin_sqlite_fs,test_24_integracion_ui_preview,test_25_sin_silencios_pass,test_26_acceso_ui_renombrar_seleccionados]:
+    for fn in [test_01_plantilla_tokens_validos,test_02_plantilla_tokens_invalidos,test_03_sanitizacion_visible_en_preview,test_04_reservados_longitud,test_05_preservacion_extension,test_06_orden_estable,test_07_colisiones_intra_lote_sufijos,test_08_colisiones_fs,test_09_colisiones_db_unique,test_10_case_insensitive,test_11_swap_AB,test_12_ciclo_3,test_13_fallo_durante_ciclo_recuperacion,test_14_preservacion_video_id_marcadores_segmentos,test_15_reasociacion_miniaturas,test_16_cancelacion_parcial,test_17_progreso,test_18_cero_reescaneo,test_19_cero_ffmpeg,test_20_preview_plan_exacto,test_21_errores_visibles,test_22_tarea_fuera_hilo,test_23_ui_sin_sqlite_fs,test_24_integracion_ui_preview,test_25_sin_silencios_pass,test_26_acceso_ui_renombrar_seleccionados,test_27_estructural_b83]:
         try: fn()
         except Exception as e:
             import traceback; falla(fn.__name__, str(e)); traceback.print_exc()

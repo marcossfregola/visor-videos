@@ -496,28 +496,30 @@ def test_08_nombre_duplicado():
         return False, "archivo borrado tras duplicado misma ruta"
     if _contar_videos(db) != 2:  # original + 1 derivado
         return False, f"videos { _contar_videos(db)} !=2 tras dup misma ruta"
-    # distinta ruta mismo nombre
+    # B8.3 distinta ruta mismo nombre -> PERMITIDO (homónimo por ruta_normalizada)
     otro_dir = os.path.join(tmp, "otro")
     os.makedirs(otro_dir, exist_ok=True)
     der2 = os.path.join(otro_dir, "dup.mp4")  # mismo basename
     if not _generar_video(der2, duracion=2):
         return False, "gen der2 fail"
-    # intentar alta con mismo nombre pero distinta ruta -> rechazar
     alta3 = ev.incorporar_video_derivado_al_catalogo(der2, vid, [{"segmento_id": sid, "inicio": 0.5, "fin": 1.5}], tipo="individual", ruta_db=db)
-    if alta3.get("ok"):
-        return False, "alta distinta ruta mismo nombre deberia fallar (UNIQUE nombre)"
+    if not alta3.get("ok"):
+        return False, f"B8.3 homónimo distinta ruta mismo nombre debería permitir, got {alta3}"
     if not os.path.isfile(der2):
-        return False, "archivo der2 borrado tras dup distinta ruta"
-    if _contar_derivaciones(db) != 1:
-        return False, f"derivaciones { _contar_derivaciones(db)} !=1 tras dups"
-    # identidad por nombre UNIQUE rechaza colision con otro archivo y nunca reutiliza silenciosamente
-    # Verificar que der2 no fue confundido con der1 (ids distintos)
+        return False, "archivo der2 borrado tras homónimo"
+    if _contar_derivaciones(db) != 2:
+        return False, f"derivaciones { _contar_derivaciones(db)} !=2 tras homónimo permitido"
+    if _contar_videos(db) != 3:
+        return False, f"videos { _contar_videos(db)} !=3 tras homónimo"
+    # verificar que ambos homónimos coexisten con rutas distintas
     conn = sqlite3.connect(db)
-    fila = conn.execute("SELECT ruta FROM videos WHERE nombre='dup.mp4'").fetchone()
+    filas = conn.execute("SELECT ruta FROM videos WHERE nombre='dup.mp4' ORDER BY ruta").fetchall()
     conn.close()
-    if fila is None or os.path.normcase(os.path.normpath(fila[0])) != os.path.normcase(os.path.normpath(os.path.abspath(der1))):
-        return False, f"ruta catalogada no es der1 {fila}"
-    return True, "duplicado misma y distinta ruta rechazados, archivo conservado, no reutilizacion silenciosa"
+    rutas_norm = {os.path.normcase(os.path.normpath(r[0])) for r in filas}
+    esperadas = {os.path.normcase(os.path.normpath(os.path.abspath(der1))), os.path.normcase(os.path.normpath(os.path.abspath(der2)))}
+    if rutas_norm != esperadas:
+        return False, f"rutas homónimas no coinciden {rutas_norm} vs {esperadas}"
+    return True, "B8.3 homónimo permitido, misma ruta rechaza, distinta ruta coexiste"
 
 def test_09_derivado_de_derivado_bloqueado():
     tmp = os.path.join(BASE, "t09_derder")
@@ -761,27 +763,33 @@ def test_14_rollback_integridad():
         return False, "gen dup fail"
     # insertar manualmente como si ya existiera en catalogo
     _insertar_video_catalogado(db, dup_ruta, nombre=dup_nombre)
-    # ahora intentar incorporar otro archivo con mismo nombre pero distinta ruta -> debe fallar y no dejar relacion parcial
+    # B8.3 distinta ruta mismo nombre -> PERMITIDO (homónimo por ruta_normalizada)
     otro_dir = os.path.join(tmp, "otro")
     os.makedirs(otro_dir, exist_ok=True)
     dup2 = os.path.join(otro_dir, dup_nombre)
     if not _generar_video(dup2, duracion=2):
         return False, "gen dup2 fail"
     alta = ev.incorporar_video_derivado_al_catalogo(dup2, vid, [{"segmento_id": sid1, "inicio": 0.5, "fin": 1.0}], tipo="individual", ruta_db=db)
-    if alta.get("ok"):
-        return False, "dup deberia fallar"
-    # verificar no queda video sin relacion ni relacion parcial
-    # contar: videos debe seguir 2 (orig + dup), derivaciones 0
-    if _contar_videos(db) != 2:
-        return False, f"videos {_contar_videos(db)} !=2"
-    if _contar_derivaciones(db) != 0:
-        return False, f"derivaciones { _contar_derivaciones(db)} !=0"
-    # verificar que dup2 no se inserto como video
+    if not alta.get("ok"):
+        return False, f"B8.3 homónimo distinta ruta mismo nombre debería permitir, got {alta}"
+    # verificar que homónimo se insertó correctamente (videos 3: orig + dup + dup2, derivaciones 1)
+    if _contar_videos(db) != 3:
+        return False, f"videos {_contar_videos(db)} !=3 tras homónimo B8.3"
+    if _contar_derivaciones(db) != 1:
+        return False, f"derivaciones { _contar_derivaciones(db)} !=1 tras homónimo"
     conn = sqlite3.connect(db)
-    filas = conn.execute("SELECT ruta FROM videos WHERE nombre=?", (dup_nombre,)).fetchall()
+    filas = conn.execute("SELECT ruta FROM videos WHERE nombre=? ORDER BY ruta", (dup_nombre,)).fetchall()
     conn.close()
-    if len(filas) != 1 or os.path.normcase(os.path.normpath(filas[0][0])) != os.path.normcase(os.path.normpath(os.path.abspath(dup_ruta))):
-        return False, f"ruta dup cambio {filas}"
+    rutas_norm = {os.path.normcase(os.path.normpath(r[0])) for r in filas}
+    esperadas = {os.path.normcase(os.path.normpath(os.path.abspath(dup_ruta))), os.path.normcase(os.path.normpath(os.path.abspath(dup2)))}
+    if rutas_norm != esperadas:
+        return False, f"rutas homónimas no coinciden {rutas_norm} vs {esperadas}"
+    # ahora probar misma ruta idéntica debe fallar (rollback)
+    alta_dup_same = ev.incorporar_video_derivado_al_catalogo(dup_ruta, vid, [{"segmento_id": sid1, "inicio": 0.5, "fin": 1.0}], tipo="individual", ruta_db=db)
+    if alta_dup_same.get("ok"):
+        return False, "misma ruta idéntica debería fallar"
+    if _contar_videos(db) != 3 or _contar_derivaciones(db) != 1:
+        return False, "conteo cambió tras duplicado misma ruta"
     # secuencia con rollback: intentar insertar con un segmento_id invalido -> no debe dejar derivacion parcial
     der_seq = os.path.join(tmp, "seq_rollback.mp4")
     if not _generar_video(der_seq, duracion=3):
@@ -790,8 +798,8 @@ def test_14_rollback_integridad():
     alta2 = ev.incorporar_video_derivado_al_catalogo(der_seq, vid, [{"segmento_id": 999999, "inicio": 0.5, "fin": 1.0}], tipo="individual", ruta_db=db)
     if alta2.get("ok"):
         return False, "segmento inexistente deberia fallar"
-    if _contar_derivaciones(db) != 0:
-        return False, "derivacion parcial tras segmento invalido"
+    if _contar_derivaciones(db) != 1:
+        return False, f"derivacion parcial tras segmento invalido, esperado 1 got { _contar_derivaciones(db)}"
     # verificar no hay video seq sin relacion
     conn = sqlite3.connect(db)
     fila_seq = conn.execute("SELECT id FROM videos WHERE nombre=?", (os.path.basename(der_seq),)).fetchone()

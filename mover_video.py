@@ -16,7 +16,7 @@ import os
 import sqlite3
 import uuid
 
-from rutas import ruta_biblioteca
+from rutas import normalizar_ruta_clave, ruta_biblioteca
 
 
 class MoverError(Exception):
@@ -176,25 +176,47 @@ def mover_video(video_id, carpeta_destino, ruta_db=None, forzar_cross_volume=Fal
     nueva_ruta = os.path.join(carpeta_destino_abs, nombre)
     nueva_ruta = os.path.abspath(nueva_ruta)
 
-    # Misma carpeta: rechazo/no-op claro
+    # B8.3A — contrato único de colisión por ruta_normalizada exacta
+    try:
+        ruta_destino_normalizada = normalizar_ruta_clave(nueva_ruta)
+    except Exception as exc:
+        raise ValidacionError(f"no se pudo normalizar ruta destino {nueva_ruta!r}: {exc}") from exc
+    try:
+        ruta_actual_normalizada = normalizar_ruta_clave(ruta_actual_abs)
+    except Exception as exc:
+        raise MoverError(f"no se pudo normalizar ruta actual {ruta_actual_abs!r}: {exc}") from exc
+    # Misma ruta física (no-op) — mismo destino físico que origen
+    if ruta_destino_normalizada == ruta_actual_normalizada:
+        raise ValidacionError("origen y destino son el mismo archivo (misma ruta normalizada)")
+    # Misma carpeta: rechazo/no-op claro (destino físico distinto pero misma carpeta)
     try:
         dir_actual = os.path.dirname(ruta_actual_abs)
         dir_dest_norm = os.path.normcase(os.path.normpath(carpeta_destino_abs))
         dir_actual_norm = os.path.normcase(os.path.normpath(dir_actual))
         if dir_dest_norm == dir_actual_norm:
             raise ValidacionError(f"origen y destino son la misma carpeta: {carpeta_destino_abs!r}")
-        # también verificar ruta final igual (mismo archivo)
-        if os.path.normcase(os.path.normpath(nueva_ruta)) == os.path.normcase(os.path.normpath(ruta_actual_abs)):
-            raise ValidacionError("origen y destino son el mismo archivo")
     except ValidacionError:
         raise
     except Exception:
         pass
 
-    # Destino existente: rechazo nunca overwrite
+    # Destino existente en FS: rechazo nunca overwrite (aunque DB no tenga colisión)
     if os.path.exists(nueva_ruta):
-        # si es mismo archivo ya manejado arriba, aquí es colisión real
         raise ColisionError(f"ya existe un archivo en destino: {nueva_ruta!r}")
+
+    # Catálogo: otro video_id con misma ruta_normalizada destino -> rechazo
+    conn_chk = sqlite3.connect(ruta_db)
+    try:
+        fila_dup = conn_chk.execute(
+            "SELECT id FROM videos WHERE ruta_normalizada = ? AND id != ?", (ruta_destino_normalizada, video_id)
+        ).fetchone()
+        if fila_dup is not None:
+            raise ColisionError(f"ya existe otro video con la misma ruta destino {nueva_ruta!r} (id {fila_dup[0]}, ruta_normalizada {ruta_destino_normalizada!r})")
+    finally:
+        try:
+            conn_chk.close()
+        except Exception:
+            pass
 
     # Origen faltante
     if not os.path.isfile(ruta_actual_abs):
@@ -215,13 +237,30 @@ def mover_video(video_id, carpeta_destino, ruta_db=None, forzar_cross_volume=Fal
         except OSError as exc:
             raise MoverError(f"fallo al mover en filesystem (same-volume): {exc}") from exc
 
-        # UPDATE transacción
+        # UPDATE transacción — revalida colisión ruta_normalizada y actualiza dual-write
         conn = sqlite3.connect(ruta_db)
         try:
             conn.execute("BEGIN")
+            # Carrera: otro proceso pudo insertar misma ruta_normalizada entre prevalidación y rename
+            fila_dup_tx = conn.execute(
+                "SELECT id FROM videos WHERE ruta_normalizada = ? AND id != ?", (ruta_destino_normalizada, video_id)
+            ).fetchone()
+            if fila_dup_tx is not None:
+                conn.rollback()
+                try:
+                    os.rename(nueva_ruta, ruta_actual_abs)
+                except OSError as exc_comp:
+                    raise CompensacionFalloError(
+                        f"colisión ruta_normalizada en transacción y compensación falló: {exc_comp}",
+                        ruta_original=ruta_actual_abs,
+                        ruta_nueva=nueva_ruta,
+                        error_db=f"colisión ruta_normalizada {ruta_destino_normalizada!r} id {fila_dup_tx[0]}",
+                        error_compensacion=str(exc_comp),
+                    ) from exc_comp
+                raise ColisionError(f"ya existe otro video con la misma ruta destino {nueva_ruta!r} (carrera, id {fila_dup_tx[0]})")
             cur = conn.execute(
-                "UPDATE videos SET ruta = ? WHERE id = ?",
-                (nueva_ruta, video_id),
+                "UPDATE videos SET ruta = ?, ruta_normalizada = ? WHERE id = ?",
+                (nueva_ruta, ruta_destino_normalizada, video_id),
             )
             if cur.rowcount == 0:
                 conn.rollback()
@@ -400,13 +439,24 @@ def mover_video(video_id, carpeta_destino, ruta_db=None, forzar_cross_volume=Fal
             # intentar limpiar? origen intacto
             raise MoverError("destino final no existe tras publicación")
 
-        # Paso 6: UPDATE SQLite
+        # Paso 6: UPDATE SQLite — dual-write ruta_normalizada y revalida colisión
         conn = sqlite3.connect(ruta_db)
         try:
             conn.execute("BEGIN")
+            fila_dup_tx2 = conn.execute(
+                "SELECT id FROM videos WHERE ruta_normalizada = ? AND id != ?", (ruta_destino_normalizada, video_id)
+            ).fetchone()
+            if fila_dup_tx2 is not None:
+                conn.rollback()
+                try:
+                    if os.path.isfile(nueva_ruta):
+                        os.remove(nueva_ruta)
+                except Exception:
+                    pass
+                raise ColisionError(f"ya existe otro video con la misma ruta destino {nueva_ruta!r} (carrera cross-volume, id {fila_dup_tx2[0]})")
             cur = conn.execute(
-                "UPDATE videos SET ruta = ? WHERE id = ?",
-                (nueva_ruta, video_id),
+                "UPDATE videos SET ruta = ?, ruta_normalizada = ? WHERE id = ?",
+                (nueva_ruta, ruta_destino_normalizada, video_id),
             )
             if cur.rowcount == 0:
                 conn.rollback()

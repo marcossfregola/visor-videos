@@ -1,8 +1,11 @@
-"""Servicio B7.4 — copia individual segura de un video catalogado.
+"""Servicio B7.4 — copia individual segura de un video catalogado (B8.3A).
 
-Contrato:
+Contrato B8.3A:
 - Recibe video_id, carpeta_destino, ruta_db.
-- Valida origen, destino, misma carpeta y colisiones Windows case-insensitive.
+- Valida origen, destino, misma carpeta y colisiones por destino físico normalizado exacto.
+- Mismo nombre en otra carpeta = permitido (homónimo); distingue por ruta_normalizada.
+- Destino exacto libre -> copiar y catalogar por ruta_normalizada con NUEVO video_id.
+- Destino exacto ocupada (FS o catálogo) -> rechazar sin overwrite ni reutilización ID.
 - Copia a temporal exclusivo dentro del destino; verifica tamaño + SHA-256;
   publica a ruta final sin sobrescritura (rename local).
 - Incorpora el nuevo archivo al catálogo incrementalmente con nuevo video_id
@@ -12,9 +15,7 @@ Contrato:
   archivo válido: devolver estado de inconsistencia claro para que UI informe.
   Nunca dejar SQLite apuntando a archivo inexistente.
 - Origen y su DB/relaciones permanecen intactos.
-- Si `videos.nombre` UNIQUE impide mismo nombre en carpetas distintas, genera
-  nombre destino no colisionante de forma explícita y predecible con sufijo
-  _001, _002... via motor B6.8 (nombres.py) sin migración amplia.
+- No genera sufijos _001 por nombre UNIQUE; la identidad es ruta_normalizada.
   Colisión FS existente se rechaza (no overwrite, no auto-rename sobre FS).
 """
 
@@ -26,7 +27,7 @@ import uuid
 from datetime import datetime
 
 import nombres as nombres_mod
-from rutas import ruta_biblioteca, ruta_carpeta_miniaturas
+from rutas import normalizar_ruta_clave, ruta_biblioteca, ruta_carpeta_miniaturas
 
 
 class CopiarError(Exception):
@@ -280,76 +281,44 @@ def copiar_video(video_id, carpeta_destino, ruta_db=None):
         # si ruta relativa existe pero abs no, usar relativa para lectura
         ruta_actual_abs = os.path.abspath(ruta_actual) if os.path.isfile(os.path.abspath(ruta_actual)) else ruta_actual
 
-    # Determinar nombre destino final (política UNIQUE)
-    # 1) FS colisión directa con nombre original -> rechazo inmediato (no auto-rename sobre FS)
-    if _existe_fs_case_insensitive(carpeta_destino_abs, nombre_original):
-        raise ColisionError(f"ya existe un archivo en destino con mismo nombre (case-insensitive): {os.path.join(carpeta_destino_abs, nombre_original)!r}")
-
+    # B8.3A — destino exacto: mismo basename en otra carpeta permitido, sin sufijo
+    # Copiar crea archivo físico distinto y debe obtener NUEVO video_id, aunque conserve mismo nombre visible.
     nombre_final = nombre_original
-    # Verificar duplicado DB UNIQUE (global). Si existe cualquier fila con mismo nombre (case-insensitive),
-    # generar nombre no colisionante via motor B6.8.
-    # Nota: esto incluye la propia fila original, por lo que SIEMPRE que UNIQUE esté vigente,
-    # copiar con mismo nombre requerirá sufijo. Si el schema ya admitiera mismo nombre
-    # en carpetas distintas, esta consulta no encontraría duplicado si la constraint no fuese UNIQUE,
-    # pero con UNIQUE vigente siempre habrá duplicado (el original).
-    # Por eso generamos sufijo determinista.
+    nueva_ruta = os.path.join(carpeta_destino_abs, nombre_final)
+    nueva_ruta = os.path.abspath(nueva_ruta)
+
+    # Contrato único de colisión por ruta_normalizada exacta
+    try:
+        ruta_destino_normalizada = normalizar_ruta_clave(nueva_ruta)
+    except Exception as exc:
+        raise ValidacionError(f"no se pudo normalizar ruta destino {nueva_ruta!r}: {exc}") from exc
+    try:
+        ruta_actual_normalizada = normalizar_ruta_clave(ruta_actual_abs)
+    except Exception as exc:
+        raise CopiarError(f"no se pudo normalizar ruta origen {ruta_actual_abs!r}: {exc}") from exc
+
+    # Mismo archivo físico (no-op) — origen y destino misma ruta normalizada
+    if ruta_destino_normalizada == ruta_actual_normalizada:
+        raise ValidacionError("origen y destino son el mismo archivo (misma ruta normalizada)")
+
+    # Misma carpeta ya validada arriba, pero si por ruta normalizada es misma carpeta y mismo nombre también es colisión
+    # FS destino existe -> rechazo nunca overwrite (case-insensitive Windows)
+    if _existe_fs_case_insensitive(carpeta_destino_abs, nombre_final) or os.path.exists(nueva_ruta):
+        raise ColisionError(f"ya existe un archivo en destino: {nueva_ruta!r}")
+
+    # Catálogo: ruta_destino_normalizada ya catalogada -> rechazo (otro video_id)
     conn_check = sqlite3.connect(ruta_db)
     try:
-        # COLLATE NOCASE para case-insensitive Windows
         fila_dup = conn_check.execute(
-            "SELECT id FROM videos WHERE nombre = ? COLLATE NOCASE",
-            (nombre_original,),
+            "SELECT id FROM videos WHERE ruta_normalizada = ?", (ruta_destino_normalizada,)
         ).fetchone()
         if fila_dup is not None:
-            # Existe al menos una fila con ese nombre (será el original al menos)
-            # Generar nombre único
-            stem, ext = os.path.splitext(nombre_original)
-            if not ext:
-                ext = ".mp4"
-            # Definir existe_fn combinado FS+DB
-            def existe_fn(candidato):
-                # FS case-insensitive
-                if _existe_fs_case_insensitive(carpeta_destino_abs, candidato):
-                    return True
-                try:
-                    r = conn_check.execute(
-                        "SELECT id FROM videos WHERE nombre = ? COLLATE NOCASE",
-                        (candidato,),
-                    ).fetchone()
-                    return r is not None
-                except Exception:
-                    return False
-
-            try:
-                # resolver_colision ya valida longitud y genera _001...
-                nombre_final = nombres_mod.resolver_colision(stem, ext, existe_fn=existe_fn, nombres_en_lote=None)
-            except Exception as exc:
-                raise CopiarError(f"no se pudo generar nombre único para copia: {exc}") from exc
-            # Si el generado coincide con original y sigue duplicado, error
-            if nombre_final.lower() == nombre_original.lower():
-                # No debería pasar porque original existe, resolver debió generar sufijo
-                raise ColisionError(f"no se pudo resolver colisión de nombre único: {nombre_original!r}")
-            # Verificar que final no colisione FS (resolver ya lo garantiza)
-            if _existe_fs_case_insensitive(carpeta_destino_abs, nombre_final):
-                raise ColisionError(f"colisión FS para nombre generado: {nombre_final!r}")
+            raise ColisionError(f"ya existe otro video catalogado en destino {nueva_ruta!r} (id {fila_dup[0]}, ruta_normalizada {ruta_destino_normalizada!r})")
     finally:
         try:
             conn_check.close()
         except Exception:
             pass
-
-    nueva_ruta = os.path.join(carpeta_destino_abs, nombre_final)
-    nueva_ruta = os.path.abspath(nueva_ruta)
-
-    # Verificar misma archivo final (por si nombre_final generado igual a origen y misma carpeta ya rechazada)
-    if os.path.normcase(os.path.normpath(nueva_ruta)) == os.path.normcase(os.path.normpath(ruta_actual_abs)):
-        raise ValidacionError("origen y destino son el mismo archivo (ruta final coincide con origen)")
-
-    # Verificar destino no existe justo antes de copiar (doble check)
-    if _existe_fs_case_insensitive(carpeta_destino_abs, nombre_final):
-        raise ColisionError(f"ya existe un archivo en destino: {nueva_ruta!r}")
-    if os.path.exists(nueva_ruta):
-        raise ColisionError(f"ya existe un archivo en destino: {nueva_ruta!r}")
 
     # === Copia a temporal exclusivo dentro del destino ===
     ruta_temporal = None
@@ -428,7 +397,7 @@ def copiar_video(video_id, carpeta_destino, ruta_db=None):
             pass
         raise CopiarError(f"fallo inesperado en verificación: {exc}") from exc
 
-    # Publicar temporal a destino final por rename atómico local, revalidando colisión
+    # Publicar temporal a destino final por rename atómico local, revalidando colisión ruta_normalizada exacta
     try:
         if _existe_fs_case_insensitive(carpeta_destino_abs, nombre_final) or os.path.exists(nueva_ruta):
             try:
@@ -436,6 +405,23 @@ def copiar_video(video_id, carpeta_destino, ruta_db=None):
             except Exception:
                 pass
             raise ColisionError(f"colisión al publicar: ya existe destino {nueva_ruta!r}")
+        # Revalidar catálogo por ruta_normalizada antes de publicar (evita publicar si otro insertó misma ruta)
+        conn_pre_pub = sqlite3.connect(ruta_db)
+        try:
+            fila_dup_pub = conn_pre_pub.execute(
+                "SELECT id FROM videos WHERE ruta_normalizada = ?", (ruta_destino_normalizada,)
+            ).fetchone()
+            if fila_dup_pub is not None:
+                try:
+                    os.remove(ruta_temporal)
+                except Exception:
+                    pass
+                raise ColisionError(f"colisión al publicar: ya existe video catalogado en destino {nueva_ruta!r} (id {fila_dup_pub[0]})")
+        finally:
+            try:
+                conn_pre_pub.close()
+            except Exception:
+                pass
         os.rename(ruta_temporal, nueva_ruta)
     except ColisionError:
         raise
@@ -503,46 +489,43 @@ def copiar_video(video_id, carpeta_destino, ruta_db=None):
     except Exception:
         duracion = None
 
-    # Alta en SQLite (INSERT, no upsert)
+    # Alta en SQLite (INSERT, no upsert) — identidad por ruta_normalizada
     conn2 = None
     try:
         import escanear_videos as escanear_mod
         conn2 = escanear_mod.conectar_bd(ruta_db)
         conn2.execute("BEGIN")
-        # Revalidar duplicado dentro de transacción (carrera)
+        # Revalidar duplicado dentro de transacción por ruta_normalizada exacta (carrera)
         fila_dup2 = conn2.execute(
-            "SELECT id FROM videos WHERE nombre = ? COLLATE NOCASE",
-            (nombre_final,),
+            "SELECT id FROM videos WHERE ruta_normalizada = ?", (ruta_destino_normalizada,)
         ).fetchone()
         if fila_dup2 is not None:
             conn2.rollback()
-            # Archivo ya publicado con nombre que ahora colisiona (carrera)
+            # Archivo ya publicado con ruta que ahora colisiona (carrera)
             # No borrar archivo silenciosamente: informar inconsistencia
             raise CopiarInconsistenciaError(
-                f"nombre duplicado en catálogo al incorporar copia (carrera): {nombre_final!r} ya existe id {fila_dup2[0]} — archivo en {nueva_ruta!r} conservado pero no catalogado",
+                f"ruta duplicada en catálogo al incorporar copia (carrera): {nueva_ruta!r} ya existe id {fila_dup2[0]} (ruta_normalizada {ruta_destino_normalizada!r}) — archivo en {nueva_ruta!r} conservado pero no catalogado",
                 ruta_nueva=nueva_ruta,
-                error_db=f"duplicate nombre {nombre_final!r}",
+                error_db=f"duplicate ruta_normalizada {ruta_destino_normalizada!r}",
             )
 
         extension_col = os.path.splitext(nombre_final)[1].lower()
         if not extension_col:
             extension_col = ".mp4"
         fecha_imp = datetime.now().isoformat()
-        # Validar columnas extra
-        try:
-            escanear_mod._asegurar_columnas_videos(conn2)
-        except Exception:
-            pass
+        # B8.3 schema ya preparado por conectar_bd; no silenciar fallo de migración aditiva
+        escanear_mod._asegurar_columnas_videos(conn2)
 
-        # INSERT explícito (no upsert) para preservar identidad nueva
+        # INSERT explícito (no upsert) para preservar identidad nueva, incluye ruta_normalizada NOT NULL UNIQUE
         conn2.execute(
             """
-            INSERT INTO videos (nombre, ruta, extension, fecha_importacion, duracion_segundos, ancho, alto, codec_video, cantidad_miniaturas, tamano_bytes, mtime_ns)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO videos (nombre, ruta, ruta_normalizada, extension, fecha_importacion, duracion_segundos, ancho, alto, codec_video, cantidad_miniaturas, tamano_bytes, mtime_ns)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 nombre_final,
                 os.path.abspath(nueva_ruta),
+                ruta_destino_normalizada,
                 extension_col,
                 fecha_imp,
                 float(duracion) if isinstance(duracion, (int, float)) and duracion is not None else None,
@@ -555,10 +538,10 @@ def copiar_video(video_id, carpeta_destino, ruta_db=None):
             ),
         )
         conn2.commit()
-        # Obtener nuevo id
+        # Obtener nuevo id por ruta_normalizada (inequívoco para homónimos)
         fila_new = conn2.execute(
-            "SELECT id FROM videos WHERE nombre = ? COLLATE NOCASE",
-            (nombre_final,),
+            "SELECT id FROM videos WHERE ruta_normalizada = ?",
+            (ruta_destino_normalizada,),
         ).fetchone()
         if fila_new is None:
             # Inconsistencia: INSERT aparentemente ok pero no se encuentra
@@ -614,20 +597,56 @@ def copiar_video(video_id, carpeta_destino, ruta_db=None):
             except Exception:
                 pass
 
-    # B7.4 fix-027: replicar miniatura/previews asociadas al nuevo nombre sin regeneración.
-    # Si el original tenía cache derivada (_01.jpg, _preview_*.jpg), copiarla al prefijo
-    # del nuevo nombre para que miniatura_principal resuelva tras reinicio sin Escanear.
-    # No falla la copia si el cache no existe o no se puede replicar (best-effort).
+    # B8.3A — réplica canónica por video_id (v<id>_01.jpg) sin regeneración FFmpeg.
+    # Usa video_id origen y nuevo_id conocidos tras INSERT; no decide por nombre.
+    # Copia no destructiva solo si destino no existe, con temporal+replace si aplica.
+    # Si falla la réplica después de archivo+DB válidos, no destruir copia válida;
+    # fallo queda visible via detalles pero ok=True se preserva (contrato CopiarInconsistencia histórico).
+    # CERO fallback por nombre: si helper por ID no existe es error de programación reportado, nunca cache por nombre.
     mini_copiadas = 0
     preview_copiadas = 0
+    cache_replica_detalle = None
+    cache_fallos = 0
     try:
-        mini_copiadas, preview_copiadas = _replicar_cache_miniaturas(nombre_original, nombre_final)
+        import escanear_videos as esc_rep
+        # resolución dinámica solo para permitir monkeypatch en tests; producción usa helper canónico por ID
+        replicar = getattr(esc_rep, "replicar_cache_por_id", None) or getattr(esc_rep, "copiar_cache_entre_ids", None)
+        if callable(replicar):
+            res_cache = replicar(video_id, nuevo_id)
+            if isinstance(res_cache, dict):
+                cache_replica_detalle = res_cache
+                mini_copiadas = int(res_cache.get("mini_copiadas", 0))
+                preview_copiadas = int(res_cache.get("preview_copiadas", 0))
+                cache_fallos = int(res_cache.get("fallos", 0))
+                if cache_fallos:
+                    try:
+                        print(f"[B8.3A] copiar_video cache réplica fallos vid_origen={video_id} vid_dest={nuevo_id} detalle={res_cache}")
+                    except Exception:
+                        pass
+            elif isinstance(res_cache, (list, tuple)) and len(res_cache) >= 2:
+                mini_copiadas, preview_copiadas = int(res_cache[0]), int(res_cache[1])
+                cache_replica_detalle = {"mini_copiadas": mini_copiadas, "preview_copiadas": preview_copiadas, "copiados": mini_copiadas + preview_copiadas, "fallos": 0, "detalles": []}
+                cache_fallos = 0
+            else:
+                cache_replica_detalle = {"copiados": 0, "ya_existentes": 0, "fallos": 1, "detalles": [{"src": "", "dst": "", "estado": "helper_retorno_inesperado", "preview": False}], "mini_copiadas": 0, "preview_copiadas": 0}
+                cache_fallos = 1
+                try:
+                    print(f"[B8.3A] copiar_video helper retorno inesperado vid_origen={video_id} vid_dest={nuevo_id} res={res_cache!r}")
+                except Exception:
+                    pass
+        else:
+            # B8.3A cierre: helper por ID no disponible -> fallo de réplica visible, NUNCA fallback por nombre
+            cache_replica_detalle = {"copiados": 0, "ya_existentes": 0, "fallos": 1, "detalles": [{"src": "", "dst": "", "estado": "helper_no_disponible_error_programacion", "preview": False}], "mini_copiadas": 0, "preview_copiadas": 0}
+            cache_fallos = 1
+            try:
+                print(f"[B8.3A] copiar_video helper replicar_cache_por_id no disponible vid_origen={video_id} vid_dest={nuevo_id} error_programacion")
+            except Exception:
+                pass
         if mini_copiadas > 0:
             try:
                 import escanear_videos as escanear_mod2
                 conn3 = escanear_mod2.conectar_bd(ruta_db)
                 try:
-                    # Actualizar cantidad_miniaturas para coherencia DB (no crítico para display)
                     conn3.execute("UPDATE videos SET cantidad_miniaturas = ? WHERE id = ?", (int(mini_copiadas), int(nuevo_id)))
                     conn3.commit()
                 finally:
@@ -635,10 +654,37 @@ def copiar_video(video_id, carpeta_destino, ruta_db=None):
                         conn3.close()
                     except Exception:
                         pass
+            except Exception as exc_upd:
+                # best-effort: fallo de actualización no destruye copia; reportar en detalle
+                try:
+                    print(f"[B8.3A] copiar_video fallo UPDATE cantidad_miniaturas vid={nuevo_id}: {exc_upd}")
+                except Exception:
+                    pass
+                if isinstance(cache_replica_detalle, dict):
+                    cache_replica_detalle.setdefault("detalles", []).append({"src": "", "dst": "", "estado": f"fallo_update_cantidad:{exc_upd}", "preview": False})
+                    cache_replica_detalle["fallos"] = int(cache_replica_detalle.get("fallos", 0)) + 1
+                    cache_fallos = int(cache_replica_detalle.get("fallos", 0))
+    except Exception as exc:
+        # réplica best-effort: no destruir copia válida ya publicada+DB; reportar visible y en resultado
+        try:
+            print(f"[B8.3A] copiar_video excepción réplica cache vid_origen={video_id} vid_dest={nuevo_id}: {type(exc).__name__}: {exc}")
+        except Exception:
+            pass
+        if cache_replica_detalle is None:
+            cache_replica_detalle = {"copiados": mini_copiadas + preview_copiadas, "ya_existentes": 0, "fallos": 1, "detalles": [{"src": "", "dst": "", "estado": f"excepcion:{type(exc).__name__}:{exc}", "preview": False}], "mini_copiadas": mini_copiadas, "preview_copiadas": preview_copiadas}
+            cache_fallos = 1
+        else:
+            try:
+                if isinstance(cache_replica_detalle, dict):
+                    cache_replica_detalle.setdefault("detalles", []).append({"src": "", "dst": "", "estado": f"excepcion:{type(exc).__name__}:{exc}", "preview": False})
+                    cache_replica_detalle["fallos"] = int(cache_replica_detalle.get("fallos", 0)) + 1
+                    cache_fallos = int(cache_replica_detalle.get("fallos", 0))
             except Exception:
                 pass
-    except Exception:
-        pass
+
+    # Garantizar detalle determinista aunque no haya cache origen (evitar None)
+    if cache_replica_detalle is None:
+        cache_replica_detalle = {"copiados": mini_copiadas + preview_copiadas, "ya_existentes": 0, "fallos": 0, "detalles": [], "mini_copiadas": mini_copiadas, "preview_copiadas": preview_copiadas}
 
     return {
         "ok": True,
@@ -653,4 +699,8 @@ def copiar_video(video_id, carpeta_destino, ruta_db=None):
         "ruta_anterior": ruta_actual_abs,
         "nombre_final": nombre_final,
         "modo": "copia-temporal-verificada",
+        "cache_replica": cache_replica_detalle,
+        "cache_fallos": cache_fallos,
+        "mini_copiadas": mini_copiadas,
+        "preview_copiadas": preview_copiadas,
     }

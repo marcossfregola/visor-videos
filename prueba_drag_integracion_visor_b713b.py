@@ -11,6 +11,7 @@ from PySide6.QtCore import QByteArray, QPoint, QPointF, Qt, QEvent
 from PySide6.QtGui import QMouseEvent
 
 from escanear_videos import conectar_bd
+import rutas
 import visor_videos as vv
 import panel_organizacion as po
 
@@ -77,8 +78,8 @@ for name, vid in [("video_a.mp4", 101), ("video_b.mp4", 102), ("video_c.mp4", 10
     open(ruta, "wb").write(b"x" * 1024)
     st = os.stat(ruta)
     c = conectar_bd(db)
-    c.execute("INSERT INTO videos (nombre,ruta,extension,fecha_importacion,tamano_bytes,mtime_ns) VALUES (?,?,?,?,?,?)",
-              (name, os.path.abspath(ruta), os.path.splitext(name)[1].lower(), "2026-01-01", st.st_size, st.st_mtime_ns))
+    c.execute("INSERT INTO videos (nombre,ruta,ruta_normalizada,extension,fecha_importacion,tamano_bytes,mtime_ns) VALUES (?,?,?,?,?,?,?)",
+              (name, os.path.abspath(ruta), rutas.normalizar_ruta_clave(os.path.abspath(ruta)), os.path.splitext(name)[1].lower(), "2026-01-01", st.st_size, st.st_mtime_ns))
     # asegurar id determinista
     row = c.execute("SELECT id FROM videos WHERE nombre=?", (name,)).fetchone()
     actual_vid = row[0]

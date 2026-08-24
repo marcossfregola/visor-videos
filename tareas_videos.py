@@ -32,6 +32,7 @@ from escanear_videos import (
     listar_marcadores,
     listar_marcadores_de,
     listar_registros_por_nombres,
+    listar_registros_por_rutas,
     listar_segmentos,
     listar_segmentos_de,
     listar_videos,
@@ -41,6 +42,7 @@ from escanear_videos import (
     preparar_registros_basicos,
     previews_existentes,
 )
+from rutas import normalizar_ruta_clave as _normalizar_ruta_clave_tarea
 from exploracion_cache import (
     FOTOGRAMAS_INICIALES,
     duracion_valida,
@@ -99,27 +101,46 @@ class TareaFFprobe(TareaBase):
     def _trabajo(self):
         resultados = []
         total = len(self._rutas)
-        registros = None
-        stats_por_ruta = {}
+        registros_por_norm = None
+        stats_por_norm = {}
+        # B8.3: reutilización por ruta_normalizada, nunca por nombre
         if (
-            self._nombres is not None
+            self._rutas is not None
             and self._stats is not None
             and self._ruta_db is not None
         ):
-            registros = listar_registros_por_nombres(
-                self._nombres, self._ruta_db
-            )
+            try:
+                registros_por_norm = listar_registros_por_rutas(
+                    self._rutas, self._ruta_db
+                )
+            except FileNotFoundError:
+                # DB no existe: no reutilizable, distinguir de error real
+                registros_por_norm = None
+            except ValueError:
+                # Error de schema/estado B8.3 inválido: propagar, no esconder como no reutilizable
+                raise
+            except Exception:
+                # Error real inesperado: propagar
+                raise
             for item in (self._stats.get("resultados") or []):
                 if isinstance(item, dict) and isinstance(item.get("ruta"), str):
-                    stats_por_ruta[item["ruta"]] = item
+                    ruta_stat = item["ruta"]
+                    try:
+                        n = _normalizar_ruta_clave_tarea(ruta_stat)
+                    except Exception:
+                        # Stat con ruta no normalizable (auxiliar no autoritativa): ignorar entrada, sin usar ruta cruda
+                        continue
+                    stats_por_norm[n] = item
         for indice, ruta in enumerate(self._rutas):
-            nombre = None
-            if self._nombres is not None and indice < len(self._nombres):
-                nombre = self._nombres[indice]
             reutilizado = False
-            if registros is not None and nombre is not None:
-                registro = registros.get(nombre)
-                stat = stats_por_ruta.get(ruta)
+            if registros_por_norm is not None:
+                try:
+                    norm = _normalizar_ruta_clave_tarea(ruta)
+                except Exception as exc:
+                    # Ruta propia no normalizable para identidad: error explícito (no fallback crudo ni ffprobe silencioso)
+                    raise ValueError(f"B8.3 TareaFFprobe: no se pudo normalizar ruta {ruta!r}: {exc}") from exc
+                registro = registros_por_norm.get(norm)
+                stat = stats_por_norm.get(norm)
                 if _metadata_reutilizable(registro, ruta, stat):
                     resultados.append(
                         {
@@ -505,12 +526,13 @@ class TareaActualizarCantidadMiniaturas(TareaBase):
 
 class TareaSincronizacionCatalogo(TareaBase):
     def __init__(
-        self, carpeta, ruta_db=None, parent=None, carpetas_protegidas=None
+        self, carpeta, ruta_db=None, parent=None, carpetas_protegidas=None, carpetas_retiradas=None
     ):
         super().__init__(parent)
         self._carpeta = carpeta
         self._ruta_db = ruta_db
         self._carpetas_protegidas = carpetas_protegidas
+        self._carpetas_retiradas = list(carpetas_retiradas) if isinstance(carpetas_retiradas, (list, tuple, set)) and carpetas_retiradas else None
 
     @property
     def carpeta(self):
@@ -520,24 +542,48 @@ class TareaSincronizacionCatalogo(TareaBase):
     def ruta_db(self):
         return self._ruta_db
 
+    @property
+    def carpetas_retiradas(self):
+        return list(self._carpetas_retiradas) if self._carpetas_retiradas else None
+
     def _trabajo(self):
+        import threading
         diferencias = escanear_mod.detectar_diferencias(
             self._carpeta, self._ruta_db, self._carpetas_protegidas
         )
         plan = escanear_mod.preparar_plan_sincronizacion(diferencias)
         incorporaciones = escanear_mod.aplicar_incorporaciones(plan, self._ruta_db)
         eliminaciones = escanear_mod.eliminar_candidatos(plan, self._ruta_db)
+        # B8.3A shrink backend: solo tras sincronización exitosa del conjunto actual
+        shrink = None
+        if self._carpetas_retiradas:
+            try:
+                shrink = escanear_mod.eliminar_registros_de_carpetas_retiradas(
+                    self._ruta_db, self._carpetas_retiradas
+                )
+            except Exception as exc:
+                # Reportar error visible, no fingir éxito; rollback ya manejado en helper
+                raise RuntimeError(f"shrink cleanup falló para {self._carpetas_retiradas}: {exc}") from exc
+        # Capturar evidencia de thread para pruebas arquitectónicas
+        shrink_info = shrink if isinstance(shrink, dict) else {"eliminados": 0, "ids": [], "rutas": [], "carpetas_retiradas": [], "thread_id": threading.get_ident(), "is_main_thread": threading.current_thread() is threading.main_thread()}
+        # Si no hubo shrink, asegurar estructura con thread info
+        if shrink is None:
+            shrink_info = {"eliminados": 0, "ids": [], "rutas": [], "carpetas_retiradas": [], "thread_id": threading.get_ident(), "is_main_thread": threading.current_thread() is threading.main_thread()}
         return {
             "diferencias": diferencias,
             "plan": plan,
             "incorporaciones": incorporaciones,
             "eliminaciones": eliminaciones,
+            "shrink": shrink_info,
             "resumen": {
                 "nuevos": len(diferencias["nuevos"]),
                 "ya_sincronizados": len(plan["ya_sincronizados"]),
                 "incorporados": incorporaciones["incorporados"],
                 "eliminados": eliminaciones["eliminados"],
                 "candidatos_restantes": eliminaciones["restantes"],
+                "shrink_eliminados": shrink_info.get("eliminados", 0),
+                "shrink_thread_id": shrink_info.get("thread_id"),
+                "shrink_is_main_thread": shrink_info.get("is_main_thread"),
             },
         }
 

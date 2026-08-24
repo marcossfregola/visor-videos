@@ -19,6 +19,7 @@ from escanear_videos import (
     listar_segmentos,
     obtener_video_por_id,
 )
+from rutas import normalizar_ruta_clave
 import renombrar_video as svc
 from renombrar_video import (
     validar_nuevo_nombre,
@@ -50,13 +51,15 @@ def _insertar_video(ruta_db, carpeta, nombre, contenido=b"x"):
     st = os.stat(ruta)
     conn = conectar_bd(ruta_db)
     try:
+        ruta_abs = os.path.abspath(ruta)
+        ruta_norm = normalizar_ruta_clave(ruta_abs)
         conn.execute(
-            "INSERT INTO videos (nombre, ruta, extension, fecha_importacion, tamano_bytes, mtime_ns) VALUES (?, ?, ?, ?, ?, ?)",
-            (nombre, os.path.abspath(ruta), os.path.splitext(nombre)[1].lower(), "2026-01-01T00:00:00", st.st_size, st.st_mtime_ns),
+            "INSERT INTO videos (nombre, ruta, ruta_normalizada, extension, fecha_importacion, tamano_bytes, mtime_ns) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (nombre, ruta_abs, ruta_norm, os.path.splitext(nombre)[1].lower(), "2026-01-01T00:00:00", st.st_size, st.st_mtime_ns),
         )
-        vid = conn.execute("SELECT id FROM videos WHERE nombre=?", (nombre,)).fetchone()[0]
+        vid = conn.execute("SELECT id FROM videos WHERE ruta_normalizada=?", (ruta_norm,)).fetchone()[0]
         conn.commit()
-        return vid, os.path.abspath(ruta)
+        return vid, ruta_abs
     finally:
         conn.close()
 
@@ -312,6 +315,11 @@ def test_11_fallo_sqlite_compensacion_restaura_fs():
             def __init__(self, *a, **k):
                 self._real = orig_connect(*a, **k)
                 self._in_tx = False
+            @property
+            def in_transaction(self):
+                return self._real.in_transaction
+            def __getattr__(self, name):
+                return getattr(self._real, name)
             def execute(self, sql, params=()):
                 if "UPDATE videos SET" in sql:
                     raise sqlite3.OperationalError("simulado fallo DB")
@@ -374,6 +382,11 @@ def test_12_fallo_compensacion_error_critico():
         class FakeConn2:
             def __init__(self, *a, **k):
                 self._real = orig_connect(*a, **k)
+            @property
+            def in_transaction(self):
+                return self._real.in_transaction
+            def __getattr__(self, name):
+                return getattr(self._real, name)
             def execute(self, sql, params=()):
                 if "UPDATE videos SET" in sql:
                     raise sqlite3.OperationalError("fallo DB tras rename")

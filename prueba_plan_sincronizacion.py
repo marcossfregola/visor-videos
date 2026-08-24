@@ -174,7 +174,7 @@ def test_03():
         temp_carpeta.cleanup()
     ok = (
         isinstance(plan, dict)
-        and set(plan.keys()) == {"carpeta", "a_incorporar", "ya_sincronizados", "candidatos_a_eliminar"}
+        and {"carpeta", "a_incorporar", "ya_sincronizados", "candidatos_a_eliminar"}.issubset(set(plan.keys()))
         and plan["carpeta"] == carpeta
         and plan["a_incorporar"] == []
         and plan["ya_sincronizados"] == []

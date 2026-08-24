@@ -15,6 +15,8 @@ G) no se regenera innecesariamente mediante FFmpeg.
 
 Falla con estado defectuoso (antes de fix): copia queda sin miniatura tras reinicio.
 Pasa con fix: copia replica cache y persiste.
+
+B8.3A — cache canónica por video_id: v<id>_01.jpg y v<id>_preview_<NN>.jpg
 """
 import os
 import shutil
@@ -26,7 +28,8 @@ import escanear_videos
 import visor_videos
 import copiar_video as svc
 import rutas as rutas_mod
-from escanear_videos import conectar_bd, listar_videos_paginado
+from escanear_videos import conectar_bd, listar_videos_paginado, ruta_miniatura_id, ruta_preview_id, previews_existentes_por_id
+from rutas import normalizar_ruta_clave
 
 
 def _crear_db(tmpdir):
@@ -96,29 +99,31 @@ def test_copia_preserva_miniatura_tras_reinicio_sin_escaneo():
             f.write(b"fakevideo" * 800)
         st = os.stat(ruta_orig)
         conn = conectar_bd(ruta_db)
-        conn.execute("INSERT INTO videos (nombre,ruta,extension,fecha_importacion,tamano_bytes,mtime_ns,cantidad_miniaturas) VALUES (?,?,?,?,?,?,?)",
-                     (nombre_orig, os.path.abspath(ruta_orig), ".mp4", datetime.datetime.now().isoformat(), st.st_size, st.st_mtime_ns, 1))
-        vid_orig = conn.execute("SELECT id FROM videos WHERE nombre=?", (nombre_orig,)).fetchone()[0]
+        ruta_abs = os.path.abspath(ruta_orig)
+        ruta_norm = normalizar_ruta_clave(ruta_abs)
+        conn.execute("INSERT INTO videos (nombre,ruta,ruta_normalizada,extension,fecha_importacion,tamano_bytes,mtime_ns,cantidad_miniaturas) VALUES (?,?,?,?,?,?,?,?)",
+                     (nombre_orig, ruta_abs, ruta_norm, ".mp4", datetime.datetime.now().isoformat(), st.st_size, st.st_mtime_ns, 1))
+        vid_orig = conn.execute("SELECT id FROM videos WHERE ruta_normalizada=?", (ruta_norm,)).fetchone()[0]
         conn.commit(); conn.close()
 
-        # simular miniatura y previews existentes para original (como si pipeline ya generó)
-        mini_orig = os.path.join(mini, "videoX_01.jpg")
+        # simular miniatura y previews canónicas por ID para original (como si pipeline B8.2 ya generó)
+        mini_orig = ruta_miniatura_id(vid_orig, 1)
         with open(mini_orig, "wb") as f:
             f.write(b"fakejpg")
         # asegurar mtime mini >= video para vigencia
         import time
         time.sleep(0.01)
-        # previews
+        # previews canónicos por ID
         for i in range(1, 4):
-            p = os.path.join(mini, f"videoX_preview_{i:02d}.jpg")
+            p = ruta_preview_id(vid_orig, i)
             with open(p, "wb") as f:
                 f.write(b"preview")
 
-        # verificar F) original conserva miniatura antes de copia
-        assert visor_videos.miniatura_principal(nombre_orig) is not None, "original debe tener miniatura antes"
-        assert os.path.isfile(visor_videos.miniatura_principal(nombre_orig))
+        # verificar F) original conserva miniatura canónica antes de copia
+        assert os.path.isfile(ruta_miniatura_id(vid_orig, 1)), "original debe tener miniatura canónica por ID antes"
+        assert len(previews_existentes_por_id(vid_orig)) >= 1
 
-        # A) copiar A->B via servicio (fuera UI)
+        # A) copiar A->B via servicio (fuera UI) — homónimo conserva mismo nombre visible
         ffmpeg_calls.clear()
         res = svc.copiar_video(vid_orig, B, ruta_db)
         assert res.get("ok"), f"copia debe ok: {res}"
@@ -126,27 +131,38 @@ def test_copia_preserva_miniatura_tras_reinicio_sin_escaneo():
         nombre_copy = res["nombre"]
         ruta_copy = res["ruta"]
 
-        # B) nuevo video_id distinto
+        # B) nuevo video_id distinto aunque mismo nombre homónimo
         assert vid_copy != vid_orig, "nuevo video_id distinto del original"
         assert res["video_id_original"] == vid_orig
+        assert nombre_copy == nombre_orig, "homónimo conserva mismo nombre visible"
 
-        # C) primera miniatura disponible para la copia inmediatamente (sin escaneo, sin regeneración)
-        mini_copy_path = visor_videos.miniatura_principal(nombre_copy)
-        assert mini_copy_path is not None, f"copia debe tener miniatura inmediata, got {mini_copy_path}, lista {os.listdir(mini)}"
-        assert os.path.isfile(mini_copy_path), f"archivo miniatura copia debe existir: {mini_copy_path}"
-        # previews también replicados
-        previews_copy = visor_videos.previews_de(nombre_copy)
-        assert len(previews_copy) >= 1, f"copia debe tener previews replicados, got {previews_copy}"
+        # C) primera miniatura disponible para la copia inmediatamente (sin escaneo, sin regeneración) — ruta canónica por ID distinta
+        mini_copy_path = ruta_miniatura_id(vid_copy, 1)
+        mini_orig_path = ruta_miniatura_id(vid_orig, 1)
+        assert mini_copy_path != mini_orig_path, f"rutas canónicas deben diferir por ID: {mini_copy_path} vs {mini_orig_path}"
+        assert mini_copy_path.endswith(f"v{vid_copy}_01.jpg") and mini_orig_path.endswith(f"v{vid_orig}_01.jpg"), f"esquema canónico v<id>_01.jpg esperado {mini_copy_path} {mini_orig_path}"
+        assert os.path.isfile(mini_copy_path), f"archivo miniatura copia debe existir: {mini_copy_path}, lista {os.listdir(mini)}"
+        assert os.path.isfile(mini_orig_path), f"origen conserva miniatura: {mini_orig_path}"
+        # previews también replicados por ID con rutas distintas
+        previews_copy = previews_existentes_por_id(vid_copy)
+        previews_orig = previews_existentes_por_id(vid_orig)
+        assert len(previews_copy) >= 1, f"copia debe tener previews replicados por ID, got {previews_copy}"
+        assert len(previews_orig) >= 1
+        for idx in range(1, 4):
+            pc = ruta_preview_id(vid_copy, idx)
+            po = ruta_preview_id(vid_orig, idx)
+            assert pc != po, f"previews canónicas deben diferir por ID idx {idx}: {pc} vs {po}"
+            assert pc.endswith(f"v{vid_copy}_preview_{idx:02d}.jpg")
+        # contenido idéntico inicial (copia bit-identical)
+        with open(mini_orig_path, "rb") as f: data_orig_init = f.read()
+        with open(mini_copy_path, "rb") as f: data_copy_init = f.read()
+        assert data_orig_init == data_copy_init, "miniatura copia debe ser copia idéntica del original, no regenerada"
 
         # G) no se regenera innecesariamente mediante FFmpeg
         assert not any(c in ("generar_miniatura", "generar_preview", "asegurar_miniatura", "asegurar_miniaturas") for c in ffmpeg_calls), f"no debe regenerar FFmpeg, calls={ffmpeg_calls}"
         assert not escaneo_calls, f"no debe escaneo, calls={escaneo_calls}"
 
         # D) cerrar/recrear contexto: simular reinicio con nueva lectura desde persistencia
-        # cerrar conexiones y reabrir via paginado + miniatura lookup (equivalente arranque)
-        # también recrear VisorVideos con mismo ruta_db / ruta_config temporal
-
-        # nueva lectura paginada sin escaneo para ambas carpetas
         pagA = listar_videos_paginado(100, 0, None, ruta_db, carpeta=A, incluir_subcarpetas=False)
         pagB = listar_videos_paginado(100, 0, None, ruta_db, carpeta=B, incluir_subcarpetas=False)
         idsA = [r[8] for r in pagA["videos"]]
@@ -154,26 +170,47 @@ def test_copia_preserva_miniatura_tras_reinicio_sin_escaneo():
         assert vid_orig in idsA and vid_copy not in idsA, f"A debe contener solo original: {idsA}"
         assert vid_copy in idsB and vid_orig not in idsB, f"B debe contener copia: {idsB}"
 
-        # E) copia sigue resolviendo su primera miniatura sin escaneo tras reinicio
+        # E) copia sigue resolviendo su primera miniatura sin escaneo tras reinicio — rutas por ID distintas
         ffmpeg_calls.clear(); escaneo_calls.clear()
-        # re-evaluar miniatura tras 'reinicio' (nueva resolución FS)
-        mini_orig_reload = visor_videos.miniatura_principal(nombre_orig)
-        mini_copy_reload = visor_videos.miniatura_principal(nombre_copy)
+        mini_orig_reload = ruta_miniatura_id(vid_orig, 1)
+        mini_copy_reload = ruta_miniatura_id(vid_copy, 1)
         assert mini_orig_reload is not None and os.path.isfile(mini_orig_reload), "original conserva miniatura tras reinicio"
         assert mini_copy_reload is not None and os.path.isfile(mini_copy_reload), f"copia debe conservar miniatura tras reinicio, got {mini_copy_reload}, mini dir {os.listdir(mini)}"
-        # contenido idéntico al original (copia bit-identical de cache)
+        assert mini_orig_reload != mini_copy_reload, "rutas de miniatura deben ser distintas SIEMPRE para IDs distintos (B8.3A estricto, homónimo no comparte archivo)"
+        assert mini_orig_reload.endswith(f"v{vid_orig}_01.jpg") and mini_copy_reload.endswith(f"v{vid_copy}_01.jpg")
         with open(mini_orig_reload, "rb") as f: data_orig = f.read()
         with open(mini_copy_reload, "rb") as f: data_copy = f.read()
         assert data_orig == data_copy, "miniatura copia debe ser copia idéntica del original, no regenerada"
+        # previews reload también distintas
+        assert ruta_preview_id(vid_orig, 1) != ruta_preview_id(vid_copy, 1)
+        assert os.path.isfile(ruta_preview_id(vid_orig, 1)) and os.path.isfile(ruta_preview_id(vid_copy, 1))
 
-        # F) original conserva la suya (ya verificado) y no se comparte estado mutable
-        assert mini_orig_reload != mini_copy_reload, "rutas de miniatura deben ser distintas (identidad nueva, no compartir archivo)"
-        # verificar copia no heredó marcadores/segmentos sería por svc, pero aquí no creamos, al menos verificar DB
+        # F) original conserva la suya y no se comparte estado mutable — modificar/eliminar copia no altera origen
+        # modificar copia
+        with open(mini_copy_reload, "wb") as f:
+            f.write(b"modificado_copy_distinto")
+        with open(mini_orig_reload, "rb") as f: data_orig_after = f.read()
+        with open(mini_copy_reload, "rb") as f: data_copy_after = f.read()
+        assert data_orig_after == data_orig, "modificar cache copia NO debe alterar origen"
+        assert data_copy_after != data_orig_after, "copia modificada debe diferir de origen"
+        # restaurar copia para siguiente check y probar eliminación no afecta origen
+        with open(mini_copy_reload, "wb") as f:
+            f.write(data_orig)
+        # eliminar copia temporalmente
+        os.remove(mini_copy_reload)
+        assert not os.path.isfile(mini_copy_reload), "copia eliminada"
+        assert os.path.isfile(mini_orig_reload), "origen intacto tras eliminar cache copia"
+        # restaurar
+        with open(mini_copy_reload, "wb") as f:
+            f.write(data_orig)
+        assert os.path.isfile(mini_copy_reload) and os.path.isfile(mini_orig_reload)
+        assert open(mini_orig_reload,"rb").read() == open(mini_copy_reload,"rb").read()
+
+        # verificar copia no heredó marcadores/segmentos
         conn2 = sqlite3.connect(ruta_db)
         c_orig = conn2.execute("SELECT COUNT(*) FROM marcadores_video WHERE video_id=?", (vid_orig,)).fetchone()[0]
         c_copy = conn2.execute("SELECT COUNT(*) FROM marcadores_video WHERE video_id=?", (vid_copy,)).fetchone()[0]
         conn2.close()
-        # ambos 0 en este test, pero copy no debe compartir si hubiera
         assert c_copy == 0, "copia no debe heredar marcadores"
 
         # Recreación real de VisorVideos (cierre/recreación)
@@ -186,16 +223,14 @@ def test_copia_preserva_miniatura_tras_reinicio_sin_escaneo():
         ventana = visor_videos.VisorVideos(ruta_db=ruta_db, ruta_config=ruta_config)
         ventana.resize(720, 540)
         ventana.show()
-        # esperar carga inicial sin escaneo
         for _ in range(100):
             QApplication.processEvents()
             time.sleep(0.02)
             if getattr(ventana, "_carga_completada", False) and not ventana.gestor.activo:
                 break
-        # verificar que tras recreación, copia y original siguen con miniatura (via helper)
-        assert visor_videos.miniatura_principal(nombre_copy) is not None
-        assert visor_videos.miniatura_principal(nombre_orig) is not None
-        # no se debe haber disparado escaneo durante recreación para resolver miniatura
+        # verificar que tras recreación, copia y original siguen con miniatura por ID
+        assert os.path.isfile(ruta_miniatura_id(vid_copy, 1))
+        assert os.path.isfile(ruta_miniatura_id(vid_orig, 1))
         assert not escaneo_calls, f"recreación Visor no debe escaneo para miniatura, got {escaneo_calls}"
         ventana.close()
         try: ventana.gestor.cerrar()
@@ -219,4 +254,3 @@ def test_copia_preserva_miniatura_tras_reinicio_sin_escaneo():
 if __name__ == "__main__":
     test_copia_preserva_miniatura_tras_reinicio_sin_escaneo()
     print("TOTAL=1/1 RESULTADO_FINAL=PASS")
-

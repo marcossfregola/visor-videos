@@ -306,9 +306,10 @@ def main():
         _set_modo(ventana, MODO_ALCANCE_SOLO)
         ventana.iniciar_escaneo()
         _esperar_escaneo(ventana)
+        # B8.3: c.mp4 en C no es subcarpeta de A, se preserva; B\b sí es subcarpeta y se elimina al volver a solo
         verifica(
-            _nombres_bd(ruta_db) == ["a.mp4"],
-            "transición 4: volver a Solo carpeta restaura {a.mp4}",
+            _nombres_bd(ruta_db) == sorted(["a.mp4", "c.mp4"]),
+            "transición 4: volver a Solo carpeta conserva c.mp4 (fuera de A) y solo a.mp4 de A",
             extra=_nombres_bd(ruta_db),
         )
 

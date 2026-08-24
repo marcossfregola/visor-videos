@@ -475,6 +475,7 @@ def test_24_no_segundo_upsert():
         _teardown(tmp_cache,o1,o2)
         tmp_vid.cleanup(); tmp_db.cleanup()
 def test_25_unique_nombre_vigente():
+    # B8.3: UNIQUE(nombre) eliminado, homónimos permitidos; UNIQUE ruta vigente
     tmp_db=tempfile.TemporaryDirectory()
     ruta_db=os.path.join(tmp_db.name,"c.db")
     tmp_cache, o1,o2=_setup_cache_temp()
@@ -483,22 +484,42 @@ def test_25_unique_nombre_vigente():
         regs=[{"nombre":"dup.mp4","ruta":os.path.join(tmp_db.name,"dup.mp4"),"extension":".mp4","fecha_importacion":"2026-01-01T00:00:00"}]
         guardar_videos(regs, ruta_db)
         conn=None
+        ok_nombre=False
+        ok_ruta=False
         try:
             conn=sqlite3.connect(ruta_db)
-            conn.execute("INSERT INTO videos (nombre, ruta, ruta_normalizada, extension, fecha_importacion) VALUES (?,?,?,?,?)", ("dup.mp4", os.path.join(tmp_db.name,"otra","dup.mp4"), rutas_mod.normalizar_ruta_clave(os.path.join(tmp_db.name,"otra","dup.mp4")), ".mp4", "2026-01-01T00:00:00"))
+            otra=os.path.join(tmp_db.name,"otra","dup.mp4")
+            os.makedirs(os.path.dirname(otra), exist_ok=True)
+            conn.execute("INSERT INTO videos (nombre, ruta, ruta_normalizada, extension, fecha_importacion) VALUES (?,?,?,?,?)", ("dup.mp4", otra, rutas_mod.normalizar_ruta_clave(otra), ".mp4", "2026-01-01T00:00:00"))
             conn.commit()
-            ok=False
+            ok_nombre=True
         except sqlite3.IntegrityError:
-            ok=True
+            ok_nombre=False
+        finally:
+            try:
+                if conn: conn.close()
+                # reopen para siguiente prueba
+            except: pass
+        try:
+            conn=sqlite3.connect(ruta_db)
+            p1=os.path.join(tmp_db.name,"dup.mp4")
+            norm=rutas_mod.normalizar_ruta_clave(p1)
+            conn.execute("INSERT INTO videos (nombre, ruta, ruta_normalizada, extension, fecha_importacion) VALUES (?,?,?,?,?)", ("otro.mp4", p1, norm, ".mp4", "2026-01-01T00:00:00"))
+            conn.commit()
+            ok_ruta=False
+        except sqlite3.IntegrityError:
+            ok_ruta=True
         finally:
             try:
                 if conn: conn.close()
             except: pass
-        return ok, "UNIQUE nombre vigente"
+        ok=ok_nombre and ok_ruta
+        return ok, f"homónimo permitido {ok_nombre} ruta única {ok_ruta}"
     finally:
         _teardown(tmp_cache,o1,o2)
         tmp_db.cleanup()
 def test_26_homonimos_rechazados():
+    # B8.3: homónimos en rutas distintas SÍ coexisten
     tmp_db=tempfile.TemporaryDirectory()
     ruta_db=os.path.join(tmp_db.name,"c.db")
     tmp_cache, o1,o2=_setup_cache_temp()
@@ -508,9 +529,10 @@ def test_26_homonimos_rechazados():
         res=guardar_videos(regs, ruta_db)
         conn=sqlite3.connect(ruta_db)
         cnt=conn.execute("SELECT COUNT(*) FROM videos WHERE nombre='same.mp4'").fetchone()[0]
+        cnt2=conn.execute("SELECT COUNT(*) FROM videos").fetchone()[0]
         conn.close()
-        ok=cnt==1
-        return ok, f"cnt={cnt}"
+        ok=cnt==2 and cnt2==2 and res["ids"][0]!=res["ids"][1]
+        return ok, f"cnt={cnt} total={cnt2} ids={res['ids']}"
     finally:
         _teardown(tmp_cache,o1,o2)
         tmp_db.cleanup()

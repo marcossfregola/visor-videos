@@ -237,62 +237,75 @@ def test_09_actualizacion_existente_dual_write():
     regs1 = preparar_registros_basicos([nombre], carpeta)
     res1 = guardar_videos(regs1, ruta_db)
     id1 = res1["ids"][0]
-    # simular mover archivo: misma nombre, distinta ruta (pero nombre es PK, así que seguimos con misma ruta? Para probar dual-write cambiamos ruta)
-    # En realidad ON CONFLICT(nombre) actualizará ruta si cambiamos carpeta
-    nueva_carpeta = os.path.join(tmp.name, "sub")
-    os.makedirs(nueva_carpeta, exist_ok=True)
-    ruta_v2 = os.path.join(nueva_carpeta, nombre)
-    # preparar registro con misma nombre pero nueva ruta
-    regs2 = [{"nombre": nombre, "ruta": ruta_v2, "extension": ".mp4", "fecha_importacion": "2026-01-02T00:00:00"}]
+    # B8.3: misma ruta_normalizada reinsertada => mismo id, atributos se actualizan (nombre mutable)
+    # Ahora probar upsert con misma ruta física (mismo norm) pero distinto nombre/metadata
+    ruta_v2 = ruta_v1  # misma ruta
+    regs2 = [{"nombre": "ex_renamed.mp4", "ruta": ruta_v2, "extension": ".mp4", "fecha_importacion": "2026-01-02T00:00:00"}]
     res2 = guardar_videos(regs2, ruta_db)
     id2 = res2["ids"][0]
     conn = sqlite3.connect(ruta_db)
-    fila = conn.execute("SELECT id, ruta, ruta_normalizada FROM videos WHERE nombre=?", (nombre,)).fetchone()
+    fila = conn.execute("SELECT id, nombre, ruta, ruta_normalizada FROM videos WHERE ruta_normalizada=?", (rutas_mod.normalizar_ruta_clave(ruta_v2),)).fetchone()
     conn.close()
     tmp.cleanup()
     esperado = rutas_mod.normalizar_ruta_clave(ruta_v2)
-    ok = id1 == id2 == fila[0] and fila[1] == ruta_v2 and fila[2] == esperado
+    ok = id1 == id2 == fila[0] and fila[2] == ruta_v2 and fila[3] == esperado and fila[1] == "ex_renamed.mp4"
     return ok, f"id1={id1} id2={id2} fila={fila} esperado={esperado!r}"
 
 
 def test_10_unique_nombre_vigente():
+    # B8.3: UNIQUE(nombre) eliminado, homónimos permitidos; UNIQUE(ruta_normalizada) vigente
     tmp = tempfile.TemporaryDirectory()
     ruta_db = os.path.join(tmp.name, "uniq_nombre.db")
     conn = conectar_bd(ruta_db); conn.commit(); conn.close()
     regs1 = [{"nombre": "dup.mp4", "ruta": os.path.join(tmp.name, "dup.mp4"), "extension": ".mp4", "fecha_importacion": "2026-01-01T00:00:00"}]
     guardar_videos(regs1, ruta_db)
-    # intentar duplicar nombre vía SQL directo debe fallar
+    # duplicado nombre con distinta ruta debe PERMITIRSE (no UNIQUE nombre)
     conn = sqlite3.connect(ruta_db)
     try:
+        otra_ruta = os.path.join(tmp.name, "otra", "dup.mp4")
+        os.makedirs(os.path.dirname(otra_ruta), exist_ok=True)
         conn.execute("INSERT INTO videos (nombre, ruta, ruta_normalizada, extension, fecha_importacion) VALUES (?,?,?,?,?)",
-                     ("dup.mp4", os.path.join(tmp.name, "otra", "dup.mp4"), rutas_mod.normalizar_ruta_clave(os.path.join(tmp.name, "otra", "dup.mp4")), ".mp4", "2026-01-01T00:00:00"))
+                     ("dup.mp4", otra_ruta, rutas_mod.normalizar_ruta_clave(otra_ruta), ".mp4", "2026-01-01T00:00:00"))
         conn.commit()
-        ok = False; detalle = "no lanzó IntegrityError"
+        ok_nombre = True
+        detalle_nombre = "homónimo permitido OK"
     except sqlite3.IntegrityError as exc:
-        ok = True; detalle = f"IntegrityError ok: {exc}"
+        ok_nombre = False; detalle_nombre = f"falló inesperado UNIQUE(nombre): {exc}"
+    # duplicado ruta_normalizada con distinto nombre debe FALLAR (UNIQUE ruta)
+    try:
+        p1 = os.path.join(tmp.name, "dup.mp4")
+        norm = rutas_mod.normalizar_ruta_clave(p1)
+        conn.execute("INSERT INTO videos (nombre, ruta, ruta_normalizada, extension, fecha_importacion) VALUES (?,?,?,?,?)",
+                     ("otro.mp4", p1, norm, ".mp4", "2026-01-01T00:00:00"))
+        conn.commit()
+        ok_ruta = False; detalle_ruta = "no lanzó IntegrityError ruta_normalizada"
+    except sqlite3.IntegrityError as exc:
+        ok_ruta = True; detalle_ruta = f"IntegrityError ruta OK: {exc}"
     finally:
         conn.close()
         tmp.cleanup()
-    return ok, detalle
+    ok = ok_nombre and ok_ruta
+    return ok, f"{detalle_nombre} | {detalle_ruta}"
 
 
 def test_11_homonimos_no_coexisten():
+    # B8.3: homónimos en rutas distintas SÍ coexisten (UNIQUE ruta_normalizada, no nombre)
     tmp = tempfile.TemporaryDirectory()
     ruta_db = os.path.join(tmp.name, "homo.db")
     conn = conectar_bd(ruta_db); conn.commit(); conn.close()
-    # dos archivos con mismo nombre en carpetas distintas -> todavía no pueden coexistir por UNIQUE(nombre)
     regs = [
         {"nombre": "same.mp4", "ruta": os.path.join(tmp.name, "a", "same.mp4"), "extension": ".mp4", "fecha_importacion": "2026-01-01T00:00:00"},
         {"nombre": "same.mp4", "ruta": os.path.join(tmp.name, "b", "same.mp4"), "extension": ".mp4", "fecha_importacion": "2026-01-01T00:00:00"},
     ]
-    # guardar_videos con upsert sobre nombre: el segundo sobrescribe al primero, no crea dos filas
     res = guardar_videos(regs, ruta_db)
     conn = sqlite3.connect(ruta_db)
     cnt = conn.execute("SELECT COUNT(*) FROM videos WHERE nombre='same.mp4'").fetchone()[0]
+    cnt_total = conn.execute("SELECT COUNT(*) FROM videos").fetchone()[0]
+    ids = res.get('ids')
     conn.close()
     tmp.cleanup()
-    ok = cnt == 1  # no pueden coexistir dos homónimos
-    return ok, f"cnt={cnt} ids={res.get('ids')}"
+    ok = cnt == 2 and cnt_total == 2 and ids[0] != ids[1]
+    return ok, f"cnt={cnt} total={cnt_total} ids={ids}"
 
 
 def test_12_unique_ruta_normalizada():

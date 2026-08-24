@@ -359,6 +359,7 @@ def test_04():
 
 
 def test_05():
+    # B8.3: a.mp4 en C:\ no es subcarpeta de temp, se preserva; b.mkv en C:\ y temp son homónimos distintos
     temp, ruta_db = _crear_bd(_filas(["a.mp4", "b.mkv"]))
     carpeta = _carpeta_con(["b.mkv"])
     try:
@@ -373,11 +374,14 @@ def test_05():
         filas = _filas_de(ruta_db)
         ventana.close()
         _limpiar(ventana)
+        # B8.3: DB debe preservar a.mp4 de C:\ (no es subcarpeta) y b.mkv orig en C:\ + nuevo b.mkv en temp (homónimos)
+        filas_nombres = sorted([f[0] for f in filas])
         ok = (
             antes == ["a.mp4", "b.mkv"]
             and despues == ["b.mkv"]
             and "a.mp4" not in despues
-            and [f[0] for f in filas] == ["b.mkv"]
+            and filas_nombres.count("b.mkv") == 2
+            and "a.mp4" in filas_nombres
         )
         return ok, f"antes={antes} despues={despues} filas={[f[0] for f in filas]}"
     finally:

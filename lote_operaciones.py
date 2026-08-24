@@ -11,10 +11,13 @@ Contrato:
 - Progreso por ítem actual/total.
 """
 
+import os
+import sqlite3
+
 import mover_video as _mover_mod
 import copiar_video as _copiar_mod
 import eliminar_video as _eliminar_mod
-from rutas import ruta_biblioteca
+from rutas import normalizar_ruta_clave, ruta_biblioteca
 
 
 def _validar_video_ids(video_ids):
@@ -30,6 +33,23 @@ def _validar_video_ids(video_ids):
         if vid <= 0:
             raise ValueError(f"video_id debe ser positivo, got {vid!r}")
     return lista
+
+
+def _emit_progreso(progreso_callback, actual, total, detalles, fallidos, vid, idx):
+    """Emite progreso y registra fallos visibles sin abortar lote.
+
+    Capturas específicas para errores esperados de interfaz; genérico para inesperados.
+    """
+    if not callable(progreso_callback):
+        return
+    try:
+        progreso_callback(actual, total)
+    except (TypeError, ValueError, RuntimeError, AttributeError) as exc:
+        detalles.append({"video_id": vid, "ok": False, "error_progreso": f"{type(exc).__name__}: {exc}", "tipo_progreso": type(exc).__name__, "indice": idx, "progreso_error": True})
+        fallidos.append({"video_id": vid, "error": f"progreso_callback falló: {exc}", "tipo": type(exc).__name__, "excepcion": exc, "indice": idx, "progreso_error": True})
+    except Exception as exc:
+        detalles.append({"video_id": vid, "ok": False, "error_progreso": f"{type(exc).__name__}: {exc}", "tipo_progreso": type(exc).__name__, "indice": idx, "progreso_error": True})
+        fallidos.append({"video_id": vid, "error": f"progreso_callback error inesperado: {type(exc).__name__}: {exc}", "tipo": type(exc).__name__, "excepcion": exc, "indice": idx, "progreso_error": True})
 
 
 def lote_operaciones(operacion, video_ids, ruta_db, carpeta_destino=None, cancel_check=None, progreso_callback=None):
@@ -61,13 +81,11 @@ def lote_operaciones(operacion, video_ids, ruta_db, carpeta_destino=None, cancel
     if ruta_db is None:
         try:
             ruta_db = ruta_biblioteca()
-        except Exception:
+        except (OSError, ValueError, TypeError, sqlite3.Error):
             pass
     if not isinstance(ruta_db, str) or not ruta_db.strip():
         raise ValueError("ruta_db debe ser texto no vacío")
     if operacion in ("mover", "copiar"):
-        # No validamos existencia aquí para respetar "no pre-vuelo global"; dejamos que servicio valide.
-        # Solo validamos tipo básico si se provee
         if carpeta_destino is not None and not isinstance(carpeta_destino, str):
             raise TypeError("carpeta_destino debe ser texto o None")
 
@@ -75,8 +93,47 @@ def lote_operaciones(operacion, video_ids, ruta_db, carpeta_destino=None, cancel
     exitosos = []
     fallidos = []
     cancelados = []
+    # B8.3A — detección de destino físico duplicado dentro del mismo lote
+    destinos_lote_norm = {}
+    nombres_por_id = {}
+    # Pre-cargar nombres determinísticamente para mover/copiar
+    if operacion in ("mover", "copiar") and isinstance(carpeta_destino, str) and carpeta_destino.strip():
+        if vids:
+            if not os.path.isfile(ruta_db):
+                raise FileNotFoundError(f"Base de datos no encontrada: {ruta_db}")
+            conn_tmp = sqlite3.connect(ruta_db)
+            try:
+                filas = conn_tmp.execute(
+                    f"SELECT id, nombre FROM videos WHERE id IN ({','.join('?' for _ in vids)})", vids
+                ).fetchall()
+                for fid, fnom in filas:
+                    nombres_por_id[fid] = fnom
+            finally:
+                try:
+                    conn_tmp.close()
+                except OSError:
+                    pass
+
+    def _destino_lote_normalizado(vid):
+        """Calcula destino normalizado para vid en lote mover/copiar.
+
+        Si no computable por falta de nombre, retorna None para delegar a servicio.
+        Si normalización falla, propaga ValueError para marcar fallido explícito.
+        """
+        if operacion not in ("mover", "copiar"):
+            return None
+        if not isinstance(carpeta_destino, str) or not carpeta_destino.strip():
+            return None
+        nombre = nombres_por_id.get(vid)
+        if not isinstance(nombre, str) or not nombre:
+            return None
+        dest = os.path.join(os.path.abspath(carpeta_destino.strip()), nombre)
+        # normalizar_ruta_clave puede lanzar ValueError/TypeError; no silenciar
+        dest_norm = normalizar_ruta_clave(dest)
+        if not isinstance(dest_norm, str) or not dest_norm.strip():
+            raise ValueError(f"ruta_normalizada vacía para destino {dest!r}")
+        return dest_norm
     # omitidos es espejo de cancelados para contrato spec
-    cancel_check_error = None
     for idx, vid in enumerate(vids):
         # cancelación cooperativa antes de iniciar cada ítem — caso esperado explícito, error inesperado visible
         if callable(cancel_check):
@@ -84,11 +141,9 @@ def lote_operaciones(operacion, video_ids, ruta_db, carpeta_destino=None, cancel
             try:
                 cancelar_solicitada = bool(cancel_check())
             except (TypeError, ValueError, RuntimeError, AttributeError) as exc:
-                # error esperado de interfaz/estado: visible, no silenciado, continuar sin cancelar
                 cancel_check_error = f"cancel_check falló: {type(exc).__name__}: {exc}"
                 detalles.append({"video_id": vid, "ok": False, "error": cancel_check_error, "tipo": type(exc).__name__, "excepcion": exc, "indice": idx, "cancelado": False})
                 fallidos.append({"video_id": vid, "error": cancel_check_error, "tipo": type(exc).__name__, "excepcion": exc, "indice": idx})
-                # no cancelar, registrar y continuar al progreso visible
                 cancelar_solicitada = False
             except Exception as exc:
                 cancel_check_error = f"cancel_check error inesperado: {type(exc).__name__}: {exc}"
@@ -96,26 +151,41 @@ def lote_operaciones(operacion, video_ids, ruta_db, carpeta_destino=None, cancel
                 fallidos.append({"video_id": vid, "error": cancel_check_error, "tipo": type(exc).__name__, "excepcion": exc, "indice": idx})
                 cancelar_solicitada = False
             if cancelar_solicitada:
-                # marcar este y restantes como cancelados
                 for j in range(idx, total):
                     v = vids[j]
                     entry = {"video_id": v, "indice": j, "motivo": "cancelado"}
                     cancelados.append(entry)
                     detalles.append({"video_id": v, "ok": False, "cancelado": True, "omitido": True, "error": "cancelado", "tipo": "Cancelado", "indice": j})
-                    if callable(progreso_callback):
-                        try:
-                            progreso_callback(j + 1, total)
-                        except (TypeError, ValueError, RuntimeError, AttributeError) as exc_cb:
-                            # progreso con error esperado: visible pero no aborta lote
-                            detalles.append({"video_id": v, "ok": False, "error": f"progreso_callback falló tras cancel: {exc_cb}", "tipo": type(exc_cb).__name__, "indice": j})
-                        except Exception as exc_cb:
-                            detalles.append({"video_id": v, "ok": False, "error": f"progreso_callback error inesperado tras cancel: {type(exc_cb).__name__}: {exc_cb}", "tipo": type(exc_cb).__name__, "indice": j})
+                    _emit_progreso(progreso_callback, j + 1, total, detalles, fallidos, v, j)
                 break
-        # si ya cancelado y break, no ejecutar
         if len(cancelados) > 0 and idx >= len(vids) - len(cancelados):
-            # ya manejado por break
             if any(d.get("indice") == idx for d in detalles):
                 continue
+
+        # B8.3A — prevalidación intra-lote: dos ítems con mismo destino físico normalizado
+        dest_norm = None
+        dest_error = None
+        try:
+            dest_norm = _destino_lote_normalizado(vid)
+        except (ValueError, TypeError, OSError, sqlite3.Error) as exc:
+            # fallo determinístico de normalización: marcar ítem como fallido explícito
+            dest_error = f"no se pudo normalizar destino para video_id {vid}: {type(exc).__name__}: {exc}"
+            fallidos.append({"video_id": vid, "error": dest_error, "tipo": type(exc).__name__, "excepcion": exc, "indice": idx})
+            detalles.append({"video_id": vid, "ok": False, "error": dest_error, "tipo": type(exc).__name__, "excepcion": exc, "indice": idx, "cancelado": False})
+            _emit_progreso(progreso_callback, idx + 1, total, detalles, fallidos, vid, idx)
+            continue
+        # si dest_norm es None (sin nombre), delegar a servicio sin prevalidación intra-lote
+        if dest_norm is not None:
+            if dest_norm in destinos_lote_norm:
+                prev_idx = destinos_lote_norm[dest_norm]
+                prev_vid = vids[prev_idx] if 0 <= prev_idx < len(vids) else None
+                err_msg = f"destino físico duplicado dentro del lote: {dest_norm!r} ya solicitado por video_id {prev_vid} (índice {prev_idx}); este ítem {vid} (índice {idx}) rechaza sin overwrite"
+                fallidos.append({"video_id": vid, "error": err_msg, "tipo": "ColisionError", "excepcion": Exception(err_msg), "indice": idx})
+                detalles.append({"video_id": vid, "ok": False, "error": err_msg, "tipo": "ColisionError", "excepcion": Exception(err_msg), "indice": idx, "cancelado": False})
+                _emit_progreso(progreso_callback, idx + 1, total, detalles, fallidos, vid, idx)
+                continue
+            else:
+                destinos_lote_norm[dest_norm] = idx
 
         try:
             if operacion == "mover":
@@ -127,34 +197,17 @@ def lote_operaciones(operacion, video_ids, ruta_db, carpeta_destino=None, cancel
             exitosos.append({"video_id": vid, "resultado": res, "indice": idx})
             detalles.append({"video_id": vid, "ok": True, "resultado": res, "indice": idx})
         except Exception as exc:
-            # cualquier excepción del servicio se registra como fallo parcial y se continúa
             fallidos.append({"video_id": vid, "error": str(exc), "tipo": type(exc).__name__, "excepcion": exc, "indice": idx})
             detalles.append({"video_id": vid, "ok": False, "error": str(exc), "tipo": type(exc).__name__, "excepcion": exc, "indice": idx, "cancelado": False})
         finally:
-            # progreso por ítem, incluso tras fallo; errores de callback visibles, no silenciados
             if not any(c.get("video_id") == vid and c.get("indice") == idx for c in cancelados):
-                if callable(progreso_callback):
-                    try:
-                        progreso_callback(idx + 1, total)
-                    except (TypeError, ValueError, RuntimeError, AttributeError) as exc:
-                        # error esperado de progreso: registrar visible sin abortar lote ni revertir DB
-                        detalles.append({"video_id": vid, "ok": detalles[-1].get("ok", False) if detalles and detalles[-1].get("indice")==idx else False, "error_progreso": f"{type(exc).__name__}: {exc}", "tipo_progreso": type(exc).__name__, "indice": idx, "progreso_error": True})
-                        fallidos.append({"video_id": vid, "error": f"progreso_callback falló: {exc}", "tipo": type(exc).__name__, "excepcion": exc, "indice": idx, "progreso_error": True})
-                    except Exception as exc:
-                        detalles.append({"video_id": vid, "ok": detalles[-1].get("ok", False) if detalles and detalles[-1].get("indice")==idx else False, "error_progreso": f"{type(exc).__name__}: {exc}", "tipo_progreso": type(exc).__name__, "indice": idx, "progreso_error": True})
-                        fallidos.append({"video_id": vid, "error": f"progreso_callback error inesperado: {type(exc).__name__}: {exc}", "tipo": type(exc).__name__, "excepcion": exc, "indice": idx, "progreso_error": True})
+                _emit_progreso(progreso_callback, idx + 1, total, detalles, fallidos, vid, idx)
 
-    # Si cancelación ocurrió, el progreso ya se emitió para cada cancelado; los anteriores ya emitidos.
-    # Asegurar que detalles está ordenado por indice — errores de orden visibles
     try:
         detalles = sorted(detalles, key=lambda d: d.get("indice", 0))
     except (TypeError, ValueError, AttributeError) as exc:
-        # orden falló pero no silenciar: agregar registro visible
         detalles.append({"video_id": -1, "ok": False, "error": f"fallo orden detalles: {exc}", "tipo": type(exc).__name__, "indice": -1})
-    except Exception as exc:
-        detalles.append({"video_id": -1, "ok": False, "error": f"error inesperado orden detalles: {type(exc).__name__}: {exc}", "tipo": type(exc).__name__, "indice": -1})
     procesados = len(exitosos) + len(fallidos)
-    # omitidos es alias de cancelados
     omitidos = list(cancelados)
     return {
         "total": total,
@@ -164,7 +217,6 @@ def lote_operaciones(operacion, video_ids, ruta_db, carpeta_destino=None, cancel
         "cancelados": cancelados,
         "omitidos": omitidos,
         "detalles": detalles,
-        # compatibilidad extra
         "exitosos_count": len(exitosos),
         "fallidos_count": len(fallidos),
         "cancelados_count": len(cancelados),

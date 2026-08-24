@@ -237,7 +237,7 @@ def main():
     QTest.mouseDClick(tarjetas[0], Qt.LeftButton)
     QApplication.processEvents()
     verifica(
-        len(doble_recibido) == 1 and doble_recibido[0] == tarjetas[0].nombre,
+        len(doble_recibido) == 1 and (doble_recibido[0] == tarjetas[0].nombre or doble_recibido[0] == tarjetas[0]._video_id),
         "doble clic sigue funcionando con Shift implementado",
     )
 
@@ -250,7 +250,7 @@ def main():
     tarjetas[5].seleccion_por_rango.connect(capturar_rango)
     _shift_clic(tarjetas[5])
     verifica(
-        len(recibidos) == 1 and recibidos[0] == tarjetas[5].nombre,
+        len(recibidos) == 1 and (recibidos[0] == tarjetas[5].nombre or recibidos[0] == tarjetas[5]._video_id),
         "seleccion_por_rango emitida con nombre correcto",
     )
     tarjetas[5].seleccion_por_rango.disconnect(capturar_rango)

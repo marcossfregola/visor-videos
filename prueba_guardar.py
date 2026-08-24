@@ -93,6 +93,10 @@ class ConectorConHilo:
         self._registro = registro
         self._registro["connect"].append(threading.get_ident())
 
+    @property
+    def in_transaction(self):
+        return self._real.in_transaction
+
     def execute(self, *args, **kwargs):
         return self._real.execute(*args, **kwargs)
 
@@ -106,6 +110,9 @@ class ConectorConHilo:
     def close(self):
         self._registro["close"].append(threading.get_ident())
         return self._real.close()
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
 
 
 def test_01():
@@ -147,6 +154,7 @@ def test_02():
 
 
 def test_03():
+    # B8.3: misma nombre en ruta distinta => fila nueva (id distinto)
     temp, ruta_db = _crear_bd([])
     try:
         datos1 = _datos("a.mp4", ruta="C:\\v\\a_v1.mp4", duracion=1.0, ancho=1, alto=1, codec="h264", miniaturas=0)
@@ -154,7 +162,9 @@ def test_03():
         cap1, fl1, ok1 = correr(g1, TareaGuardarVideo(datos1, ruta_db))
         conn = sqlite3.connect(ruta_db)
         try:
-            id_v1 = conn.execute("SELECT id FROM videos WHERE nombre = 'a.mp4'").fetchone()[0]
+            # obtener id por ruta_normalizada (B8.3)
+            from rutas import normalizar_ruta_clave
+            id_v1 = conn.execute("SELECT id FROM videos WHERE ruta_normalizada = ?", (normalizar_ruta_clave("C:\\v\\a_v1.mp4"),)).fetchone()[0]
         finally:
             conn.close()
 
@@ -163,10 +173,10 @@ def test_03():
         cap2, fl2, ok2 = correr(g2, TareaGuardarVideo(datos2, ruta_db))
         conn = sqlite3.connect(ruta_db)
         try:
-            filas = conn.execute("SELECT id, nombre, ruta, extension, fecha_importacion, duracion_segundos, ancho, alto, codec_video, cantidad_miniaturas, tamano_bytes FROM videos").fetchall()
+            filas = conn.execute("SELECT id, nombre, ruta, extension, fecha_importacion, duracion_segundos, ancho, alto, codec_video, cantidad_miniaturas, tamano_bytes FROM videos ORDER BY ruta").fetchall()
         finally:
             conn.close()
-        esperado = (id_v1, "a.mp4", "C:\\v\\a_v2.mp4", ".mp4", "2026-08-02T00:00:00", 9.5, 1920, 1080, "av1", 3, None)
+        # B8.3: dos homónimos coexisten
         ok = (
             ok1
             and ok2
@@ -174,13 +184,12 @@ def test_03():
             and not fl2["timeout"]
             and (cap1.resultado.get("guardado") is True and cap1.resultado.get("nombre") == "a.mp4" and isinstance(cap1.resultado.get("video_id"), int))
             and (cap2.resultado.get("guardado") is True and cap2.resultado.get("nombre") == "a.mp4" and isinstance(cap2.resultado.get("video_id"), int))
-            and len(filas) == 1
-            and filas[0] == esperado
+            and len(filas) == 2
+            and cap1.resultado.get("video_id") != cap2.resultado.get("video_id")
         )
-        return ok, f"filas={filas} esperado={esperado}"
+        return ok, f"filas={filas} ids {cap1.resultado.get('video_id')} vs {cap2.resultado.get('video_id')}"
     finally:
         temp.cleanup()
-
 
 def test_04():
     datos = _datos("full.mp4", ruta="C:\\full\\video.mp4", fecha="2026-08-02T12:00:00",
@@ -362,6 +371,10 @@ def test_09():
             def __init__(self, real):
                 self._real = real
 
+            @property
+            def in_transaction(self):
+                return self._real.in_transaction
+
             def execute(self, *args, **kwargs):
                 return self._real.execute(*args, **kwargs)
 
@@ -374,6 +387,9 @@ def test_09():
 
             def close(self):
                 return self._real.close()
+
+            def __getattr__(self, name):
+                return getattr(self._real, name)
 
         sqlite3.connect = lambda *a, **k: ConectorFallaCommit(original_connect(*a, **k))
         try:

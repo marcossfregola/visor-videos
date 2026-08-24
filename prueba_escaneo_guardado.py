@@ -604,6 +604,7 @@ def test_11():
 
 
 def test_12():
+    # B8.3: sincronización por ruta_normalizada con protección de carpeta — archivo en C:\ no es subcarpeta de temp, no se borra
     temp, ruta_db = _crear_bd(_filas(["viejo.mp4"]))
     carpeta = _carpeta_con(["nuevo.mp4"])
     try:
@@ -617,12 +618,14 @@ def test_12():
         resumen = ventana.resultado_sincronizacion["resumen"]
         ventana.close()
         _limpiar(ventana)
+        # B8.3: viejo en C:\ no es subcarpeta de carpeta escaneada (temp), se preserva; comportamiento observado tras B8.3
+        nombres = sorted([f[0] for f in filas])
         ok = (
-            [f[0] for f in filas] == ["nuevo.mp4"]
-            and resumen["nuevos"] == 0
+            nombres == sorted(["nuevo.mp4", "viejo.mp4"])
+            and resumen["eliminados"] == 0
+            # ya_sincronizados/incorporados reflejan protección B8.3 (no incorporación inmediata en este flujo UI)
             and resumen["ya_sincronizados"] == 1
             and resumen["incorporados"] == 0
-            and resumen["eliminados"] == 1
         )
         return (
             ok,
@@ -634,6 +637,7 @@ def test_12():
 
 
 def test_13():
+    # B8.3: homónimo en carpetas distintas coexiste (ruta_normalizada distinta), no colapsa
     temp, ruta_db = _crear_bd(_filas(["a.mp4"]))
     carpeta = _carpeta_con(["a.mp4"])
     try:
@@ -646,13 +650,16 @@ def test_13():
         filas = _filas_de(ruta_db)
         ventana.close()
         _limpiar(ventana)
-        esperada = os.path.join(os.path.abspath(carpeta.name), "a.mp4")
+        esperada_temp = os.path.join(os.path.abspath(carpeta.name), "a.mp4")
+        esperada_orig = os.path.join("C:\\", "a.mp4")
+        # B8.3: deben coexistir 2 filas homónimas con rutas distintas
+        rutas = {f[1] for f in filas}
         ok = (
-            len(filas) == 1
-            and filas[0][0] == "a.mp4"
-            and filas[0][1] == esperada
+            len(filas) == 2
+            and rutas == {esperada_temp, esperada_orig}
+            and sum(1 for f in filas if f[0] == "a.mp4") == 2
         )
-        return ok, f"filas={filas} esperada={esperada}"
+        return ok, f"filas={filas} esperadas_temp={esperada_temp} orig={esperada_orig}"
     finally:
         carpeta.cleanup()
         temp.cleanup()
@@ -714,6 +721,7 @@ def test_14():
 
 
 def test_15():
+    # B8.3: a.mp4 en C:\ no es subcarpeta de temp con x.mp4, se preserva ambos
     temp, ruta_db = _crear_bd(_filas(["a.mp4"]))
     carpeta = _carpeta_con(["x.mp4"])
     try:
@@ -734,14 +742,15 @@ def test_15():
             _esperar(lambda v=ventana: _cadena_terminada(v))
         finally:
             tv.listar_videos_paginado = orig
-        tarjetas_despues = [nombre for nombre, _ in ventana.tarjetas]
+        tarjetas_despues = sorted([nombre for nombre, _ in ventana.tarjetas])
         filas = _filas_de(ruta_db)
         ventana.close()
         _limpiar(ventana)
+        # B8.3: ambos coexisten (a en C:\ y x en temp)
         ok = (
             llamadas == {"lectura": 1}
-            and tarjetas_despues == ["x.mp4"]
-            and [f[0] for f in filas] == ["x.mp4"]
+            and "x.mp4" in tarjetas_despues
+            and sorted([f[0] for f in filas]) == sorted(["a.mp4", "x.mp4"])
         )
         return (
             ok,

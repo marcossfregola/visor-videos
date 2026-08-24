@@ -50,16 +50,25 @@ def _registro_bd(nombre, ruta, duracion, ancho, alto, codec, tamano, mtime_ns):
 
 
 def _insertar_registro(ruta_db, datos):
+    # B8.3: ruta_normalizada es NOT NULL en post-cutover, incluirla si falta
+    from rutas import normalizar_ruta_clave
     conn = conectar_bd(ruta_db)
     try:
+        ruta_norm = datos.get("ruta_normalizada")
+        if not ruta_norm:
+            try:
+                ruta_norm = normalizar_ruta_clave(datos["ruta"])
+            except Exception:
+                ruta_norm = datos["ruta"]
         conn.execute(
             """
-            INSERT INTO videos (nombre, ruta, extension, fecha_importacion, duracion_segundos, ancho, alto, codec_video, cantidad_miniaturas, tamano_bytes, mtime_ns)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO videos (nombre, ruta, ruta_normalizada, extension, fecha_importacion, duracion_segundos, ancho, alto, codec_video, cantidad_miniaturas, tamano_bytes, mtime_ns)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 datos["nombre"],
                 datos["ruta"],
+                ruta_norm,
                 datos["extension"],
                 datos["fecha_importacion"],
                 datos["duracion_segundos"],

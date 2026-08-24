@@ -1,6 +1,7 @@
 """Suite B7.9 — base modo Organización/Explorer — corregida."""
 import os, sys, tempfile, shutil, inspect, sqlite3, time
 from escanear_videos import conectar_bd
+import rutas
 from tareas_videos import TareaLoteOperaciones
 import visor_videos
 
@@ -24,7 +25,7 @@ def _ins(db, carpeta, nombre, contenido=b"x"*1024):
     open(ruta,"wb").write(contenido)
     st=os.stat(ruta)
     conn=conectar_bd(db)
-    conn.execute("INSERT INTO videos (nombre,ruta,extension,fecha_importacion,tamano_bytes,mtime_ns) VALUES (?,?,?,?,?,?)",(nombre, os.path.abspath(ruta), os.path.splitext(nombre)[1].lower(),"2026-01-01", st.st_size, st.st_mtime_ns))
+    conn.execute("INSERT INTO videos (nombre,ruta,ruta_normalizada,extension,fecha_importacion,tamano_bytes,mtime_ns) VALUES (?,?,?,?,?,?,?)",(nombre, os.path.abspath(ruta), rutas.normalizar_ruta_clave(os.path.abspath(ruta)), os.path.splitext(nombre)[1].lower(),"2026-01-01", st.st_size, st.st_mtime_ns))
     vid=conn.execute("SELECT id FROM videos WHERE nombre=?",(nombre,)).fetchone()[0]
     conn.commit(); conn.close()
     return vid, os.path.abspath(ruta)

@@ -18,6 +18,7 @@ import tareas_videos as tv
 import escanear_videos as esc_mod
 import renombrar_masivo as rm
 from escanear_videos import conectar_bd
+from rutas import normalizar_ruta_clave
 
 _CONT = 0
 _FALLOS = 0
@@ -82,9 +83,10 @@ def _crear_bd_y_archivos(nombres):
         ruta = os.path.join(VIDEOS_DIR, name)
         abs_ruta = os.path.abspath(ruta)
         st = os.stat(ruta)
-        conn.execute("INSERT INTO videos (nombre,ruta,extension,fecha_importacion,tamano_bytes,mtime_ns) VALUES (?,?,?,?,?,?)",
-                     (name, abs_ruta, os.path.splitext(name)[1].lower(), "2026-01-01", st.st_size, st.st_mtime_ns))
-        vid = conn.execute("SELECT id FROM videos WHERE nombre=?", (name,)).fetchone()[0]
+        ruta_norm = normalizar_ruta_clave(abs_ruta)
+        conn.execute("INSERT INTO videos (nombre,ruta,ruta_normalizada,extension,fecha_importacion,tamano_bytes,mtime_ns) VALUES (?,?,?,?,?,?,?)",
+                     (name, abs_ruta, ruta_norm, os.path.splitext(name)[1].lower(), "2026-01-01", st.st_size, st.st_mtime_ns))
+        vid = conn.execute("SELECT id FROM videos WHERE ruta_normalizada=?", (ruta_norm,)).fetchone()[0]
         vids.append(vid)
     conn.commit()
     conn.close()

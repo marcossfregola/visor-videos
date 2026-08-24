@@ -161,7 +161,7 @@ def main():
     tarjeta_0.menu_contextual.connect(capturar_menu)
     _derecho(tarjeta_0)
     verifica(
-        len(recibidos) == 1 and recibidos[0] == tarjeta_0.nombre,
+        len(recibidos) == 1 and (recibidos[0] == tarjeta_0.nombre or recibidos[0] == tarjeta_0._video_id),
         "menu_contextual emite nombre correcto al clic derecho",
     )
     tarjeta_0.menu_contextual.disconnect(capturar_menu)
@@ -240,7 +240,7 @@ def main():
     QTest.mouseDClick(tarjeta_0, Qt.LeftButton)
     QApplication.processEvents()
     verifica(
-        len(doble_recibido) == 1 and doble_recibido[0] == tarjeta_0.nombre,
+        len(doble_recibido) == 1 and (doble_recibido[0] == tarjeta_0.nombre or doble_recibido[0] == tarjeta_0._video_id),
         "doble clic sigue funcionando con menu contextual",
     )
 

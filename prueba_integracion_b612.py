@@ -561,7 +561,7 @@ def test_10_bloqueo_derivado_de_derivado():
     return True, "bloqueo derivado-de-derivado OK"
 
 def test_11_unique_catalog_error():
-    """UNIQUE(nombre)/catalog_error: duplicado misma ruta y distinta ruta rechazan con catalog_error y archivo conservado."""
+    """B8.3 UNIQUE(ruta_normalizada): misma ruta rechaza con catalog_error, distinta ruta mismo nombre ahora PERMITIDO (homónimo)."""
     if not _ffmpeg_disponible():
         return True, "ffmpeg skip"
     tmp=os.path.join(BASE,"t11_unique")
@@ -580,7 +580,7 @@ def test_11_unique_catalog_error():
     alta1=ev.incorporar_video_derivado_al_catalogo(der1,vid,[{"segmento_id":sid,"inicio":0.5,"fin":1.5}],tipo="individual",ruta_db=db)
     if not alta1.get("ok"):
         return False, f"alta1 fail {alta1.get('error')}"
-    # misma ruta
+    # misma ruta debe fallar
     alta2=ev.incorporar_video_derivado_al_catalogo(der1,vid,[{"segmento_id":sid,"inicio":0.5,"fin":1.5}],tipo="individual",ruta_db=db)
     if alta2.get("ok"):
         return False, "misma ruta deberia fallar"
@@ -588,20 +588,23 @@ def test_11_unique_catalog_error():
         return False, f"catalog_error false misma ruta {alta2}"
     if not os.path.isfile(der1):
         return False, "der1 borrado"
-    # distinta ruta mismo nombre
+    # distinta ruta mismo nombre B8.3: debe PERMITIRSE (homónimo) — antes fallaba con UNIQUE(nombre)
     otro_dir=os.path.join(tmp,"otro")
     os.makedirs(otro_dir,exist_ok=True)
     der2=os.path.join(otro_dir,"dup.mp4")
     if not _generar_video(der2,duracion=2):
         return False, "gen der2 fail"
     alta3=ev.incorporar_video_derivado_al_catalogo(der2,vid,[{"segmento_id":sid,"inicio":0.5,"fin":1.5}],tipo="individual",ruta_db=db)
-    if alta3.get("ok"):
-        return False, "distinta ruta mismo nombre deberia fallar"
-    if not alta3.get("catalog_error"):
-        return False, f"catalog_error distinta ruta {alta3}"
+    if not alta3.get("ok"):
+        return False, f"B8.3 homónimo distinta ruta mismo nombre debería permitir, got {alta3}"
+    if alta3.get("catalog_error"):
+        return False, f"catalog_error inesperado para homónimo permitido {alta3}"
     if not os.path.isfile(der2):
         return False, "der2 borrado"
-    return True, "UNIQUE(nombre)/catalog_error OK"
+    # verificar que ambos homónimos coexisten con ids distintos
+    if alta1["derivado_video_id"] == alta3["derivado_video_id"]:
+        return False, "ids homónimos no deben colisionar"
+    return True, "B8.3 homónimo permitido, misma ruta rechaza OK"
 
 def test_12_migraciones_idempotentes_integrity():
     """Migraciones idempotentes+PRAGMA integrity_check: 3 aperturas, datos intactos, integrity ok."""

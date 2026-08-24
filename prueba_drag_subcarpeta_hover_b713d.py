@@ -12,6 +12,7 @@ from PySide6.QtGui import QDragEnterEvent, QDragMoveEvent, QDropEvent, QDragLeav
 
 import panel_organizacion as po
 from escanear_videos import conectar_bd
+import rutas
 import visor_videos as vv
 from tareas_videos import TareaLoteOperaciones
 
@@ -511,8 +512,8 @@ for name in ["video_a.mp4", "video_b.mp4"]:
     open(ruta, "wb").write(b"x"*1024)
     st = os.stat(ruta)
     c = conectar_bd(db)
-    c.execute("INSERT INTO videos (nombre,ruta,extension,fecha_importacion,tamano_bytes,mtime_ns) VALUES (?,?,?,?,?,?)",
-              (name, os.path.abspath(ruta), ".mp4", "2026-01-01", st.st_size, st.st_mtime_ns))
+    c.execute("INSERT INTO videos (nombre,ruta,ruta_normalizada,extension,fecha_importacion,tamano_bytes,mtime_ns) VALUES (?,?,?,?,?,?,?)",
+              (name, os.path.abspath(ruta), rutas.normalizar_ruta_clave(os.path.abspath(ruta)), ".mp4", "2026-01-01", st.st_size, st.st_mtime_ns))
     row = c.execute("SELECT id FROM videos WHERE nombre=?", (name,)).fetchone()
     vids.append((name, row[0], os.path.abspath(ruta)))
     c.commit()
@@ -597,8 +598,8 @@ ruta_v = os.path.join(origen17, nombre_v)
 open(ruta_v, "wb").write(b"x"*2048)
 st = os.stat(ruta_v)
 c = conectar_bd(db17)
-c.execute("INSERT INTO videos (nombre,ruta,extension,fecha_importacion,tamano_bytes,mtime_ns) VALUES (?,?,?,?,?,?)",
-          (nombre_v, os.path.abspath(ruta_v), ".mp4", "2026-01-01", st.st_size, st.st_mtime_ns))
+c.execute("INSERT INTO videos (nombre,ruta,ruta_normalizada,extension,fecha_importacion,tamano_bytes,mtime_ns) VALUES (?,?,?,?,?,?,?)",
+          (nombre_v, os.path.abspath(ruta_v), rutas.normalizar_ruta_clave(os.path.abspath(ruta_v)), ".mp4", "2026-01-01", st.st_size, st.st_mtime_ns))
 row = c.execute("SELECT id FROM videos WHERE nombre=?", (nombre_v,)).fetchone()
 vid = row[0]
 print(f"T17 video_id={vid} ruta={ruta_v}")

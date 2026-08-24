@@ -1,6 +1,7 @@
 """Suite B7.6 — operaciones masivas seguras sobre seleccionados."""
 import os, sys, sqlite3, tempfile, shutil, hashlib, inspect
 from escanear_videos import conectar_bd, guardar_marcador, guardar_segmento, listar_marcadores, listar_segmentos, listar_videos, listar_videos_paginado, obtener_video_por_id, detectar_diferencias, preparar_plan_sincronizacion, aplicar_incorporaciones
+from rutas import normalizar_ruta_clave
 import operaciones
 import mover_video as mover_svc
 import copiar_video as copiar_svc
@@ -32,10 +33,12 @@ def _ins(db, carpeta, nombre, contenido=b"x"*1024, cont=None):
     open(ruta,"wb").write(contenido)
     st=os.stat(ruta)
     conn=conectar_bd(db)
-    conn.execute("INSERT INTO videos (nombre,ruta,extension,fecha_importacion,tamano_bytes,mtime_ns) VALUES (?,?,?,?,?,?)",(nombre, os.path.abspath(ruta), os.path.splitext(nombre)[1].lower(),"2026-01-01", st.st_size, st.st_mtime_ns))
-    vid=conn.execute("SELECT id FROM videos WHERE nombre=?",(nombre,)).fetchone()[0]
+    ruta_abs = os.path.abspath(ruta)
+    ruta_norm = normalizar_ruta_clave(ruta_abs)
+    conn.execute("INSERT INTO videos (nombre,ruta,ruta_normalizada,extension,fecha_importacion,tamano_bytes,mtime_ns) VALUES (?,?,?,?,?,?,?)",(nombre, ruta_abs, ruta_norm, os.path.splitext(nombre)[1].lower(),"2026-01-01", st.st_size, st.st_mtime_ns))
+    vid=conn.execute("SELECT id FROM videos WHERE ruta_normalizada=?",(ruta_norm,)).fetchone()[0]
     conn.commit(); conn.close()
-    return vid, os.path.abspath(ruta)
+    return vid, ruta_abs
 
 def test_01_mover_3_preserva_ids():
     tmp,db=_db()
@@ -216,23 +219,29 @@ def test_10_colision_mover_fallo_parcial_sin_overwrite():
     finally: shutil.rmtree(tmp,ignore_errors=True)
 
 def test_11_colisiones_copiar_sufijos_deterministas():
+    """B8.3A adaptado: copiar mismo vid 3 veces a mismo destino debe detectar duplicado intra-lote, sin sufijos."""
     tmp,db=_db()
     A=os.path.join(tmp,"A"); B=os.path.join(tmp,"B")
     os.makedirs(A,exist_ok=True); os.makedirs(B,exist_ok=True)
     try:
         vid,_=_ins(db,A,"suf.mp4",cont=b"data")
-        # copiar 3 veces mismo vid
+        # copiar 3 veces mismo vid a mismo B -> B8.3A: 1 exitoso con mismo nombre, 2 fallidos por destino duplicado intra-lote/FS
         res=lote.lote_operaciones("copiar", [vid,vid,vid], db, carpeta_destino=B)
-        verifica(res["exitosos_count"]==3,"copiar 3 sufijos")
+        verifica(res["exitosos_count"]==1,"B8.3A copiar duplicado intra-lote: 1 exitoso")
+        verifica(res["fallidos_count"]==2,"B8.3A copiar duplicado intra-lote: 2 fallidos")
         nombres=[e["resultado"]["nombre"] for e in res["exitosos"]]
-        verifica(nombres==["suf_001.mp4","suf_002.mp4","suf_003.mp4"],f"sufijos deterministas {nombres}")
-        # no overwrite
-        for n in nombres:
-            verifica(os.path.isfile(os.path.join(B,n)),f"{n} existe")
-        # segunda ejecución debe seguir determinista _004 etc
+        verifica(nombres==["suf.mp4"],f"B8.3A conserva mismo nombre sin sufijo {nombres}")
+        # no overwrite: solo un archivo en B
+        verifica(os.path.isfile(os.path.join(B,"suf.mp4")),"suf.mp4 existe")
+        # segunda ejecución con mismo vid a mismo B debe fallar por destino exacto ocupado (FS+DB)
         res2=lote.lote_operaciones("copiar", [vid], db, carpeta_destino=B)
-        verifica(res2["exitosos"][0]["resultado"]["nombre"]=="suf_004.mp4","sufijo determinista continua")
-        print("test11 done")
+        verifica(res2["exitosos_count"]==0 and res2["fallidos_count"]==1,"B8.3A segunda copia a mismo destino exacto debe fallar por colisión")
+        # copiar a carpeta distinta C debe permitir mismo nombre con nuevo ID
+        C=os.path.join(tmp,"C")
+        os.makedirs(C,exist_ok=True)
+        res3=lote.lote_operaciones("copiar", [vid], db, carpeta_destino=C)
+        verifica(res3["exitosos_count"]==1 and res3["exitosos"][0]["resultado"]["nombre"]=="suf.mp4","B8.3A homónimo en carpeta distinta permitido sin sufijo")
+        print("test11 done — B8.3A")
     finally: shutil.rmtree(tmp,ignore_errors=True)
 
 def test_12_copia_replica_miniaturas():
@@ -289,6 +298,11 @@ def test_14_fallo_db_post_publicacion():
         orig_con=esc.conectar_bd
         class Fake:
             def __init__(self,*a,**k): self._r=orig_con(*a,**k)
+            @property
+            def in_transaction(self):
+                return self._r.in_transaction
+            def __getattr__(self, name):
+                return getattr(self._r, name)
             def execute(self,*a,**k):
                 sql=a[0] if a else ""
                 if "INSERT INTO videos" in sql: raise sqlite3.OperationalError("simulado fallo DB")
@@ -476,11 +490,24 @@ def test_26_cero_except_pass_b76():
         if "except Exception:" in src:
             # justificar: debe tener mensaje visible, no pass
             verifica("mensaje_carpeta" in src or "estado_escaneo" in src or "fallidos" in src or "inconsistencia" in src.lower() or "visible" in src.lower() or "error" in src.lower(), f"{name} excepción justificada con mensaje visible")
-    # lote_operaciones también auditado
+    # lote_operaciones también auditado — B8.3A restaurado estricto sin número mágico inflado
     src_lote=open("lote_operaciones.py",encoding="utf-8").read()
+    import re as _re_lote
+    # cero casos except Exception: pass (bare) y except Exception as ...: pass
     verifica("except Exception:\n                pass" not in src_lote, "lote_operaciones sin except pass silencioso")
-    verifica(src_lote.count("except Exception:") <= 2, "lote_operaciones captura genérica limitada y justificada")
-    print("test26 done")
+    verifica(not _re_lote.search(r"except\s+Exception\s*:\s*\n\s*pass", src_lote), "lote sin bare except Exception: pass")
+    verifica(not _re_lote.search(r"except\s+Exception\s+as\s+\w+\s*:\s*\n\s*pass", src_lote), "lote sin except Exception as ...: pass")
+    # 3 capturas genéricas justificadas (cancel_check, progreso, delegación servicio) todas con manejo visible, no pass/silencio
+    cnt_generic = src_lote.count("except Exception as")
+    cnt_bare = src_lote.count("except Exception:")
+    verifica(cnt_bare == 0, f"lote cero bare except Exception: (got {cnt_bare})")
+    verifica(cnt_generic == 3, f"lote captura genérica exactamente 3 justificadas (got {cnt_generic})")
+    # cada captura debe terminar en manejo visible (fallidos/detalles/error) no pass
+    for m in _re_lote.finditer(r"except\s+Exception\s+as\s+(\w+)\s*:\s*\n(.*?)(?=\n\s*except|\n\s*def |\n\s*for |\n\s*try|\Z)", src_lote, flags=_re_lote.DOTALL):
+        bloque = m.group(0)
+        verifica("pass" not in bloque.splitlines()[1] if len(bloque.splitlines())>1 else True, "bloque genérico no es pass")
+        verifica("fallidos" in bloque or "detalles" in bloque or "error" in bloque.lower(), "bloque genérico justificado con manejo visible")
+    print("test26 done — B8.3A estricto")
 
 def test_27_fallo_refresco_reportado():
     # Simular fallo de refresco UI queda reportado, no oculto, con recarga segura

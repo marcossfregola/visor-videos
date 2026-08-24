@@ -18,6 +18,7 @@ from escanear_videos import (
     obtener_video_por_id,
     actualizar_ruta_video,
 )
+from rutas import normalizar_ruta_clave
 import mover_video as svc
 from mover_video import (
     ValidacionError,
@@ -48,13 +49,15 @@ def _insertar_video(ruta_db, carpeta, nombre, contenido=b"x"*1024):
     st = os.stat(ruta)
     conn = conectar_bd(ruta_db)
     try:
+        ruta_abs = os.path.abspath(ruta)
+        ruta_norm = normalizar_ruta_clave(ruta_abs)
         conn.execute(
-            "INSERT INTO videos (nombre, ruta, extension, fecha_importacion, tamano_bytes, mtime_ns) VALUES (?, ?, ?, ?, ?, ?)",
-            (nombre, os.path.abspath(ruta), os.path.splitext(nombre)[1].lower(), "2026-01-01T00:00:00", st.st_size, st.st_mtime_ns),
+            "INSERT INTO videos (nombre, ruta, ruta_normalizada, extension, fecha_importacion, tamano_bytes, mtime_ns) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (nombre, ruta_abs, ruta_norm, os.path.splitext(nombre)[1].lower(), "2026-01-01T00:00:00", st.st_size, st.st_mtime_ns),
         )
-        vid = conn.execute("SELECT id FROM videos WHERE nombre=?", (nombre,)).fetchone()[0]
+        vid = conn.execute("SELECT id FROM videos WHERE ruta_normalizada=?", (ruta_norm,)).fetchone()[0]
         conn.commit()
-        return vid, os.path.abspath(ruta)
+        return vid, ruta_abs
     finally:
         conn.close()
 
@@ -131,7 +134,9 @@ def test_03_misma_carpeta_rechazo():
             svc.mover_video(vid, orig, ruta_db)
             assert False, "misma carpeta debe rechazar"
         except ValidacionError as exc:
-            assert "misma carpeta" in str(exc).lower()
+            # B8.3A: misma carpeta y mismo archivo comparten ruta_normalizada; ambas son válidas
+            msg = str(exc).lower()
+            assert "misma carpeta" in msg or "mismo archivo" in msg
         assert os.path.isfile(ruta_orig)
         info = obtener_video_por_id(vid, ruta_db)
         assert info["ruta"] == ruta_orig
@@ -195,6 +200,11 @@ def test_06_db_falla_rollback_same():
         class FakeConn:
             def __init__(self, *a, **k):
                 self._real = orig_connect(*a, **k)
+            @property
+            def in_transaction(self):
+                return self._real.in_transaction
+            def __getattr__(self, name):
+                return getattr(self._real, name)
             def execute(self, sql, params=()):
                 if "UPDATE videos SET ruta" in sql:
                     raise sqlite3.OperationalError("simulado fallo DB")
@@ -247,6 +257,11 @@ def test_07_rollback_falla_critico_same():
                 raise OSError("compensación fallida")
         class FakeConn2:
             def __init__(self,*a,**k): self._real=orig_connect(*a,**k)
+            @property
+            def in_transaction(self):
+                return self._real.in_transaction
+            def __getattr__(self, name):
+                return getattr(self._real, name)
             def execute(self,sql,params=()):
                 if "UPDATE videos SET ruta" in sql:
                     raise sqlite3.OperationalError("fallo DB")
@@ -351,6 +366,11 @@ def test_10_db_falla_cross_compensa_destino():
         orig_connect = m.sqlite3.connect
         class FakeConn:
             def __init__(self,*a,**k): self._real=orig_connect(*a,**k)
+            @property
+            def in_transaction(self):
+                return self._real.in_transaction
+            def __getattr__(self, name):
+                return getattr(self._real, name)
             def execute(self,sql,params=()):
                 if "UPDATE videos SET ruta" in sql:
                     raise sqlite3.OperationalError("fallo DB cross")
@@ -1155,10 +1175,26 @@ def test_22_paginacion_y_filtros_por_carpeta():
     os.makedirs(B, exist_ok=True)
     try:
         from escanear_videos import listar_videos_paginado
+        from rutas import normalizar_ruta_clave as _norm22
         def ins(nombre, carpeta):
             ruta = os.path.join(carpeta, nombre)
+            ruta_abs = os.path.abspath(ruta)
+            ruta_norm = _norm22(ruta_abs)
             c = sqlite3.connect(ruta_db)
-            c.execute("INSERT INTO videos (nombre, ruta, extension, fecha_importacion) VALUES (?,?,?,?)", (nombre, os.path.abspath(ruta), os.path.splitext(nombre)[1], "2026-01-01T00:00:00"))
+            # B8.3A: conectar_bd ya creó esquema con ruta_normalizada NOT NULL, pero este ins usa sqlite3 directo sin migraciones; asegurar via conectar_bd helper o insert explícito con ruta_normalizada
+            # Intentar asegurar columna por si DB recién creada con conectar_bd ya tiene, sino INSERT fallará; usamos INSERT con ruta_normalizada
+            try:
+                c.execute("INSERT INTO videos (nombre, ruta, ruta_normalizada, extension, fecha_importacion) VALUES (?,?,?,?,?)", (nombre, ruta_abs, ruta_norm, os.path.splitext(nombre)[1], "2026-01-01T00:00:00"))
+            except sqlite3.OperationalError as exc:
+                if "no such column" in str(exc).lower() and "ruta_normalizada" in str(exc).lower():
+                    # fallback: crear columna y reintentar (migración mínima para test directo)
+                    try:
+                        c.execute("ALTER TABLE videos ADD COLUMN ruta_normalizada TEXT")
+                    except Exception:
+                        pass
+                    c.execute("INSERT INTO videos (nombre, ruta, ruta_normalizada, extension, fecha_importacion) VALUES (?,?,?,?,?)", (nombre, ruta_abs, ruta_norm, os.path.splitext(nombre)[1], "2026-01-01T00:00:00"))
+                else:
+                    raise
             c.commit()
             c.close()
         # A vs AB: 3 en A, 2 en AB
