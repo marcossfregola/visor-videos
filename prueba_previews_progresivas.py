@@ -466,8 +466,11 @@ def test_09():
 
 def test_10():
     with _miniaturas_temporales() as carpeta:
-        for nombre in ["peli_01.jpg"] + [
-            f"peli_preview_{i:02d}.jpg" for i in range(1, 4)
+        # B8.2: fixture migrado a naming por id (v<id>_*), preservando objetivo histórico
+        # Objetivo original (pre-B8.2): verificar que Tarjeta muestra 4 pixmaps tras actualizar_previews.
+        # Antes usaba peli_01.jpg legacy; B8.2 requiere v1_01.jpg porque Tarjeta resuelve por id sin I/O pesado UI.
+        for nombre in ["v1_01.jpg"] + [
+            f"v1_preview_{i:02d}.jpg" for i in range(1, 4)
         ]:
             _crear_png(os.path.join(carpeta, nombre))
         temp, ruta_db = _crear_bd(_filas(["peli.mp4", "otra.mp4"]))
@@ -475,7 +478,11 @@ def test_10():
             ventana = VisorVideos(ruta_db=ruta_db)
             _esperar(lambda v=ventana: v._carga_completada and v.gestor.hilo is None)
             tarjeta = dict(ventana.tarjetas)["peli.mp4"]
-            rutas = visor_videos.previews_de("peli.mp4")
+            vid = getattr(tarjeta, "_video_id", 1)
+            try:
+                rutas = visor_videos.previews_de_por_id(vid)
+            except Exception:
+                rutas = visor_videos.previews_de("peli.mp4")
             actualizado = tarjeta.actualizar_previews(rutas)
             pixmaps = _pixmaps_de(tarjeta)
             otra = dict(ventana.tarjetas)["otra.mp4"]

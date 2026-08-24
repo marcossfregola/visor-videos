@@ -3,6 +3,8 @@ import os
 import shutil
 import sqlite3
 import subprocess
+import tempfile
+import time
 from datetime import datetime
 
 from rutas import normalizar_ruta_clave, ruta_biblioteca, ruta_carpeta_miniaturas, ruta_carpeta_videos
@@ -904,6 +906,422 @@ def generar_previews_faltantes(videos, carpeta, duraciones=None):
         "reutilizados": sum(r["reutilizados"] for r in resultados),
         "errores": sum(r["errores"] for r in resultados),
     }
+
+
+# ── B8.2 — Caché por video_id (namespace v<id>_<NN>.jpg) ──
+def _validar_video_id_cache(video_id):
+    if isinstance(video_id, bool) or not isinstance(video_id, int):
+        raise TypeError("video_id debe ser entero")
+    if video_id <= 0:
+        raise ValueError("video_id debe ser positivo")
+
+
+def ruta_miniatura_id(video_id, indice=1):
+    """B8.2 ruta de miniatura por video_id: v<id>_<NN>.jpg"""
+    _validar_video_id_cache(video_id)
+    if not isinstance(indice, int) or isinstance(indice, bool) or indice < 1:
+        raise ValueError("indice debe ser entero >=1")
+    return os.path.join(ruta_carpeta_miniaturas(), f"v{video_id}_{indice:02d}{EXTENSION_MINIATURA}")
+
+
+def ruta_preview_id(video_id, indice):
+    """B8.2 ruta de preview por video_id: v<id>_preview_<NN>.jpg"""
+    _validar_video_id_cache(video_id)
+    if not isinstance(indice, int) or isinstance(indice, bool) or indice < 1:
+        raise ValueError("indice debe ser entero >=1")
+    return os.path.join(ruta_carpeta_miniaturas(), f"v{video_id}_preview_{indice:02d}{EXTENSION_MINIATURA}")
+
+
+def _es_archivo_preview_id(nombre_archivo, video_id):
+    return os.path.splitext(nombre_archivo)[0].startswith(f"v{video_id}_preview_")
+
+def _es_miniatura_id(nombre_archivo, video_id):
+    base = os.path.splitext(nombre_archivo)[0]
+    pref = f"v{video_id}_"
+    if not base.startswith(pref):
+        return False
+    if _es_archivo_preview_id(nombre_archivo, video_id):
+        return False
+    suffix = base[len(pref):]
+    return suffix.isdigit()
+
+def contar_miniaturas_por_id(video_id):
+    _validar_video_id_cache(video_id)
+    carpeta = ruta_carpeta_miniaturas()
+    if not os.path.isdir(carpeta):
+        return 0
+    return sum(1 for n in os.listdir(carpeta) if _es_miniatura_id(n, video_id))
+
+def siguiente_indice_libre_por_id(video_id):
+    _validar_video_id_cache(video_id)
+    indice = 1
+    while os.path.isfile(ruta_miniatura_id(video_id, indice)):
+        indice += 1
+    return indice
+
+def miniatura_reutilizable_por_id(video_id, ruta_video):
+    """B8.2 contrato canónico: solo la miniatura principal v<id>_01.jpg es vigente.
+
+    Itera solo la canónica determinista sin FS pesado (1 stat), no acumula _02.
+    Si _01 no existe o está stale, retorna None para que el caller regenere canónica.
+    """
+    _validar_video_id_cache(video_id)
+    carpeta = ruta_carpeta_miniaturas()
+    if not os.path.isdir(carpeta):
+        return None
+    ruta = ruta_miniatura_id(video_id, 1)
+    if os.path.isfile(ruta) and miniatura_vigente(ruta_video, ruta):
+        return ruta
+    return None
+
+def previews_existentes_por_id(video_id):
+    _validar_video_id_cache(video_id)
+    carpeta = ruta_carpeta_miniaturas()
+    if not os.path.isdir(carpeta):
+        return []
+    return [ruta_preview_id(video_id, i) for i in range(1, CANTIDAD_PREVIEWS+1) if os.path.isfile(ruta_preview_id(video_id, i))]
+
+def previews_faltantes_por_id(video_id):
+    _validar_video_id_cache(video_id)
+    return [i for i in range(1, CANTIDAD_PREVIEWS+1) if not os.path.isfile(ruta_preview_id(video_id, i))]
+
+def _duracion_de_duraciones_por_id(duraciones, video_id, ruta_video):
+    if not isinstance(duraciones, dict):
+        return None
+    if ruta_video in duraciones:
+        return duraciones[ruta_video]
+    # también soportar clave por video_id
+    if video_id in duraciones:
+        return duraciones[video_id]
+    return None
+
+def asegurar_miniatura_por_id(video_id, ruta_video, duracion_segundos=None):
+    """B8.2 contrato canónico: principal es v<id>_01.jpg; si está stale se reemplaza atómicamente.
+
+    No acumula _02 para la principal. Operación segura: genera a temporal + os.replace,
+    no destruye vigente previa sin reemplazo válido. No toca legacy.
+    """
+    _validar_video_id_cache(video_id)
+    if not ffmpeg_disponible() or not os.path.isfile(ruta_video) or os.path.getsize(ruta_video)==0:
+        return 0
+    destino = ruta_miniatura_id(video_id, 1)
+    if os.path.isfile(destino) and miniatura_vigente(ruta_video, destino):
+        return 1
+    os.makedirs(ruta_carpeta_miniaturas(), exist_ok=True)
+    # Generar a temporal adyacente para replace atómico (no borrar stale hasta validar)
+    carpeta = ruta_carpeta_miniaturas()
+    tmp_path = None
+    try:
+        fd, tmp_path = tempfile.mkstemp(suffix=EXTENSION_MINIATURA, prefix=f"tmp_v{video_id}_", dir=carpeta)
+        os.close(fd)
+        # generar_miniatura escribe directamente a ruta destino; le damos tmp
+        # Necesita FFmpeg real; si falla, limpiar tmp y no tocar destino
+        ok = generar_miniatura(ruta_video, tmp_path, duracion_segundos)
+        if not ok or not os.path.isfile(tmp_path) or os.path.getsize(tmp_path)==0:
+            try:
+                if tmp_path and os.path.isfile(tmp_path):
+                    os.remove(tmp_path)
+            except OSError:
+                pass
+            return 0
+        # Reemplazo atómico: preserva destino previo hasta tener reemplazo válido
+        try:
+            os.replace(tmp_path, destino)
+        except OSError:
+            try:
+                if tmp_path and os.path.isfile(tmp_path):
+                    os.remove(tmp_path)
+            except OSError:
+                pass
+            return 0
+        return 1 if os.path.isfile(destino) and os.path.getsize(destino)>0 else 0
+    except (OSError, ValueError, TypeError):
+        try:
+            if tmp_path and os.path.isfile(tmp_path):
+                os.remove(tmp_path)
+        except OSError:
+            pass
+        return 0
+
+def asegurar_miniaturas_por_id(video_ids, rutas_por_id, on_progreso=None, duraciones=None, nombres_por_id=None):
+    """B8.2 asegura miniaturas por video_id (usa rutas por id, no nombres).
+
+    Si `nombres_por_id` se provee, intenta migrar caché legacy (copia) antes de decidir
+    si necesita FFmpeg, preservando legacy y siendo idempotente. Fallos de migración
+    quedan observables en el resultado (campo migracion_fallos/errores) sin borrar origen.
+    """
+    if isinstance(video_ids, (str, bytes, bytearray)):
+        raise TypeError("video_ids debe ser colección, no texto")
+    try:
+        lista = list(video_ids)
+    except TypeError:
+        raise TypeError("video_ids debe ser colección iterable") from None
+    for vid in lista:
+        _validar_video_id_cache(vid)
+    if rutas_por_id is None or not isinstance(rutas_por_id, dict):
+        raise TypeError("rutas_por_id debe ser dict video_id->ruta")
+    resultados=[]
+    total=len(lista)
+    migracion_fallos_total=0
+    migracion_copiados_total=0
+    migracion_ya_existentes_total=0
+    migracion_detalles=[]
+    for idx, vid in enumerate(lista):
+        ruta_video = rutas_por_id.get(vid)
+        if not isinstance(ruta_video, str) or not ruta_video or not os.path.isfile(ruta_video):
+            resultados.append({"video_id": vid, "ruta": ruta_video, "asegurada":0, "cantidad_miniaturas": contar_miniaturas_por_id(vid), "migracion_fallos":0})
+            if on_progreso: on_progreso(idx+1,total)
+            continue
+        mig_fallos=0
+        mig_res=None
+        if nombres_por_id and vid in nombres_por_id:
+            try:
+                mig_res = migrar_cache_legacy_a_id(vid, nombres_por_id[vid])
+                mig_fallos = int(mig_res.get("fallos",0)) if isinstance(mig_res, dict) else 0
+                migracion_fallos_total += mig_fallos
+                migracion_copiados_total += int(mig_res.get("copiados",0)) if isinstance(mig_res, dict) else 0
+                migracion_ya_existentes_total += int(mig_res.get("ya_existentes",0)) if isinstance(mig_res, dict) else 0
+                if isinstance(mig_res, dict):
+                    migracion_detalles.append({"video_id": vid, "migracion": mig_res})
+            except (OSError, ValueError, TypeError) as exc:
+                print(f"[B8.2] migrar_cache_legacy_a_id miniatura vid={vid} error: {exc}")
+                mig_fallos = 1
+                migracion_fallos_total += 1
+                migracion_detalles.append({"video_id": vid, "error": str(exc), "estado":"excepcion"})
+        dur = _duracion_de_duraciones_por_id(duraciones, vid, ruta_video)
+        aseg = asegurar_miniatura_por_id(vid, ruta_video, dur)
+        item={"video_id": vid, "ruta": ruta_video, "asegurada": aseg, "cantidad_miniaturas": contar_miniaturas_por_id(vid), "migracion_fallos": mig_fallos}
+        if mig_res is not None:
+            item["migracion"] = mig_res
+        # reflejar fallo observable también en errores si hubo fallo
+        if mig_fallos>0:
+            item["errores"] = mig_fallos
+        resultados.append(item)
+        if on_progreso: on_progreso(idx+1,total)
+    return {"video_ids": lista, "resultados": resultados, "procesados": len(resultados), "con_miniatura": sum(1 for r in resultados if r["cantidad_miniaturas"]>0), "sin_miniatura": sum(1 for r in resultados if r["cantidad_miniaturas"]==0), "migracion_fallos": migracion_fallos_total, "migracion_copiados": migracion_copiados_total, "migracion_ya_existentes": migracion_ya_existentes_total, "migracion_detalles": migracion_detalles, "errores": migracion_fallos_total}
+
+def generar_previews_faltantes_por_id(video_ids, rutas_por_id, duraciones=None, nombres_por_id=None):
+    if isinstance(video_ids, (str, bytes, bytearray)):
+        raise TypeError("video_ids debe ser colección, no texto")
+    try:
+        lista = list(video_ids)
+    except TypeError:
+        raise TypeError("video_ids debe ser colección iterable") from None
+    for vid in lista:
+        _validar_video_id_cache(vid)
+    if rutas_por_id is None or not isinstance(rutas_por_id, dict):
+        raise TypeError("rutas_por_id debe ser dict")
+    resultados=[]
+    migracion_fallos_total=0
+    migracion_copiados_total=0
+    migracion_detalles=[]
+    for vid in lista:
+        mig_fallos=0
+        mig_res=None
+        if nombres_por_id and vid in nombres_por_id:
+            try:
+                if len(previews_existentes_por_id(vid)) < CANTIDAD_PREVIEWS:
+                    mig_res = migrar_cache_legacy_a_id(vid, nombres_por_id[vid])
+                    mig_fallos = int(mig_res.get("fallos",0)) if isinstance(mig_res, dict) else 0
+                    migracion_fallos_total += mig_fallos
+                    migracion_copiados_total += int(mig_res.get("copiados",0)) if isinstance(mig_res, dict) else 0
+                    if isinstance(mig_res, dict):
+                        migracion_detalles.append({"video_id": vid, "migracion": mig_res})
+            except (OSError, ValueError, TypeError) as exc:
+                print(f"[B8.2] migrar_cache_legacy_a_id previews vid={vid} error: {exc}")
+                mig_fallos = 1
+                migracion_fallos_total += 1
+                migracion_detalles.append({"video_id": vid, "error": str(exc), "estado":"excepcion"})
+        ruta_video = rutas_por_id.get(vid)
+        faltantes = previews_faltantes_por_id(vid)
+        generados=reutilizados=errores=0
+        dur = _duracion_de_duraciones_por_id(duraciones, vid, ruta_video if isinstance(ruta_video,str) else "")
+        if faltantes and isinstance(ruta_video,str) and ruta_video:
+            os.makedirs(ruta_carpeta_miniaturas(), exist_ok=True)
+            base=None
+            if os.path.isfile(ruta_video):
+                base=miniatura_reutilizable_por_id(vid, ruta_video)
+            for indice in faltantes:
+                dest=ruta_preview_id(vid, indice)
+                if os.path.isfile(ruta_video) and os.path.getsize(ruta_video)>0 and generar_preview(ruta_video, dest, indice, dur):
+                    generados+=1
+                elif base is not None and os.path.isfile(base):
+                    try:
+                        shutil.copyfile(base, dest)
+                        reutilizados+=1
+                    except OSError:
+                        errores+=1
+                else:
+                    errores+=1
+        # incorporar fallos de migración como errores observables (sin ocultar)
+        if mig_fallos>0:
+            errores += mig_fallos
+        previews=previews_existentes_por_id(vid)
+        item={"video_id": vid, "ruta": ruta_video, "previews": previews, "generados":generados, "reutilizados":reutilizados, "errores":errores, "completos": len(previews)>=CANTIDAD_PREVIEWS, "migracion_fallos": mig_fallos}
+        if mig_res is not None:
+            item["migracion"] = mig_res
+        resultados.append(item)
+    return {"video_ids": lista, "resultados": resultados, "procesados": len(resultados), "con_previews": sum(1 for r in resultados if r["previews"]), "sin_previews": sum(1 for r in resultados if not r["previews"]), "completos": sum(1 for r in resultados if r["completos"]), "generados": sum(r["generados"] for r in resultados), "reutilizados": sum(r["reutilizados"] for r in resultados), "errores": sum(r["errores"] for r in resultados), "migracion_fallos": migracion_fallos_total, "migracion_copiados": migracion_copiados_total, "migracion_detalles": migracion_detalles}
+
+def migrar_cache_legacy_a_id(video_id, nombre):
+    """B8.2 migra copia no destructiva de caché legacy (por nombre) a namespace por id.
+
+    Copia cada archivo legacy `prefix_*.jpg` y `prefix_preview_*.jpg` a `v<id>_*.jpg`.
+    Idempotente, no borra legacy, valida copia. Fallo en un archivo no afecta otros.
+    Retorna dict con copiados, ya_existentes, fallos.
+    """
+    _validar_video_id_cache(video_id)
+    if not isinstance(nombre, str) or not nombre:
+        raise ValueError("nombre debe ser texto no vacío")
+    carpeta = ruta_carpeta_miniaturas()
+    if not os.path.isdir(carpeta):
+        return {"copiados":0, "ya_existentes":0, "fallos":0, "detalles":[]}
+    pref = _nombre_seguro(os.path.splitext(nombre)[0])
+    detalles=[]
+    copiados=ya_existentes=fallos=0
+    try:
+        archivos = os.listdir(carpeta)
+    except OSError:
+        return {"copiados":0, "ya_existentes":0, "fallos":0, "detalles":[]}
+    for fname in archivos:
+        base, ext = os.path.splitext(fname)
+        if ext.lower() != EXTENSION_MINIATURA:
+            continue
+        # detectar si es legacy de este nombre
+        if not base.startswith(pref + "_"):
+            continue
+        # distinguir preview vs miniatura
+        is_preview = base.startswith(pref + "_preview_")
+        if is_preview:
+            suffix = base[len(pref + "_preview_"):]
+            if not suffix.isdigit():
+                continue
+            try:
+                idx = int(suffix)
+            except ValueError:
+                continue
+            dest_name = f"v{video_id}_preview_{idx:02d}{EXTENSION_MINIATURA}"
+        else:
+            suffix = base[len(pref)+1:]
+            if not suffix.isdigit():
+                continue
+            # evitar confundir preview ya filtrado
+            if "_preview_" in base:
+                continue
+            try:
+                idx = int(suffix)
+            except ValueError:
+                continue
+            dest_name = f"v{video_id}_{idx:02d}{EXTENSION_MINIATURA}"
+        src = os.path.join(carpeta, fname)
+        dst = os.path.join(carpeta, dest_name)
+        if os.path.isfile(dst):
+            ya_existentes+=1
+            detalles.append({"src": fname, "dst": dest_name, "estado":"ya_existe"})
+            continue
+        # B8.2 atomic: copiar a temporal adyacente + os.replace para evitar carrera check+copyfile
+        tmp_dst = None
+        try:
+            fd, tmp_dst = tempfile.mkstemp(suffix=EXTENSION_MINIATURA, prefix=f"tmp_mig_v{video_id}_", dir=carpeta)
+            os.close(fd)
+            try:
+                shutil.copyfile(src, tmp_dst)
+            except OSError as exc:
+                fallos+=1
+                detalles.append({"src": fname, "dst": dest_name, "estado":f"fallo_copy:{exc}"})
+                try:
+                    if tmp_dst and os.path.isfile(tmp_dst):
+                        os.remove(tmp_dst)
+                except OSError:
+                    pass
+                continue
+            # validar temporal
+            try:
+                if not os.path.isfile(tmp_dst) or os.path.getsize(tmp_dst)==0:
+                    fallos+=1
+                    detalles.append({"src": fname, "dst": dest_name, "estado":"fallo_validacion_tmp"})
+                    try:
+                        if tmp_dst and os.path.isfile(tmp_dst):
+                            os.remove(tmp_dst)
+                    except OSError:
+                        pass
+                    continue
+            except OSError as exc:
+                fallos+=1
+                detalles.append({"src": fname, "dst": dest_name, "estado":f"fallo_stat:{exc}"})
+                try:
+                    if tmp_dst and os.path.isfile(tmp_dst):
+                        os.remove(tmp_dst)
+                except OSError:
+                    pass
+                continue
+            # replace atómico: si dst apareció entre tanto (carrera), ya_existentes
+            if os.path.isfile(dst):
+                ya_existentes+=1
+                detalles.append({"src": fname, "dst": dest_name, "estado":"ya_existe_carrera"})
+                try:
+                    if tmp_dst and os.path.isfile(tmp_dst):
+                        os.remove(tmp_dst)
+                except OSError:
+                    pass
+                continue
+            try:
+                os.replace(tmp_dst, dst)
+            except OSError as exc:
+                fallos+=1
+                detalles.append({"src": fname, "dst": dest_name, "estado":f"fallo_replace:{exc}"})
+                try:
+                    if tmp_dst and os.path.isfile(tmp_dst):
+                        os.remove(tmp_dst)
+                except OSError:
+                    pass
+                continue
+            # validar destino final
+            try:
+                if os.path.isfile(dst) and os.path.getsize(dst)>0:
+                    copiados+=1
+                    detalles.append({"src": fname, "dst": dest_name, "estado":"copiado"})
+                else:
+                    fallos+=1
+                    detalles.append({"src": fname, "dst": dest_name, "estado":"fallo_validacion_dst"})
+            except OSError as exc:
+                fallos+=1
+                detalles.append({"src": fname, "dst": dest_name, "estado":f"fallo_validacion2:{exc}"})
+        except OSError as exc:
+            fallos+=1
+            detalles.append({"src": fname, "dst": dest_name, "estado":f"fallo_tmp:{exc}"})
+            try:
+                if tmp_dst and os.path.isfile(tmp_dst):
+                    os.remove(tmp_dst)
+            except OSError:
+                pass
+        except (ValueError, TypeError) as exc:
+            fallos+=1
+            detalles.append({"src": fname, "dst": dest_name, "estado":f"fallo:{exc}"})
+            try:
+                if tmp_dst and os.path.isfile(tmp_dst):
+                    os.remove(tmp_dst)
+            except OSError:
+                pass
+    # limpieza huérfanos: ningún tmp_mig_* debe quedar (defensivo, ya limpiados)
+    return {"copiados": copiados, "ya_existentes": ya_existentes, "fallos": fallos, "detalles": detalles}
+
+def migrar_toda_cache_legacy(ruta_db=None):
+    """Migra toda la caché legacy para todos los videos (batch)."""
+    if ruta_db is None:
+        ruta_db = ruta_biblioteca()
+    if not os.path.isfile(ruta_db):
+        raise FileNotFoundError(f"Base de datos no encontrada: {ruta_db}")
+    conn = conectar_bd(ruta_db)
+    try:
+        filas = conn.execute("SELECT id, nombre FROM videos").fetchall()
+    finally:
+        conn.close()
+    total_copiados=0
+    for vid, nombre in filas:
+        res = migrar_cache_legacy_a_id(vid, nombre)
+        total_copiados+=res["copiados"]
+    return {"videos": len(filas), "copiados": total_copiados}
 
 def insertar_video(conn, carpeta, nombre):
     extension = os.path.splitext(nombre)[1].lower()

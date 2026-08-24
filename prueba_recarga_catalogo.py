@@ -259,7 +259,7 @@ def test_02():
             "TareaTamanosArchivos",
             "TareaFFprobe",
             "TareaGuardarVideos",
-            "TareaMiniaturas",
+            "TareaMiniaturasPorId",
             "TareaActualizarCantidadMiniaturas",
             "TareaSincronizacionCatalogo",
             "TareaLecturaCatalogoPaginada",

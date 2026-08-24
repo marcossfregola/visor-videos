@@ -10,15 +10,19 @@ from escanear_videos import (
     _metadata_reutilizable,
     actualizar_cantidad_miniaturas_batch,
     actualizar_segmento,
+    asegurar_miniaturas,
+    asegurar_miniaturas_por_id,
     asignar_color_marcador,
     asignar_color_segmento,
-    asegurar_miniaturas,
     combinar_registros_con_ffprobe,
     combinar_registros_con_miniaturas,
     combinar_registros_con_tamanos,
     conectar_bd,
     eliminar_marcador,
     eliminar_segmento,
+    generar_previews_faltantes_por_id,
+    migrar_cache_legacy_a_id,
+    previews_existentes_por_id,
     escanear_videos,
     generar_previews_faltantes,
     guardar_marcador,
@@ -230,6 +234,31 @@ class TareaMiniaturas(TareaBase):
         )
 
 
+class TareaMiniaturasPorId(TareaBase):
+    """B8.2 miniaturas por video_id (usa rutas_por_id, no nombres)."""
+    def __init__(self, video_ids, rutas_por_id, duraciones=None, nombres_por_id=None, parent=None):
+        super().__init__(parent)
+        if video_ids is None:
+            video_ids=[]
+        if isinstance(video_ids, (str, bytes)):
+            raise TypeError("video_ids debe ser colección")
+        self._video_ids=list(video_ids)
+        if not isinstance(rutas_por_id, dict):
+            raise TypeError("rutas_por_id debe ser dict")
+        self._rutas_por_id=dict(rutas_por_id)
+        self._duraciones=dict(duraciones) if duraciones is not None else None
+        self._nombres_por_id=dict(nombres_por_id) if isinstance(nombres_por_id, dict) else None
+    @property
+    def video_ids(self): return list(self._video_ids)
+    @property
+    def rutas_por_id(self): return dict(self._rutas_por_id)
+    @property
+    def duraciones(self): return dict(self._duraciones) if self._duraciones else None
+    @property
+    def nombres_por_id(self): return dict(self._nombres_por_id) if self._nombres_por_id else None
+    def _trabajo(self):
+        return asegurar_miniaturas_por_id(self._video_ids, self._rutas_por_id, self.reportar_progreso, self._duraciones, self._nombres_por_id)
+
 class TareaPreviewsProgresivas(TareaBase):
     def __init__(self, videos, carpeta, duraciones=None, parent=None):
         super().__init__(parent)
@@ -257,6 +286,44 @@ class TareaPreviewsProgresivas(TareaBase):
         return generar_previews_faltantes(
             self._videos, self._carpeta, self._duraciones
         )
+
+class TareaPreviewsPorId(TareaBase):
+    def __init__(self, video_ids, rutas_por_id, duraciones=None, nombres_por_id=None, parent=None):
+        super().__init__(parent)
+        if video_ids is None:
+            video_ids=[]
+        self._video_ids=list(video_ids)
+        if not isinstance(rutas_por_id, dict):
+            raise TypeError("rutas_por_id debe ser dict")
+        self._rutas_por_id=dict(rutas_por_id)
+        self._duraciones=dict(duraciones) if duraciones is not None else None
+        self._nombres_por_id=dict(nombres_por_id) if isinstance(nombres_por_id, dict) else None
+    @property
+    def video_ids(self): return list(self._video_ids)
+    @property
+    def rutas_por_id(self): return dict(self._rutas_por_id)
+    @property
+    def nombres_por_id(self): return dict(self._nombres_por_id) if self._nombres_por_id else None
+    def _trabajo(self):
+        return generar_previews_faltantes_por_id(self._video_ids, self._rutas_por_id, self._duraciones, self._nombres_por_id)
+
+class TareaMigrarCacheLegacy(TareaBase):
+    def __init__(self, video_ids, nombres_por_id, ruta_db=None, parent=None):
+        super().__init__(parent)
+        self._video_ids=list(video_ids)
+        self._nombres_por_id=dict(nombres_por_id)
+        self._ruta_db=ruta_db
+    def _trabajo(self):
+        total=0; copiados=0; detalles=[]
+        for vid in self._video_ids:
+            nombre=self._nombres_por_id.get(vid)
+            if not nombre: continue
+            res=migrar_cache_legacy_a_id(vid, nombre)
+            copiados+=res["copiados"]
+            total+=1
+            detalles.append({"video_id": vid, "nombre": nombre, "res": res})
+            self.reportar_progreso(total, len(self._video_ids))
+        return {"procesados": len(self._video_ids), "copiados": copiados, "detalles": detalles}
 
 
 class TareaLecturaCatalogo(TareaBase):

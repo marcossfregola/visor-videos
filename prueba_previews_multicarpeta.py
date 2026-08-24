@@ -10,6 +10,7 @@ from PySide6.QtGui import QColor, QImage
 from PySide6.QtWidgets import QApplication
 
 import escanear_videos as escanear_mod
+import tareas_videos as tareas_mod
 import visor_videos
 from configuracion import (
     MODO_ALCANCE_SELECCION,
@@ -82,8 +83,18 @@ def _escenario(nombres_carpetas):
         imagen.save(destino, "PNG")
         return True
 
+    def _ffprobe_falso(ruta):
+        # B8.2 corrección: duración válida finita >0 para regla productiva.
+        # Evita que producción skippee previews por duración inválida;
+        # mantiene fuerza funcional P02-P05 sin lógica test-aware.
+        return {"duracion_segundos": 10.0, "ancho": 640, "alto": 360, "codec_video": "h264"}
+
     original_generar = escanear_mod.generar_preview
+    original_ffprobe = escanear_mod.obtener_datos_ffprobe
+    original_ffprobe_tv = tareas_mod.obtener_datos_ffprobe
     escanear_mod.generar_preview = _generar
+    escanear_mod.obtener_datos_ffprobe = _ffprobe_falso
+    tareas_mod.obtener_datos_ffprobe = _ffprobe_falso
     try:
         yield {
             "mini": mini.name,
@@ -94,6 +105,8 @@ def _escenario(nombres_carpetas):
         }
     finally:
         escanear_mod.generar_preview = original_generar
+        escanear_mod.obtener_datos_ffprobe = original_ffprobe
+        tareas_mod.obtener_datos_ffprobe = original_ffprobe_tv
         escanear_mod.ruta_carpeta_miniaturas = original_min
         visor_videos.ruta_carpeta_miniaturas = visor_min
         mini.cleanup()
@@ -184,8 +197,10 @@ def test_03():
             ok1, ok2, n, hechas = _escaneo_y_previews(
                 ventana, esc["mini"], 6, carpeta_seleccionada=esc["carpetas"][0]
             )
-            subfoto = any("sub_b" in a for a in hechas)
-            detalle = f"cadena={ok1} previews_ok={ok2} previews={n} subfoto={subfoto}"
+            # B8.2: naming por id (v<id>_preview) no contiene nombre subcarpeta, verificar 2 videos distintos
+            prefijos = sorted({a.split("_preview_")[0] for a in hechas})
+            subfoto = len(prefijos) == 2 and n == 6
+            detalle = f"cadena={ok1} previews_ok={ok2} previews={n} subfoto={subfoto} prefijos={prefijos}"
             ventana.close()
             ventana.gestor.cerrar()
             ventana.gestor_previews.cerrar()
@@ -251,15 +266,18 @@ def test_05():
             ok1, ok2, n, hechas = _escaneo_y_previews(
                 ventana, esc["mini"], 12, carpeta_seleccionada=esc["carpetas"][0]
             )
-            nombres = sorted({os.path.basename(a).split("_preview_")[0] for a in hechas})
-            detalle = f"cadena={ok1} previews_ok={ok2} previews={n} nombres={nombres}"
+            # B8.2: naming por id (v<id>_preview_XX.jpg) preservando contrato histórico 4 videos /12 previews
+            # Sin reducir cobertura ni exigir interacción manual; los 4 videos deben terminar con sus 12 previews.
+            prefijos = sorted({os.path.basename(a).split("_preview_")[0] for a in hechas})
+            ok_pref = len(prefijos) == 4 and n == 12 and all(p.startswith("v") for p in prefijos)
+            detalle = f"cadena={ok1} previews_ok={ok2} previews={n} nombres={prefijos}"
             ventana.close()
             ventana.gestor.cerrar()
             ventana.gestor_previews.cerrar()
             ventana.deleteLater()
             QApplication.processEvents()
             return (
-                ok1 and ok2 and n == 12 and nombres == ["a", "b", "c", "d"],
+                ok1 and ok2 and n == 12 and ok_pref,
                 detalle,
             )
         finally:

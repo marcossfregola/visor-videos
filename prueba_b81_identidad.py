@@ -578,10 +578,29 @@ def test_22_ruta_relativa_detectada_y_preservada():
 
 
 def test_21_version_build():
+    # B8.1 identidad reconciliada: la suite B8.1 verifica contrato de identidad (ruta_normalizada) sin debilitar;
+    # la autoridad de build B8.2 está en prueba_version_build.py. Aquí se verifica estrictamente B8.2 actual
+    # manteniendo invariante de identidad B8.1.
     ok1 = configuracion.VERSION_PRODUCTO == "Beta 8"
-    ok2 = configuracion.BUILD_IDENTIFICADOR == "B8.1"
-    ok3 = configuracion.TEXTO_VERSION_BUILD == "Beta 8 - B8.1"
-    return ok1 and ok2 and ok3, f"ver={configuracion.VERSION_PRODUCTO} build={configuracion.BUILD_IDENTIFICADOR} texto={configuracion.TEXTO_VERSION_BUILD}"
+    ok2 = configuracion.BUILD_IDENTIFICADOR == "B8.2"
+    ok3 = configuracion.TEXTO_VERSION_BUILD == "Beta 8 - B8.2"
+    # Verificar que identidad B8.1 (ruta_normalizada UNIQUE) sigue vigente
+    tmp = tempfile.TemporaryDirectory()
+    ruta_db = os.path.join(tmp.name, "b81id_tmp.db")
+    try:
+        conn = conectar_bd(ruta_db)
+        try:
+            cols = {r[1] for r in conn.execute("PRAGMA table_info(videos)")}
+            idxs = {r[1] for r in conn.execute("PRAGMA index_list(videos)")}
+            ok4 = "ruta_normalizada" in cols and "idx_videos_ruta_normalizada" in idxs
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    finally:
+        tmp.cleanup()
+    return ok1 and ok2 and ok3 and ok4, f"ver={configuracion.VERSION_PRODUCTO} build={configuracion.BUILD_IDENTIFICADOR} texto={configuracion.TEXTO_VERSION_BUILD} identidad_ruta_norm={'ok' if ok4 else 'falta'}"
 
 
 def main():

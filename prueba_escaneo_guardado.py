@@ -312,7 +312,7 @@ def test_06():
                 "TareaTamanosArchivos",
                 "TareaFFprobe",
                 "TareaGuardarVideos",
-                "TareaMiniaturas",
+                "TareaMiniaturasPorId",
                 "TareaActualizarCantidadMiniaturas",
                 "TareaSincronizacionCatalogo",
                 "TareaLecturaCatalogoPaginada",
@@ -451,7 +451,7 @@ def test_09():
                 "TareaTamanosArchivos",
                 "TareaFFprobe",
                 "TareaGuardarVideos",
-                "TareaMiniaturas",
+                "TareaMiniaturasPorId",
                 "TareaActualizarCantidadMiniaturas",
                 "TareaSincronizacionCatalogo",
                 "TareaLecturaCatalogoPaginada",
@@ -540,6 +540,8 @@ def test_11():
         originales = {
             "asegurar_miniatura": escanear_mod.asegurar_miniatura,
             "contar_miniaturas": escanear_mod.contar_miniaturas,
+            "asegurar_miniatura_por_id": escanear_mod.asegurar_miniatura_por_id,
+            "contar_miniaturas_por_id": escanear_mod.contar_miniaturas_por_id,
         }
 
         def _asegurar(video, ruta_video, duracion_segundos=None):
@@ -552,8 +554,20 @@ def test_11():
             info["contar_principal"] = QThread.isMainThread()
             return 1
 
+        def _asegurar_id(video_id, ruta_video, duracion_segundos=None):
+            info["asegurar"] += 1
+            info["asegurar_principal"] = QThread.isMainThread()
+            return 1
+
+        def _contar_id(video_id):
+            info["contar"] += 1
+            info["contar_principal"] = QThread.isMainThread()
+            return 1
+
         escanear_mod.asegurar_miniatura = _asegurar
         escanear_mod.contar_miniaturas = _contar
+        escanear_mod.asegurar_miniatura_por_id = _asegurar_id
+        escanear_mod.contar_miniaturas_por_id = _contar_id
         try:
             with _dialogo_falso(carpeta.name):
                 ventana.seleccionar_carpeta()
@@ -899,17 +913,27 @@ def test_18():
                 "SELECT nombre, duracion_segundos, ancho, alto, codec_video, "
                 "cantidad_miniaturas FROM videos ORDER BY nombre"
             ).fetchall()
+            # B8.2: obtener video_id para verificar nombre caché por id
+            try:
+                vid_real = conn.execute(
+                    "SELECT id FROM videos WHERE nombre='video_real.mp4'"
+                ).fetchone()
+                vid_real = vid_real[0] if vid_real else None
+            except Exception:
+                vid_real = None
         finally:
             conn.close()
         ventana.close()
         _limpiar(ventana)
         por_nombre = {f[0]: f[1:] for f in filas}
-        real = por_nombre["video_real.mp4"]
-        vacio1 = por_nombre["vacio1.mp4"]
-        vacio2 = por_nombre["vacio2.avi"]
+        real = por_nombre.get("video_real.mp4", (None, None, None, None, None))
+        vacio1 = por_nombre.get("vacio1.mp4", (None, None, None, None, None))
+        vacio2 = por_nombre.get("vacio2.avi", (None, None, None, None, None))
         resumen_esperado = texto_resumen_sincronizacion(
             {"incorporados": 0, "eliminados": 0, "candidatos_restantes": 0}
         )
+        # B8.2 adaptación: cache ahora es v<id>_01.jpg; conservar fuerza de invariantes originales
+        esperada = f"v{vid_real}_01.jpg" if isinstance(vid_real, int) else "v*_01.jpg"
         ok = (
             guardado == 3
             and estado == resumen_esperado
@@ -917,7 +941,7 @@ def test_18():
             and real == (5.0, 640, 360, "h264", 1)
             and vacio1 == (None, None, None, None, 0)
             and vacio2 == (None, None, None, None, 0)
-            and generadas == ["video_real_01.jpg"]
+            and generadas == [esperada]
         )
         return (
             ok,
@@ -1213,12 +1237,22 @@ def test_23():
     try:
         ventana = VisorVideos(ruta_db=ruta_db)
         _esperar(lambda v=ventana: v._carga_completada and v.gestor.hilo is None)
+        # B8.2: la pipeline usa TareaMiniaturasPorId -> asegurar_miniaturas_por_id
         orig = tv.asegurar_miniaturas
+        orig_por_id = escanear_mod.asegurar_miniaturas_por_id
+        orig_tv_por_id = getattr(tv, "asegurar_miniaturas_por_id", None)
 
-        def _falla(videos, carpeta_escaneada):
+        def _falla(*a, **k):
             raise RuntimeError("fallo controlado de miniaturas")
 
+        def _falla_por_id(*a, **k):
+            raise RuntimeError("fallo controlado de miniaturas por id")
+
         tv.asegurar_miniaturas = _falla
+        escanear_mod.asegurar_miniaturas = _falla
+        escanear_mod.asegurar_miniaturas_por_id = _falla_por_id
+        if orig_tv_por_id is not None:
+            tv.asegurar_miniaturas_por_id = _falla_por_id
         try:
             with _dialogo_falso(carpeta.name):
                 ventana.seleccionar_carpeta()
@@ -1226,6 +1260,10 @@ def test_23():
             _esperar(lambda v=ventana: _cadena_terminada(v))
         finally:
             tv.asegurar_miniaturas = orig
+            escanear_mod.asegurar_miniaturas = orig
+            escanear_mod.asegurar_miniaturas_por_id = orig_por_id
+            if orig_tv_por_id is not None:
+                tv.asegurar_miniaturas_por_id = orig_tv_por_id
         estado_error = ventana.estado_escaneo.text()
         guardado_error = ventana.registros_guardados
         gestor_error = ventana.gestor.estado

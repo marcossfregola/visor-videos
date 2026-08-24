@@ -1,3 +1,4 @@
+import math
 import escanear_videos
 import exploracion_cache
 import nombres
@@ -82,6 +83,8 @@ from escanear_videos import (
     color_rgb,
     configurar_cantidad_previews,
     configurar_escaneo_recursivo,
+    ruta_miniatura_id,
+    ruta_preview_id,
 )
 from rutas import (
     carpeta_padre,
@@ -143,9 +146,12 @@ from tareas_videos import (
     TareaListarSegmentos,
     TareaListarSegmentosVarios,
     TareaLoteOperaciones,
+    TareaMigrarCacheLegacy,
     TareaMiniaturas,
+    TareaMiniaturasPorId,
     TareaMoverVideo,
     TareaPrevalidarDrop,
+    TareaPreviewsPorId,
     TareaPreviewsProgresivas,
     TareaRenombrarMasivo,
     TareaRenombrarVideo,
@@ -159,6 +165,7 @@ from tareas_videos import (
     conectar_bd,
     guardar_videos,
     previews_existentes,
+    previews_existentes_por_id,
 )
 
 
@@ -395,6 +402,7 @@ def _pixmap_acotado(pixmap):
 
 
 def miniatura_principal(nombre):
+    """Legacy B8.1: por nombre (conservado solo para migración, no usar en flujo normal)."""
     prefijo = _nombre_seguro(os.path.splitext(nombre)[0])
     carpeta = ruta_carpeta_miniaturas()
     if os.path.isdir(carpeta):
@@ -413,9 +421,25 @@ def miniatura_principal(nombre):
             return ruta
     return None
 
+def miniatura_principal_por_id(video_id):
+    """B8.2: ruta determinista por video_id sin I/O pesado en UI.
+
+    Devuelve la ruta canónica v<id>_01.jpg sin recorrer filesystem ni copiar.
+    La migración legacy y la verificación de vigencia ocurren en backend/tareas.
+    La UI solo intenta cargar el QPixmap; si no existe se muestra 'Sin miniatura'.
+    """
+    if not isinstance(video_id, int) or isinstance(video_id, bool) or video_id <= 0:
+        return None
+    try:
+        return ruta_miniatura_id(video_id, 1)
+    except (ValueError, TypeError):
+        return None
 
 def previews_de(nombre):
     return previews_existentes(nombre)
+
+def previews_de_por_id(video_id):
+    return previews_existentes_por_id(video_id)
 
 
 ESTILO_SELECCIONADA = "Tarjeta { border: 3px solid #2196F3; }"
@@ -1346,6 +1370,7 @@ class Tarjeta(QFrame):
         self._miniatura_original = None
         self._recuadro_sin_miniatura = None
         self._previews_completas = False
+        self._previews_cache = []
 
         contenedor_imagenes = QHBoxLayout()
         contenedor_imagenes.setContentsMargins(0, 0, 0, 0)
@@ -1353,10 +1378,27 @@ class Tarjeta(QFrame):
         self._contenedor_imagenes = contenedor_imagenes
 
         ancho, alto = dimensiones_miniatura()
-        ruta_miniatura = miniatura_principal(nombre)
+        ruta_miniatura = None
+        # B8.2: resolución determinista sin I/O pesado ni migración en UI (backend/tareas)
+        if isinstance(self._video_id, int) and self._video_id > 0 and not isinstance(self._video_id, bool):
+            ruta_miniatura = miniatura_principal_por_id(self._video_id)
+        else:
+            ruta_miniatura = miniatura_principal(nombre)
+        # Intentar cargar; si QPixmap es nulo (archivo no existe aún) mostrar recuadro
+        pixmap_cargado = None
         if ruta_miniatura is not None:
+            try:
+                _pix = QPixmap(ruta_miniatura)
+                if not _pix.isNull():
+                    pixmap_cargado = _pixmap_acotado(_pix)
+                else:
+                    ruta_miniatura = None
+            except (RuntimeError, ValueError, TypeError):
+                ruta_miniatura = None
+                pixmap_cargado = None
+        if ruta_miniatura is not None and pixmap_cargado is not None and not pixmap_cargado.isNull():
             imagen = QLabel()
-            pixmap = _pixmap_acotado(QPixmap(ruta_miniatura))
+            pixmap = pixmap_cargado
             imagen.setPixmap(
                 pixmap.scaled(
                     ancho,
@@ -1860,6 +1902,11 @@ class Tarjeta(QFrame):
             return False
         if isinstance(rutas, str):
             rutas = [rutas]
+        # B8.2: mantener caché en memoria para ajustar_previews sin I/O
+        try:
+            self._previews_cache = list(rutas) if isinstance(rutas, (list, tuple)) else [rutas]
+        except (TypeError, ValueError):
+            self._previews_cache = []
         actualizado = False
         for indice in range(min(len(self._etiquetas_previews), len(rutas))):
             if self._colocar_preview(indice, rutas[indice]):
@@ -1878,6 +1925,62 @@ class Tarjeta(QFrame):
             )
         return actualizado
 
+    def actualizar_miniatura_por_id(self):
+        """B8.2: refresca miniatura principal desde v<id>_01.jpg tras migración background.
+
+        No realiza recorrido de carpeta ni duplicado de archivos ni acceso a base
+        ni generación de miniaturas. Solo intenta cargar el QPixmap canónico
+        determinado por video_id. Si no existe o es nulo, no altera la tarjeta.
+        Si había 'Sin miniatura', lo reemplaza por la imagen sin recargar catálogo
+        ni perder selección/scroll. Retorna True si hubo cambio visible.
+        """
+        if not isinstance(self._video_id, int) or isinstance(self._video_id, bool) or self._video_id <= 0:
+            return False
+        ruta = miniatura_principal_por_id(self._video_id)
+        if not ruta:
+            return False
+        try:
+            pix = QPixmap(ruta)
+        except (RuntimeError, ValueError, TypeError):
+            return False
+        if pix.isNull():
+            return False
+        pix = _pixmap_acotado(pix)
+        ancho, alto = dimensiones_miniatura()
+        if self._imagen_miniatura is not None and self._miniatura_original is not None:
+            # Ya tenía imagen: actualizar pixmap si es distinto
+            try:
+                if self._miniatura_original.cacheKey() == pix.cacheKey():
+                    return False
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                pass
+            self._imagen_miniatura.setPixmap(pix.scaled(ancho, alto, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            self._imagen_miniatura.setFixedHeight(alto)
+            self._miniatura_original = pix
+            return True
+        if self._recuadro_sin_miniatura is not None:
+            try:
+                self._contenedor_imagenes.removeWidget(self._recuadro_sin_miniatura)
+                self._recuadro_sin_miniatura.hide()
+                self._recuadro_sin_miniatura.deleteLater()
+            except (RuntimeError, AttributeError, TypeError):
+                pass
+            self._recuadro_sin_miniatura = None
+            imagen = QLabel()
+            imagen.setPixmap(pix.scaled(ancho, alto, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            imagen.setFixedHeight(alto)
+            imagen.setAlignment(Qt.AlignCenter)
+            imagen.installEventFilter(self)
+            self._imagen_miniatura = imagen
+            self._miniatura_original = pix
+            # Insertar al inicio (antes de previews)
+            try:
+                self._contenedor_imagenes.insertWidget(0, imagen)
+            except (RuntimeError, AttributeError, TypeError):
+                self._contenedor_imagenes.addWidget(imagen)
+            return True
+        return False
+
     def _asegurar_slots_previews(self, cantidad):
         while len(self._etiquetas_previews) < cantidad:
             etiqueta = PreviewConTiempo()
@@ -1890,10 +1993,24 @@ class Tarjeta(QFrame):
 
     def ajustar_previews(self, cantidad):
         self._asegurar_slots_previews(cantidad)
-        existentes = previews_de(self._nombre) or []
+        # B8.2: sin I/O en UI — usa cache en memoria poblada por _aplicar_previews/migracion.
+        # previews_de_por_id haria stats por indice en hilo UI; se evita para no bloquear.
+        # Generacion de faltantes sigue por GestorTareas/TareaPreviewsPorId.
+        existentes = []
+        try:
+            cache = getattr(self, "_previews_cache", None)
+            if isinstance(cache, (list, tuple)) and cache:
+                existentes = list(cache)
+            else:
+                # sin cache previa: mostrar placeholders (no FS ni DB ni proceso)
+                existentes = []
+        except (AttributeError, TypeError, ValueError) as exc:
+            print(f"[B8.2] ajustar_previews cache error: {exc}")
+            existentes = []
         for i, etiqueta in enumerate(self._etiquetas_previews):
             etiqueta.setVisible(i < cantidad)
-        self.actualizar_previews(existentes[:cantidad])
+        # Mostrar solo los ya conocidos; si faltan, quedan placeholders "Generando preview…"
+        self.actualizar_previews(existentes[:cantidad] if existentes else [])
 
     def aplicar_tamano(self):
         ancho, alto = dimensiones_miniatura()
@@ -2886,6 +3003,9 @@ class VisorVideos(QMainWindow):
         self.videos_detectados = None
         self.registros_guardados = None
         self._guardado_por_ruta_normalizada = None
+        self._guardado_rutas_por_id = None
+        self._guardado_nombres_por_id = None
+        self._registros_para_guardar = None
         self._sincronizacion_pendiente = False
         self.tarea_sincronizacion = None
         self.resultado_sincronizacion = None
@@ -3334,6 +3454,16 @@ class VisorVideos(QMainWindow):
         self._cola_resumen = []
         self._resumen_op_actual = None
         self._resumen_ids_en_vuelo = set()
+
+        # B8.2 migración legacy -> id en background (batch por página, no por tarjeta, sin FS en UI)
+        self.gestor_migracion = GestorTareas(self)
+        self.gestor_migracion.tarea_resultado.connect(self._al_resultado_migracion)
+        self.gestor_migracion.tarea_error.connect(self._al_error_migracion)
+        self.gestor_migracion.tarea_finalizada.connect(self._al_migracion_finalizada)
+        self._cola_migracion = []
+        self._migracion_op_actual = None
+        self._migracion_ids_en_vuelo = set()
+        self._previews_diferidas = set()
 
         # B6.7 exportación segura de un segmento (sin SQLite directo desde UI)
         self.gestor_export = GestorTareas(self)
@@ -3812,15 +3942,22 @@ class VisorVideos(QMainWindow):
             incluir_sub = bool(self._recursivo_actual())
         except Exception:
             incluir_sub = False
-        # Si modo es seleccion_personalizada y carpeta es carpeta_seleccionada única, pero el alcance real es lista de carpetas seleccionadas
-        # Para coherencia, si _modo_alcance == seleccion y hay lista efectiva, usar esa lista
+        # B8.2 fix multicarpeta: en modo SELECCION el catálogo visible debe ser la unión de carpetas seleccionadas,
+        # no solo carpeta_seleccionada única. Esto restaura contrato histórico P05 (4 videos /12 previews).
+        # Sin perder paginación: sigue LIMIT/OFFSET, solo cambia WHERE a OR de carpetas.
         try:
             if getattr(self, "_modo_alcance", None) == MODO_ALCANCE_SELECCION:
-                # En modo selección, la carpeta efectiva es la lista de selección, no solo la carpeta actual
-                # Pero para la vista principal (tarjetas) seguimos filtrando por carpeta_seleccionada si existe;
-                # la lista se usa en escaneo. Para navegación, si la lista existe y carpeta_seleccionada está dentro, recursivo ya cubre.
-                # No sobrescribir carpeta_param aquí para no cambiar semántica inmediata.
-                pass
+                sel = None
+                try:
+                    if hasattr(self, "seleccion_carpetas") and self.seleccion_carpetas is not None:
+                        sel = self.seleccion_carpetas.obtener_seleccion()
+                except (AttributeError, TypeError, RuntimeError):
+                    sel = None
+                if isinstance(sel, (set, list, tuple)) and sel:
+                    validas_sel = [c for c in sel if isinstance(c, str) and c.strip() and os.path.isdir(c)]
+                    if validas_sel:
+                        # Usar lista completa como filtro OR, respetando incluir_sub actual (recursivo para SELECCION)
+                        carpeta_param = validas_sel
         except Exception:
             pass
         return TareaLecturaCatalogoPaginada(
@@ -4479,6 +4616,11 @@ class VisorVideos(QMainWindow):
     def _tarjeta_por_nombre(self, nombre):
         for candidato, tarjeta in self.tarjetas:
             if candidato == nombre:
+                return tarjeta
+
+    def _tarjeta_por_id(self, video_id):
+        for _, tarjeta in self.tarjetas:
+            if getattr(tarjeta, "_video_id", None) == video_id:
                 return tarjeta
         return None
 
@@ -8397,6 +8539,9 @@ class VisorVideos(QMainWindow):
         self._carpeta_sincronizacion = carpeta
         self.registros_guardados = None
         self._guardado_por_ruta_normalizada = None
+        self._guardado_rutas_por_id = None
+        self._guardado_nombres_por_id = None
+        self._registros_para_guardar = None
         self.resultado_sincronizacion = None
         self.tarea_escaneo = None
         self.tarea_tamanos = None
@@ -8442,6 +8587,9 @@ class VisorVideos(QMainWindow):
         self.tarea_actualizar_miniaturas = None
         self.tarea_sincronizacion = None
         self._guardado_por_ruta_normalizada = None
+        self._guardado_rutas_por_id = None
+        self._guardado_nombres_por_id = None
+        self._registros_para_guardar = None
         self.resultado_actualizar_miniaturas = None
         self.tarea_recarga_catalogo = None
         self.tarea_pagina = None
@@ -8572,15 +8720,21 @@ class VisorVideos(QMainWindow):
         self._actualizar_botones_carpeta()
 
     def _iniciar_miniaturas(self):
-        if self.tarea_escaneo is None or self.videos_detectados is None:
+        # B8.2: miniaturas por video_id (requiere guardado previo)
+        if self._guardado_ids is None or not self._guardado_ids:
+            self._limpiar_cadena()
+            self._actualizar_botones_carpeta()
+            return
+        if self._guardado_rutas_por_id is None or self._guardado_nombres_por_id is None:
             self._limpiar_cadena()
             self._actualizar_botones_carpeta()
             return
         duraciones = self._duraciones_desde_ffprobe()
-        tarea = TareaMiniaturas(
-            self.videos_detectados,
-            self.tarea_escaneo.carpeta,
+        tarea = TareaMiniaturasPorId(
+            self._guardado_ids,
+            self._guardado_rutas_por_id,
             duraciones=duraciones,
+            nombres_por_id=self._guardado_nombres_por_id,
         )
         if not self.gestor.iniciar(tarea):
             self._limpiar_cadena()
@@ -8619,6 +8773,7 @@ class VisorVideos(QMainWindow):
 
     def _iniciar_guardado(self):
         # B8.1: guardado antes de miniaturas; solo ffprobe + tamanos, no miniaturas
+        # B8.2: guarda registros para mapear id->ruta/nombre para caché por id
         if (
             self.tarea_escaneo is None
             or self.videos_detectados is None
@@ -8635,6 +8790,7 @@ class VisorVideos(QMainWindow):
         registros = combinar_registros_con_tamanos(
             registros, self.resultado_tamanos
         )
+        self._registros_para_guardar = list(registros)
         tarea = TareaGuardarVideos(registros, self._ruta_db)
         if not self.gestor.iniciar(tarea):
             self._limpiar_cadena()
@@ -9002,10 +9158,20 @@ class VisorVideos(QMainWindow):
     def _iniciar_previews(self):
         if not self._carga_completada:
             return
-        nombres = [nombre for nombre, _ in self.tarjetas]
-        if not nombres:
-            return
-        self._encolar_previews(nombres)
+        # B8.2: usar video_id para previews
+        ids = []
+        for _, tarjeta in self.tarjetas:
+            vid = getattr(tarjeta, "_video_id", None)
+            if isinstance(vid, int) and not isinstance(vid, bool) and vid>0:
+                ids.append(vid)
+        if ids:
+            self._encolar_previews_por_id(ids)
+        else:
+            # fallback legacy por nombre (solo para tests antiguos)
+            nombres = [nombre for nombre, _ in self.tarjetas]
+            if not nombres:
+                return
+            self._encolar_previews(nombres)
         self._al_previews_finalizada()
 
     def _encolar_previews(self, nombres):
@@ -9023,6 +9189,60 @@ class VisorVideos(QMainWindow):
                 continue
             self._cola_previews.append((nombre, carpeta))
 
+    def _encolar_previews_por_id(self, video_ids):
+        # B8.2 cola por video_id, evita duplicados; secuenciada tras migración legacy (B8.2 carrera)
+        # B8.2 007 diferidos: si la solicitud llega mientras migra, no se pierde: se registra en
+        # _previews_diferidas y se mantiene en _cola_previews para que esperas no retornen prematuramente;
+        # _siguiente_lote_previews filtrará el inicio hasta que vuelo se libere, evitando carrera.
+        if not hasattr(self, "_previews_diferidas"):
+            self._previews_diferidas = set()
+        pendientes = set()
+        for item in self._cola_previews:
+            try:
+                pendientes.add(item[0])
+            except (AttributeError, TypeError, IndexError, ValueError):
+                continue
+        # evitar doble dispatch: considerar diferidos y tarea activa
+        pendientes |= self._previews_diferidas
+        try:
+            if getattr(self, "gestor_previews", None) is not None and self.gestor_previews.activo and getattr(self, "tarea_previews", None) is not None:
+                tarea = self.tarea_previews
+                vids_act = getattr(tarea, "video_ids", None)
+                if vids_act is None:
+                    vids_act = getattr(tarea, "_video_ids", None)
+                if isinstance(vids_act, (list, tuple, set)):
+                    for v in vids_act:
+                        if isinstance(v, int) and not isinstance(v, bool):
+                            pendientes.add(v)
+        except (AttributeError, TypeError, RuntimeError):
+            pass
+        for vid in video_ids:
+            if not isinstance(vid, int) or isinstance(vid, bool) or vid <= 0:
+                continue
+            if vid in pendientes:
+                continue
+            tarjeta_tmp = self._tarjeta_por_id(vid)
+            if tarjeta_tmp is None:
+                continue
+            # B8.2: no encolar generación automática de previews cuando no existe duración válida y finita >0.
+            # Regla productiva coherente: evita gestor/hilo efímero y FFmpeg para videos sin duración usable.
+            dur_tmp = getattr(tarjeta_tmp, "_duracion", None)
+            try:
+                dur_val = float(dur_tmp) if isinstance(dur_tmp, (int,float)) and not isinstance(dur_tmp,bool) else None
+                if dur_val is None or not math.isfinite(dur_val) or dur_val <= 0:
+                    continue
+            except (TypeError, ValueError):
+                continue
+            if getattr(tarjeta_tmp, "_previews_completas", False):
+                continue
+            # B8.2 carrera: si aún migra, registrar diferido (deduplicado) y mantener en cola para no perder
+            if hasattr(self, "_migracion_ids_en_vuelo") and vid in self._migracion_ids_en_vuelo:
+                self._previews_diferidas.add(vid)
+                carpeta_tmp = getattr(tarjeta_tmp, "_carpeta_video", "") if tarjeta_tmp is not None else ""
+                self._cola_previews.append((vid, carpeta_tmp))
+                continue
+            self._cola_previews.append((vid, getattr(tarjeta_tmp, "_carpeta_video", "")))
+
     def _al_previews_finalizada(self):
         if self.gestor_previews.estado != Estado.INACTIVO:
             return
@@ -9030,6 +9250,54 @@ class VisorVideos(QMainWindow):
 
     def _siguiente_lote_previews(self):
         if self.gestor_previews.activo:
+            return
+        # Detectar si la cola es por id (primer elemento es int) o por nombre
+        if self._cola_previews and isinstance(self._cola_previews[0][0], int):
+            # B8.2 por id — secuenciación diferida: si el lote aún migra, no iniciar (mantener en cola)
+            lote_ids = []
+            restantes = []
+            for item in self._cola_previews:
+                vid, _ = item
+                if len(lote_ids) < TAMANIO_LOTE_PREVIEWS:
+                    lote_ids.append(vid)
+                else:
+                    restantes.append(item)
+            # Si algún vid del lote aún está en vuelo, reencolar al inicio y esperar a migración
+            if any(hasattr(self, "_migracion_ids_en_vuelo") and vid in self._migracion_ids_en_vuelo for vid in lote_ids):
+                # Mantener orden: lote al frente + restantes (no consumir)
+                # No limpiar diferidos aún; se drenan al iniciar
+                return
+            self._cola_previews = restantes
+            if not lote_ids:
+                return
+            # Drenar diferidos para los vids que ahora inician (evita doble dispatch)
+            if hasattr(self, "_previews_diferidas"):
+                for vid in lote_ids:
+                    self._previews_diferidas.discard(vid)
+            # construir rutas_por_id, duraciones y nombres_por_id por id (B8.2: propagación real sin SQLite/FS pesado UI)
+            rutas_por_id = {}
+            duraciones = {}
+            nombres_por_id = {}
+            for vid in lote_ids:
+                tarjeta = self._tarjeta_por_id(vid)
+                if tarjeta is None:
+                    continue
+                nombre = getattr(tarjeta, "_nombre", None)
+                carpeta = getattr(tarjeta, "_carpeta_video", "")
+                ruta_video = os.path.join(carpeta, nombre) if isinstance(nombre, str) and isinstance(carpeta, str) else ""
+                rutas_por_id[vid] = ruta_video
+                if isinstance(nombre, str) and nombre:
+                    nombres_por_id[vid] = nombre
+                dur = getattr(tarjeta, "_duracion", None)
+                if isinstance(dur, (int, float)) and not isinstance(dur, bool):
+                    duraciones[vid] = dur
+                    if ruta_video:
+                        duraciones[ruta_video] = dur
+            tarea = TareaPreviewsPorId(lote_ids, rutas_por_id, duraciones=duraciones, nombres_por_id=nombres_por_id)
+            if not self.gestor_previews.iniciar(tarea):
+                self._cola_previews = restantes + [(vid, "") for vid in lote_ids]
+                return
+            self.tarea_previews = tarea
             return
         carpeta_lote = None
         lote = []
@@ -9073,13 +9341,23 @@ class VisorVideos(QMainWindow):
 
     def _aplicar_previews(self, resultado):
         for item in resultado.get("resultados", []):
+            # B8.2: soporta tanto por video_id como por nombre
+            vid = item.get("video_id")
             nombre = item.get("nombre")
             rutas = item.get("previews")
             ruta_video = item.get("ruta")
             if not rutas:
                 continue
-            tarjeta = self._tarjeta_por_nombre(nombre)
+            tarjeta = None
+            if isinstance(vid, int):
+                tarjeta = self._tarjeta_por_id(vid)
+            if tarjeta is None and isinstance(nombre, str):
+                tarjeta = self._tarjeta_por_nombre(nombre)
             if tarjeta is None:
+                continue
+            # validación de carpeta solo si ambos son strs y no vacíos (para evitar falso negativo con id)
+            if isinstance(vid, int):
+                tarjeta.actualizar_previews(rutas)
                 continue
             carpeta_esperada = getattr(tarjeta, "_carpeta_video", None)
             if (
@@ -9175,6 +9453,11 @@ class VisorVideos(QMainWindow):
             self.visibles.append(fila[0])
             self.cuadricula.addWidget(tarjeta, posicion, 0)
         self.filtrar(self.busqueda.text())
+        # B8.2: migración legacy batch para tarjetas agregadas por paginación
+        try:
+            self._encolar_migracion_legacy(filas)
+        except Exception as exc:
+            print(f"[B8.2] _agregar_tarjetas migracion error: {exc}")
 
     def _al_resultado_guardado(self, resultado):
         self._guardado_pendiente = False
@@ -9191,12 +9474,27 @@ class VisorVideos(QMainWindow):
             self._guardado_ids = list(resultado.get("ids") or resultado.get("video_ids") or [])
         except Exception:
             self._guardado_ids = []
+        # B8.2: mapear id -> ruta/nombre para caché por id (sin silenciar genérico)
+        try:
+            self._guardado_rutas_por_id = {}
+            self._guardado_nombres_por_id = {}
+            ids = self._guardado_ids
+            regs = self._registros_para_guardar or []
+            for idx, vid in enumerate(ids):
+                if idx < len(regs):
+                    self._guardado_rutas_por_id[vid] = regs[idx].get("ruta")
+                    self._guardado_nombres_por_id[vid] = regs[idx].get("nombre")
+        except (TypeError, ValueError, AttributeError, IndexError) as exc:
+            print(f"[B8.2] _al_resultado_guardado mapping error: {exc}")
+            self._guardado_rutas_por_id = {}
+            self._guardado_nombres_por_id = {}
         self._miniaturas_pendiente = True
         self._actualizar_botones_carpeta()
 
     def _iniciar_actualizar_miniaturas(self):
         # B8.1: actualizar exclusivamente cantidad_miniaturas por video_id después de miniaturas
-        if self.resultado_miniaturas is None or self._guardado_por_ruta_normalizada is None:
+        # B8.2: resultado ya trae video_id directamente
+        if self.resultado_miniaturas is None:
             self._limpiar_cadena()
             self._actualizar_botones_carpeta()
             return
@@ -9204,19 +9502,25 @@ class VisorVideos(QMainWindow):
         for item in (self.resultado_miniaturas.get("resultados") or []):
             if not isinstance(item, dict):
                 continue
-            ruta = item.get("ruta")
+            vid = item.get("video_id")
             cantidad = item.get("cantidad_miniaturas")
+            if isinstance(vid, int) and vid>0:
+                actualizaciones.append((vid, cantidad))
+                continue
+            # fallback legacy por ruta
+            ruta = item.get("ruta")
             if not isinstance(ruta, str) or not ruta:
                 continue
             try:
                 norm = normalizar_ruta_clave(ruta)
             except Exception:
                 continue
-            vid = self._guardado_por_ruta_normalizada.get(norm)
-            if vid is None:
-                # fallback: intentar por nombre si ruta no mapeada (compat)
+            if self._guardado_por_ruta_normalizada is None:
                 continue
-            actualizaciones.append((vid, cantidad))
+            vid2 = self._guardado_por_ruta_normalizada.get(norm)
+            if vid2 is None:
+                continue
+            actualizaciones.append((vid2, cantidad))
         # Si no hay actualizaciones, ir directo a sincronización sin tarea
         if not actualizaciones:
             self._actualizar_miniaturas_pendiente = False
@@ -9242,6 +9546,9 @@ class VisorVideos(QMainWindow):
         self.resultado_miniaturas = None
         self._guardado_por_ruta_normalizada = None
         self._guardado_ids = None
+        self._guardado_rutas_por_id = None
+        self._guardado_nombres_por_id = None
+        self._registros_para_guardar = None
         self._sincronizacion_pendiente = True
         self._actualizar_botones_carpeta()
 
@@ -9360,6 +9667,11 @@ class VisorVideos(QMainWindow):
             self.visibles.append(fila[0])
             self.cuadricula.addWidget(tarjeta, indice, 0)
         self.filtrar(self.busqueda.text())
+        # B8.2: migración legacy batch para tarjetas recién creadas (no bloquea UI)
+        try:
+            self._encolar_migracion_legacy(filas)
+        except Exception as exc:
+            print(f"[B8.2] _crear_tarjetas migracion error: {exc}")
 
     def _abrir_video(self, nombre):
         carpeta = self.carpeta_seleccionada
@@ -10042,6 +10354,224 @@ class VisorVideos(QMainWindow):
             })
         tarjeta._segmentos.sort(key=lambda s: (s["inicio"], s["fin"], s["id"] if s["id"] is not None else 0))
 
+    # ── B8.2 migración legacy -> id al cargar página (batch, background, no I/O en UI) ──
+    def _encolar_migracion_legacy(self, filas):
+        """Encola migración batch para filas recién visibles (B8.2).
+
+        No realiza recorrido de carpeta ni duplicado ni acceso a base ni
+        generación. Solo prepara video_id<->nombre inequívoco según los datos
+        del catálogo (fila[0]=nombre, fila[8]=id) y delega copia no destructiva
+        a tarea worker. Batch por página: una tarea para todo el lote.
+        """
+        if not filas:
+            return
+        video_ids = []
+        nombres_por_id = {}
+        for fila in filas:
+            try:
+                nombre = fila[0]
+                vid = fila[8]
+            except IndexError:
+                continue
+            if not isinstance(vid, int) or isinstance(vid, bool) or vid <= 0:
+                continue
+            if not isinstance(nombre, str) or not nombre:
+                continue
+            if vid in self._migracion_ids_en_vuelo:
+                continue
+            # Solo asociación inequívoca: la fila ya es la verdad del catálogo
+            # No inferir por ruta ni fallback por nombre ambiguo
+            if vid in nombres_por_id and nombres_por_id[vid] != nombre:
+                # colisión intra-lote (no debería ocurrir si DB íntegra)
+                continue
+            video_ids.append(vid)
+            nombres_por_id[vid] = nombre
+        if not video_ids:
+            return
+        # deduplicar preservando orden
+        video_ids = list(dict.fromkeys(video_ids))
+        for vid in video_ids:
+            self._migracion_ids_en_vuelo.add(vid)
+        self._cola_migracion.append({"video_ids": video_ids, "nombres_por_id": nombres_por_id})
+        self._procesar_siguiente_migracion()
+
+    def _procesar_siguiente_migracion(self):
+        if getattr(self, "gestor_migracion", None) is None:
+            return
+        if self.gestor_migracion.activo:
+            return
+        if not self._cola_migracion:
+            return
+        op = self._cola_migracion.pop(0)
+        video_ids = op.get("video_ids", [])
+        nombres_por_id = op.get("nombres_por_id", {})
+        # Filtrar tarjetas que ya no existen (recarga/paginación) y ya migradas
+        vigentes = []
+        vigentes_nombres = {}
+        for vid in video_ids:
+            tarjeta = self._tarjeta_por_video_id(vid)
+            if tarjeta is None:
+                self._migracion_ids_en_vuelo.discard(vid)
+                continue
+            vigentes.append(vid)
+            vigentes_nombres[vid] = nombres_por_id.get(vid)
+        if not vigentes:
+            self._procesar_siguiente_migracion()
+            return
+        tarea = TareaMigrarCacheLegacy(vigentes, vigentes_nombres, self._ruta_db)
+        self._migracion_op_actual = {"video_ids": vigentes, "nombres_por_id": vigentes_nombres}
+        if not self.gestor_migracion.iniciar(tarea):
+            self._cola_migracion.insert(0, {"video_ids": vigentes, "nombres_por_id": vigentes_nombres})
+            self._migracion_op_actual = None
+
+    def _al_resultado_migracion(self, resultado):
+        op = getattr(self, "_migracion_op_actual", None)
+        if op is None:
+            return
+        # Actualizar solo tarjetas afectadas, sin recargar catálogo ni perder selección/scroll
+        detalles = resultado.get("detalles", []) if isinstance(resultado, dict) else []
+        afectados = set()
+        for det in detalles:
+            vid = det.get("video_id")
+            res = det.get("res", {}) if isinstance(det, dict) else {}
+            if not isinstance(vid, int):
+                continue
+            # Si hubo copiados o ya_existentes, la id ya está poblada
+            copiados = res.get("copiados", 0) if isinstance(res, dict) else 0
+            ya = res.get("ya_existentes", 0) if isinstance(res, dict) else 0
+            # También considerar éxito parcial aunque fallos, si legacy fue copiada
+            if copiados > 0 or ya > 0:
+                afectados.add(vid)
+            # Si la copia generó archivos, forzar refresh aunque conteo 0 (caso preview)
+            if isinstance(res, dict) and res.get("detalles"):
+                # si alguna entry copiada, marcar
+                for d in res.get("detalles", []):
+                    if d.get("estado") == "copiado":
+                        afectados.add(vid)
+                        break
+        # Fallback: si detalles vacío pero procesados>0, considerar todos los del lote como potenciales
+        if not afectados and isinstance(resultado, dict) and resultado.get("copiados", 0) > 0:
+            for vid in op.get("video_ids", []):
+                afectados.add(vid)
+        for vid in afectados:
+            tarjeta = self._tarjeta_por_video_id(vid)
+            if tarjeta is None:
+                self._migracion_ids_en_vuelo.discard(vid)
+                # limpiar diferidos y cola para vid sin tarjeta
+                if hasattr(self, "_previews_diferidas"):
+                    self._previews_diferidas.discard(vid)
+                try:
+                    self._cola_previews = [it for it in self._cola_previews if it[0] != vid]
+                except (AttributeError, TypeError, RuntimeError, ValueError):
+                    pass
+                continue
+            # Refrescar miniatura principal (sin listdir/copy)
+            try:
+                tarjeta.actualizar_miniatura_por_id()
+            except (AttributeError, TypeError, RuntimeError, ValueError, OSError) as exc:
+                print(f"[B8.2] actualizar_miniatura_por_id vid={vid} error: {exc}")
+            # Refrescar previews por id (si existen tras migración)
+            try:
+                rutas = previews_de_por_id(vid)
+                if rutas:
+                    tarjeta.actualizar_previews(rutas)
+            except (AttributeError, TypeError, RuntimeError, ValueError, OSError) as exc:
+                print(f"[B8.2] actualizar_previews por id vid={vid} error: {exc}")
+            self._migracion_ids_en_vuelo.discard(vid)
+        # Limpiar ids no afectados (fallos o sin copia)
+        for vid in list(op.get("video_ids", [])):
+            self._migracion_ids_en_vuelo.discard(vid)
+            # si tarjeta ya no existe, limpiar diferidos/cola para ese vid
+            try:
+                if self._tarjeta_por_video_id(vid) is None:
+                    if hasattr(self, "_previews_diferidas"):
+                        self._previews_diferidas.discard(vid)
+                    self._cola_previews = [it for it in self._cola_previews if it[0] != vid]
+            except (AttributeError, TypeError, RuntimeError, ValueError):
+                pass
+        # B8.2 007: tras liberar vuelo, si hay diferidos pendientes, asegurar que _siguiente_lote_previews se intente
+        try:
+            if getattr(self, "_previews_diferidas", set()):
+                self._al_previews_finalizada()
+        except (AttributeError, TypeError, RuntimeError):
+            pass
+
+    def _al_error_migracion(self, mensaje):
+        op = getattr(self, "_migracion_op_actual", None)
+        ids_para_previews = list(op.get("video_ids", [])) if isinstance(op, dict) else []
+        if op is not None:
+            for vid in op.get("video_ids", []):
+                self._migracion_ids_en_vuelo.discard(vid)
+                # limpiar diferidos/cola si tarjeta ya no existe
+                try:
+                    if self._tarjeta_por_video_id(vid) is None:
+                        if hasattr(self, "_previews_diferidas"):
+                            self._previews_diferidas.discard(vid)
+                        self._cola_previews = [it for it in self._cola_previews if it[0] != vid]
+                except (AttributeError, TypeError, RuntimeError, ValueError):
+                    pass
+        # Fallo observable: no borrar legacy (worker nunca borra), no recargar catálogo
+        # Dejar mensaje en estado_carga si visible, pero no modificar tarjetas
+        print(f"[B8.2] migración error: {mensaje}")
+        self._migracion_op_actual = None
+        self._procesar_siguiente_migracion()
+        # B8.2 secuenciar: tras fallo, igual intentar previews (fallback FFmpeg) sin carrera
+        if ids_para_previews:
+            filtrados = []
+            for vid in ids_para_previews:
+                tarjeta = self._tarjeta_por_video_id(vid)
+                if tarjeta is None:
+                    continue
+                if getattr(tarjeta, "_previews_completas", False):
+                    continue
+                filtrados.append(vid)
+            if filtrados:
+                self._encolar_previews_por_id(filtrados)
+                self._al_previews_finalizada()
+
+    def _al_migracion_finalizada(self):
+        op = getattr(self, "_migracion_op_actual", None)
+        ids_para_previews = list(op.get("video_ids", [])) if isinstance(op, dict) else []
+        self._migracion_op_actual = None
+        self._procesar_siguiente_migracion()
+        # Limpiar diferidos de vids sin tarjeta (no reintentar)
+        if ids_para_previews:
+            for vid in list(ids_para_previews):
+                try:
+                    if self._tarjeta_por_video_id(vid) is None:
+                        if hasattr(self, "_previews_diferidas"):
+                            self._previews_diferidas.discard(vid)
+                        self._cola_previews = [it for it in self._cola_previews if it[0] != vid]
+                except (AttributeError, TypeError, RuntimeError, ValueError):
+                    pass
+        # B8.2 secuenciar: tras migración exitosa, encolar previews para ese lote (evita carrera)
+        # Si ya había solicitudes diferidas, _encolar las deduplicará y _cola_previews ya contiene placeholders;
+        # solo disparamos _siguiente si queda trabajo.
+        if ids_para_previews:
+            filtrados = []
+            for vid in ids_para_previews:
+                tarjeta = self._tarjeta_por_video_id(vid)
+                if tarjeta is None:
+                    continue
+                if getattr(tarjeta, "_previews_completas", False):
+                    # si ya completa, limpiar diferido sin reencolar
+                    if hasattr(self, "_previews_diferidas") and vid in self._previews_diferidas:
+                        self._previews_diferidas.discard(vid)
+                        # también quitar placeholder de cola si quedó
+                        try:
+                            self._cola_previews = [it for it in self._cola_previews if it[0] != vid]
+                        except (AttributeError, TypeError, RuntimeError, ValueError):
+                            pass
+                    continue
+                filtrados.append(vid)
+            if filtrados:
+                self._encolar_previews_por_id(filtrados)
+        # Siempre intentar drenar diferidos/cola tras liberar vuelo
+        try:
+            self._al_previews_finalizada()
+        except (AttributeError, TypeError, RuntimeError):
+            pass
+
     def closeEvent(self, event):
         self._timer_previews.stop()
         self._ocultar_vista()
@@ -10127,6 +10657,18 @@ class VisorVideos(QMainWindow):
             self._prevalidacion_drop_en_curso = False
             self._prevalidacion_drop_ids = None
             self._prevalidacion_drop_dest = None
+        if getattr(self, "gestor_migracion", None) is not None:
+            self.gestor_migracion.cerrar()
+            self._migracion_op_actual = None
+            self._cola_migracion = []
+            self._migracion_ids_en_vuelo = set()
+            if hasattr(self, "_previews_diferidas"):
+                self._previews_diferidas = set()
+            # limpiar placeholders diferidos de _cola_previews
+            try:
+                self._cola_previews = []
+            except (AttributeError, TypeError, RuntimeError):
+                pass
         super().closeEvent(event)
 
 

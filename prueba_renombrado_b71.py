@@ -445,9 +445,10 @@ def test_14_ui_no_hace_sqlite_rename_directo_y_usa_background():
 
 
 def test_15_regresiones_marcadores_segmentos_derivados_version():
-    # versión
+    # versión — B8.2 reconciliación: contrato de build actualizado estrictamente a B8.2
+    # (único cambio respecto histórico B7.0; invariantes funcionales preservados: marcadores/segmentos y renombrado no rompe)
     from configuracion import TEXTO_VERSION_BUILD
-    assert TEXTO_VERSION_BUILD == "Beta 7 - B7.0"
+    assert TEXTO_VERSION_BUILD == "Beta 8 - B8.2"
     # marcadores/segmentos aún funcionan
     tmpdir, ruta_db = _crear_db_temporal()
     carpeta = os.path.join(tmpdir, "videos")
