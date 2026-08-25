@@ -4,7 +4,7 @@ Arquitectura vigente del proyecto (condensada del documento tecnico heredado y d
 
 ## 1. Estructura general
 
-Workspace: `C:\prueba` (repo Git, rama `beta8` local, HEAD técnico `97cb2f7f30853ed3a80ac310b7112cac80440158` / cierre documental `38fbc88e30c892b75b3bf66d752c49ba4c057c33`; parent B8.3 `e4104ae53cf205811e57e582350733552aaa8740`; `main@d04a712` base documental; rama de versión `beta8`, tag `v8.0-beta`).
+Workspace: `C:\prueba` (repo Git, rama `beta9` abierta B9.0 desde `v8.0-beta`/`e851c7c2be1c3d12aac8ccb633e1aaecea2b7d3d`; baseline publicado `origin/beta8` + `v8.0-beta` alineados en `e851c7c`; cierre técnico B8.4 `97cb2f7f30853ed3a80ac310b7112cac80440158` / cierre documental `38fbc88e30c892b75b3bf66d752c49ba4c057c33`, parent B8.3 `e4104ae53cf205811e57e582350733552aaa8740`; `main@d04a7124dcb7741d16c015d88909d12851c58289` divergida, NO base de `beta9`).
 
 ```text
 visor_videos.py          Interfaz grafica PySide6 (ventana, tarjetas, previews, navegacion, organización)
@@ -106,7 +106,7 @@ Mantenidos como ajenos al visor: `main.py` (script de prueba de operaciones), `o
 
 - Centro de navegacion permanente extensible (ya con Organización/Explorer).
 - Herramientas de manipulación basadas en el modelo visual de escenas/previews sin timeline.
-- Cambios por etapas pequeñas; cada etapa extiende la arquitectura solo en su alcance aprobado. **B8.3 aún no implementada** (no documentar como hecho).
+- Cambios por etapas pequeñas; cada etapa extiende la arquitectura solo en su alcance aprobado. **Beta 8 — B8.1–B8.4 completadas y publicadas** (`v8.0-beta`/`e851c7c`; sin arquitectura futura de Beta 9 aún).
 
 ## 10. Decisiones arquitectonicas duraderas
 

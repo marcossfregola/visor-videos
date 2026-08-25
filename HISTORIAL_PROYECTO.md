@@ -5,6 +5,19 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 126. B9.0 — Apertura de Beta 9 (ramificación y planificación)
+
+- **Fecha:** 2026-08-24
+- **Tipo:** apertura de rama y planificación documental **B9.0 sin implementación funcional**.
+- **Rama:** `beta9` creada localmente exactamente desde `v8.0-beta`/`e851c7c2be1c3d12aac8ccb633e1aaecea2b7d3d` (`B8 Preparar identidad de publicación`; `origin/beta8` alineado; `main@d04a7124dcb7741d16c015d88909d12851c58289` divergida y NO usada).
+- **Baseline:** Beta 8 cerrada funcional (técnico `97cb2f7f30853ed3a80ac310b7112cac80440158`, documental `38fbc88e30c892b75b3bf66d752c49ba4c057c33`, parent `e4104ae53cf205811e57e582350733552aaa8740`) y publicada (`beta8` + `v8.0-beta` sin Release).
+- **Alcance Beta 9 decidido (sin ampliar):** P01–P09, P18, P23 y requisito T04 (ROADMAP).
+- **Sin implementación:** P01–P09, P18, P23, T04 permanecen pendientes; sin cambios .py/SQLite/FFmpeg/cache.
+- **Documentación reconciliada:** `STATUS.md`/`ROADMAP.md`/`ARCHITECTURE.md` alineados a baseline `v8.0-beta`/`e851c7c`; eliminada expresión obsoleta "beta8 local" y corregida afirmación "B8.3 aún no implementada".
+- **Sin push/tag/merge/Release.**
+
+---
+
 ## 125. B8.4 — Regresión y cierre — navegación homónimos y validación humana
 
 - **Fecha:** 2026-08-24

@@ -2,27 +2,26 @@
 
 ## Fase actual
 
-**Beta 8 — CERRADA FUNCIONALMENTE (beta8 local, validación humana aprobada).**
+**Beta 9 — ABIERTA (B9.0 apertura y planificación). Beta 8 cerrada y publicada como baseline.**
 
-- B8.1 cerrada localmente: `d43c1b8e9c38d132c346933967e8e8bac7fdae9f` (2026-08-23).
-- B8.2 cerrada localmente: `33da65066867026d9a72bb333216bfd9fdc4b626` (2026-08-24).
-- B8.3 cerrada localmente: `e4104ae53cf205811e57e582350733552aaa8740` (2026-08-24).
-- B8.4 cerrada localmente: `97cb2f7f30853ed3a80ac310b7112cac80440158` (2026-08-24).
-- Rama de versión: `beta8`. Tag de versión: `v8.0-beta`. HEAD técnico B8.4: `97cb2f7f30853ed3a80ac310b7112cac80440158` (commit documental `38fbc88`); parent B8.3 `e4104ae53cf205811e57e582350733552aaa8740`.
-- Publicación GitHub mediante rama `beta8` + tag `v8.0-beta` (sin GitHub Release ni instalador público).
-- Próximo paso exacto: **Beta 9 — Exploración visual avanzada** (según ROADMAP).
+- Beta 8 **cerrada funcional y documentalmente**: cierre técnico B8.4 `97cb2f7f30853ed3a80ac310b7112cac80440158` (parent B8.3 `e4104ae53cf205811e57e582350733552aaa8740`), cierre documental `38fbc88e30c892b75b3bf66d752c49ba4c057c33` (2026-08-24).
+- Publicación GitHub Beta 8: rama `beta8` + tag anotado `v8.0-beta` → `e851c7c2be1c3d12aac8ccb633e1aaecea2b7d3d` (`B8 Preparar identidad de publicación`; sin GitHub Release ni instalador público). `origin/beta8` y `v8.0-beta^{commit}` alineados en `e851c7c`.
+- **Baseline técnico de Beta 9:** `v8.0-beta` / `e851c7c2be1c3d12aac8ccb633e1aaecea2b7d3d` (NO `main`). Rama `beta9` creada localmente el 2026-08-24 exactamente desde ese baseline; sin push/tag/merge.
+- B8.1 cerrada: `d43c1b8e9c38d132c346933967e8e8bac7fdae9f` (2026-08-23); B8.2 cerrada: `33da65066867026d9a72bb333216bfd9fdc4b626` (2026-08-24); B8.3 cerrada: `e4104ae53cf205811e57e582350733552aaa8740` (2026-08-24); B8.4 cerrada: `97cb2f7f30853ed3a80ac310b7112cac80440158` (2026-08-24).
 - `T09` (identidad `UNIQUE(nombre)`) **cerrado en B8.3** (cutover `ruta_normalizada` `UNIQUE`).
-- Baseline publicado estable sigue `v7.0-beta` / `f9976d3b3b68a197bf8e9d29a4ecc670f48a9709` y `main` documental `d04a7124dcb7741d16c015d88909d12851c58289`.
 - Validación humana final B8.4 aprobada: `MADRE→A→MADRE→B→MADRE` sin escanear, navegación, homónimos, operaciones y FFmpeg real verificados.
+- Próximo paso: **Beta 9 — Exploración visual avanzada** (ROADMAP: P01–P09, P18, P23 y requisito T04) — **en planificación, sin implementación funcional**.
 
-Para el historial completo ver `HISTORIAL_PROYECTO.md` (124/123/122/121).
+Para el historial completo ver `HISTORIAL_PROYECTO.md` (126/125/124/123/122/121).
 
 ## Último baseline aprobado
 
-- Tag `v7.0-beta` sobre `f9976d3` (cierre funcional Beta 7).
+- Tag `v8.0-beta` sobre `e851c7c` (cierre Beta 8; `B8 Preparar identidad de publicación`; commit documental `38fbc88`, técnico `97cb2f7`).
+- Rama `beta8` publicada en `origin/beta8` alineada con `v8.0-beta^{commit}` en `e851c7c2be1c3d12aac8ccb633e1aaecea2b7d3d`.
+- Tag previo `v7.0-beta` sobre `f9976d3` (cierre funcional Beta 7) conservado como referencia histórica.
 - Rama `beta7` `97e6fcf` incluye B7.0–B7.13 completas y reconciliación post-publicación.
-- `main` reconciliada documental `d04a712` como base de esta rama `beta8` local.
-- `main` matriz documental definitiva `PROJECT/STATUS/ARCHITECTURE/ENVIRONMENT/RULES/ROADMAP/BACKLOG/HISTORIAL/EMPACADO/METODOLOGIA` (V1.3).
+- `main` `d04a7124dcb7741d16c015d88909d12851c58289` matriz documental V1.3 (divergida de `beta8`/`beta9`; NO usada como base de Beta 9).
+- `beta9` nace exactamente de `v8.0-beta`/`e851c7c` (NO de `main`).
 
 ## Estado funcional (Beta 8 cerrada)
 

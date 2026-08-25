@@ -92,11 +92,15 @@ Lo no listado arriba permanece en `BACKLOG.md` como **quizá**: selección intel
 - **B8.3 — Cutover de identidad — COMPLETADA** `e4104ae53cf205811e57e582350733552aaa8740` (2026-08-24): elimina `UNIQUE(nombre)`, `UNIQUE(ruta_normalizada)` vigente, homónimos `AAAA.mp4` en `A/B` con `video_id` distinto, `ruta_normalizada` única, `nombre` no único.
 - **B8.4 — Regresión y cierre — COMPLETADA** `97cb2f7f30853ed3a80ac310b7112cac80440158` (2026-08-24): migración DB, navegación `MADRE/A/B` sin `shrink` ancestro, descarte lecturas obsoletas por generación, `preparar_registros_basicos` `basename`, validación humana `MADRE→A→MADRE→B→MADRE` aprobada.
 
-**Beta 8 — CERRADA FUNCIONALMENTE** `beta8` HEAD técnico `97cb2f7` / cierre documental `38fbc88`. Rama de versión `beta8`, tag `v8.0-beta`, publicación GitHub mediante `beta8` + `v8.0-beta` (validación humana aprobada).
+**Beta 8 — CERRADA Y PUBLICADA** `beta8`/`origin/beta8` y `v8.0-beta` → `e851c7c2be1c3d12aac8ccb633e1aaecea2b7d3d` (HEAD `B8 Preparar identidad de publicación`; técnico `97cb2f7`, documental `38fbc88`; validación humana aprobada).
+
+## Beta 9 — apertura
+
+**B9.0 — Apertura — 2026-08-24:** rama `beta9` creada localmente exactamente desde `v8.0-beta`/`e851c7c2be1c3d12aac8ccb633e1aaecea2b7d3d` (baseline publicado de Beta 8; NO desde `main` `d04a712`). Sin implementación funcional; alcance Beta 9 permanece P01–P09, P18, P23 y T04 según lo ya decidido. Sin push/tag/Release.
 
 ## Próximo paso exacto
 
-**Beta 9 — Exploración visual avanzada** (P01–P09, P18, P23, T04). `beta8` cerrada, sin pendientes de identidad/cache.
+**Beta 9 — Exploración visual avanzada** (P01–P09, P18, P23, T04) — **en planificación (B9.0), sin implementación**. `beta8` cerrada y publicada, sin pendientes de identidad/cache.
 
 ## Criterio
 
