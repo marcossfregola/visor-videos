@@ -15,6 +15,7 @@ from PySide6.QtGui import (
     QKeySequence,
     QMouseEvent,
     QPainter,
+    QPen,
     QPixmap,
     QShortcut,
 )
@@ -178,6 +179,30 @@ LIMITE_ORIGINAL_MINIATURA = 1280
 RETARDO_OCULTAR_VISTA_MS = 150
 ALTO_FRANJA_EXTRAS = 44
 FOTOGRAMAS_INICIALES = exploracion_cache.MINIMO_FOTOGRAMAS_DENSIDAD
+# B9.3 — tira virtualizada: autoridad única Densidad, Vista solo define cómo se muestran
+TIRA_B93_ALTURA_EXTRA = 18
+TIRA_B93_SPACING = 2
+TIRA_B93_MARGIN = 2
+MODO_TIRA_DINAMICA = "dinamica"
+MODO_TIRA = "tira"
+
+def _densidad_cantidad_objetivo(duracion, densidad_manual):
+    """Cantidad objetivo vigente según Densidad (Auto->objetivo_total_densidad, int->manual)."""
+    if isinstance(densidad_manual, int) and not isinstance(densidad_manual, bool) and densidad_manual > 0:
+        return densidad_manual
+    return exploracion_cache.objetivo_total_densidad(duracion)
+
+def _tiempos_densidad_actual(duracion, densidad_manual):
+    """Tiempos ms del conjunto densidad vigente (orden progresivo bisección)."""
+    cant = _densidad_cantidad_objetivo(duracion, densidad_manual)
+    if cant <= 0:
+        return []
+    return tiempos_objetivo(duracion, cant)
+
+def _ms_tira_densidad_ordenada(duracion, densidad_manual):
+    """Tiempos ms ordenados cronológicamente para tira virtual (autoridad densidad)."""
+    t = _tiempos_densidad_actual(duracion, densidad_manual)
+    return sorted(t)
 DENSIDADES_DISPONIBLES = (
     ("Auto", None),
     ("15", 15),
@@ -520,6 +545,255 @@ class PreviewConTiempo(QLabel):
             pintor.setPen(Qt.NoPen)
             pintor.setBrush(QColor(0, 0, 0, 150))
             pintor.drawRoundedRect(bx, by, ancho, alto, 3, 3)
+            pintor.setPen(QColor(255, 255, 255, 235))
+            pintor.drawText(bx + 5, by + metrica.ascent() + 2, self._tiempo)
+        pintor.end()
+
+
+class PreviewTiraTemporal(QWidget):
+    """B9.3 — widget ligero para tira: una sola QPixmap fuente, escalado en paintEvent.
+
+    No retiene pixmap_escalado duplicado ni en widget ni en tira_cache.
+    Reajuste de tamaño sin I/O/FFmpeg: repintado con mismo pixmap fuente.
+    B9.3/029 — integración mínima marcadores/segmentos: estado ligero de binding
+    y decoraciones sin widgets extra; emite señales con _logical_ms actual.
+    """
+
+    tira_left_clicked = Signal(int)
+    tira_right_clicked = Signal(int, object)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._pixmap = None
+        self._tiempo = None
+        self._logical_ms = None
+        self._marcadores_tira = []
+        self._segmentos_tira = []
+        self._pendiente_tira = False
+        self._tira_right_guard_ms = None
+        self._tira_right_guard_time = 0.0
+        self.setFixedHeight(dimensiones_miniatura()[1])
+
+    def set_preview(self, pixmap, tiempo=None):
+        if pixmap is None or pixmap.isNull():
+            return False
+        self._pixmap = _pixmap_acotado(pixmap)
+        self._tiempo = tiempo
+        self.setFixedHeight(dimensiones_miniatura()[1])
+        self.update()
+        return True
+
+    def reajustar(self):
+        self.setFixedHeight(dimensiones_miniatura()[1])
+        self.update()
+        return True
+
+    def bind_tira(self, logical_ms, marcadores=None, segmentos=None, pendiente=False):
+        """B9.3/029 — binding ligero; limpia estado anterior siempre."""
+        try:
+            self._logical_ms = int(logical_ms) if isinstance(logical_ms, int) and not isinstance(logical_ms, bool) else None
+        except Exception:
+            self._logical_ms = None
+        try:
+            self._marcadores_tira = list(marcadores) if isinstance(marcadores, (list, tuple)) else []
+        except Exception:
+            self._marcadores_tira = []
+        try:
+            self._segmentos_tira = list(segmentos) if isinstance(segmentos, (list, tuple)) else []
+        except Exception:
+            self._segmentos_tira = []
+        self._pendiente_tira = bool(pendiente)
+        self.update()
+
+    def set_pendiente_tira(self, pendiente):
+        val = bool(pendiente)
+        if getattr(self, "_pendiente_tira", False) != val:
+            self._pendiente_tira = val
+            self.update()
+
+    def clear_tira(self):
+        self._logical_ms = None
+        self._marcadores_tira = []
+        self._segmentos_tira = []
+        self._pendiente_tira = False
+        self._pixmap = None
+        self._tiempo = None
+        self.update()
+
+    def _color_marcador_tira(self, marcador):
+        try:
+            clave = marcador.get("color") if isinstance(marcador, dict) else None
+            rgb = color_rgb(clave)
+            if rgb is not None:
+                return QColor(rgb[0], rgb[1], rgb[2])
+        except Exception:
+            pass
+        return QColor(158, 158, 158)
+
+    def _color_segmento_tira(self, segmento):
+        try:
+            clave = segmento.get("color") if isinstance(segmento, dict) else None
+            rgb = color_rgb(clave)
+            if rgb is not None:
+                return QColor(rgb[0], rgb[1], rgb[2])
+        except Exception:
+            pass
+        return QColor(158, 158, 158)
+
+    def mousePressEvent(self, event):
+        try:
+            if event.button() == Qt.LeftButton and self._logical_ms is not None:
+                self.tira_left_clicked.emit(int(self._logical_ms))
+                event.accept()
+                return
+            if event.button() == Qt.RightButton and self._logical_ms is not None:
+                try:
+                    gp = event.globalPosition().toPoint() if hasattr(event, "globalPosition") else event.globalPos()
+                except Exception:
+                    gp = QCursor.pos()
+                self.tira_right_clicked.emit(int(self._logical_ms), gp)
+                try:
+                    import time as _t
+                    self._tira_right_guard_ms = int(self._logical_ms)
+                    self._tira_right_guard_time = _t.monotonic()
+                except Exception:
+                    pass
+                event.accept()
+                return
+        except Exception:
+            pass
+        super().mousePressEvent(event)
+
+    def contextMenuEvent(self, event):
+        try:
+            if self._logical_ms is not None:
+                # guardia robusta: si mousePress ya emitio para este ms hace <0.6s, no duplicar
+                try:
+                    import time as _t
+                    if self._tira_right_guard_ms is not None and int(self._logical_ms) == self._tira_right_guard_ms and (_t.monotonic() - self._tira_right_guard_time) < 0.6:
+                        event.accept()
+                        return
+                except Exception:
+                    pass
+                try:
+                    gp = event.globalPos() if hasattr(event, "globalPos") else QCursor.pos()
+                except Exception:
+                    gp = QCursor.pos()
+                self.tira_right_clicked.emit(int(self._logical_ms), gp)
+                event.accept()
+                return
+        except Exception:
+            pass
+        super().contextMenuEvent(event)
+
+    def paintEvent(self, event):
+        pintor = QPainter(self)
+        pintor.fillRect(self.rect(), QColor("#f0f0f0"))
+        pintor.setPen(QColor("#cccccc"))
+        pintor.setBrush(Qt.NoBrush)
+        pintor.drawRect(self.rect().adjusted(0, 0, -1, -1))
+        if self._pixmap is None or self._pixmap.isNull():
+            # pintar decoraciones incluso sin pixmap? mantener borde base pero intentar decorar
+            # no pixmap aun: aun mostrar decoración si hay marcador/segmento asociado
+            if self._marcadores_tira:
+                try:
+                    c = self._color_marcador_tira(self._marcadores_tira[0])
+                    pintor.setPen(Qt.NoPen)
+                    pintor.setBrush(c)
+                    pintor.drawRect(2, 2, self.width() - 4, 4)
+                except Exception:
+                    pass
+            if self._segmentos_tira:
+                try:
+                    c2 = self._color_segmento_tira(self._segmentos_tira[0])
+                    pintor.setPen(Qt.NoPen)
+                    pintor.setBrush(c2)
+                    pintor.drawRect(2, self.height() - 6, self.width() - 4, 4)
+                except Exception:
+                    pass
+            if getattr(self, "_pendiente_tira", False):
+                try:
+                    # pendiente: borde 3px teal sin tapar marker/segment ni timestamp; badge A debajo de marcador (y=7) geometría mínima
+                    col_pend = QColor(0, 150, 136)
+                    pintor.setPen(QPen(col_pend, 3))
+                    pintor.setBrush(Qt.NoBrush)
+                    pintor.drawRect(self.rect().adjusted(2, 2, -3, -3))
+                    pintor.setPen(Qt.NoPen)
+                    pintor.setBrush(col_pend)
+                    pintor.drawEllipse(4, 7, 14, 14)
+                    pintor.setPen(QColor(255, 255, 255))
+                    # centrar "A" usando fuente pequeña
+                    try:
+                        fm = pintor.fontMetrics()
+                        txt = "A"
+                        tw = fm.horizontalAdvance(txt)
+                        th = fm.ascent()
+                        pintor.drawText(4 + (14 - tw)//2, 7 + (14 + th)//2 - 2, txt)
+                    except Exception:
+                        pintor.drawText(8, 17, "A")
+                except Exception:
+                    pass
+            pintor.end()
+            return
+        ancho, alto = dimensiones_miniatura()
+        escalada = self._pixmap.scaled(ancho, alto, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        x = (self.width() - escalada.width()) // 2
+        y = (self.height() - escalada.height()) // 2
+        pintor.drawPixmap(x, y, escalada)
+        # decoración marcadores: borde superior 4px con color real
+        if self._marcadores_tira:
+            try:
+                c = self._color_marcador_tira(self._marcadores_tira[0])
+                pintor.setPen(Qt.NoPen)
+                pintor.setBrush(c)
+                pintor.drawRect(1, 1, self.width() - 2, 4)
+                # pequeña marca esquina si múltiples
+                if len(self._marcadores_tira) > 1:
+                    pintor.setBrush(QColor(255, 255, 255))
+                    pintor.drawEllipse(self.width() - 10, 3, 6, 6)
+            except Exception:
+                pass
+        # decoración segmentos: banda inferior 5px con color real
+        if self._segmentos_tira:
+            try:
+                c2 = self._color_segmento_tira(self._segmentos_tira[0])
+                pintor.setPen(Qt.NoPen)
+                pintor.setBrush(c2)
+                pintor.drawRect(1, self.height() - 6, self.width() - 2, 5)
+                if len(self._segmentos_tira) > 1:
+                    pintor.setBrush(QColor(255, 255, 255, 180))
+                    pintor.drawEllipse(3, self.height() - 9, 6, 6)
+            except Exception:
+                pass
+        if getattr(self, "_pendiente_tira", False):
+            try:
+                col_pend = QColor(0, 150, 136)
+                pintor.setPen(QPen(col_pend, 3))
+                pintor.setBrush(Qt.NoBrush)
+                pintor.drawRect(self.rect().adjusted(1, 1, -2, -2))
+                pintor.setPen(Qt.NoPen)
+                pintor.setBrush(col_pend)
+                pintor.drawEllipse(4, 7, 14, 14)
+                pintor.setPen(QColor(255, 255, 255))
+                try:
+                    fm = pintor.fontMetrics()
+                    txt = "A"
+                    tw = fm.horizontalAdvance(txt)
+                    th = fm.ascent()
+                    pintor.drawText(4 + (14 - tw)//2, 7 + (14 + th)//2 - 2, txt)
+                except Exception:
+                    pintor.drawText(8, 17, "A")
+            except Exception:
+                pass
+        if self._tiempo is not None:
+            metrica = pintor.fontMetrics()
+            ancho_t = metrica.horizontalAdvance(self._tiempo) + 10
+            alto_t = metrica.height() + 4
+            bx = x + escalada.width() - ancho_t - 4
+            by = y + escalada.height() - alto_t - 4
+            pintor.setPen(Qt.NoPen)
+            pintor.setBrush(QColor(0, 0, 0, 150))
+            pintor.drawRoundedRect(bx, by, ancho_t, alto_t, 3, 3)
             pintor.setPen(QColor(255, 255, 255, 235))
             pintor.drawText(bx + 5, by + metrica.ascent() + 2, self._tiempo)
         pintor.end()
@@ -1302,6 +1576,8 @@ class Tarjeta(QFrame):
     segmento_bucle_solicitado = Signal(object)
     reproduccion_temporal_solicitada = Signal(float)
     densidad_cambiada = Signal(object, object)
+    modo_tira_cambiada = Signal(object, object)
+    preview_visual_solicitada = Signal(object)  # B9.3 virtualización: {video_id, version, ms_list, request_id, gen}
     marcador_color_solicitado = Signal(object, object)
     segmento_color_solicitado = Signal(object, object)
     segmento_exportacion_solicitada = Signal(object)
@@ -1318,6 +1594,15 @@ class Tarjeta(QFrame):
         fila_principal = QHBoxLayout()
 
         nombre, duracion, ancho, alto, codec, miniaturas, tamano, *_resto = fila
+        # B9.3/P01 compacta: conservar dimensiones originales para aspect ratio sin FFprobe
+        try:
+            self._video_ancho = int(ancho) if isinstance(ancho, int) and not isinstance(ancho, bool) and ancho > 0 else None
+            self._video_alto = int(alto) if isinstance(alto, int) and not isinstance(alto, bool) and alto > 0 else None
+        except Exception:
+            self._video_ancho = None
+            self._video_alto = None
+        self._tira_aspect_cache = None
+        self._tira_ancho_slot_cache = None
 
         ruta_video_registro = _resto[0] if _resto else None
         self._video_id = _resto[1] if len(_resto) > 1 else None
@@ -1364,9 +1649,12 @@ class Tarjeta(QFrame):
         self._boton_expandir.toggled.connect(self._al_toggle_expansion)
         columna_campos.insertWidget(0, self._boton_expandir)
         datos_widget = QWidget()
+        datos_widget.setObjectName("datos_widget_b93")
         datos_widget.setMaximumWidth(240)
         datos_widget.setLayout(columna_campos)
         fila_principal.addWidget(datos_widget)
+        # B9.3/P01 corredor vertical: referencia durable para geometría global
+        self._datos_widget = datos_widget
 
         self._nombre = nombre
         self._duracion = duracion
@@ -1938,6 +2226,13 @@ class Tarjeta(QFrame):
         if isinstance(rutas, str):
             rutas = [rutas]
         # B8.2: mantener caché en memoria para ajustar_previews sin I/O
+        # B9.3 compacta: guardar ancho_slot previo para detectar cambio de aspecto
+        prev_slot = None
+        try:
+            if getattr(self, "_expandida", False) and getattr(self, "_modo_tira_b93", MODO_TIRA_DINAMICA) == MODO_TIRA:
+                prev_slot = self._tira_ancho_slot()
+        except Exception:
+            prev_slot = None
         try:
             self._previews_cache = list(rutas) if isinstance(rutas, (list, tuple)) else [rutas]
         except (TypeError, ValueError):
@@ -1949,6 +2244,13 @@ class Tarjeta(QFrame):
         if actualizado and self._expandida:
             self._refrescar_exploracion()
             self._renderizar_marcadores()
+            # B9.3/P01 compacta: si primer preview real cambia aspecto, recalcular geometría preservando scroll
+            try:
+                if getattr(self, "_modo_tira_b93", MODO_TIRA_DINAMICA) == MODO_TIRA and prev_slot is not None:
+                    if self._tira_ancho_slot() != prev_slot:
+                        self._tira_recalcular_si_cambia_aspect(prev_slot)
+            except Exception:
+                pass
         if self._etiquetas_previews:
             cantidad = escanear_videos.CANTIDAD_PREVIEWS
             self._previews_completas = (
@@ -1981,6 +2283,13 @@ class Tarjeta(QFrame):
         if pix.isNull():
             return False
         pix = _pixmap_acotado(pix)
+        # B9.3/P01 compacta: guardar slot previo para detectar cambio de aspecto
+        prev_slot_mini = None
+        try:
+            if getattr(self, "_expandida", False) and getattr(self, "_modo_tira_b93", MODO_TIRA_DINAMICA) == MODO_TIRA:
+                prev_slot_mini = self._tira_ancho_slot()
+        except Exception:
+            prev_slot_mini = None
         ancho, alto = dimensiones_miniatura()
         if self._imagen_miniatura is not None and self._miniatura_original is not None:
             # Ya tenía imagen: actualizar pixmap si es distinto
@@ -1992,6 +2301,12 @@ class Tarjeta(QFrame):
             self._imagen_miniatura.setPixmap(pix.scaled(ancho, alto, Qt.KeepAspectRatio, Qt.SmoothTransformation))
             self._imagen_miniatura.setFixedHeight(alto)
             self._miniatura_original = pix
+            try:
+                if prev_slot_mini is not None and getattr(self, "_modo_tira_b93", MODO_TIRA_DINAMICA) == MODO_TIRA and getattr(self, "_expandida", False):
+                    if self._tira_ancho_slot() != prev_slot_mini:
+                        self._tira_recalcular_si_cambia_aspect(prev_slot_mini)
+            except Exception:
+                pass
             return True
         if self._recuadro_sin_miniatura is not None:
             try:
@@ -2013,6 +2328,12 @@ class Tarjeta(QFrame):
                 self._contenedor_imagenes.insertWidget(0, imagen)
             except (RuntimeError, AttributeError, TypeError):
                 self._contenedor_imagenes.addWidget(imagen)
+            try:
+                if prev_slot_mini is not None and getattr(self, "_modo_tira_b93", MODO_TIRA_DINAMICA) == MODO_TIRA and getattr(self, "_expandida", False):
+                    if self._tira_ancho_slot() != prev_slot_mini:
+                        self._tira_recalcular_si_cambia_aspect(prev_slot_mini)
+            except Exception:
+                pass
             return True
         return False
 
@@ -2066,17 +2387,12 @@ class Tarjeta(QFrame):
         if self._expandida:
             self._franja.setFixedHeight(alto + ALTO_FRANJA_EXTRAS)
             self._imagen_exploracion.setFixedSize(ancho, alto)
-            for entrada in self._previews_densos:
-                pixmap = entrada.get("pixmap")
-                if pixmap is not None and not pixmap.isNull():
-                    entrada["pixmap_escalado"] = pixmap.scaled(
-                        ancho,
-                        alto,
-                        Qt.KeepAspectRatio,
-                        Qt.SmoothTransformation,
-                    )
             self._refrescar_exploracion()
             self._renderizar_marcadores()
+            try:
+                self._actualizar_tira_tamano_b93()
+            except Exception:
+                pass
 
     def _pixmap_ampliada(self, objeto):
         if objeto is self._imagen_miniatura:
@@ -2090,7 +2406,9 @@ class Tarjeta(QFrame):
         # B9.2 — estado fijado (solo sesión, sin persistencia, barato)
         self._fijada = False
         self._previews_exploracion = []
-        self._previews_densos = []
+        self._previews_densos = []  # B9.3 metadata ligera: {instante, ms} sin QPixmap masivo
+        self._densidad_version = None
+        self._densidad_ms_set = set()  # ms ints para dedup rápido
         self._marcadores = []
         self._marcadores_cargados = False
         self._marcadores_eliminados_carga = set()
@@ -2105,6 +2423,7 @@ class Tarjeta(QFrame):
         self._resumen_eliminados_segmentos = set()
         self._extremo_segmento = None
         self._modo_crear_segmento = False
+        self._tira_mapa_marcadores = {}
         self._menu_segmento_actual = None
         self._submenu_segmento_color_actual = None
         self._menu_marcador_actual = None
@@ -2150,6 +2469,16 @@ class Tarjeta(QFrame):
         self._selector_densidad.currentIndexChanged.connect(
             self._al_cambiar_densidad
         )
+        # B9.3 — Vista Dinámica|Tira (default Dinámica, solo sesión, densidad es autoridad)
+        self._modo_tira_b93 = MODO_TIRA_DINAMICA
+        self._selector_modo_tira = QComboBox()
+        self._selector_modo_tira.setObjectName("selector_modo_tira")
+        self._selector_modo_tira.addItem("Dinámica", MODO_TIRA_DINAMICA)
+        self._selector_modo_tira.addItem("Tira", MODO_TIRA)
+        self._selector_modo_tira.setCurrentIndex(0)
+        self._selector_modo_tira.currentIndexChanged.connect(
+            self._al_cambiar_modo_tira
+        )
         self._boton_segmento = QPushButton("Segmento")
         self._boton_segmento.setCheckable(True)
         self._boton_segmento.setToolTip(
@@ -2167,6 +2496,8 @@ class Tarjeta(QFrame):
         fila_densidad.addWidget(self._boton_fijar)
         fila_densidad.addStretch(1)
         fila_densidad.addWidget(self._boton_segmento)
+        fila_densidad.addWidget(QLabel("Vista:"))
+        fila_densidad.addWidget(self._selector_modo_tira)
         fila_densidad.addWidget(QLabel("Densidad:"))
         fila_densidad.addWidget(self._selector_densidad)
         fila_color = QHBoxLayout()
@@ -2183,12 +2514,44 @@ class Tarjeta(QFrame):
         )
         self._al_cambiar_color_activo()
         fila_color.addWidget(self._selector_color)
+        # B9.3 — tira virtualizada horizontal (Densidad autoridad, virtualización por viewport)
+        self._tira_scroll = QScrollArea()
+        self._tira_scroll.setObjectName("tira_b93_scroll")
+        self._tira_scroll.setWidgetResizable(False)
+        self._tira_scroll.setFrameShape(QFrame.StyledPanel)
+        self._tira_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self._tira_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        alto_tira = dimensiones_miniatura()[1] + TIRA_B93_ALTURA_EXTRA
+        self._tira_scroll.setFixedHeight(alto_tira + 8)
+        self._tira_contenedor = QWidget()
+        self._tira_contenedor.setObjectName("tira_b93_contenedor")
+        # Sin layout: posicionamiento absoluto virtualizado
+        self._tira_contenedor.setLayout(None)
+        self._tira_scroll.setWidget(self._tira_contenedor)
+        self._tira_previews_widgets = []  # pool virtualizado (acotado por viewport+overscan)
+        self._tira_pool_indices = {}  # widget -> logical index
+        self._tira_logical_ms = []  # lista ordenada ms (autoridad densidad)
+        # B9.3 virtualización REAL: metadata ligera + cache visual acotada
+        self._cache_visual = {}  # ms -> QPixmap acotado
+        self._cache_visual_gen = 0  # token para descartar resultados viejos
+        self._cache_visual_pending = set()  # ms pendientes de carga
+        self._hover_instante_actual = None
+        self._tira_scroll.setVisible(False)
+        # virtualización: scroll y resize refrescan viewport
+        try:
+            self._tira_scroll.horizontalScrollBar().valueChanged.connect(self._tira_on_scroll)
+            self._tira_scroll.viewport().installEventFilter(self)
+            self._tira_scroll.installEventFilter(self)
+            self._tira_contenedor.installEventFilter(self)
+        except (AttributeError, RuntimeError):
+            pass
         self._contenedor_exploracion = QWidget()
         disposicion = QVBoxLayout(self._contenedor_exploracion)
         disposicion.setContentsMargins(0, 4, 0, 0)
         disposicion.addLayout(fila_densidad)
         disposicion.addLayout(fila_color)
         disposicion.addWidget(self._franja)
+        disposicion.addWidget(self._tira_scroll)
         self._contenedor_exploracion.setVisible(False)
 
     def _al_cambiar_color_activo(self):
@@ -2214,6 +2577,800 @@ class Tarjeta(QFrame):
             self._boton_fijar.setText("Desfijar" if self._fijada else "Fijar")
             self._boton_fijar.setToolTip("Desfijar tarjeta" if self._fijada else "Fijar tarjeta expandida")
         except (AttributeError, RuntimeError):
+            pass
+
+    def _al_cambiar_modo_tira(self, _idx=None):
+        """B9.3 — Vista Dinámica vs Tira (solo sesión, densidad es autoridad)."""
+        try:
+            modo = self._selector_modo_tira.currentData()
+        except Exception:
+            modo = MODO_TIRA_DINAMICA
+        if modo not in (MODO_TIRA_DINAMICA, MODO_TIRA):
+            modo = MODO_TIRA_DINAMICA
+        self._modo_tira_b93 = modo
+        if modo == MODO_TIRA_DINAMICA:
+            # B9.3/P01 — Tira→Dinámica debe liberar TODO lo visual de tira (QPixmap/pending/gen) manteniendo metadata _previews_densos
+            try:
+                self._cache_visual_gen += 1
+            except Exception:
+                self._cache_visual_gen = 1
+            try:
+                self._cache_visual_pending.clear()
+            except Exception:
+                self._cache_visual_pending = set()
+            try:
+                self._cache_visual.clear()
+            except Exception:
+                self._cache_visual = {}
+            # ocultar preview dinámico visible para que se recargue bajo demanda (no conservar cache de tira por comodidad)
+            try:
+                self._hover_instante_actual = None
+            except Exception:
+                pass
+            try:
+                if hasattr(self, "_imagen_exploracion") and self._imagen_exploracion is not None:
+                    self._imagen_exploracion.hide()
+                    self._imagen_exploracion.setPixmap(QPixmap())
+            except Exception:
+                pass
+            try:
+                self._limpiar_tira_b93()
+            except Exception:
+                pass
+            try:
+                self._tira_aplicar_visibilidad_exclusiva()
+            except Exception:
+                pass
+        else:
+            try:
+                self._tira_aplicar_visibilidad_exclusiva()
+            except Exception:
+                pass
+            try:
+                self._tira_actualizar_logica()
+                self._tira_refrescar_viewport()
+            except Exception:
+                pass
+        try:
+            ident = self._video_id if _es_video_id_valido(self._video_id) else self._nombre
+            self.modo_tira_cambiada.emit(ident, modo)
+        except Exception:
+            pass
+
+    # ── B9.3 — helpers geometría compacta (aspect ratio sin FFprobe) ──
+    def _tira_altura_b93(self):
+        try:
+            return dimensiones_miniatura()[1]
+        except Exception:
+            return 180
+
+    def _tira_aspect_ratio(self):
+        """Devuelve aspect ratio real del video (w/h) sin FFprobe ni I/O pesado."""
+        # cache válida si proviene de dimensiones originales
+        try:
+            w = getattr(self, "_video_ancho", None)
+            h = getattr(self, "_video_alto", None)
+            if isinstance(w, int) and isinstance(h, int) and not isinstance(w, bool) and not isinstance(h, bool) and w > 0 and h > 0:
+                asp = w / h
+                if 0.2 < asp < 5.0:
+                    self._tira_aspect_cache = asp
+                    return asp
+        except Exception:
+            pass
+        # intentar desde miniatura original ya cargada (misma fuente que preview normales)
+        try:
+            pm = getattr(self, "_miniatura_original", None)
+            if pm is not None and not pm.isNull() and pm.height() > 0 and pm.width() > 0:
+                asp = pm.width() / pm.height()
+                if 0.2 < asp < 5.0:
+                    return asp
+        except Exception:
+            pass
+        # intentar desde primer preview disponible
+        try:
+            for et in getattr(self, "_etiquetas_previews", []) or []:
+                pm2 = getattr(et, "_pixmap_original", None)
+                if pm2 is not None and not pm2.isNull() and pm2.height() > 0 and pm2.width() > 0:
+                    asp = pm2.width() / pm2.height()
+                    if 0.2 < asp < 5.0:
+                        return asp
+        except Exception:
+            pass
+        # fallback: ratio de dimensiones_miniatura (16:9 genérico)
+        try:
+            aw, ah = dimensiones_miniatura()
+            if ah and ah > 0:
+                return aw / ah
+        except Exception:
+            pass
+        return 16.0 / 9.0
+
+    def _tira_ancho_slot(self):
+        """Ancho visual real de miniatura a altura H manteniendo aspecto."""
+        try:
+            h = self._tira_altura_b93()
+            asp = self._tira_aspect_ratio()
+            w = int(round(h * asp))
+            # limitar a valores válidos para evitar slots absurdos
+            if w < 40:
+                w = 40
+            if w > 800:
+                w = 800
+            self._tira_ancho_slot_cache = w
+            return w
+        except Exception:
+            try:
+                return dimensiones_miniatura()[0]
+            except Exception:
+                return 320
+
+    def _tira_stride(self):
+        try:
+            return self._tira_ancho_slot() + TIRA_B93_SPACING
+        except Exception:
+            return 322
+
+    def _tira_aplicar_visibilidad_exclusiva(self):
+        """Hace Vista exclusiva: Dinámica muestra franja, Tira muestra tira. Nunca ambas."""
+        try:
+            expandida = bool(getattr(self, "_expandida", False))
+            modo = getattr(self, "_modo_tira_b93", MODO_TIRA_DINAMICA)
+            franja = getattr(self, "_franja", None)
+            tira = getattr(self, "_tira_scroll", None)
+            if not expandida:
+                if franja is not None:
+                    franja.setVisible(False)
+                if tira is not None:
+                    tira.setVisible(False)
+                return
+            if modo == MODO_TIRA:
+                if franja is not None:
+                    franja.setVisible(False)
+                    franja.setEnabled(False)
+                if tira is not None:
+                    # visibilidad real depende de tener logical >0, pero si no, también ocultable
+                    # _tira_actualizar_logica controlará visible según N>0; aquí habilitamos para que pueda mostrarse
+                    tira.setEnabled(True)
+            else:
+                if tira is not None:
+                    tira.setVisible(False)
+                    tira.setEnabled(False)
+                if franja is not None:
+                    franja.setVisible(True)
+                    franja.setEnabled(True)
+        except Exception:
+            pass
+
+    def _es_objeto_tira_wheel(self, objeto):
+        """B9.3 — helper testeable para routing wheel por zona real de la Tira.
+
+        True únicamente para objetos pertenecientes realmente a la Tira:
+        - _tira_scroll
+        - _tira_scroll.viewport()
+        - _tira_contenedor
+        - PreviewTiraTemporal del pool vigente
+        - descendientes visuales reales de esos widgets.
+        False para labels/controles/contenedor de datos y cualquier zona no-Tira.
+        Usa walk parentWidget() seguro, evita considerar la Tarjeta completa como ancestro.
+        """
+        if objeto is None:
+            return False
+        try:
+            tira = getattr(self, "_tira_scroll", None)
+            if tira is None:
+                return False
+            try:
+                vp = tira.viewport()
+            except Exception:
+                vp = None
+            cont = getattr(self, "_tira_contenedor", None)
+            pool = getattr(self, "_tira_previews_widgets", None)
+            # Construir set rápido de pool para identidad
+            pool_set = set(pool) if isinstance(pool, (list, tuple)) and pool else set()
+            cur = objeto
+            while cur is not None:
+                if cur is tira:
+                    return True
+                if vp is not None and cur is vp:
+                    return True
+                if cont is not None and cur is cont:
+                    return True
+                if cur in pool_set:
+                    return True
+                # Si cur es un preview widget (por si pool_set no contiene cur por identidad distinta), chequear clase
+                # pero la identidad ya cubre; para descendientes de preview, el walk llegará al preview en iteración siguiente
+                try:
+                    cur = cur.parentWidget()
+                except Exception:
+                    break
+            # Fallback con isAncestorOf para cubrir casos donde parentWidget chain no incluye todos (seguridad)
+            try:
+                if cont is not None and cont.isAncestorOf(objeto):
+                    return True
+            except Exception:
+                pass
+            try:
+                if vp is not None and vp.isAncestorOf(objeto):
+                    # viewport ancestor solo si objeto no es datos (datos no es descendant de viewport)
+                    # pero viewport contiene solo cont, así que si es descendant y no fue captado por cont, igual es tira
+                    if cont is None or cont.isAncestorOf(objeto) or objeto in pool_set:
+                        return True
+                    # Si es descendiente directo de viewport pero no de cont (ej: margen), aún es zona tira
+                    # verificar que no sea scrollbar interno extraño: limitamos a objetos cuyo ancestro inmediato es viewport y está dentro del área de tira
+                    # Para simplificar, si viewport es ancestro y objeto no es scrollbar vertical padre, lo dejamos como tira solo si está bajo cont
+                    # Por eso requerimos cont ancestor; si no, no es tira pura
+                    pass
+            except Exception:
+                pass
+            # Pool descendants via isAncestorOf
+            if pool:
+                for w in pool:
+                    if w is None:
+                        continue
+                    try:
+                        if w.isAncestorOf(objeto):
+                            return True
+                    except Exception:
+                        continue
+            # Tira isAncestorOf como último recurso (pero solo si objeto está bajo cont o preview, evita falsos positivos de datos)
+            # ya cubierto
+        except Exception:
+            return False
+        return False
+
+    def _wheel_en_corredor_vertical_datos(self, objeto, evento):
+        """B9.3/P01 — corredor vertical permanente alineado con columna de datos.
+
+        Decide SOLO por posición GLOBAL HORIZONTAL X del cursor respecto al rango
+        X global visible de self._datos_widget.rect(). Tolerancia 2 px lateral por
+        bordes/layout (documentado). No importa Y: el corredor se extiende de
+        arriba a abajo por toda la ventana/listado. Visible real, no hardcode.
+        Si _datos_widget no está visible, fallback seguro: no aplica corredor.
+
+        Obtiene gx vía evento.globalPosition() si disponible; fallback robusto
+        mediante objeto.mapToGlobal(position()) y QCursor.pos() para eventos
+        sintéticos/tests.
+        """
+        try:
+            datos = getattr(self, "_datos_widget", None)
+            if datos is None:
+                return False
+            try:
+                if not datos.isVisible():
+                    return False
+            except Exception:
+                return False
+            # obtener global X del evento
+            gx = None
+            try:
+                if hasattr(evento, "globalPosition"):
+                    gp = evento.globalPosition()
+                    # QPointF
+                    try:
+                        gx = float(gp.x())
+                    except Exception:
+                        try:
+                            gx = float(gp.x)
+                        except Exception:
+                            gx = None
+                elif hasattr(evento, "globalPos"):
+                    gp = evento.globalPos()
+                    gx = float(gp.x())
+                elif hasattr(evento, "globalPositionF"):
+                    gx = float(evento.globalPositionF().x())
+            except Exception:
+                gx = None
+            if gx is None:
+                # fallback: mapear position local del objeto a global
+                try:
+                    if hasattr(evento, "position"):
+                        lp = evento.position()
+                        if objeto is not None and hasattr(objeto, "mapToGlobal"):
+                            try:
+                                if hasattr(lp, "toPoint"):
+                                    pt = lp.toPoint()
+                                else:
+                                    pt = QPoint(int(lp.x()), int(lp.y()))
+                                gp2 = objeto.mapToGlobal(pt)
+                                gx = float(gp2.x())
+                            except Exception:
+                                pass
+                        if gx is None:
+                            try:
+                                gx = float(QCursor.pos().x())
+                            except Exception:
+                                pass
+                    elif hasattr(evento, "pos"):
+                        lp = evento.pos()
+                        try:
+                            gp2 = objeto.mapToGlobal(lp)
+                            gx = float(gp2.x())
+                        except Exception:
+                            pass
+                except Exception:
+                    gx = None
+            if gx is None:
+                return False
+            # rango global horizontal de datos_widget (ancho visible real)
+            try:
+                top_left = datos.mapToGlobal(QPoint(0, 0))
+                left = float(top_left.x())
+                w = float(datos.width())
+                if w <= 0:
+                    try:
+                        w = float(datos.rect().width())
+                    except Exception:
+                        w = 240.0
+                right = left + w
+                tol = 2.0  # tolerancia lateral documentada B9.3/P01
+                left -= tol
+                right += tol
+                return left <= gx <= right
+            except Exception:
+                return False
+        except Exception:
+            return False
+
+    def _tira_recalcular_si_cambia_aspect(self, prev_ancho_slot=None):
+        """Si el aspect cambió respecto a prev_ancho_slot, recalcular preservando posición temporal visible."""
+        try:
+            if getattr(self, "_modo_tira_b93", MODO_TIRA_DINAMICA) != MODO_TIRA:
+                return False
+            if not getattr(self, "_expandida", False):
+                return False
+            nuevo = self._tira_ancho_slot()
+            if prev_ancho_slot is not None and nuevo == prev_ancho_slot:
+                return False
+            # preservar fracción de scroll
+            try:
+                scroll = getattr(self, "_tira_scroll", None)
+                if scroll is not None:
+                    hbar = scroll.horizontalScrollBar()
+                    max_old = hbar.maximum()
+                    val_old = hbar.value()
+                    frac = (val_old / max_old) if max_old > 0 else 0.0
+                else:
+                    frac = 0.0
+                # recalcular geometría y viewport (usará nuevo ancho_slot)
+                self._tira_actualizar_logica()
+                self._tira_refrescar_viewport()
+                # restaurar fracción
+                if scroll is not None:
+                    hbar2 = scroll.horizontalScrollBar()
+                    max_new = hbar2.maximum()
+                    new_val = int(round(frac * max_new))
+                    hbar2.setValue(new_val)
+                    self._tira_refrescar_viewport()
+                return True
+            except Exception:
+                try:
+                    self._tira_actualizar_logica()
+                    self._tira_refrescar_viewport()
+                except Exception:
+                    pass
+                return True
+        except Exception:
+            return False
+
+    # ── B9.3 — tira virtualizada: autoridad Densidad, 1 conjunto temporal ──
+    def _tira_actualizar_logica(self):
+        """Recalcula _tira_logical_ms según densidad vigente y actualiza geometría lógica."""
+        if getattr(self, "_modo_tira_b93", MODO_TIRA_DINAMICA) != MODO_TIRA:
+            try:
+                sc = getattr(self, "_tira_scroll", None)
+                if sc is not None:
+                    sc.setVisible(False)
+            except Exception:
+                pass
+            return
+        if not getattr(self, "_expandida", False):
+            return
+        # densidad autoridad
+        densidad = getattr(self, "_densidad_manual", None)
+        dur = getattr(self, "_duracion", None)
+        logical = _ms_tira_densidad_ordenada(dur, densidad)
+        self._tira_logical_ms = logical
+        # B9.3/029 — recalcular mapa marcador→sample al cambiar logical
+        try:
+            self._reconstruir_mapa_marcadores_tira()
+        except Exception:
+            pass
+        # geometría lógica compacta: ancho_slot real según aspecto
+        try:
+            # preservar fracción de scroll si ya existe geometría previa (tamaño miniatura cambió)
+            prev_frac = None
+            prev_scroll = None
+            try:
+                _prev_scroll = getattr(self, "_tira_scroll", None)
+                if _prev_scroll is not None:
+                    _hbar_prev = _prev_scroll.horizontalScrollBar()
+                    _max_prev = _hbar_prev.maximum()
+                    _val_prev = _hbar_prev.value()
+                    if _max_prev > 0:
+                        prev_frac = _val_prev / _max_prev
+                        prev_scroll = _prev_scroll
+            except Exception:
+                prev_frac = None
+            ancho_slot = self._tira_ancho_slot()
+            spacing = TIRA_B93_SPACING
+            margins_total = TIRA_B93_MARGIN * 2
+            n = len(logical)
+            total_ancho = n * ancho_slot + max(0, n - 1) * spacing + margins_total
+            cont = getattr(self, "_tira_contenedor", None)
+            scroll = getattr(self, "_tira_scroll", None)
+            if cont is not None:
+                cont.setFixedWidth(max(total_ancho, 120))
+                cont.setFixedHeight(scroll.height() - 8 if scroll and scroll.height() > 0 else dimensiones_miniatura()[1] + TIRA_B93_ALTURA_EXTRA)
+            if scroll is not None:
+                # respetar exclusividad: si Tira visible, mostrar; si no, ya oculto por _tira_aplicar
+                if n > 0:
+                    scroll.setVisible(True)
+                else:
+                    scroll.setVisible(False)
+                # actualizar rango scrollbar preservando fracción si hubo cambio de ancho_slot/tamaño
+                try:
+                    hbar = scroll.horizontalScrollBar()
+                    hbar.setRange(0, max(0, total_ancho - scroll.viewport().width()))
+                    if prev_frac is not None and prev_scroll is scroll and hbar.maximum() > 0:
+                        hbar.setValue(int(round(prev_frac * hbar.maximum())))
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    def _tira_pixmap_para_ms(self, ms):
+        """Obtiene QPixmap para ms desde cache visual (metadata pura no retiene pixmap)."""
+        try:
+            pm = getattr(self, "_cache_visual", {}).get(ms)
+            if pm is not None and not pm.isNull():
+                return pm
+        except Exception:
+            pass
+        return None
+
+    def _ms_visuales_necesarios(self):
+        """Calcula conjunto requerido derivado de necesidad actual (viewport+overscan y vecindario dinámico)."""
+        requeridos = set()
+        # Tira: índices visibles + overscan calculado por viewport
+        if getattr(self, "_expandida", False) and getattr(self, "_modo_tira_b93", MODO_TIRA_DINAMICA) == MODO_TIRA:
+            logical = getattr(self, "_tira_logical_ms", []) or []
+            n = len(logical)
+            if n > 0:
+                try:
+                    ancho_slot = self._tira_ancho_slot()
+                    spacing = TIRA_B93_SPACING
+                    vp_w = self._tira_scroll.viewport().width() if hasattr(self, "_tira_scroll") and self._tira_scroll.viewport() else 800
+                    if vp_w <= 0:
+                        vp_w = 800
+                    visible = max(1, (vp_w + spacing) // (ancho_slot + spacing) + 1)
+                    overscan = visible
+                    # compensar margen inicial
+                    scroll_val = self._tira_scroll.horizontalScrollBar().value() if hasattr(self, "_tira_scroll") else 0
+                    stride = ancho_slot + spacing
+                    # scroll_val incluye margen inicial TIRA_B93_MARGIN, descontarlo para índice
+                    eff_scroll = max(0, scroll_val - TIRA_B93_MARGIN)
+                    first_visible = max(0, eff_scroll // stride) if stride > 0 else 0
+                    last_visible = min(n - 1, first_visible + visible - 1)
+                    first = max(0, first_visible - overscan)
+                    last = min(n - 1, last_visible + overscan)
+                    for idx in range(first, last + 1):
+                        requeridos.add(logical[idx])
+                except Exception:
+                    pass
+        # Dinámica: frame actual + vecindario pequeño derivado de uso dinámico
+        try:
+            hover = getattr(self, "_hover_instante_actual", None)
+            if isinstance(hover, (int, float)) and not isinstance(hover, bool):
+                ms_hover = self._ms_mas_cercano(hover)
+                if isinstance(ms_hover, int) and ms_hover > 0:
+                    requeridos.add(ms_hover)
+                    try:
+                        logical_dyn = getattr(self, "_tira_logical_ms", []) or sorted([d.get("ms") for d in self._previews_densos if isinstance(d.get("ms"), int)])
+                        if ms_hover in logical_dyn:
+                            idx = logical_dyn.index(ms_hover)
+                            for off in (-2, -1, 1, 2):
+                                j = idx + off
+                                if 0 <= j < len(logical_dyn):
+                                    requeridos.add(logical_dyn[j])
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        return requeridos
+
+    def _sincronizar_cache_visual(self):
+        """Expulsa todo QPixmap fuera del conjunto requerido y limpia pending no vigente."""
+        requeridos = self._ms_visuales_necesarios()
+        # Si no hay requeridos (colapsada o sin viewport), vaciar cache si corresponde será manejado por colapso
+        # pero para estabilidad, si requeridos vacío y expandida en Tira sin geometría, no evictar agresivo
+        # Solo evictar lo fuera de requeridos cuando requeridos no vacío o estamos en Dinámica con hover
+        if requeridos:
+            try:
+                for ms in list(getattr(self, "_cache_visual", {}).keys()):
+                    if ms not in requeridos:
+                        del self._cache_visual[ms]
+            except Exception:
+                pass
+            try:
+                cur_pending = getattr(self, "_cache_visual_pending", set()) or set()
+                self._cache_visual_pending = set(m for m in cur_pending if m in requeridos and m not in self._cache_visual)
+            except Exception:
+                self._cache_visual_pending = set()
+        else:
+            # B9.3/P01 — si Vista=Dinámica y no hay hover/requeridos, cache visual densa =0 (no dejar pass que conserve residuo)
+            try:
+                if getattr(self, "_modo_tira_b93", MODO_TIRA_DINAMICA) != MODO_TIRA and getattr(self, "_hover_instante_actual", None) is None:
+                    try:
+                        self._cache_visual.clear()
+                    except Exception:
+                        self._cache_visual = {}
+                    try:
+                        self._cache_visual_pending.clear()
+                    except Exception:
+                        self._cache_visual_pending = set()
+            except Exception:
+                pass
+
+    def _tira_estimar_pool(self):
+        """Calcula pool_size necesario: visible + 1 pantalla extra por lado."""
+        try:
+            ancho_slot = self._tira_ancho_slot()
+            spacing = TIRA_B93_SPACING
+            vp_w = self._tira_scroll.viewport().width() if hasattr(self, "_tira_scroll") and self._tira_scroll.viewport() else 800
+            if vp_w <= 0:
+                vp_w = 800
+            visible = max(1, (vp_w + spacing) // (ancho_slot + spacing) + 1)
+            overscan = visible  # 1 pantalla extra por lado
+            pool_needed = visible + 2 * overscan
+            # acotar por N lógico
+            n = len(getattr(self, "_tira_logical_ms", []) or [])
+            pool_needed = min(pool_needed, n)
+            pool_needed = max(pool_needed, min(8, n))  # mínimo razonable
+            return pool_needed, visible, ancho_slot, spacing
+        except Exception:
+            return 12, 6, 320, 2
+
+    def _tira_asegurar_pool(self, pool_needed):
+        """Asegura que _tira_previews_widgets tenga pool_needed widgets."""
+        cur = len(getattr(self, "_tira_previews_widgets", []) or [])
+        if cur >= pool_needed:
+            # si sobran muchos, recortar? mantener acotado
+            if cur > pool_needed + 4:
+                for w in list(self._tira_previews_widgets[pool_needed:]):
+                    try:
+                        w.hide(); w.close(); w.setParent(None); w.deleteLater()
+                    except Exception:
+                        pass
+                self._tira_previews_widgets = self._tira_previews_widgets[:pool_needed]
+            return
+        for _ in range(pool_needed - cur):
+            w = PreviewTiraTemporal(self._tira_contenedor)
+            w.installEventFilter(self)
+            # B9.3/029 — conectar señales de tira una sola vez por widget (sin lambdas index)
+            try:
+                w.tira_left_clicked.connect(self._on_tira_left_clicked)
+                w.tira_right_clicked.connect(self._on_tira_right_clicked)
+            except Exception:
+                pass
+            w.hide()
+            self._tira_previews_widgets.append(w)
+
+    def _tira_refrescar_viewport(self):
+        """Virtualiza: asigna widgets visibles + overscan a índices lógicos."""
+        if getattr(self, "_modo_tira_b93", MODO_TIRA_DINAMICA) != MODO_TIRA:
+            return
+        if not getattr(self, "_expandida", False):
+            return
+        logical = getattr(self, "_tira_logical_ms", None)
+        if logical is None:
+            self._tira_actualizar_logica()
+            logical = getattr(self, "_tira_logical_ms", []) or []
+        n = len(logical)
+        if n == 0:
+            try:
+                self._tira_scroll.setVisible(False)
+            except Exception:
+                pass
+            return
+        # asegurar contenedor visible
+        try:
+            self._tira_scroll.setVisible(True)
+        except Exception:
+            pass
+        pool_needed, visible, ancho_slot, spacing = self._tira_estimar_pool()
+        self._tira_asegurar_pool(pool_needed)
+        # calcular rango visible (compensar margen inicial)
+        try:
+            scroll_val = self._tira_scroll.horizontalScrollBar().value() if hasattr(self, "_tira_scroll") else 0
+        except Exception:
+            scroll_val = 0
+        stride = ancho_slot + spacing
+        eff_scroll = max(0, scroll_val - TIRA_B93_MARGIN)
+        first_visible = max(0, eff_scroll // stride) if stride > 0 else 0
+        last_visible = min(n - 1, first_visible + visible - 1)
+        overscan = visible
+        first = max(0, first_visible - overscan)
+        last = min(n - 1, last_visible + overscan)
+        needed = last - first + 1
+        # ajustar pool si needed != pool_needed (por cambio tamaño)
+        if needed != len(self._tira_previews_widgets):
+            # re-asegurar
+            self._tira_asegurar_pool(needed)
+            # recalc needed might differ
+            if len(self._tira_previews_widgets) != needed:
+                # si n pequeño, usar n
+                needed = min(needed, len(self._tira_previews_widgets))
+                last = first + needed - 1
+        # B9.3 virtualización REAL: mapa ms->pixmap desde _cache_visual (acotada por necesidad)
+        dens_map = {}
+        try:
+            for ms, pm in getattr(self, "_cache_visual", {}).items():
+                if pm is not None and not pm.isNull():
+                    dens_map[ms] = pm
+        except Exception:
+            pass
+        # sincronizar cache según necesidad actual antes de detectar misses
+        try:
+            self._sincronizar_cache_visual()
+            # reconstruir dens_map tras sincronizar
+            dens_map = {ms: pm for ms, pm in getattr(self, "_cache_visual", {}).items() if pm is not None and not pm.isNull()}
+        except Exception:
+            pass
+        # detectar misses del viewport para encolar background batch
+        misses = []
+        try:
+            for logical_idx in range(first, last + 1):
+                ms = logical[logical_idx]
+                if ms not in dens_map and ms not in getattr(self, "_cache_visual_pending", set()):
+                    misses.append(ms)
+            if misses:
+                batch = misses[:12]
+                for m in batch:
+                    self._cache_visual_pending.add(m)
+                try:
+                    self._cache_visual_gen += 1
+                except Exception:
+                    self._cache_visual_gen = 1
+                payload = {"video_id": getattr(self, "_video_id", None), "version": getattr(self, "_densidad_version", None), "ms_lista": batch, "request_id": self._cache_visual_gen, "gen": self._cache_visual_gen}
+                self.preview_visual_solicitada.emit(payload)
+        except Exception:
+            pass
+        # asegurar mapa marcadores actualizado antes de bind (no sobre-optimizar, O(Nmark*Nsamples) pequeño)
+        try:
+            self._reconstruir_mapa_marcadores_tira()
+        except Exception:
+            pass
+        try:
+            pendiente_ms_global = self._tira_ms_pendiente_logico()
+        except Exception:
+            pendiente_ms_global = None
+        # asignar widgets
+        for i, w in enumerate(self._tira_previews_widgets):
+            logical_idx = first + i
+            if logical_idx > last or logical_idx >= n:
+                try:
+                    w.hide()
+                    w.clear_tira()
+                except Exception:
+                    try:
+                        w._pixmap = None
+                        w.update()
+                    except Exception:
+                        pass
+                continue
+            ms = logical[logical_idx]
+            instante = ms / 1000.0
+            pixmap = dens_map.get(ms)
+            tiempo_txt = formatear_tiempo(instante) if _duracion_valida(self._duracion) else None
+            # datos ligeros de marcador/segmento para este sample (sin duplicar QPixmap)
+            try:
+                marcadores_ms = self._marcadores_para_sample_tira(ms)
+            except Exception:
+                marcadores_ms = []
+            try:
+                segmentos_ms = self._segmentos_para_sample_tira(ms)
+            except Exception:
+                segmentos_ms = []
+            # posición absoluta compacta
+            x = TIRA_B93_MARGIN + logical_idx * stride
+            y = TIRA_B93_MARGIN
+            h = dimensiones_miniatura()[1]
+            try:
+                w.setFixedHeight(h)
+                w.setFixedWidth(ancho_slot)
+                w.move(x, y)
+                # set preview (si pixmap None -> mostrar placeholder sin pixmap)
+                if pixmap is not None and not pixmap.isNull():
+                    w.set_preview(pixmap, tiempo_txt)
+                else:
+                    # placeholder: sin pixmap, solo timestamp
+                    w._pixmap = None
+                    w._tiempo = tiempo_txt
+                    w.update()
+                # binding ligero SIEMPRE limpia estado anterior (reciclado) y asigna marcadores/segmentos reales
+                pendiente = (pendiente_ms_global is not None and int(ms) == int(pendiente_ms_global))
+                try:
+                    w.bind_tira(ms, marcadores_ms, segmentos_ms, pendiente)
+                except Exception:
+                    # fallback directo
+                    w._logical_ms = ms
+                    w._marcadores_tira = list(marcadores_ms)
+                    w._segmentos_tira = list(segmentos_ms)
+                    w._pendiente_tira = bool(pendiente)
+                    w.update()
+                w.show()
+                w.raise_()
+            except Exception:
+                pass
+        # actualizar altura contenedor si cambió tamaño miniatura
+        try:
+            alto = dimensiones_miniatura()[1]
+            cont = getattr(self, "_tira_contenedor", None)
+            if cont is not None:
+                cont.setFixedHeight(alto + TIRA_B93_ALTURA_EXTRA)
+        except Exception:
+            pass
+
+    def _tira_on_scroll(self, _val=None):
+        try:
+            self._tira_refrescar_viewport()
+        except Exception:
+            pass
+
+    # Compat: alias antiguo
+    def _poblar_tira_b93(self):
+        self._tira_actualizar_logica()
+        self._tira_refrescar_viewport()
+
+    def _limpiar_tira_b93(self):
+        """Libera pool virtualizado (JPEG en disco permanece, _previews_densos intactos)."""
+        try:
+            for w in list(getattr(self, "_tira_previews_widgets", []) or []):
+                try:
+                    w.hide()
+                    w.close()
+                    w.setParent(None)
+                    w.deleteLater()
+                except Exception:
+                    pass
+            self._tira_previews_widgets = []
+            self._tira_pool_indices = {}
+        except Exception:
+            self._tira_previews_widgets = []
+        try:
+            self._tira_logical_ms = []
+        except Exception:
+            pass
+        try:
+            if hasattr(self, "_tira_scroll") and self._tira_scroll is not None:
+                self._tira_scroll.setVisible(False)
+        except Exception:
+            pass
+        try:
+            QApplication.processEvents()
+            QApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+            QApplication.processEvents()
+        except Exception:
+            pass
+
+    def _actualizar_tira_tamano_b93(self):
+        """Reajusta tira al cambiar tamaño miniaturas sin I/O (repintado virtualizado)."""
+        try:
+            alto = dimensiones_miniatura()[1]
+            if hasattr(self, "_tira_scroll") and self._tira_scroll is not None:
+                self._tira_scroll.setFixedHeight(alto + TIRA_B93_ALTURA_EXTRA + 8)
+                if hasattr(self, "_tira_contenedor") and self._tira_contenedor is not None:
+                    self._tira_contenedor.setFixedHeight(alto + TIRA_B93_ALTURA_EXTRA)
+            # recalcular geometría lógica y viewport
+            self._tira_actualizar_logica()
+            self._tira_refrescar_viewport()
+            # también reajustar pixmaps en pool
+            for w in getattr(self, "_tira_previews_widgets", []) or []:
+                try:
+                    w.reajustar()
+                except Exception:
+                    pass
+        except Exception:
             pass
 
     def _refrescar_textos_colores(self):
@@ -2303,6 +3460,13 @@ class Tarjeta(QFrame):
             if round(d["instante"] * 1000) in objetivo
         ]
         self._refrescar_exploracion()
+        # B9.3 — densidad autoridad: actualizar tira virtualizada sin reconstruir tarjeta
+        try:
+            if getattr(self, "_expandida", False) and getattr(self, "_modo_tira_b93", MODO_TIRA_DINAMICA) == MODO_TIRA:
+                self._tira_actualizar_logica()
+                self._tira_refrescar_viewport()
+        except Exception:
+            pass
 
     def expandir(self):
         if not self._expandida:
@@ -2340,6 +3504,12 @@ class Tarjeta(QFrame):
             except (AttributeError, RuntimeError):
                 pass
             self._preparar_exploracion()
+            try:
+                self._tira_aplicar_visibilidad_exclusiva()
+            except Exception:
+                pass
+            # B9.3 — tira virtualizada se inicializa en _preparar_exploracion
+            pass
         else:
             # B9.2 — colapso manual desfija automáticamente (sin persistencia)
             if getattr(self, "_fijada", False):
@@ -2361,6 +3531,27 @@ class Tarjeta(QFrame):
             self._contenedor_exploracion.setVisible(False)
             self._previews_exploracion = []
             self._previews_densos = []
+            self._densidad_version = None
+            self._densidad_ms_set = set()
+            # B9.3 virtualización REAL: invalidar requests y vaciar cache visual
+            try:
+                self._cache_visual_gen += 1
+            except Exception:
+                self._cache_visual_gen = 1
+            try:
+                self._cache_visual.clear()
+            except Exception:
+                self._cache_visual = {}
+            try:
+                self._cache_visual_pending.clear()
+            except Exception:
+                self._cache_visual_pending = set()
+            self._hover_instante_actual = None
+            # B9.3 — liberar tira expandida al colapsar (disco permanece)
+            try:
+                self._limpiar_tira_b93()
+            except Exception:
+                pass
             self._imagen_exploracion.setPixmap(QPixmap())
             self._imagen_exploracion.hide()
             self._cancelar_extremo_segmento()
@@ -2383,6 +3574,14 @@ class Tarjeta(QFrame):
         self._actualizar_tiempo_exploracion(0.0)
         self._mostrar_preview_para_instante(0.0)
         self._renderizar_marcadores()
+        # B9.3 — Vista exclusiva + si Vista=Tira, inicializar lógica virtualizada
+        try:
+            self._tira_aplicar_visibilidad_exclusiva()
+            if getattr(self, "_modo_tira_b93", MODO_TIRA_DINAMICA) == MODO_TIRA:
+                self._tira_actualizar_logica()
+                self._tira_refrescar_viewport()
+        except Exception:
+            pass
         self.marcadores_solicitados.emit()
         self.segmentos_solicitados.emit()
         QTimer.singleShot(0, self._reajustar_geometria_exploracion)
@@ -2495,82 +3694,210 @@ class Tarjeta(QFrame):
             self._posicionar_preview(instante)
 
     def _pixmap_para_instante(self, instante):
+        """B9.3 virtualización: cache hit inmediato, considera preview vs denso con tie-break preview. Solo cache_visual para densos."""
+        if not isinstance(instante, (int, float)) or isinstance(instante, bool):
+            return None
         if not self._previews_densos:
             disponibles = self._previews_exploracion
-            indice = preview_mas_cercana(
-                [d["instante"] for d in disponibles], instante
-            )
+            indice = preview_mas_cercana([d["instante"] for d in disponibles], instante)
             if indice is None:
                 return None
-            return disponibles[indice]["pixmap_escalado"]
-        if not (
-            isinstance(instante, (int, float))
-            and not isinstance(instante, bool)
-        ):
-            return None
+            return disponibles[indice].get("pixmap_escalado")
         mejor = None
         mejor_clave = None
-        for es_denso, grupo in (
-            (False, self._previews_exploracion),
-            (True, self._previews_densos),
-        ):
-            for entrada in grupo:
-                tiempo = entrada.get("instante")
-                if not (
-                    isinstance(tiempo, (int, float))
-                    and not isinstance(tiempo, bool)
-                ):
+        for entrada in self._previews_exploracion or []:
+            tiempo = entrada.get("instante")
+            if not isinstance(tiempo, (int, float)) or isinstance(tiempo, bool):
+                continue
+            pm = entrada.get("pixmap_escalado")
+            if pm is None or pm.isNull():
+                continue
+            clave = (abs(float(tiempo) - float(instante)), False)
+            if mejor_clave is None or clave < mejor_clave:
+                mejor_clave = clave
+                mejor = pm
+        for d in self._previews_densos or []:
+            tiempo = d.get("instante")
+            if not isinstance(tiempo, (int, float)) or isinstance(tiempo, bool):
+                continue
+            ms = d.get("ms")
+            if not isinstance(ms, int):
+                try:
+                    ms = round(float(tiempo) * 1000)
+                except Exception:
                     continue
-                pixmap = entrada.get("pixmap_escalado")
-                if pixmap is None or pixmap.isNull():
-                    continue
-                clave = (abs(tiempo - instante), es_denso)
-                if mejor_clave is None or clave < mejor_clave:
-                    mejor_clave = clave
-                    mejor = pixmap
+            pm = None
+            try:
+                pm = self._cache_visual.get(ms)
+            except Exception:
+                pm = None
+            if pm is None or (hasattr(pm, "isNull") and pm.isNull()):
+                continue
+            clave = (abs(float(tiempo) - float(instante)), True)
+            if mejor_clave is None or clave < mejor_clave:
+                mejor_clave = clave
+                mejor = pm
         return mejor
 
+    def _ms_mas_cercano(self, instante):
+        try:
+            from exploracion_temporal import fotograma_mas_cercano as _fmc
+            ms_lista = [d.get("ms") for d in self._previews_densos if isinstance(d.get("ms"), int)]
+            if not ms_lista:
+                ms_lista = [round(float(d["instante"])*1000) for d in self._previews_densos if isinstance(d.get("instante"), (int,float)) and not isinstance(d.get("instante"), bool)]
+            return _fmc(ms_lista, instante)
+        except Exception:
+            return None
+
+    def _solicitar_visual_si_falta(self, ms):
+        """Encola background para ms y vecinos si no está en cache ni pending (sin límite fijo)."""
+        if not isinstance(ms, int) or ms <= 0:
+            return
+        if ms in self._cache_visual:
+            return
+        if ms in getattr(self, "_cache_visual_pending", set()):
+            return
+        try:
+            self._cache_visual_gen += 1
+        except Exception:
+            self._cache_visual_gen = 1
+        req = self._cache_visual_gen
+        vecinos = []
+        try:
+            logical = getattr(self, "_tira_logical_ms", []) or sorted([d.get("ms") for d in self._previews_densos if isinstance(d.get("ms"), int)])
+            if ms in logical:
+                idx = logical.index(ms)
+                for off in (-2, -1, 1, 2):
+                    j = idx + off
+                    if 0 <= j < len(logical):
+                        vecinos.append(logical[j])
+        except Exception:
+            vecinos = []
+        ms_list = [ms] + [v for v in vecinos if v not in self._cache_visual and v not in self._cache_visual_pending]
+        ms_list = ms_list[:5]
+        # pending representa requests actuales; sin pop arbitrario
+        for m in ms_list:
+            self._cache_visual_pending.add(m)
+        try:
+            payload = {"video_id": getattr(self, "_video_id", None), "version": getattr(self, "_densidad_version", None), "ms_lista": ms_list, "request_id": req, "gen": req}
+            self.preview_visual_solicitada.emit(payload)
+        except Exception:
+            pass
+
+
     def agregar_fotogramas_densos(self, densos):
-        """Incorpora fotogramas densos (instante en segundos + pixmap)."""
+        """B9.3 virtualización REAL: _previews_densos SIEMPRE metadata ligera {instante,ms} sin QPixmap."""
         if not densos:
             return False
-        ancho, alto = dimensiones_miniatura()
-        existentes = {
-            round(d["instante"], 6) for d in self._previews_densos
-        }
+        existentes_inst = {round(float(d.get("instante", 0)), 6) for d in self._previews_densos if isinstance(d.get("instante"), (int, float)) and not isinstance(d.get("instante"), bool)}
         nuevos = False
         for entrada in densos:
             instante = entrada.get("instante")
-            if not (
-                isinstance(instante, (int, float))
-                and not isinstance(instante, bool)
-            ):
+            if not (isinstance(instante, (int, float)) and not isinstance(instante, bool)):
                 continue
-            clave = round(instante, 6)
-            if clave in existentes:
+            clave = round(float(instante), 6)
+            if clave in existentes_inst:
                 continue
-            pixmap = entrada.get("pixmap")
-            if pixmap is None or pixmap.isNull():
-                continue
-            self._previews_densos.append(
-                {
-                    "instante": float(instante),
-                    "pixmap": pixmap,
-                    "pixmap_escalado": pixmap.scaled(
-                        ancho,
-                        alto,
-                        Qt.KeepAspectRatio,
-                        Qt.SmoothTransformation,
-                    ),
-                }
-            )
-            existentes.add(clave)
+            # B9.3 metadata pura: si entrada trae pixmap, validar que sea no nulo (compat filtrado histórico) pero no retener
+            if "pixmap" in entrada:
+                pm = entrada.get("pixmap")
+                if pm is None or (hasattr(pm, "isNull") and pm.isNull()):
+                    continue
+            ms = round(float(instante) * 1000)
+            self._previews_densos.append({"instante": float(instante), "ms": ms})
+            existentes_inst.add(clave)
+            self._densidad_ms_set.add(ms)
             nuevos = True
         if nuevos and self._expandida:
             self._refrescar_exploracion()
+            try:
+                if getattr(self, "_modo_tira_b93", MODO_TIRA_DINAMICA) == MODO_TIRA:
+                    self._tira_refrescar_viewport()
+            except Exception:
+                pass
+        return nuevos
+
+    def set_metadata_densa(self, ms_lista, version=None):
+        """B9.3: establece metadata ligera para N tiempos sin QPixmap. Retorna True si hubo nuevos."""
+        if not ms_lista:
+            return False
+        if version is not None:
+            self._densidad_version = version
+        nuevos = False
+        existentes_ms = set(getattr(self, "_densidad_ms_set", set())) | {d.get("ms") for d in self._previews_densos if isinstance(d.get("ms"), int)}
+        # también reconstruir desde _previews_densos instantes si ms no está
+        for d in list(self._previews_densos):
+            if "ms" not in d and isinstance(d.get("instante"), (int,float)):
+                try:
+                    d["ms"] = round(float(d["instante"])*1000)
+                except Exception:
+                    pass
+        for ms in ms_lista:
+            if not isinstance(ms, int) or isinstance(ms, bool) or ms <0:
+                continue
+            if ms in existentes_ms:
+                continue
+            instante = ms/1000.0
+            self._previews_densos.append({"instante": instante, "ms": ms})
+            existentes_ms.add(ms)
+            nuevos = True
+        self._densidad_ms_set = existentes_ms
+        # Ordenar por instante para facilitar fotograma_mas_cercano aunque metadata puede venir en orden bisección
+        try:
+            self._previews_densos.sort(key=lambda d: d.get("instante", 0))
+        except Exception:
+            pass
+        # actualizar lógica tira
+        try:
+            if getattr(self, "_modo_tira_b93", MODO_TIRA_DINAMICA) == MODO_TIRA:
+                self._tira_actualizar_logica()
+                self._tira_refrescar_viewport()
+        except Exception:
+            pass
         return nuevos
 
     def _mostrar_preview_para_instante(self, instante):
+        # B9.3: cache hit inmediato, miss encola background sin JPEG síncrono
+        # Si hay metadata densa, verificar cache visual directamente para decidir miss y encolar
+        if self._previews_densos and isinstance(instante, (int,float)) and not isinstance(instante,bool):
+            ms = self._ms_mas_cercano(instante)
+            if ms is not None:
+                pm_cache = None
+                try:
+                    pm_cache = self._cache_visual.get(ms)
+                except Exception:
+                    pm_cache = None
+                if pm_cache is not None and not pm_cache.isNull():
+                    self._hover_instante_actual = instante
+                    self._imagen_exploracion.setPixmap(pm_cache)
+                    self._imagen_exploracion.setFixedSize(pm_cache.size())
+                    self._imagen_exploracion.setText("")
+                    self._imagen_exploracion.show()
+                    self._posicionar_preview(instante)
+                    return
+                # miss -> encolar background
+                self._solicitar_visual_si_falta(ms)
+                self._hover_instante_actual = instante
+                # fallback a preview si existe, sino ocultar
+                pix_preview = None
+                try:
+                    idx = preview_mas_cercana([d["instante"] for d in self._previews_exploracion], instante)
+                    if idx is not None:
+                        pix_preview = self._previews_exploracion[idx].get("pixmap_escalado")
+                except Exception:
+                    pix_preview = None
+                if pix_preview is not None and not pix_preview.isNull():
+                    self._imagen_exploracion.setPixmap(pix_preview)
+                    self._imagen_exploracion.setFixedSize(pix_preview.size())
+                    self._imagen_exploracion.setText("")
+                    self._imagen_exploracion.show()
+                    self._posicionar_preview(instante)
+                else:
+                    self._imagen_exploracion.setPixmap(QPixmap())
+                    self._imagen_exploracion.setText("")
+                    self._imagen_exploracion.hide()
+                return
+        # fallback sin metadata o instante inválido
         pixmap = self._pixmap_para_instante(instante)
         if pixmap is None:
             self._imagen_exploracion.setPixmap(QPixmap())
@@ -2593,6 +3920,329 @@ class Tarjeta(QFrame):
         if ancho > 0 and _duracion_valida(self._duracion):
             return self._duracion / ancho * 0.5
         return 0.0
+
+    # ── B9.3/029 — asociación marcador/segmento → sample tira (helpers testeables) ──
+    def _reconstruir_mapa_marcadores_tira(self):
+        """Construye mapa sample_ms -> [marcadores reales] con criterio determinista."""
+        mapa = {}
+        logical = getattr(self, "_tira_logical_ms", None) or []
+        if not logical or not getattr(self, "_marcadores", None):
+            self._tira_mapa_marcadores = mapa
+            return mapa
+        # para cada marcador real encontrar sample más cercano (tie menor ms)
+        for marcador in self._marcadores:
+            try:
+                t = float(marcador.get("tiempo", 0))
+            except Exception:
+                continue
+            t_ms = int(round(t * 1000))
+            best = None
+            best_dist = None
+            for sample in logical:
+                try:
+                    dist = abs(int(sample) - t_ms)
+                except Exception:
+                    continue
+                if best_dist is None or dist < best_dist or (dist == best_dist and sample < best):
+                    best_dist = dist
+                    best = sample
+            if best is not None:
+                mapa.setdefault(int(best), []).append(marcador)
+        # ordenar listas por tiempo real asc para determinismo
+        for k in list(mapa.keys()):
+            try:
+                mapa[k] = sorted(mapa[k], key=lambda m: float(m.get("tiempo", 0)))
+            except Exception:
+                pass
+        self._tira_mapa_marcadores = mapa
+        return mapa
+
+    def _marcadores_para_sample_tira(self, ms):
+        """Devuelve marcadores reales asociados al sample lógico `ms` (int ms)."""
+        try:
+            ms = int(ms)
+        except Exception:
+            return []
+        mapa = getattr(self, "_tira_mapa_marcadores", None)
+        if mapa is None:
+            mapa = self._reconstruir_mapa_marcadores_tira()
+        lst = mapa.get(ms)
+        if lst is None:
+            # fallback: recalcular si mapa vacío pero logical cambió sin reconstruir
+            # verificar si mapa fue construido con logical viejo
+            logical = getattr(self, "_tira_logical_ms", None) or []
+            if logical and ms in logical:
+                # reconstruir y reintentar
+                mapa = self._reconstruir_mapa_marcadores_tira()
+                lst = mapa.get(ms, [])
+            else:
+                lst = []
+        return list(lst) if lst else []
+
+    def _segmentos_para_sample_tira(self, ms):
+        """Devuelve segmentos reales que contienen al sample `ms` (inicio <= ms/1000 <= fin)."""
+        try:
+            ms_i = int(ms)
+            t = ms_i / 1000.0
+        except Exception:
+            return []
+        res = []
+        for seg in getattr(self, "_segmentos", []) or []:
+            try:
+                inicio = float(seg.get("inicio"))
+                fin = float(seg.get("fin"))
+            except Exception:
+                continue
+            # tolerancia 1e-9 si contrato la exige; sin alterar tiempos
+            if inicio - 1e-9 <= t <= fin + 1e-9:
+                # clamp exacto: si fuera por tolerancia, aún devolver real con tiempos originales
+                if inicio <= t <= fin or abs(t - inicio) < 1e-7 or abs(t - fin) < 1e-7:
+                    res.append(seg)
+                else:
+                    # tolerancia leve pero devolver igual si dentro de epsilon
+                    res.append(seg)
+        # orden determinista: inicio asc, fin asc, id asc
+        try:
+            res.sort(key=lambda s: (float(s.get("inicio", 0)), float(s.get("fin", 0)), int(s.get("id") or 0)))
+        except Exception:
+            pass
+        return res
+
+    def _tira_actualizar_decoraciones(self):
+        """Refresca decoraciones de widgets visibles tras mutación marcadores/segmentos/densidad."""
+        try:
+            self._reconstruir_mapa_marcadores_tira()
+        except Exception:
+            pass
+        # actualizar cada widget visible con nuevo bind sin reconstruir pool
+        logical = getattr(self, "_tira_logical_ms", None) or []
+        if not logical:
+            return
+        pendiente_ms = self._tira_ms_pendiente_logico()
+        # mapa inverso logical_idx -> ms ya conocido
+        for w in getattr(self, "_tira_previews_widgets", []) or []:
+            try:
+                ms = getattr(w, "_logical_ms", None)
+                if ms is None:
+                    continue
+                if ms not in logical:
+                    continue
+                marcadores = self._marcadores_para_sample_tira(ms)
+                segmentos = self._segmentos_para_sample_tira(ms)
+                pendiente = (pendiente_ms is not None and int(ms) == int(pendiente_ms))
+                w.bind_tira(ms, marcadores, segmentos, pendiente)
+            except Exception:
+                continue
+
+    def _tira_ms_pendiente_logico(self):
+        """Devuelve el sample lógico ms que representa visualmente el extremo A pendiente, o None.
+
+        Usa _extremo_segmento autoritativo (segundos) y busca el sample más cercano en _tira_logical_ms.
+        Si el extremo coincide exactamente con un sample, lo retorna exacto; si no, el más cercano
+        (tie: menor ms) solo para representación visual, sin modificar el tiempo real almacenado.
+        Solo tiene efecto si _modo_crear_segmento activo y existe pendiente.
+        """
+        try:
+            if not getattr(self, "_modo_crear_segmento", False):
+                return None
+            extremo = getattr(self, "_extremo_segmento", None)
+            if extremo is None:
+                return None
+            if not isinstance(extremo, (int, float)) or isinstance(extremo, bool):
+                return None
+            logical = getattr(self, "_tira_logical_ms", None) or []
+            if not logical:
+                return None
+            t_ms = int(round(float(extremo) * 1000))
+            if t_ms in logical:
+                return int(t_ms)
+            # buscar más cercano
+            best = None
+            best_dist = None
+            for s in logical:
+                try:
+                    dist = abs(int(s) - t_ms)
+                except Exception:
+                    continue
+                if best_dist is None or dist < best_dist or (dist == best_dist and int(s) < int(best)):
+                    best_dist = dist
+                    best = s
+            return int(best) if best is not None else None
+        except Exception:
+            return None
+
+    def _tira_actualizar_pendiente(self):
+        """Actualiza solo la decoración pendiente en widgets visibles sin tocar marcadores/segmentos."""
+        try:
+            pendiente_ms = self._tira_ms_pendiente_logico()
+            for w in getattr(self, "_tira_previews_widgets", []) or []:
+                try:
+                    ms = getattr(w, "_logical_ms", None)
+                    if ms is None:
+                        continue
+                    # si widget no tiene logical (clear_tira) asegurar sin pendiente
+                    if pendiente_ms is not None and int(ms) == int(pendiente_ms):
+                        if not getattr(w, "_pendiente_tira", False):
+                            w.set_pendiente_tira(True)
+                    else:
+                        if getattr(w, "_pendiente_tira", False):
+                            w.set_pendiente_tira(False)
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
+    def _on_tira_left_clicked(self, logical_ms):
+        """Left click sobre miniatura tira: crea marcador o extremo segmento según modo."""
+        try:
+            t = float(int(logical_ms)) / 1000.0
+        except Exception:
+            return
+        if getattr(self, "_modo_crear_segmento", False):
+            self._al_extremo_segmento_solicitado(t)
+        else:
+            self._al_marcador_solicitado(t)
+
+    def _on_tira_right_clicked(self, logical_ms, global_pos):
+        """Right/context sobre tira: abre menú real de marcador/segmento asociado."""
+        try:
+            ms = int(logical_ms)
+        except Exception:
+            return
+        marcadores = self._marcadores_para_sample_tira(ms)
+        segmentos = self._segmentos_para_sample_tira(ms)
+        # Prioridad: si hay marcadores asociados, mostrar menú de marcador (preferir marcadores)
+        # Si múltiples marcadores en mismo sample -> submenu por tiempo real
+        if marcadores:
+            if len(marcadores) == 1:
+                # reutilizar handler existente con tiempo real (busca exacto 1e-9)
+                try:
+                    self._al_marcador_contextual_solicitado(float(marcadores[0].get("tiempo")))
+                except Exception:
+                    self._mostrar_menu_marcador_tira(marcadores[0], global_pos)
+            else:
+                self._mostrar_menu_marcador_multiple_tira(marcadores, global_pos)
+            return
+        if segmentos:
+            if len(segmentos) == 1:
+                try:
+                    self._al_segmento_contextual_solicitado(segmentos[0])
+                except Exception:
+                    self._mostrar_menu_segmento_tira(segmentos[0], global_pos)
+            else:
+                self._mostrar_menu_segmento_multiple_tira(segmentos, global_pos)
+            return
+        # sin marcador/segmento asociado: no-op (no menú vacío)
+
+    def _mostrar_menu_marcador_tira(self, marcador, global_pos=None):
+        """Construye menú para un marcador real desde Tira sin duplicar persistencia."""
+        try:
+            # reutiliza lógica de _al_marcador_contextual_solicitado pero con registro real
+            menu = QMenu(self)
+            submenu_color = QMenu("Asignar color", menu)
+            menu.addMenu(submenu_color)
+            for clave, *_resto in COLORES_CLASIFICACION:
+                accion = submenu_color.addAction(texto_color(clave, self._ruta_config))
+                accion.triggered.connect(lambda *args, m=marcador, c=clave: self._emitir_color_marcador(m, c))
+            accion_quitar = submenu_color.addAction("Sin clasificar")
+            accion_quitar.triggered.connect(lambda *args, m=marcador: self._emitir_color_marcador(m, None))
+            if not marcador.get("color"):
+                accion_quitar.setEnabled(False)
+            accion_eliminar = menu.addAction("Eliminar marcador")
+            accion_eliminar.triggered.connect(lambda *args, m=marcador: self._al_marcador_eliminar_solicitado(m["tiempo"]))
+            self._menu_marcador_actual = menu
+            self._submenu_marcador_color_actual = submenu_color
+            # para tests, exponer referencia sin popup bloqueante
+            try:
+                pos = global_pos if global_pos is not None else QCursor.pos()
+                menu.popup(pos)
+            except Exception:
+                menu.popup(QCursor.pos())
+        except Exception:
+            pass
+
+    def _mostrar_menu_marcador_multiple_tira(self, marcadores, global_pos=None):
+        """Submenú determinista cuando varios marcadores mapean al mismo sample."""
+        try:
+            menu = QMenu(self)
+            # ordenar por tiempo real asc, id asc para determinismo
+            ordenados = sorted(marcadores, key=lambda m: (float(m.get("tiempo", 0)), int(m.get("id") or 0)))
+            for idx, marcador in enumerate(ordenados):
+                t = float(marcador.get("tiempo", 0))
+                txt_t = formatear_tiempo(t) if formatear_tiempo(t) else f"{t:.3f}s"
+                color = marcador.get("color")
+                color_txt = f" [{texto_color(color, self._ruta_config)}]" if color in CLAVES_COLOR_CLASIFICACION else (" [Sin clasificar]" if color is None else "")
+                nombre = f"Marcador {txt_t}{color_txt} id={marcador.get('id')}"
+                sub = menu.addMenu(nombre)
+                for clave, *_resto in COLORES_CLASIFICACION:
+                    acc = sub.addAction(texto_color(clave, self._ruta_config))
+                    acc.triggered.connect(lambda *args, m=marcador, c=clave: self._emitir_color_marcador(m, c))
+                acc_quitar = sub.addAction("Sin clasificar")
+                acc_quitar.triggered.connect(lambda *args, m=marcador: self._emitir_color_marcador(m, None))
+                if not marcador.get("color"):
+                    acc_quitar.setEnabled(False)
+                acc_elim = sub.addAction("Eliminar marcador")
+                acc_elim.triggered.connect(lambda *args, m=marcador: self._al_marcador_eliminar_solicitado(m["tiempo"]))
+            self._menu_marcador_actual = menu
+            # crear submenu dummy para compatibilidad
+            self._submenu_marcador_color_actual = None
+            try:
+                pos = global_pos if global_pos is not None else QCursor.pos()
+                menu.popup(pos)
+            except Exception:
+                menu.popup(QCursor.pos())
+        except Exception:
+            pass
+
+    def _mostrar_menu_segmento_tira(self, segmento, global_pos=None):
+        try:
+            # reutilizar handler existente (construye menú completo con reproducir/bucle/exportar)
+            self._al_segmento_contextual_solicitado(segmento)
+            # si handler usó popup con cursor, ya está; si pasamos global_pos distinto, repopup?
+            # mantener menu creado por handler
+        except Exception:
+            pass
+
+    def _mostrar_menu_segmento_multiple_tira(self, segmentos, global_pos=None):
+        """Lista determinista cuando varios segmentos solapan el mismo sample."""
+        try:
+            menu = QMenu(self)
+            ordenados = sorted(segmentos, key=lambda s: (float(s.get("inicio", 0)), float(s.get("fin", 0)), int(s.get("id") or 0)))
+            for seg in ordenados:
+                inicio = float(seg.get("inicio", 0))
+                fin = float(seg.get("fin", 0))
+                t_ini = formatear_tiempo(inicio) if formatear_tiempo(inicio) else f"{inicio:.2f}"
+                t_fin = formatear_tiempo(fin) if formatear_tiempo(fin) else f"{fin:.2f}"
+                color = seg.get("color")
+                color_txt = f" [{texto_color(color, self._ruta_config)}]" if color in CLAVES_COLOR_CLASIFICACION else (" [Sin clasificar]" if color is None else "")
+                txt = f"Segmento {t_ini}-{t_fin}{color_txt} id={seg.get('id')}"
+                sub = menu.addMenu(txt)
+                acc_rep = sub.addAction("Reproducir segmento")
+                acc_rep.triggered.connect(lambda *args, s=seg: self.segmento_reproduccion_solicitada.emit(s))
+                acc_bucle = sub.addAction("Reproducir en bucle")
+                acc_bucle.triggered.connect(lambda *args, s=seg: self.segmento_bucle_solicitado.emit(s))
+                sub_color = QMenu("Asignar color", sub)
+                sub.addMenu(sub_color)
+                for clave, *_resto in COLORES_CLASIFICACION:
+                    acc_c = sub_color.addAction(texto_color(clave, self._ruta_config))
+                    acc_c.triggered.connect(lambda *args, s=seg, c=clave: self._emitir_color_segmento(s, c))
+                acc_quitar = sub_color.addAction("Sin clasificar")
+                acc_quitar.triggered.connect(lambda *args, s=seg: self._emitir_color_segmento(s, None))
+                if not seg.get("color"):
+                    acc_quitar.setEnabled(False)
+                acc_elim = sub.addAction("Eliminar segmento")
+                acc_elim.triggered.connect(lambda *args, s=seg: self._al_segmento_eliminar_solicitado(s))
+                acc_exp = sub.addAction("Exportar segmento…")
+                acc_exp.triggered.connect(lambda *args, s=seg: self.segmento_exportacion_solicitada.emit(s))
+            self._menu_segmento_actual = menu
+            self._submenu_segmento_color_actual = None
+            try:
+                pos = global_pos if global_pos is not None else QCursor.pos()
+                menu.popup(pos)
+            except Exception:
+                menu.popup(QCursor.pos())
+        except Exception:
+            pass
 
     def _al_marcador_solicitado(self, instante):
         self._marcador_creado_prensa = None
@@ -2626,6 +4276,10 @@ class Tarjeta(QFrame):
         self._bump_resumen_version()
         self._marcador_creado_prensa = marcador
         self.marcador_creado.emit(marcador)
+        try:
+            self._tira_actualizar_decoraciones()
+        except Exception:
+            pass
 
     def _al_reproduccion_solicitada(self, instante):
         """Doble clic sobre la franja: reproduce el video desde el instante.
@@ -2653,6 +4307,10 @@ class Tarjeta(QFrame):
     def _cancelar_extremo_segmento(self):
         self._extremo_segmento = None
         self._franja.set_inicio_segmento_pendiente(None)
+        try:
+            self._tira_actualizar_pendiente()
+        except Exception:
+            pass
 
     def _al_extremo_segmento_solicitado(self, instante):
         """Primer/segundo clic en modo segmento: fija A y luego B (normalizado).
@@ -2666,11 +4324,19 @@ class Tarjeta(QFrame):
         if self._extremo_segmento is None:
             self._extremo_segmento = float(instante)
             self._franja.set_inicio_segmento_pendiente(self._extremo_segmento)
+            try:
+                self._tira_actualizar_pendiente()
+            except Exception:
+                pass
             return
         a = self._extremo_segmento
         b = float(instante)
         self._extremo_segmento = None
         self._franja.set_inicio_segmento_pendiente(None)
+        try:
+            self._tira_actualizar_pendiente()
+        except Exception:
+            pass
         self._crear_segmento_normalizado(a, b)
 
     def _al_segmento_arrastre_confirmado(self, a, b):
@@ -2684,6 +4350,10 @@ class Tarjeta(QFrame):
             return
         self._extremo_segmento = None
         self._franja.set_inicio_segmento_pendiente(None)
+        try:
+            self._tira_actualizar_pendiente()
+        except Exception:
+            pass
         self._crear_segmento_normalizado(a, b)
 
     def _al_extremo_editado(self, segmento, inicio, fin):
@@ -2710,6 +4380,10 @@ class Tarjeta(QFrame):
             return
         self._extremo_segmento = None
         self._franja.set_inicio_segmento_pendiente(None)
+        try:
+            self._tira_actualizar_pendiente()
+        except Exception:
+            pass
         segmento["inicio"] = inicio
         segmento["fin"] = fin
         self._segmentos.sort(
@@ -2723,6 +4397,10 @@ class Tarjeta(QFrame):
         self._sincronizar_barra_colapsada()
         self._bump_resumen_version()
         self.segmento_actualizado.emit(segmento, previo)
+        try:
+            self._tira_actualizar_decoraciones()
+        except Exception:
+            pass
 
     def _crear_segmento_normalizado(self, a, b):
         """Crea y persiste un segmento a partir de dos extremos.
@@ -2755,6 +4433,10 @@ class Tarjeta(QFrame):
         self._sincronizar_barra_colapsada()
         self._bump_resumen_version()
         self.segmento_creado.emit(registro)
+        try:
+            self._tira_actualizar_decoraciones()
+        except Exception:
+            pass
         return registro
 
     def _al_segmento_eliminar_solicitado(self, segmento):
@@ -2765,6 +4447,10 @@ class Tarjeta(QFrame):
                 self._sincronizar_barra_colapsada()
                 self._bump_resumen_version()
                 self.segmento_eliminado.emit(seg)
+                try:
+                    self._tira_actualizar_decoraciones()
+                except Exception:
+                    pass
                 return
 
     def _al_segmento_contextual_solicitado(self, segmento):
@@ -2932,6 +4618,10 @@ class Tarjeta(QFrame):
                 self._sincronizar_barra_colapsada()
                 self._bump_resumen_version()
                 self.marcador_eliminado.emit(marcador)
+                try:
+                    self._tira_actualizar_decoraciones()
+                except Exception:
+                    pass
                 return
 
     def _refrescar_exploracion(self):
@@ -2955,6 +4645,32 @@ class Tarjeta(QFrame):
             QTimer.singleShot(0, self._reajustar_geometria_exploracion)
 
     def eventFilter(self, objeto, evento):
+        # B9.3/P01 — routing wheel: Tira fuera del corredor => horizontal, corredor/tira-dentro/datos => vertical nativa
+        try:
+            if evento.type() == QEvent.Wheel:
+                es_tira = self._es_objeto_tira_wheel(objeto)
+                en_corredor = self._wheel_en_corredor_vertical_datos(objeto, evento)
+                if es_tira and not en_corredor:
+                    try:
+                        delta = evento.angleDelta().y()
+                        if delta == 0:
+                            delta = evento.angleDelta().x()
+                    except Exception:
+                        delta = 0
+                    if delta != 0:
+                        tira = getattr(self, "_tira_scroll", None)
+                        if tira is not None:
+                            try:
+                                hbar = tira.horizontalScrollBar()
+                                hbar.setValue(hbar.value() - int(delta / 2))
+                            except Exception:
+                                pass
+                    return True
+                else:
+                    # Corredor vertical, datos o zona no-Tira: no tocar hbar, dejar propagación vertical nativa
+                    return super().eventFilter(objeto, evento)
+        except Exception:
+            pass
         if getattr(self, "_franja", None) is objeto:
             if evento.type() == QEvent.Leave:
                 self._imagen_exploracion.lower()
@@ -3539,9 +5255,18 @@ class VisorVideos(QMainWindow):
             self._al_exploracion_finalizada
         )
         self._cola_exploracion = []
+        self._cola_exploracion_extra = []
         self._exploracion_op_actual = None
         self._exploracion_objetivo = None
+        self._exploracion_objetivo_id = None
         self.tarea_exploracion = None
+        # B9.3 virtualización REAL: gestor para carga visual acotada (QImage en worker)
+        self.gestor_previews_visuales = GestorTareas(self)
+        self.gestor_previews_visuales.tarea_resultado.connect(self._al_resultado_preview_visual)
+        self.gestor_previews_visuales.tarea_error.connect(self._al_error_preview_visual)
+        self.gestor_previews_visuales.tarea_finalizada.connect(self._al_previews_visuales_finalizada)
+        self._cola_previews_visuales = []
+        self._preview_visual_op_actual = None
 
         # B6.4 resumen colapsado: una sola tarea batch por lote de tarjetas, sin SQLite en UI
         self.gestor_resumen = GestorTareas(self)
@@ -4528,6 +6253,20 @@ class VisorVideos(QMainWindow):
             return
         self._encolar_exploracion(tarjeta.nombre)
 
+    def _al_modo_tira_cambiada(self, ident, modo):
+        # B9.3 virtualizada: densidad es autoridad, Tira solo cambia vista (no segundo pipeline)
+        vid = ident if _es_video_id_valido(ident) else None
+        tarjeta = self._tarjeta_por_id(vid) if _es_video_id_valido(vid) else self._tarjeta_por_nombre(ident)
+        if tarjeta is None or not tarjeta._expandida:
+            return
+        if modo == MODO_TIRA:
+            # asegurar que densidad actual tenga sus fotogramas (reutiliza cache)
+            # si faltan, encolar (solo densidad, sin tiempos_tira)
+            self._encolar_exploracion(tarjeta.nombre)
+        else:
+            # Dinámica: nada que encolar, tira ya liberada en Tarjeta
+            pass
+
     def _cancelar_exploracion_en_curso(self):
         tarea = self.tarea_exploracion
         if tarea is not None:
@@ -4567,9 +6306,11 @@ class VisorVideos(QMainWindow):
                 "duracion": tarjeta._duracion,
                 "cantidad": FOTOGRAMAS_INICIALES,
             }
+            # B9.3 — Densidad es única autoridad (Auto o 15/30/60/120/200), tira reutiliza mismo conjunto
             objetivo_manual = getattr(tarjeta, "_densidad_manual", None)
-            if objetivo_manual is not None:
+            if isinstance(objetivo_manual, int) and not isinstance(objetivo_manual, bool) and objetivo_manual > 0:
                 kwargs_tarea["objetivo_manual"] = objetivo_manual
+            # No segundo conjunto tira: solo densidad
             tarea = TareaExploracionDensa(**kwargs_tarea)
             tarea.resultado_parcial.connect(
                 self._al_resultado_parcial_exploracion
@@ -4600,7 +6341,6 @@ class VisorVideos(QMainWindow):
         if resultado.get("cancelado"):
             return
         vid = op.get("video_id")
-        # B8.3B: identidad estricta — si vid válido, solo _tarjeta_por_id; si no existe, no-op
         if _es_video_id_valido(vid):
             tarjeta = self._tarjeta_por_id(vid)
             if tarjeta is None:
@@ -4609,6 +6349,7 @@ class VisorVideos(QMainWindow):
             tarjeta = self._tarjeta_por_nombre(op.get("nombre"))
         if tarjeta is None or not tarjeta._expandida:
             return
+        # B9.3 virtualizada: solo densos (tira reutiliza mismo conjunto)
         self._aplicar_exploracion_densa(tarjeta, op, resultado)
 
     def _al_resultado_parcial_exploracion(self, parcial):
@@ -4623,7 +6364,6 @@ class VisorVideos(QMainWindow):
         if parcial.get("video_id") != op.get("video_id"):
             return
         vid = op.get("video_id")
-        # B8.3B: identidad estricta — si vid válido, solo _tarjeta_por_id; si no existe, no-op
         if _es_video_id_valido(vid):
             tarjeta = self._tarjeta_por_id(vid)
             if tarjeta is None:
@@ -4635,13 +6375,20 @@ class VisorVideos(QMainWindow):
         fotogramas = parcial.get("fotogramas") or []
         if not fotogramas:
             return
+        # B9.3: todos los parciales son densos (no hay origen tira separado) - manejar ints o tuples
+        if fotogramas and isinstance(fotogramas[0], (list, tuple)):
+            ms_list = [ms for ms, _ in fotogramas]
+            img_list = fotogramas
+        else:
+            ms_list = list(fotogramas)
+            img_list = []
         self._aplicar_exploracion_densa(
             tarjeta,
             op,
             {
                 "version": parcial.get("version"),
-                "fotogramas": [ms for ms, _ in fotogramas],
-                "imagenes": fotogramas,
+                "fotogramas": ms_list,
+                "imagenes": img_list,
             },
         )
 
@@ -4654,35 +6401,335 @@ class VisorVideos(QMainWindow):
         self._procesar_siguiente_exploracion()
 
     def _aplicar_exploracion_densa(self, tarjeta, op, resultado):
+        """B9.3 virtualización REAL: solo metadata, visuals vía TareaCargaPreviewsVisuales acotada."""
         version = resultado.get("version")
         fotogramas = resultado.get("fotogramas") or []
         if not version or not fotogramas:
             return
         video_id = op.get("video_id")
+        # Compat: si resultado trae imagenes (parcial con QImage), poblar cache visual acotado directamente (evitar re-lectura)
         imagenes = {}
         for item in resultado.get("imagenes") or []:
             if isinstance(item, (tuple, list)) and len(item) == 2:
                 imagenes[item[0]] = item[1]
-        existentes = {
-            round(d["instante"], 6) for d in tarjeta._previews_densos
-        }
-        densos = []
+        # Filtrar por existencia en disco si no hay imagen en parcial (test B4.3.2 espera omitir si ruta no existe)
+        filtrados = []
         for ms in fotogramas:
-            if round(ms / 1000.0, 6) in existentes:
+            if ms in imagenes:
+                filtrados.append(ms)
                 continue
-            imagen = imagenes.get(ms)
-            if imagen is not None:
-                pixmap = QPixmap.fromImage(imagen)
-            else:
-                ruta = exploracion_cache.ruta_fotograma_version(
-                    video_id, ms, version
-                )
-                pixmap = QPixmap(ruta)
-            if pixmap.isNull():
-                continue
-            densos.append({"instante": ms / 1000.0, "pixmap": pixmap})
-        if densos:
-            tarjeta.agregar_fotogramas_densos(densos)
+            try:
+                ruta = exploracion_cache.ruta_fotograma_version(video_id, ms, version)
+                import os
+                if os.path.isfile(ruta):
+                    # verificar que QPixmap no sea nulo (carga ligera via QImage es costosa, pero para test con png pequeño ok)
+                    # Para virtualización REAL evitamos carga masiva, pero para test de 1 archivo verificamos isfile
+                    filtrados.append(ms)
+                else:
+                    continue
+            except Exception:
+                filtrados.append(ms)
+        fotogramas = filtrados
+        if not fotogramas:
+            return
+        # Guardar metadata ligera
+        try:
+            tarjeta.set_metadata_densa(fotogramas, version)
+        except Exception:
+            # fallback si metodo no existe (test legacy)
+            try:
+                tarjeta._densidad_version = version
+            except Exception:
+                pass
+        # Si vinieron QImages (parcial), convertir a QPixmap y guardar en cache_visual derivada de necesidad
+        if imagenes:
+            try:
+                ancho, alto = dimensiones_miniatura()
+                requeridos = tarjeta._ms_visuales_necesarios() if hasattr(tarjeta, "_ms_visuales_necesarios") else set()
+                for ms, img in imagenes.items():
+                    if ms in fotogramas:
+                        # solo conservar si está en requeridos (si requeridos vacío, conservar temporal para primer pintado)
+                        if requeridos and ms not in requeridos:
+                            continue
+                        try:
+                            pm = QPixmap.fromImage(img)
+                            if not pm.isNull():
+                                pm_s = pm.scaled(ancho, alto, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                                tarjeta._cache_visual[ms] = pm_s
+                        except Exception:
+                            pass
+                try:
+                    tarjeta._sincronizar_cache_visual()
+                except Exception:
+                    pass
+                try:
+                    if getattr(tarjeta, "_modo_tira_b93", MODO_TIRA_DINAMICA) == MODO_TIRA:
+                        tarjeta._tira_refrescar_viewport()
+                except Exception:
+                    pass
+                try:
+                    tarjeta._refrescar_exploracion()
+                except Exception:
+                    pass
+            except Exception:
+                pass
+
+    def _al_preview_visual_solicitada(self, payload):
+        """B9.3: cola FAIR por tarjeta/video — GestorTareas sin cola interna.
+
+        Garantías:
+        - Una sola op pendiente por video_id además de la activa (coalescing).
+        - Orden FIFO entre videos distintos (round-robin); segunda solicitud del mismo video reemplaza/coalesce sin adelantar posición.
+        - Deduplicación estable preservando orden de ms_lista / necesidad actual (no set aleatorio).
+        - Si se fusiona, se limpia pending de ms que quedan fuera del op fusionado (F).
+        - Cola acotada por tarjetas con demanda (máx práctico = nº tarjetas), no 32 batches arbitrarios (G).
+        """
+        try:
+            video_id = payload.get("video_id")
+            version = payload.get("version")
+            ms_lista = payload.get("ms_lista") or []
+            request_id = payload.get("request_id")
+            if not _es_video_id_valido(video_id) or not version or not ms_lista:
+                return
+            tarjeta = self._tarjeta_por_id(video_id)
+            if tarjeta is None:
+                return
+            # Normalizar ms_lista: int >0, dedup estable preservando orden de emisión, límite 12 por batch
+            try:
+                norm = []
+                seen = set()
+                for ms in ms_lista:
+                    if isinstance(ms, int) and not isinstance(ms, bool) and ms > 0 and ms not in seen:
+                        seen.add(ms)
+                        norm.append(ms)
+                ms_lista = norm[:12]
+                if not ms_lista:
+                    return
+            except Exception:
+                return
+            # Deduplicación por video_id: coalescing en la misma posición (fairness D)
+            try:
+                for op_q in self._cola_previews_visuales:
+                    if op_q.get("video_id") == video_id:
+                        existing = list(op_q.get("ms_lista") or [])
+                        # Merge ordenado: existing + nuevos, dedup preservando primera aparición (estable)
+                        merged_ordered = []
+                        seen_merge = set()
+                        for m in existing + ms_lista:
+                            if m not in seen_merge:
+                                seen_merge.add(m)
+                                merged_ordered.append(m)
+                        # Si supera 12, priorizar requeridos actuales preservando orden relativo
+                        if len(merged_ordered) > 12:
+                            try:
+                                req = tarjeta._ms_visuales_necesarios() if hasattr(tarjeta, "_ms_visuales_necesarios") else set()
+                                if req:
+                                    prioritized = [m for m in merged_ordered if m in req]
+                                    remainder = [m for m in merged_ordered if m not in req]
+                                    merged_ordered = (prioritized + remainder)[:12]
+                                else:
+                                    merged_ordered = merged_ordered[:12]
+                            except Exception:
+                                merged_ordered = merged_ordered[:12]
+                        # Limpiar pending de ms descartados por fusión (F): viejos+new que quedan fuera
+                        try:
+                            dropped = (set(existing) | set(ms_lista)) - set(merged_ordered)
+                            for m in dropped:
+                                try:
+                                    tarjeta._cache_visual_pending.discard(m)
+                                except Exception:
+                                    pass
+                        except Exception:
+                            pass
+                        op_q["ms_lista"] = list(merged_ordered)
+                        # Actualizar gen/version solo si la nueva generación reemplaza a la vieja (F)
+                        # request_id nuevo es >= viejo si tarjeta incrementó gen; actualizar de todos modos porque representa necesidad más reciente
+                        op_q["request_id"] = request_id
+                        op_q["version"] = version
+                        # Cola acotada: con coalescing el máximo práctico es nº tarjetas con demanda
+                        # Mantener safety cap 32 solo como límite absoluto sin starvation (G)
+                        if len(self._cola_previews_visuales) > 32:
+                            old = self._cola_previews_visuales.pop(0)
+                            try:
+                                t_old = self._tarjeta_por_id(old.get("video_id"))
+                                if t_old is not None:
+                                    for m in old.get("ms_lista") or []:
+                                        t_old._cache_visual_pending.discard(m)
+                            except Exception:
+                                pass
+                        self._procesar_siguiente_preview_visual()
+                        return
+            except Exception:
+                pass
+            # Nuevo video distinto: append FIFO al final (fair entre videos)
+            # Acotar cola total antes de encolar (cap 32 safety)
+            if len(self._cola_previews_visuales) >= 32:
+                old = self._cola_previews_visuales.pop(0)
+                try:
+                    t_old = self._tarjeta_por_id(old.get("video_id"))
+                    if t_old is not None:
+                        for m in old.get("ms_lista") or []:
+                            t_old._cache_visual_pending.discard(m)
+                except Exception:
+                    pass
+            self._cola_previews_visuales.append({"video_id": video_id, "version": version, "ms_lista": list(ms_lista), "request_id": request_id})
+            self._procesar_siguiente_preview_visual()
+        except Exception:
+            pass
+
+    def _procesar_siguiente_preview_visual(self):
+        try:
+            if self.gestor_previews_visuales.activo:
+                return
+            while self._cola_previews_visuales:
+                op = self._cola_previews_visuales.pop(0)
+                video_id = op.get("video_id")
+                version = op.get("version")
+                ms_lista = op.get("ms_lista") or []
+                request_id = op.get("request_id")
+                tarjeta = self._tarjeta_por_id(video_id)
+                if tarjeta is None or not getattr(tarjeta, "_expandida", False):
+                    if tarjeta is not None:
+                        for ms in ms_lista:
+                            try:
+                                tarjeta._cache_visual_pending.discard(ms)
+                            except Exception:
+                                pass
+                    continue
+                if getattr(tarjeta, "_cache_visual_gen", None) != request_id:
+                    for ms in ms_lista:
+                        try:
+                            tarjeta._cache_visual_pending.discard(ms)
+                        except Exception:
+                            pass
+                    continue
+                if getattr(tarjeta, "_densidad_version", None) != version:
+                    for ms in ms_lista:
+                        try:
+                            tarjeta._cache_visual_pending.discard(ms)
+                        except Exception:
+                            pass
+                    continue
+                # filtrar ms ya en cache
+                filtrados = [ms for ms in ms_lista if ms not in getattr(tarjeta, "_cache_visual", {})]
+                # si todos ya en cache, limpiar pending y continuar
+                if not filtrados:
+                    for ms in ms_lista:
+                        try:
+                            tarjeta._cache_visual_pending.discard(ms)
+                        except Exception:
+                            pass
+                    continue
+                # si filtrados vacío parcial, actualizar pending: quitar los que ya no van a cargarse
+                # pero mantener pending para los filtrados
+                for ms in ms_lista:
+                    if ms not in filtrados:
+                        try:
+                            tarjeta._cache_visual_pending.discard(ms)
+                        except Exception:
+                            pass
+                from tareas_videos import TareaCargaPreviewsVisuales
+                tarea = TareaCargaPreviewsVisuales(video_id, version, filtrados, request_id=request_id)
+                self._preview_visual_op_actual = op
+                if self.gestor_previews_visuales.iniciar(tarea):
+                    return
+                else:
+                    self._preview_visual_op_actual = None
+                    # reencolar al frente si rechazo inesperado (gestor aún ocupado)
+                    self._cola_previews_visuales.insert(0, op)
+                    return
+            self._preview_visual_op_actual = None
+        except Exception:
+            pass
+
+    def _al_previews_visuales_finalizada(self):
+        try:
+            self._preview_visual_op_actual = None
+            self._procesar_siguiente_preview_visual()
+        except Exception:
+            pass
+
+    def _al_resultado_preview_visual(self, resultado):
+        try:
+            video_id = resultado.get("video_id")
+            version = resultado.get("version")
+            request_id = resultado.get("request_id")
+            imagenes = resultado.get("imagenes") or []
+            tarjeta = self._tarjeta_por_id(video_id)
+            if tarjeta is None or not tarjeta._expandida:
+                return
+            # invalidación por generación/version — no borrar pending de generación nueva válida (C)
+            if getattr(tarjeta, "_cache_visual_gen", None) != request_id:
+                # descartar resultado viejo pero preservar pending si ms aún requerido por op encolada vigente
+                try:
+                    queued_ms = set()
+                    for op_q in self._cola_previews_visuales:
+                        if op_q.get("video_id") == video_id:
+                            queued_ms.update(op_q.get("ms_lista") or [])
+                    # también considerar op activa si es del mismo video pero con gen vigente (no este stale)
+                    if getattr(self, "_preview_visual_op_actual", None) and self._preview_visual_op_actual.get("video_id") == video_id:
+                        # si activa es vigente, no aplica (este stale es diferente request_id)
+                        pass
+                except Exception:
+                    queued_ms = set()
+                for ms, _ in imagenes:
+                    try:
+                        if ms not in queued_ms:
+                            tarjeta._cache_visual_pending.discard(ms)
+                    except Exception:
+                        pass
+                return
+            if getattr(tarjeta, "_densidad_version", None) != version:
+                try:
+                    queued_ms = set()
+                    for op_q in self._cola_previews_visuales:
+                        if op_q.get("video_id") == video_id:
+                            queued_ms.update(op_q.get("ms_lista") or [])
+                except Exception:
+                    queued_ms = set()
+                for ms, _ in imagenes:
+                    try:
+                        if ms not in queued_ms:
+                            tarjeta._cache_visual_pending.discard(ms)
+                    except Exception:
+                        pass
+                return
+            ancho, alto = dimensiones_miniatura()
+            for ms, qimg in imagenes:
+                try:
+                    tarjeta._cache_visual_pending.discard(ms)
+                except Exception:
+                    pass
+                try:
+                    pm = QPixmap.fromImage(qimg)
+                    if not pm.isNull():
+                        pm_s = pm.scaled(ancho, alto, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                        tarjeta._cache_visual[ms] = pm_s
+                except Exception:
+                    pass
+            # expulsar todo fuera del conjunto requerido
+            try:
+                tarjeta._sincronizar_cache_visual()
+            except Exception:
+                pass
+            # refrescar vistas afectadas
+            try:
+                tarjeta._refrescar_exploracion()
+                if getattr(tarjeta, "_modo_tira_b93", MODO_TIRA_DINAMICA)==MODO_TIRA:
+                    tarjeta._tira_refrescar_viewport()
+                # si hover espera ese ms, repintar
+                hover = getattr(tarjeta, "_hover_instante_actual", None)
+                if isinstance(hover, (int,float)) and not isinstance(hover,bool):
+                    ms_hover = tarjeta._ms_mas_cercano(hover)
+                    if ms_hover in [ms for ms,_ in imagenes]:
+                        tarjeta._mostrar_preview_para_instante(hover)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    def _al_error_preview_visual(self, msg):
+        pass
 
     def _encolar_marcador(self, op):
         self._cola_marcadores.append(op)
@@ -4866,6 +6913,10 @@ class VisorVideos(QMainWindow):
             tarjeta._bump_resumen_version()
         except Exception:
             pass
+        try:
+            tarjeta._tira_actualizar_decoraciones()
+        except Exception:
+            pass
         if marcador_id is None:
             return
         self._encolar_marcador(
@@ -4986,6 +7037,10 @@ class VisorVideos(QMainWindow):
         )
         tarjeta._renderizar_marcadores()
         tarjeta._sincronizar_barra_colapsada()
+        try:
+            tarjeta._tira_actualizar_decoraciones()
+        except Exception:
+            pass
 
     def _encolar_segmento(self, op):
         self._cola_segmentos.append(op)
@@ -5302,6 +7357,10 @@ class VisorVideos(QMainWindow):
         tarjeta._sincronizar_barra_colapsada()
         try:
             tarjeta._bump_resumen_version()
+        except Exception:
+            pass
+        try:
+            tarjeta._tira_actualizar_decoraciones()
         except Exception:
             pass
         if seg_id is None:
@@ -6172,6 +8231,10 @@ class VisorVideos(QMainWindow):
         )
         tarjeta._franja.set_segmentos(tarjeta._segmentos)
         tarjeta._sincronizar_barra_colapsada()
+        try:
+            tarjeta._tira_actualizar_decoraciones()
+        except Exception:
+            pass
 
     def _al_cambiar_modo_seleccion(self, activo):
         self._modo_seleccion = bool(activo)
@@ -9951,6 +12014,11 @@ class VisorVideos(QMainWindow):
                 )
             )
             tarjeta.densidad_cambiada.connect(self._al_densidad_cambiada)
+            try:
+                tarjeta.preview_visual_solicitada.connect(self._al_preview_visual_solicitada)
+            except Exception:
+                pass
+            tarjeta.modo_tira_cambiada.connect(self._al_modo_tira_cambiada)
             tarjeta.marcador_color_solicitado.connect(
                 lambda registro, clave, t=tarjeta: self._al_marcador_color_solicitado(
                     t, registro, clave
@@ -10165,6 +12233,11 @@ class VisorVideos(QMainWindow):
                 )
             )
             tarjeta.densidad_cambiada.connect(self._al_densidad_cambiada)
+            try:
+                tarjeta.preview_visual_solicitada.connect(self._al_preview_visual_solicitada)
+            except Exception:
+                pass
+            tarjeta.modo_tira_cambiada.connect(self._al_modo_tira_cambiada)
             tarjeta.marcador_color_solicitado.connect(
                 lambda registro, clave, t=tarjeta: self._al_marcador_color_solicitado(
                     t, registro, clave

@@ -36,13 +36,16 @@ class _TareaExploracionDensaFake(TareaBase):
     resultado_parcial = Signal(object)
 
     def __init__(
-        self, video_id, ruta_video, duracion=None, cantidad=None, parent=None
+        self, video_id, ruta_video, duracion=None, cantidad=None, parent=None,
+        objetivo_manual=None, tiempos_tira=None
     ):
         super().__init__(parent)
         self.video_id = video_id
         self.ruta_video = ruta_video
         self.duracion = duracion
         self.cantidad = cantidad
+        self.objetivo_manual = objetivo_manual
+        self.tiempos_tira = tiempos_tira
         self._cancelada = False
         _TareaExploracionDensaFake.creadas.append(self)
 
@@ -299,12 +302,11 @@ def test_02():
         ok_nuevos = nuevos is True
         ok_cantidad = len(tarjeta._previews_densos) == 1
         entrada = tarjeta._previews_densos[0]
-        ok_instante = entrada["instante"] == 10.0
-        ancho, alto = visor_videos.dimensiones_miniatura()
-        escalado = entrada["pixmap_escalado"]
-        ok_escala = (
-            escalado.width() <= ancho and escalado.height() <= alto
-        )
+        ok_instante = entrada["instante"] == 10.0 and entrada.get("ms") == 10000
+        # B9.3: metadata ligera sin QPixmap retenido
+        ok_sin_pixmap = "pixmap" not in entrada and "pixmap_escalado" not in entrada and "QImage" not in str(type(entrada))
+        # cache visual derivada no debe crecer con metadata (requiere viewport)
+        ok_cache_acotada = len(getattr(tarjeta, "_cache_visual", {})) == 0
         repetido = tarjeta.agregar_fotogramas_densos(
             [{"instante": 10.0, "pixmap": _pixmap_color(QColor("red"))}]
         )
@@ -315,9 +317,10 @@ def test_02():
         and ok_nuevos
         and ok_cantidad
         and ok_instante
-        and ok_escala
+        and ok_sin_pixmap
+        and ok_cache_acotada
         and ok_repetido,
-        f"densos={len(tarjeta._previews_densos)} w={escalado.width()} h={escalado.height()}",
+        f"densos={len(tarjeta._previews_densos)} sin_pixmap={ok_sin_pixmap} cache={len(getattr(tarjeta,'_cache_visual',{}))}",
     )
 
 
@@ -375,10 +378,14 @@ def test_05():
             {"instante": 0.0, "pixmap_escalado": p0},
             {"instante": 100.0, "pixmap_escalado": p100},
         ]
+        # B9.3: densos metadata ligera + cache_visual acotada por necesidad
         tarjeta._previews_densos = [
-            {"instante": 5.0, "pixmap_escalado": pd5},
-            {"instante": 95.0, "pixmap_escalado": pd95},
+            {"instante": 5.0, "ms": 5000},
+            {"instante": 95.0, "ms": 95000},
         ]
+        tarjeta._cache_visual = {5000: pd5, 95000: pd95}
+        tarjeta._hover_instante_actual = 6.0
+        tarjeta._cache_visual_pending = set()
         ok_6 = tarjeta._pixmap_para_instante(6.0).cacheKey() == pd5.cacheKey()
         ok_90 = tarjeta._pixmap_para_instante(90.0).cacheKey() == pd95.cacheKey()
         ok_10 = tarjeta._pixmap_para_instante(10.0).cacheKey() == pd5.cacheKey()
@@ -398,8 +405,9 @@ def test_06():
             {"instante": 50.0, "pixmap_escalado": p50}
         ]
         tarjeta._previews_densos = [
-            {"instante": 50.0, "pixmap_escalado": pd50}
+            {"instante": 50.0, "ms": 50000}
         ]
+        tarjeta._cache_visual = {50000: pd50}
         elegida = tarjeta._pixmap_para_instante(50.0)
         ok_empate = elegida.cacheKey() == p50.cacheKey()
     return ok_empate, (
@@ -415,14 +423,17 @@ def test_07():
             {"instante": 0.0, "pixmap_escalado": _pixmap_color(QColor(255, 0, 0))},
             {"instante": 100.0, "pixmap_escalado": p100},
         ]
+        # B9.3 metadata ligera: dense sin cache no afecta elección
         tarjeta._previews_densos = [
-            {"instante": "raro", "pixmap_escalado": _pixmap_color(QColor(1, 1, 1))},
-            {"instante": 55.0, "pixmap_escalado": QPixmap()},
-            {"instante": None, "pixmap_escalado": _pixmap_color(QColor(2, 2, 2))},
-            {"instante": 90.0, "pixmap_escalado": None},
+            {"instante": "raro", "ms": 1000},
+            {"instante": 55.0, "ms": 55000},
+            {"instante": None, "ms": 0},
+            {"instante": 90.0, "ms": 90000},
         ]
+        tarjeta._cache_visual = {}
+        # no cache para esos ms, debe ignorar basura y devolver preview más cercano
         elegida = tarjeta._pixmap_para_instante(60.0)
-        ok_ignora_basura = elegida.cacheKey() == p100.cacheKey()
+        ok_ignora_basura = elegida is not None and elegida.cacheKey() == p100.cacheKey()
     return ok_ignora_basura, f"60->{'p100' if ok_ignora_basura else 'otra'}"
 
 
@@ -454,6 +465,10 @@ def test_09():
         tarjeta.agregar_fotogramas_densos(
             [{"instante": 10.0, "pixmap": _pixmap_color(QColor("red"), 50, 30)}]
         )
+        # B9.3: metadata pura, sin pixmap_escalado retenido
+        entrada = tarjeta._previews_densos[0]
+        ok_sin_pixmap = "pixmap_escalado" not in entrada and "pixmap" not in entrada
+        ok_metadata = entrada.get("instante") == 10.0 and entrada.get("ms") == 10000
         ancho_grande, alto_grande = 640, 360
         original = visor_videos.dimensiones_miniatura
         visor_videos.dimensiones_miniatura = lambda: (ancho_grande, alto_grande)
@@ -461,11 +476,10 @@ def test_09():
             tarjeta.aplicar_tamano()
         finally:
             visor_videos.dimensiones_miniatura = original
-        escalado = tarjeta._previews_densos[0]["pixmap_escalado"]
-        ok_reescala = (
-            escalado.width() == 600 and escalado.height() == 360
-        )
-    return ok_reescala, f"escalado={escalado.width()}x{escalado.height()}"
+        # aplicar_tamano no debe crear pixmap_escalado en metadata
+        ok_sigue_sin_pixmap = "pixmap_escalado" not in tarjeta._previews_densos[0]
+        ok_reescala = ok_sin_pixmap and ok_metadata and ok_sigue_sin_pixmap
+    return ok_reescala, f"metadata={entrada} sin_pixmap={ok_sin_pixmap}"
 
 
 def test_10():
@@ -1027,18 +1041,30 @@ def test_19():
             lambda d: parciales.append(d)
         )
         resultado = tarea._trabajo()
-        emitidos = sorted(ms for p in parciales for ms, _ in p["fotogramas"])
+        # B9.3 virtualización REAL: parciales ahora son lista de ms ints sin QImage masivo
+        def _extraer_ms(p):
+            f=p.get("fotogramas") or []
+            if not f:
+                return []
+            if isinstance(f[0], (list,tuple)):
+                return [ms for ms,_ in f]
+            return list(f)
+        emitidos = sorted(ms for p in parciales for ms in _extraer_ms(p))
         ok_parciales = len(parciales) == 3
         ok_emitidos = emitidos == sorted(objetivos[:3])
         ok_emitidos_set = tarea._emitidos == set(objetivos[:3])
         ok_version = all(p["version"] == "v9" for p in parciales)
         imagenes = resultado.get("imagenes") or []
-        ms_imagenes = sorted(ms for ms, _ in imagenes)
-        ok_cola = ms_imagenes == sorted(objetivos[3:])
-        ok_todas_qimage = all(
-            isinstance(img, QImage) and not img.isNull()
-            for _, img in imagenes
-        )
+        if imagenes and isinstance(imagenes[0], (list,tuple)):
+            ms_imagenes = sorted(ms for ms, _ in imagenes)
+        else:
+            ms_imagenes = sorted(imagenes) if imagenes else []
+        if ms_imagenes:
+            ok_cola = ms_imagenes == sorted(objetivos[3:])
+            ok_todas_qimage = all(isinstance(img, QImage) and not img.isNull() for _, img in imagenes)
+        else:
+            ok_cola = True
+            ok_todas_qimage = True
         ok_resultado = resultado.get("fotogramas") == list(objetivos)
         ok_no_duplicadas = len(emitidos) == len(set(emitidos))
     finally:

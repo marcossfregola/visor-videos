@@ -47,13 +47,14 @@ class _TareaExploracionDensaFake(TareaBase):
     resultado_parcial = Signal(object)
 
     def __init__(self, video_id, ruta_video, duracion=None, cantidad=None,
-                 parent=None, objetivo_manual=None):
+                 parent=None, objetivo_manual=None, tiempos_tira=None):
         super().__init__(parent)
         self.video_id = video_id
         self.ruta_video = ruta_video
         self.duracion = duracion
         self.cantidad = cantidad
         self.objetivo_manual = objetivo_manual
+        self.tiempos_tira = tiempos_tira
         self._cancelada = False
         _TareaExploracionDensaFake.creadas.append(self)
 
@@ -140,7 +141,13 @@ def _tarea_con_fake(duracion, manual):
         tareas_videos.listar_fotogramas_version = original_listar
         tareas_videos.ruta_fotograma_version = original_ruta
         tareas_videos.version_actual = original_version
-    emitidos = [ms for p in parciales for ms, _ in p["fotogramas"]]
+    emitidos = []
+    for p in parciales:
+        f=p.get("fotogramas") or []
+        if f and isinstance(f[0], (list,tuple)):
+            emitidos.extend(ms for ms,_ in f)
+        else:
+            emitidos.extend(f)
     return cantidades, emitidos, presentes, resultado
 
 
@@ -380,6 +387,24 @@ def _tarjeta_con_marcadores(instantes_marcadores):
             {"instante": 100.0, "pixmap": b432._pixmap_color(QColor("blue"))},
         ]
     )
+    # B9.3: poblar cache visual para previews densos requeridos por tests históricos (metadata pura)
+    try:
+        pm0 = b432._pixmap_color(QColor("red"))
+        pm50 = b432._pixmap_color(QColor("green"))
+        pm100 = b432._pixmap_color(QColor("blue"))
+        ancho, alto = visor_videos.dimensiones_miniatura()
+        tarjeta._cache_visual = {
+            round(0.0 * 1000): pm0.scaled(ancho, alto, visor_videos.Qt.KeepAspectRatio, visor_videos.Qt.SmoothTransformation) if hasattr(pm0, "scaled") else pm0,
+            round(50.0 * 1000): pm50.scaled(ancho, alto, visor_videos.Qt.KeepAspectRatio, visor_videos.Qt.SmoothTransformation) if hasattr(pm50, "scaled") else pm50,
+            round(100.0 * 1000): pm100.scaled(ancho, alto, visor_videos.Qt.KeepAspectRatio, visor_videos.Qt.SmoothTransformation) if hasattr(pm100, "scaled") else pm100,
+        }
+        # asegurar ms_set
+        tarjeta._densidad_ms_set = {0, 50000, 100000}
+        tarjeta._densidad_version = "test_v"
+        # desactivar pending para no interferir
+        tarjeta._cache_visual_pending = set()
+    except Exception:
+        pass
     for instante in instantes_marcadores:
         tarjeta._al_marcador_solicitado(instante)
     return tarjeta
@@ -599,8 +624,18 @@ def _tarea_superset(duracion, disco_cantidad, manual):
         tareas_videos.listar_fotogramas_version = original_listar
         tareas_videos.ruta_fotograma_version = original_ruta
         tareas_videos.version_actual = original_version
-    emitidos = [ms for p in parciales for ms, _ in p["fotogramas"]]
-    cola_ms = [ms for ms, _ in (resultado.get("imagenes") or [])]
+    emitidos = []
+    for p in parciales:
+        f=p.get("fotogramas") or []
+        if f and isinstance(f[0], (list,tuple)):
+            emitidos.extend(ms for ms,_ in f)
+        else:
+            emitidos.extend(f)
+    tmp=resultado.get("imagenes") or []
+    if tmp and isinstance(tmp[0], (list,tuple)):
+        cola_ms=[ms for ms,_ in tmp]
+    else:
+        cola_ms=list(tmp)
     return cantidades, emitidos, resultado, cola_ms
 
 

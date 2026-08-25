@@ -25,6 +25,25 @@ from visor_videos import Tarjeta, VisorVideos
 _CONFIG_TEMPORAL = tempfile.TemporaryDirectory()
 os.environ["VISOR_CONFIG"] = os.path.join(_CONFIG_TEMPORAL.name, "configuracion.json")
 
+# B9.3 fix flake WinError32: retry cleanup de DB temporales con breve espera para liberar lock SQLite
+_orig_temp_cleanup = tempfile.TemporaryDirectory.cleanup
+def _temp_cleanup_retry(self):
+    import gc
+    gc.collect()
+    for intento in range(8):
+        try:
+            return _orig_temp_cleanup(self)
+        except PermissionError as e:
+            if intento == 7:
+                raise
+            time.sleep(0.2 + intento*0.1)
+            try:
+                QApplication.processEvents()
+            except Exception:
+                pass
+            gc.collect()
+tempfile.TemporaryDirectory.cleanup = _temp_cleanup_retry
+
 _CANTIDAD_ORIGINAL_PREVIEWS = escanear_mod.CANTIDAD_PREVIEWS
 
 
@@ -204,9 +223,51 @@ def _eliminar_marcador_via_menu(tarjeta, widget, x=5):
 def _limpiar(ventana):
     if ventana is None:
         return
-    if ventana.gestor.hilo is not None:
-        ventana.gestor.cerrar()
+    # B9.3 fix flake WinError32: cerrar todos los gestores/hilos/SQLite que puedan retener DB temporal
+    nombres_gestores = ("gestor","gestor_previews","gestor_operaciones","gestor_marcadores","gestor_segmentos","gestor_reproduccion","gestor_exploracion","gestor_resumen","gestor_migracion","gestor_export","gestor_preparacion_lote","gestor_preparacion_secuencia","gestor_renombrado","gestor_mover","gestor_crear_carpeta","gestor_copiar","gestor_eliminar","gestor_lote","gestor_renombrar_masivo","gestor_navegacion_destino","gestor_prevalidacion_drop")
+    for nombre in nombres_gestores:
+        g=getattr(ventana, nombre, None)
+        if g is not None:
+            try:
+                if getattr(g, "hilo", None) is not None:
+                    g.cerrar()
+                else:
+                    # aún sin hilo pero marcado activo, cerrar estado
+                    try:
+                        g.cerrar()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+    # esperar cierre hilos de todos los gestores
+    import time as _t
+    fin=_t.monotonic()+5.0
+    while _t.monotonic() < fin:
+        QApplication.processEvents()
+        vivos=0
+        for n in nombres_gestores:
+            g=getattr(ventana, n, None)
+            if g is not None:
+                hilo=getattr(g, "hilo", None)
+                if hilo is not None:
+                    try:
+                        if hilo.isRunning():
+                            vivos+=1
+                    except Exception:
+                        pass
+        if vivos==0:
+            break
+        _t.sleep(0.02)
+    try:
+        ventana.close()
+    except Exception:
+        pass
     ventana.deleteLater()
+    for _ in range(8):
+        QApplication.processEvents()
+    # espera extra para liberar SQLite file lock en Windows
+    _t.sleep(0.15)
+    QApplication.processEvents()
     for _ in range(5):
         QApplication.processEvents()
 

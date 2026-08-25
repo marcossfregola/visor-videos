@@ -906,40 +906,26 @@ class TareaActualizarSegmento(TareaBase):
 
 
 class TareaExploracionDensa(TareaBase):
-    """Genera o completa la caché densa de exploración temporal (B4.3.2).
+    """Genera o completa la caché densa de exploración temporal (B4.3.2/B9.3).
 
-    El trabajo corre en el hilo del gestor: `generar_fotogramas` invoca
-    FFmpeg una vez por fotograma faltante de la versión actual y la
-    cancelación es cooperativa (se revisa entre fotogramas). Un solo
-    FFmpeg activo en todo momento.
-
-    La generación es en dos fases secuenciales:
-    - Fase rápida: los `FOTOGRAMAS_INICIALES` prioritarios, sin cambio de
-      comportamiento respecto de Etapa 1.
-    - Fase secundaria: solo si el objetivo total (auto por duración o
-      manual `objetivo_manual`) supera la fase rápida, se completa hasta
-      ese total reutilizando lo ya existente y generando únicamente los
-      faltantes (nunca se regeneran los ya presentes). El objetivo manual
-      (B4.3.3) permite pedir una cantidad fija incluso en videos cortos;
-      la distribución siempre usa `tiempos_objetivo(duración, total)`.
-
-    Además de reportar progreso, emite `resultado_parcial` con los
-    fotogramas que ya están disponibles en disco (ms + QImage decodificada
-    en el hilo del worker) en ambas fases. Así la GUI incorpora resultados
-    de forma progresiva y la lectura/decodificación JPEG queda en el
-    worker, no en el hilo de la GUI.
+    B9.3 virtualización REAL:
+    - Genera/reutiliza JPEGs y emite metadata (ms/version) sin cargar QImage masivos.
+    - No carga todos los JPEG a QImage al finalizar; solo aporta lista ms + version.
+    - Progreso notifica ms disponibles (sin leer imagen) para UI que pedirá visuales acotados.
     """
 
     resultado_parcial = Signal(object)
 
     def __init__(self, video_id, ruta_video, duracion=None, cantidad=None,
-                 parent=None, objetivo_manual=None):
+                 parent=None, objetivo_manual=None, tiempos_tira=None):
         super().__init__(parent)
         self._video_id = video_id
         self._ruta_video = ruta_video
         self._duracion = duracion
         self._cantidad = cantidad
         self._objetivo_manual = objetivo_manual
+        # Compat: tiempos_tira ignorado, densidad única autoridad
+        self._tiempos_tira = None
         self._cancelada = False
         self._emitidos = set()
 
@@ -962,6 +948,10 @@ class TareaExploracionDensa(TareaBase):
     @property
     def objetivo_manual(self):
         return self._objetivo_manual
+
+    @property
+    def tiempos_tira(self):
+        return None
 
     def cancelar(self):
         self._cancelada = True
@@ -991,10 +981,6 @@ class TareaExploracionDensa(TareaBase):
                 version = None
                 permitidos = set()
             else:
-                # Conjunto permitido de esta fase: exactamente los instantes
-                # objetivo de `cantidad`. La caché en disco puede contener un
-                # superset (densidades manuales previas); la tarea decide qué
-                # subconjunto utiliza y nunca emite fotogramas ajenos a él.
                 permitidos = set(tiempos_objetivo(duracion, cantidad))
                 version = version_actual(
                     self._video_id, self._ruta_video, duracion
@@ -1014,20 +1000,14 @@ class TareaExploracionDensa(TareaBase):
                 ]
                 if not nuevos:
                     return
-                imagenes = []
                 for ms in nuevos:
-                    ruta = ruta_fotograma_version(self._video_id, ms, version)
-                    imagen = QImage(ruta)
-                    if imagen.isNull():
-                        continue
-                    imagenes.append((ms, imagen))
                     emitidos.add(ms)
-                if imagenes:
-                    self.resultado_parcial.emit({
-                        "video_id": self._video_id,
-                        "version": version,
-                        "fotogramas": imagenes,
-                    })
+                # Emitir metadata sin QImage (UI pedirá visuales acotados)
+                self.resultado_parcial.emit({
+                    "video_id": self._video_id,
+                    "version": version,
+                    "fotogramas": list(nuevos),
+                })
 
             return generar_fotogramas(
                 self._video_id,
@@ -1047,25 +1027,62 @@ class TareaExploracionDensa(TareaBase):
             and not self._cancelada
         ):
             resultado = _fase(objetivo_total)
-        if (
-            isinstance(resultado, dict)
-            and resultado.get("version")
-            and not resultado.get("cancelado")
-            and permitidos
-        ):
-            imagenes = []
-            for ms in resultado.get("fotogramas") or []:
-                if ms in permitidos and ms not in emitidos:
-                    ruta = ruta_fotograma_version(
-                        self._video_id, ms, resultado["version"]
-                    )
-                    imagen = QImage(ruta)
-                    if not imagen.isNull():
-                        imagenes.append((ms, imagen))
-            if imagenes:
-                resultado = dict(resultado)
-                resultado["imagenes"] = imagenes
+        if isinstance(resultado, dict):
+            resultado["_densidad_objetivo_ms"] = sorted(permitidos) if permitidos else []
         return resultado
+
+
+class TareaCargaPreviewsVisuales(TareaBase):
+    """Carga en background solo los JPEGs requeridos para viewport/hover (B9.3).
+
+    Recibe video_id, version y lista ms solicitados. Lee cada JPEG como
+    QImage fuera del hilo UI y devuelve (ms, QImage). Agrupa tanda
+    visible+overscan en un único request. UI convierte a QPixmap solo si
+    request sigue vigente (token/generación).
+    """
+
+    def __init__(self, video_id, version, ms_lista, request_id=None, parent=None):
+        super().__init__(parent)
+        self._video_id = video_id
+        self._version = version
+        try:
+            self._ms_lista = [int(ms) for ms in list(ms_lista) if isinstance(ms, int) and not isinstance(ms, bool) and ms > 0]
+        except Exception:
+            self._ms_lista = []
+        self._request_id = request_id
+
+    @property
+    def video_id(self):
+        return self._video_id
+
+    @property
+    def version(self):
+        return self._version
+
+    @property
+    def ms_lista(self):
+        return list(self._ms_lista)
+
+    @property
+    def request_id(self):
+        return self._request_id
+
+    def _trabajo(self):
+        imagenes = []
+        for ms in self._ms_lista:
+            ruta = ruta_fotograma_version(self._video_id, ms, self._version)
+            if not os.path.isfile(ruta):
+                continue
+            imagen = QImage(ruta)
+            if imagen.isNull():
+                continue
+            imagenes.append((ms, imagen))
+        return {
+            "video_id": self._video_id,
+            "version": self._version,
+            "request_id": self._request_id,
+            "imagenes": imagenes,
+        }
 
 
 class TareaExportarSegmento(TareaBase):
