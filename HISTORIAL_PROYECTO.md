@@ -5,6 +5,20 @@ Orden cronológico inverso (más reciente primero).
 
 ---
 
+## 127. B9.1 — Diagnóstico T04 de recursos de exploración
+
+- **Fecha:** 2026-08-25
+- **Rama:** `beta9` (parent/baseline `8fe1054e3c70e6c15e96996b4747065ab1dce46b` `B9.0 Abrir Beta 9 y reconciliar documentación`; baseline publicado `v8.0-beta`/`e851c7c`).
+- **Tipo:** etapa exclusivamente diagnóstica, sin implementación funcional de P01–P09/P18/P23.
+- **Ejecución real:** `VisorVideos` en PC de desarrollo, carpeta real `videos_prueba` → `videos_prueba/8`, `WorkingSet64` y `PrivateMemorySize64` medidos separadamente vía PowerShell (`Get-Process`), mismo PID, con `QApplication.allWidgets()` para `Tarjeta`/`PreviewConTiempo`.
+- **Configuración observada:** 7 previews por tarjeta, `512×288` (`muy_grande`); política actual 1 sola expandida simultáneamente.
+- **Ciclos y flujos reales:** 10 ciclos expandir/colapsar sin crecimiento acumulativo observado (widgets delta 0, WS/Private delta <5 MiB); cambio de carpeta mediante `_al_carpeta_actual_arbol` → `_programar_recarga_por_carpeta` → `TareaLecturaCatalogoPaginada` eliminó tarjetas anteriores y redujo widgets/memoria en el escenario medido; recarga real vía `_iniciar_recarga_catalogo` con widgets estables y variación pequeña.
+- **Modelo teórico:** `3P + 2 + 2D` buffers por expandida (previews 2×P + miniatura 2 + exploración P + densos 2×D; `512×288×4=576 KiB` por buffer).
+- **Recomendación:** estrategia B como base inmediata (liberación agresiva al colapsar, 1 expandida), evaluar C (virtualización) si P02 exige muchas expandidas simultáneas; validación en notebook sigue pendiente.
+- **Entorno:** `psutil` instalado accidentalmente durante B9.1 (`python -m pip install psutil --quiet`) y posteriormente eliminado (`pip uninstall psutil -y`), entorno restaurado; sin cambios de producción, sin dependencias nuevas.
+
+---
+
 ## 126. B9.0 — Apertura de Beta 9 (ramificación y planificación)
 
 - **Fecha:** 2026-08-24

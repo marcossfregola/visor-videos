@@ -40,7 +40,7 @@ Migración de DB existente, homónimos, cache, miniaturas/previews, FFprobe, sin
 * **P18** — mejorar ubicación del resumen de marcadores/segmentos cuando la tarjeta está colapsada.
 * **P23** — verificar/corregir doble clic en preview temporal para abrir exactamente en el timestamp correspondiente.
 
-**Requisito técnico Beta 9:** `T04 — RAM/QPixmap`. Antes de aprobar muchas previews y múltiples tarjetas expandidas: medir RAM, pixmaps, widgets, fluidez y notebook objetivo. No asumir que la retención actual es problemática sin medición, pero no permitir expansión masiva sin validación.
+**Requisito técnico Beta 9:** `T04 — RAM/QPixmap` — **diagnóstico base completado en B9.1 (PC de desarrollo)**: riesgo de RAM/QPixmap caracterizado vía medición real (`WorkingSet64`/`PrivateMemorySize64`, 7 previews `512×288`, 1 expandida, 10 ciclos sin crecimiento acumulativo observado, cambio carpeta/recarga por flujo real, modelo `3P+2+2D`); validación en notebook objetivo sigue pendiente para configuraciones finales; no se ha implementado virtualización ni multi-expansión.
 
 ## Beta 10 — VISTAS, NAVEGACIÓN Y ORGANIZACIÓN PERSONAL
 

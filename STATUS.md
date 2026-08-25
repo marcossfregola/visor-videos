@@ -10,9 +10,10 @@
 - B8.1 cerrada: `d43c1b8e9c38d132c346933967e8e8bac7fdae9f` (2026-08-23); B8.2 cerrada: `33da65066867026d9a72bb333216bfd9fdc4b626` (2026-08-24); B8.3 cerrada: `e4104ae53cf205811e57e582350733552aaa8740` (2026-08-24); B8.4 cerrada: `97cb2f7f30853ed3a80ac310b7112cac80440158` (2026-08-24).
 - `T09` (identidad `UNIQUE(nombre)`) **cerrado en B8.3** (cutover `ruta_normalizada` `UNIQUE`).
 - Validación humana final B8.4 aprobada: `MADRE→A→MADRE→B→MADRE` sin escanear, navegación, homónimos, operaciones y FFmpeg real verificados.
-- Próximo paso: **Beta 9 — Exploración visual avanzada** (ROADMAP: P01–P09, P18, P23 y requisito T04) — **en planificación, sin implementación funcional**.
+- **B9.1 — Diagnóstico T04 cerrado (2026-08-25, rama `beta9` parent `8fe1054`, sin cambios producción):** medición real en PC de desarrollo vía `VisorVideos` y PowerShell (`WorkingSet64`/`PrivateMemorySize64` separados); configuración observada 7 previews por tarjeta, `512×288`; política actual 1 sola expandida; 10 ciclos expandir/colapsar sin crecimiento acumulativo observado; flujo real de cambio de carpeta eliminó tarjetas anteriores y redujo widgets/memoria en el escenario medido; recarga real con widgets estables y variación pequeña; QPixmap es el principal factor de escalado esperado; modelo teórico `3P + 2 + 2D` buffers por expandida; recomendación estrategia B como base inmediata y evaluar C si P02 exige muchas expandidas simultáneas; validación en notebook sigue pendiente.
+- Próximo paso: **Beta 9 — Exploración visual avanzada (P01–P09, P18, P23)** — **diagnóstico T04 completado; en planificación, sin implementación funcional de Pxx**.
 
-Para el historial completo ver `HISTORIAL_PROYECTO.md` (126/125/124/123/122/121).
+Para el historial completo ver `HISTORIAL_PROYECTO.md` (127/126/125/124/123/122).
 
 ## Último baseline aprobado
 
@@ -35,7 +36,7 @@ Para el historial completo ver `HISTORIAL_PROYECTO.md` (126/125/124/123/122/121)
 
 ## Trabajo pendiente real
 
-- **Beta 9 — Exploración visual avanzada** — próximo paso (P01–P09, P18, P23, T04).
+- **Beta 9 — Exploración visual avanzada** — próximo paso (P01–P09, P18, P23; T04 diagnosticado en B9.1).
 - **Beta 10/11** según `ROADMAP.md`.
 - Beta 8 cerrada, sin pendientes de identidad/cache.
 
