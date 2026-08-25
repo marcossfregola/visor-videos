@@ -2087,6 +2087,8 @@ class Tarjeta(QFrame):
 
     def _construir_exploracion(self):
         self._expandida = False
+        # B9.2 — estado fijado (solo sesión, sin persistencia, barato)
+        self._fijada = False
         self._previews_exploracion = []
         self._previews_densos = []
         self._marcadores = []
@@ -2154,7 +2156,15 @@ class Tarjeta(QFrame):
             "Modo crear segmento: primer clic fija A, segundo clic fija B"
         )
         self._boton_segmento.toggled.connect(self._al_toggle_segmento)
+        # B9.2 — control fijar/desfijar (visible solo expandida, texto inequívoco, sin rediseño)
+        self._boton_fijar = QPushButton("Fijar")
+        self._boton_fijar.setObjectName("boton_fijar")
+        self._boton_fijar.setCheckable(True)
+        self._boton_fijar.setToolTip("Fijar tarjeta expandida")
+        self._boton_fijar.setVisible(False)
+        self._boton_fijar.toggled.connect(self._al_toggle_fijar)
         fila_densidad = QHBoxLayout()
+        fila_densidad.addWidget(self._boton_fijar)
         fila_densidad.addStretch(1)
         fila_densidad.addWidget(self._boton_segmento)
         fila_densidad.addWidget(QLabel("Densidad:"))
@@ -2183,6 +2193,28 @@ class Tarjeta(QFrame):
 
     def _al_cambiar_color_activo(self):
         self._color_activo = self._selector_color.currentData()
+
+    def _al_toggle_fijar(self, marcado):
+        """B9.2 — fijar/desfijar tarjeta expandida (solo sesión, sin persistencia)."""
+        # Solo tiene efecto si está expandida; si se colapsa por otro motivo, _set_expansion limpia.
+        if not getattr(self, "_expandida", False):
+            # Evitar fijar estando colapsada: reset inmediato
+            if marcado:
+                try:
+                    self._boton_fijar.blockSignals(True)
+                    self._boton_fijar.setChecked(False)
+                    self._boton_fijar.setText("Fijar")
+                    self._boton_fijar.setToolTip("Fijar tarjeta expandida")
+                finally:
+                    self._boton_fijar.blockSignals(False)
+                self._fijada = False
+            return
+        self._fijada = bool(marcado)
+        try:
+            self._boton_fijar.setText("Desfijar" if self._fijada else "Fijar")
+            self._boton_fijar.setToolTip("Desfijar tarjeta" if self._fijada else "Fijar tarjeta expandida")
+        except (AttributeError, RuntimeError):
+            pass
 
     def _refrescar_textos_colores(self):
         """Actualiza los textos visibles del selector de color (B6.3).
@@ -2296,8 +2328,36 @@ class Tarjeta(QFrame):
             barra = getattr(self, "_barra_colapsada", None)
             if barra is not None:
                 barra.setVisible(False)
+            # B9.2 — mostrar control fijar con estado actual
+            try:
+                if hasattr(self, "_boton_fijar"):
+                    self._boton_fijar.setVisible(True)
+                    self._boton_fijar.blockSignals(True)
+                    self._boton_fijar.setChecked(bool(getattr(self, "_fijada", False)))
+                    self._boton_fijar.setText("Desfijar" if getattr(self, "_fijada", False) else "Fijar")
+                    self._boton_fijar.setToolTip("Desfijar tarjeta" if getattr(self, "_fijada", False) else "Fijar tarjeta expandida")
+                    self._boton_fijar.blockSignals(False)
+            except (AttributeError, RuntimeError):
+                pass
             self._preparar_exploracion()
         else:
+            # B9.2 — colapso manual desfija automáticamente (sin persistencia)
+            if getattr(self, "_fijada", False):
+                self._fijada = False
+                try:
+                    if hasattr(self, "_boton_fijar"):
+                        self._boton_fijar.blockSignals(True)
+                        self._boton_fijar.setChecked(False)
+                        self._boton_fijar.setText("Fijar")
+                        self._boton_fijar.setToolTip("Fijar tarjeta expandida")
+                        self._boton_fijar.blockSignals(False)
+                except (AttributeError, RuntimeError):
+                    pass
+            try:
+                if hasattr(self, "_boton_fijar"):
+                    self._boton_fijar.setVisible(False)
+            except (AttributeError, RuntimeError):
+                pass
             self._contenedor_exploracion.setVisible(False)
             self._previews_exploracion = []
             self._previews_densos = []
@@ -4438,7 +4498,10 @@ class VisorVideos(QMainWindow):
                 self._exploracion_objetivo_id = None
                 self._cancelar_exploracion_en_curso()
             return
+        # B9.2 — autocolapso respeta fijadas: nunca colapsar automáticamente una fijada
         for candidato, tarjeta in self.tarjetas:
+            if getattr(tarjeta, "_fijada", False):
+                continue
             if vid is not None:
                 if getattr(tarjeta, "_video_id", None) != vid:
                     tarjeta.colapsar()
