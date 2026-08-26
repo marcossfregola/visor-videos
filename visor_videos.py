@@ -726,6 +726,7 @@ class PreviewTiraTemporal(QWidget):
 
     tira_left_clicked = Signal(int)
     tira_right_clicked = Signal(int, object)
+    tira_double_clicked = Signal(int)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -737,6 +738,8 @@ class PreviewTiraTemporal(QWidget):
         self._pendiente_tira = False
         self._tira_right_guard_ms = None
         self._tira_right_guard_time = 0.0
+        self._tira_pending_ms = None
+        self._tira_pending_timer = None
         self.setFixedHeight(dimensiones_miniatura()[1])
 
     def set_preview(self, pixmap, tiempo=None):
@@ -776,7 +779,41 @@ class PreviewTiraTemporal(QWidget):
             self._pendiente_tira = val
             self.update()
 
+    def _cancel_tira_pending(self):
+        try:
+            t = getattr(self, "_tira_pending_timer", None)
+            if t is not None and t.isActive():
+                t.stop()
+        except Exception:
+            pass
+        try:
+            self._tira_pending_ms = None
+            self._tira_pending_timer = None
+        except Exception:
+            pass
+
+    def _emit_tira_pending(self):
+        try:
+            ms = getattr(self, "_tira_pending_ms", None)
+            self._tira_pending_ms = None
+            self._tira_pending_timer = None
+            if ms is not None:
+                self.tira_left_clicked.emit(int(ms))
+        except Exception:
+            pass
+
+    def hideEvent(self, event):
+        try:
+            self._cancel_tira_pending()
+        except Exception:
+            pass
+        super().hideEvent(event)
+
     def clear_tira(self):
+        try:
+            self._cancel_tira_pending()
+        except Exception:
+            pass
         self._logical_ms = None
         self._marcadores_tira = []
         self._segmentos_tira = []
@@ -808,7 +845,24 @@ class PreviewTiraTemporal(QWidget):
     def mousePressEvent(self, event):
         try:
             if event.button() == Qt.LeftButton and self._logical_ms is not None:
-                self.tira_left_clicked.emit(int(self._logical_ms))
+                # B9.7.1 P23 — diferir click simple usando doubleClickInterval, cancelar si llega doubleClick
+                t = getattr(self, "_tira_pending_timer", None)
+                if t is not None and t.isActive():
+                    event.accept()
+                    return
+                try:
+                    self._cancel_tira_pending()
+                except Exception:
+                    pass
+                self._tira_pending_ms = int(self._logical_ms)
+                try:
+                    timer = QTimer(self)
+                    timer.setSingleShot(True)
+                    timer.timeout.connect(self._emit_tira_pending)
+                    self._tira_pending_timer = timer
+                    timer.start(QApplication.doubleClickInterval())
+                except Exception:
+                    self._emit_tira_pending()
                 event.accept()
                 return
             if event.button() == Qt.RightButton and self._logical_ms is not None:
@@ -828,6 +882,17 @@ class PreviewTiraTemporal(QWidget):
         except Exception:
             pass
         super().mousePressEvent(event)
+
+    def mouseDoubleClickEvent(self, event):
+        try:
+            if event.button() == Qt.LeftButton and self._logical_ms is not None:
+                self._cancel_tira_pending()
+                self.tira_double_clicked.emit(int(self._logical_ms))
+                event.accept()
+                return
+        except Exception:
+            pass
+        super().mouseDoubleClickEvent(event)
 
     def contextMenuEvent(self, event):
         try:
@@ -1004,6 +1069,7 @@ class AjustadaGridWidget(QWidget):
 
     ajustada_left_clicked = Signal(int)
     ajustada_right_clicked = Signal(int, object)
+    ajustada_double_clicked = Signal(int)
     ajustada_need_visual = Signal(list)
 
     def __init__(self, parent=None):
@@ -1021,6 +1087,8 @@ class AjustadaGridWidget(QWidget):
         self._pending_need_emitted = False
         self._last_exposed_ms = set()
         self._last_exposed_indices = set()
+        self._ajustada_pending_ms = None
+        self._ajustada_pending_timer = None
 
     def set_tarjeta_ref(self, ref):
         self._tarjeta_ref = ref
@@ -1126,6 +1194,36 @@ class AjustadaGridWidget(QWidget):
             pass
         return QColor(158, 158, 158)
 
+    def _cancel_ajustada_pending(self):
+        try:
+            t = getattr(self, "_ajustada_pending_timer", None)
+            if t is not None and t.isActive():
+                t.stop()
+        except Exception:
+            pass
+        try:
+            self._ajustada_pending_ms = None
+            self._ajustada_pending_timer = None
+        except Exception:
+            pass
+
+    def _emit_ajustada_pending(self):
+        try:
+            ms = getattr(self, "_ajustada_pending_ms", None)
+            self._ajustada_pending_ms = None
+            self._ajustada_pending_timer = None
+            if ms is not None:
+                self.ajustada_left_clicked.emit(int(ms))
+        except Exception:
+            pass
+
+    def hideEvent(self, event):
+        try:
+            self._cancel_ajustada_pending()
+        except Exception:
+            pass
+        super().hideEvent(event)
+
     def mousePressEvent(self, event):
         try:
             idx = self._index_at_pos(event.pos())
@@ -1133,7 +1231,40 @@ class AjustadaGridWidget(QWidget):
                 return super().mousePressEvent(event)
             ms = self._logical_ms[idx]
             if event.button() == Qt.LeftButton:
-                self.ajustada_left_clicked.emit(int(ms))
+                # B9.7.1 P23 — diferir simple, cancelar si llega doubleClick; un pending por superficie
+                t = getattr(self, "_ajustada_pending_timer", None)
+                pending_ms = getattr(self, "_ajustada_pending_ms", None)
+                if t is not None and t.isActive():
+                    # si pending coincide con mismo ms => segundo click del double, esperar doubleClickEvent
+                    if pending_ms is not None and int(pending_ms) == int(ms):
+                        event.accept()
+                        return
+                    # distinto ms y previo pendiente activo => flushing previo pendiente como simple inmediato
+                    # para no perder acción de click simple anterior al cambiar de celda
+                    try:
+                        # emitir pendiente previo inmediato antes de reemplazar
+                        prev = int(pending_ms) if pending_ms is not None else None
+                        self._cancel_ajustada_pending()
+                        if prev is not None:
+                            self.ajustada_left_clicked.emit(int(prev))
+                    except Exception:
+                        try:
+                            self._cancel_ajustada_pending()
+                        except Exception:
+                            pass
+                try:
+                    self._cancel_ajustada_pending()
+                except Exception:
+                    pass
+                self._ajustada_pending_ms = int(ms)
+                try:
+                    timer = QTimer(self)
+                    timer.setSingleShot(True)
+                    timer.timeout.connect(self._emit_ajustada_pending)
+                    self._ajustada_pending_timer = timer
+                    timer.start(QApplication.doubleClickInterval())
+                except Exception:
+                    self._emit_ajustada_pending()
                 event.accept()
                 return
             if event.button() == Qt.RightButton:
@@ -1147,6 +1278,20 @@ class AjustadaGridWidget(QWidget):
         except Exception:
             pass
         super().mousePressEvent(event)
+
+    def mouseDoubleClickEvent(self, event):
+        try:
+            idx = self._index_at_pos(event.pos())
+            if idx is not None:
+                ms = self._logical_ms[idx]
+                if event.button() == Qt.LeftButton:
+                    self._cancel_ajustada_pending()
+                    self.ajustada_double_clicked.emit(int(ms))
+                    event.accept()
+                    return
+        except Exception:
+            pass
+        super().mouseDoubleClickEvent(event)
 
     def contextMenuEvent(self, event):
         try:
@@ -3109,6 +3254,7 @@ class Tarjeta(QFrame):
         self._ajustada_grid.set_tarjeta_ref(self)
         self._ajustada_grid.ajustada_left_clicked.connect(self._on_ajustada_left_clicked)
         self._ajustada_grid.ajustada_right_clicked.connect(self._on_ajustada_right_clicked)
+        self._ajustada_grid.ajustada_double_clicked.connect(self._on_ajustada_double_clicked)
         self._ajustada_grid.ajustada_need_visual.connect(self._on_ajustada_need_visual)
         self._ajustada_grid.setVisible(False)
         # Sin QScrollArea horizontal interno; altura crece con filas, scroll vertical global navega
@@ -3668,6 +3814,7 @@ class Tarjeta(QFrame):
             try:
                 w.tira_left_clicked.connect(self._on_tira_left_clicked)
                 w.tira_right_clicked.connect(self._on_tira_right_clicked)
+                w.tira_double_clicked.connect(self._on_tira_double_clicked)
             except Exception:
                 pass
             # usar ancho natural B9.3, no achicar (B9.5 sería fit-to-width)
@@ -3788,6 +3935,11 @@ class Tarjeta(QFrame):
             layout = cont.layout() if cont is not None else None
             for w in list(getattr(self, "_reducida_previews_widgets", []) or []):
                 try:
+                    try:
+                        if hasattr(w, "_cancel_tira_pending"):
+                            w._cancel_tira_pending()
+                    except Exception:
+                        pass
                     w.hide()
                     w.clear_tira()
                     if layout is not None:
@@ -4173,6 +4325,17 @@ class Tarjeta(QFrame):
             QApplication.processEvents()
             QApplication.sendPostedEvents(None, QEvent.DeferredDelete)
             QApplication.processEvents()
+        except Exception:
+            pass
+
+    def _on_ajustada_double_clicked(self, logical_ms):
+        """B9.7.1 P23 — doble clic Ajustada: reproduce sin crear marcador/segmento, preserva A."""
+        try:
+            t = float(int(logical_ms)) / 1000.0
+        except Exception:
+            return
+        try:
+            self.reproduccion_temporal_solicitada.emit(float(t))
         except Exception:
             pass
 
@@ -4666,6 +4829,7 @@ class Tarjeta(QFrame):
             try:
                 w.tira_left_clicked.connect(self._on_tira_left_clicked)
                 w.tira_right_clicked.connect(self._on_tira_right_clicked)
+                w.tira_double_clicked.connect(self._on_tira_double_clicked)
             except Exception:
                 pass
             w.hide()
@@ -4843,6 +5007,11 @@ class Tarjeta(QFrame):
         try:
             for w in list(getattr(self, "_tira_previews_widgets", []) or []):
                 try:
+                    try:
+                        if hasattr(w, "_cancel_tira_pending"):
+                            w._cancel_tira_pending()
+                    except Exception:
+                        pass
                     w.hide()
                     w.close()
                     w.setParent(None)
@@ -5116,6 +5285,28 @@ class Tarjeta(QFrame):
             except Exception:
                 self._cache_visual_pending = set()
             self._hover_instante_actual = None
+            # B9.7.1 P23 — cancelar pendientes de simple click antes de liberar widgets
+            try:
+                for _w in list(getattr(self, "_tira_previews_widgets", []) or []):
+                    try:
+                        if hasattr(_w, "_cancel_tira_pending"):
+                            _w._cancel_tira_pending()
+                    except Exception:
+                        pass
+                for _w in list(getattr(self, "_reducida_previews_widgets", []) or []):
+                    try:
+                        if hasattr(_w, "_cancel_tira_pending"):
+                            _w._cancel_tira_pending()
+                    except Exception:
+                        pass
+                ag = getattr(self, "_ajustada_grid", None)
+                if ag is not None and hasattr(ag, "_cancel_ajustada_pending"):
+                    try:
+                        ag._cancel_ajustada_pending()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
             # B9.3 — liberar tira expandida al colapsar (disco permanece)
             try:
                 self._limpiar_tira_b93()
@@ -5996,6 +6187,18 @@ class Tarjeta(QFrame):
                 ag = getattr(self, "_ajustada_grid", None)
                 if ag is not None:
                     ag.update()
+        except Exception:
+            pass
+
+    def _on_tira_double_clicked(self, logical_ms):
+        """B9.7.1 P23 — doble clic sobre preview temporal: reproduce exactamente en logical_ms sin crear marcador/segmento."""
+        try:
+            t = float(int(logical_ms)) / 1000.0
+        except Exception:
+            return
+        # No crear marcador ni extremo; preservar A pendiente intacto. Solo reproducir.
+        try:
+            self.reproduccion_temporal_solicitada.emit(float(t))
         except Exception:
             pass
 
