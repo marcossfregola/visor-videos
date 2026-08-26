@@ -185,6 +185,11 @@ TIRA_B93_SPACING = 2
 TIRA_B93_MARGIN = 2
 MODO_TIRA_DINAMICA = "dinamica"
 MODO_TIRA = "tira"
+# B9.4 — modalidad Reducida (cantidad reducida sin scroll) — tercera Vista, mismo contrato densidad
+MODO_REDUCIDA = "reducida"
+REDUCIDA_MAX_PREVIEWS = 5
+REDUCIDA_SPACING = TIRA_B93_SPACING
+REDUCIDA_MARGIN = TIRA_B93_MARGIN
 
 def _densidad_cantidad_objetivo(duracion, densidad_manual):
     """Cantidad objetivo vigente según Densidad (Auto->objetivo_total_densidad, int->manual)."""
@@ -203,6 +208,160 @@ def _ms_tira_densidad_ordenada(duracion, densidad_manual):
     """Tiempos ms ordenados cronológicamente para tira virtual (autoridad densidad)."""
     t = _tiempos_densidad_actual(duracion, densidad_manual)
     return sorted(t)
+
+
+def _seleccionar_ms_reducida(logical_ms, cantidad):
+    """B9.4 — selección determinista y equiespaciada para Reducida.
+
+    - Entrada lista ordenada (si no lo está se normaliza/sort).
+    - k = min(cantidad, len(lista)).
+    - k==0 => [].
+    - k==1 => sample central determinista (índice floor(n/2)), no arbitrariamente primero.
+    - k>=2 => índices equidistantes 0..n-1 incluyendo extremos, cálculo entero estable,
+      sin random, sin duplicados, orden creciente.
+    """
+    try:
+        if not isinstance(logical_ms, (list, tuple)):
+            # soportar iterable
+            logical_ms = list(logical_ms) if logical_ms is not None else []
+        else:
+            logical_ms = list(logical_ms)
+    except Exception:
+        return []
+    # normalizar: filtrar ints válidos, ordenar
+    filtrada = []
+    for v in logical_ms:
+        try:
+            if isinstance(v, int) and not isinstance(v, bool) and v >= 0:
+                filtrada.append(int(v))
+            elif isinstance(v, float) and not isinstance(v, bool):
+                filtrada.append(int(round(v)))
+        except Exception:
+            continue
+    filtrada = sorted(set(filtrada)) if False else sorted(filtrada)
+    # eliminar duplicados preservando orden? sorted ya, pero usamos set ordering: si había duplicados reales, eliminar
+    # Para mantener determinismo sin perder distribución (duplicados no deberían existir en logical_ms), deduplicar:
+    tmp = []
+    seen = set()
+    for x in filtrada:
+        if x not in seen:
+            seen.add(x)
+            tmp.append(x)
+    filtrada = tmp
+    n = len(filtrada)
+    if n == 0 or cantidad is None:
+        if n == 0:
+            return []
+        cantidad = n
+    try:
+        cantidad = int(cantidad)
+    except Exception:
+        return []
+    if cantidad <= 0:
+        return []
+    k = min(cantidad, n)
+    if k == 0:
+        return []
+    if k == 1:
+        idx = n // 2
+        return [filtrada[idx]]
+    # k>=2
+    indices = []
+    for i in range(k):
+        # fórmula estable: round(i*(n-1)/(k-1))
+        try:
+            val = i * (n - 1) / (k - 1)
+            idx = int(round(val))
+        except Exception:
+            idx = (i * (n - 1)) // (k - 1) if k > 1 else 0
+        if idx < 0:
+            idx = 0
+        if idx >= n:
+            idx = n - 1
+        indices.append(idx)
+    # eliminar duplicados preservando orden creciente y sin huecos (si duplicado por redondeo, desplazar)
+    # Garantizar estrictamente creciente: si duplicado, avanzar al siguiente disponible
+    # Pero para n>=k duplicado no debería ocurrir con round cuando n>=k; aun así asegurar.
+    uniq_idx = []
+    last = -1
+    for idx in indices:
+        if idx <= last:
+            idx = last + 1
+            if idx >= n:
+                idx = n - 1
+        # evitar saltos excesivos por corrimiento, mantener dentro
+        if idx not in uniq_idx:
+            uniq_idx.append(idx)
+            last = idx
+    # Si por corrimiento perdimos cardinalidad (ej n=5,k=5 fine, n=6,k=5 con round podría duplicar?), rellenar lineal
+    if len(uniq_idx) < k:
+        # fallback lineal floor
+        uniq_idx = []
+        for i in range(k):
+            idx = (i * (n - 1)) // (k - 1) if k > 1 else 0
+            if uniq_idx and idx <= uniq_idx[-1]:
+                idx = uniq_idx[-1] + 1
+            uniq_idx.append(min(idx, n - 1))
+        # deduplicar final
+        uniq_idx = sorted(set(uniq_idx))
+        # si aún <k por deduplicar, añadir extremos faltantes secuencialmente
+        while len(uniq_idx) < k:
+            for cand in range(n):
+                if cand not in uniq_idx:
+                    uniq_idx.append(cand)
+                    uniq_idx.sort()
+                    if len(uniq_idx) >= k:
+                        break
+            break
+        uniq_idx = uniq_idx[:k]
+    uniq_idx = sorted(set(uniq_idx))[:k]
+    # asegurar que incluye 0 y n-1 cuando k>=2
+    if k >= 2:
+        if 0 not in uniq_idx:
+            uniq_idx[0] = 0
+        if n - 1 not in uniq_idx:
+            uniq_idx[-1] = n - 1
+        uniq_idx = sorted(set(uniq_idx))
+        # si set redujo k, re-expandir
+        while len(uniq_idx) < k:
+            # insertar valor intermedio faltante más espaciado
+            best = None
+            best_gap = -1
+            for a, b in zip(uniq_idx, uniq_idx[1:]):
+                gap = b - a
+                if gap > 1 and gap > best_gap:
+                    best_gap = gap
+                    best = (a + b) // 2
+            if best is None:
+                break
+            uniq_idx.append(best)
+            uniq_idx.sort()
+        uniq_idx = sorted(uniq_idx)[:k]
+    return [filtrada[i] for i in uniq_idx]
+
+
+def _cantidad_reducida_que_cabe(ancho_util, ancho_slot, spacing):
+    """B9.4 — cuántas previews caben sin scroll ni recorte.
+
+    Fórmula documentada: floor((ancho_util + spacing) / (ancho_slot + spacing))
+    considerando margins ya descontados en ancho_util. Nunca asumir 5.
+    Si geometría es inválida/0 => 0 (caller hará fallback a 1 si hay logical).
+    """
+    try:
+        ancho_util = float(ancho_util)
+        ancho_slot = float(ancho_slot)
+        spacing = float(spacing)
+        if ancho_util <= 0 or ancho_slot <= 0:
+            return 0
+        if ancho_slot + spacing <= 0:
+            return 0
+        val = (ancho_util + spacing) / (ancho_slot + spacing)
+        cabe = int(math.floor(val))
+        if cabe < 0:
+            cabe = 0
+        return cabe
+    except Exception:
+        return 0
 DENSIDADES_DISPONIBLES = (
     ("Auto", None),
     ("15", 15),
@@ -2470,11 +2629,13 @@ class Tarjeta(QFrame):
             self._al_cambiar_densidad
         )
         # B9.3 — Vista Dinámica|Tira (default Dinámica, solo sesión, densidad es autoridad)
+        # B9.4 — Vista Reducida (tercera opción, mismo contrato densidad)
         self._modo_tira_b93 = MODO_TIRA_DINAMICA
         self._selector_modo_tira = QComboBox()
         self._selector_modo_tira.setObjectName("selector_modo_tira")
         self._selector_modo_tira.addItem("Dinámica", MODO_TIRA_DINAMICA)
         self._selector_modo_tira.addItem("Tira", MODO_TIRA)
+        self._selector_modo_tira.addItem("Reducida", MODO_REDUCIDA)
         self._selector_modo_tira.setCurrentIndex(0)
         self._selector_modo_tira.currentIndexChanged.connect(
             self._al_cambiar_modo_tira
@@ -2545,6 +2706,24 @@ class Tarjeta(QFrame):
             self._tira_contenedor.installEventFilter(self)
         except (AttributeError, RuntimeError):
             pass
+        # B9.4 — modalidad Reducida: contenedor liviano sin scroll
+        # Fórmula ancho útil: ancho actual de _contenedor_exploracion menos márgenes existentes (REDUCIDA_MARGIN*2).
+        # Ancho natural de preview: _tira_ancho_slot() (helper B9.3 de aspect ratio) + spacing vigente.
+        self._reducida_contenedor = QWidget()
+        self._reducida_contenedor.setObjectName("reducida_b94_contenedor")
+        # Sin QScrollArea/QScrollBar — layout horizontal directo
+        _layout_reducida = QHBoxLayout(self._reducida_contenedor)
+        _layout_reducida.setContentsMargins(REDUCIDA_MARGIN, REDUCIDA_MARGIN, REDUCIDA_MARGIN, REDUCIDA_MARGIN)
+        _layout_reducida.setSpacing(REDUCIDA_SPACING)
+        self._reducida_previews_widgets = []  # SOLO widgets realmente mostrados, <=5
+        self._reducida_ms_subset = []  # ms seleccionados determinista
+        # Altura coherente con previews B9.3 + margen extra
+        try:
+            _alto_red = dimensiones_miniatura()[1] + TIRA_B93_ALTURA_EXTRA
+            self._reducida_contenedor.setFixedHeight(_alto_red + 8)
+        except Exception:
+            pass
+        self._reducida_contenedor.setVisible(False)
         self._contenedor_exploracion = QWidget()
         disposicion = QVBoxLayout(self._contenedor_exploracion)
         disposicion.setContentsMargins(0, 4, 0, 0)
@@ -2552,6 +2731,7 @@ class Tarjeta(QFrame):
         disposicion.addLayout(fila_color)
         disposicion.addWidget(self._franja)
         disposicion.addWidget(self._tira_scroll)
+        disposicion.addWidget(self._reducida_contenedor)
         self._contenedor_exploracion.setVisible(False)
 
     def _al_cambiar_color_activo(self):
@@ -2580,16 +2760,17 @@ class Tarjeta(QFrame):
             pass
 
     def _al_cambiar_modo_tira(self, _idx=None):
-        """B9.3 — Vista Dinámica vs Tira (solo sesión, densidad es autoridad)."""
+        """B9.3 Vista Dinámica vs Tira — B9.4 añade Reducida (solo sesión, densidad autoridad)."""
         try:
             modo = self._selector_modo_tira.currentData()
         except Exception:
             modo = MODO_TIRA_DINAMICA
-        if modo not in (MODO_TIRA_DINAMICA, MODO_TIRA):
+        if modo not in (MODO_TIRA_DINAMICA, MODO_TIRA, MODO_REDUCIDA):
             modo = MODO_TIRA_DINAMICA
+        prev_modo = getattr(self, "_modo_tira_b93", MODO_TIRA_DINAMICA)
         self._modo_tira_b93 = modo
         if modo == MODO_TIRA_DINAMICA:
-            # B9.3/P01 — Tira→Dinámica debe liberar TODO lo visual de tira (QPixmap/pending/gen) manteniendo metadata _previews_densos
+            # B9.3/P01 — Tira/Reducida → Dinámica debe liberar TODO lo visual (QPixmap/pending/gen) manteniendo metadata _previews_densos
             try:
                 self._cache_visual_gen += 1
             except Exception:
@@ -2602,7 +2783,6 @@ class Tarjeta(QFrame):
                 self._cache_visual.clear()
             except Exception:
                 self._cache_visual = {}
-            # ocultar preview dinámico visible para que se recargue bajo demanda (no conservar cache de tira por comodidad)
             try:
                 self._hover_instante_actual = None
             except Exception:
@@ -2618,10 +2798,43 @@ class Tarjeta(QFrame):
             except Exception:
                 pass
             try:
+                self._limpiar_reducida_b94()
+            except Exception:
+                pass
+            try:
                 self._tira_aplicar_visibilidad_exclusiva()
             except Exception:
                 pass
-        else:
+        elif modo == MODO_TIRA:
+            # Tira: liberar reducida si venía, luego construir tira
+            try:
+                self._limpiar_reducida_b94()
+            except Exception:
+                pass
+            # si venía de Reducida, limpiar visual cache para no mezclar stale (gen bump)
+            if prev_modo == MODO_REDUCIDA:
+                try:
+                    self._cache_visual_gen += 1
+                except Exception:
+                    self._cache_visual_gen = 1
+                try:
+                    self._cache_visual_pending.clear()
+                except Exception:
+                    self._cache_visual_pending = set()
+                try:
+                    self._cache_visual.clear()
+                except Exception:
+                    self._cache_visual = {}
+                try:
+                    self._hover_instante_actual = None
+                except Exception:
+                    pass
+                try:
+                    if hasattr(self, "_imagen_exploracion") and self._imagen_exploracion is not None:
+                        self._imagen_exploracion.hide()
+                        self._imagen_exploracion.setPixmap(QPixmap())
+                except Exception:
+                    pass
             try:
                 self._tira_aplicar_visibilidad_exclusiva()
             except Exception:
@@ -2629,6 +2842,42 @@ class Tarjeta(QFrame):
             try:
                 self._tira_actualizar_logica()
                 self._tira_refrescar_viewport()
+            except Exception:
+                pass
+        elif modo == MODO_REDUCIDA:
+            # Reducida: liberar tira, limpiar cache visual, construir reducida
+            try:
+                self._limpiar_tira_b93()
+            except Exception:
+                pass
+            try:
+                self._cache_visual_gen += 1
+            except Exception:
+                self._cache_visual_gen = 1
+            try:
+                self._cache_visual_pending.clear()
+            except Exception:
+                self._cache_visual_pending = set()
+            try:
+                self._cache_visual.clear()
+            except Exception:
+                self._cache_visual = {}
+            try:
+                self._hover_instante_actual = None
+            except Exception:
+                pass
+            try:
+                if hasattr(self, "_imagen_exploracion") and self._imagen_exploracion is not None:
+                    self._imagen_exploracion.hide()
+                    self._imagen_exploracion.setPixmap(QPixmap())
+            except Exception:
+                pass
+            try:
+                self._tira_aplicar_visibilidad_exclusiva()
+            except Exception:
+                pass
+            try:
+                self._reducida_actualizar_logica()
             except Exception:
                 pass
         try:
@@ -2711,33 +2960,443 @@ class Tarjeta(QFrame):
             return 322
 
     def _tira_aplicar_visibilidad_exclusiva(self):
-        """Hace Vista exclusiva: Dinámica muestra franja, Tira muestra tira. Nunca ambas."""
+        """Hace Vista exclusiva: Dinámica muestra franja, Tira muestra tira, Reducida muestra reducida. Nunca dos visibles."""
         try:
             expandida = bool(getattr(self, "_expandida", False))
             modo = getattr(self, "_modo_tira_b93", MODO_TIRA_DINAMICA)
             franja = getattr(self, "_franja", None)
             tira = getattr(self, "_tira_scroll", None)
+            reducida = getattr(self, "_reducida_contenedor", None)
             if not expandida:
                 if franja is not None:
                     franja.setVisible(False)
                 if tira is not None:
                     tira.setVisible(False)
+                if reducida is not None:
+                    reducida.setVisible(False)
                 return
             if modo == MODO_TIRA:
                 if franja is not None:
                     franja.setVisible(False)
                     franja.setEnabled(False)
+                if reducida is not None:
+                    reducida.setVisible(False)
+                    reducida.setEnabled(False)
                 if tira is not None:
-                    # visibilidad real depende de tener logical >0, pero si no, también ocultable
-                    # _tira_actualizar_logica controlará visible según N>0; aquí habilitamos para que pueda mostrarse
                     tira.setEnabled(True)
-            else:
+                    # _tira_actualizar_logica controlará visible según N>0
+            elif modo == MODO_REDUCIDA:
+                if franja is not None:
+                    franja.setVisible(False)
+                    franja.setEnabled(False)
                 if tira is not None:
                     tira.setVisible(False)
                     tira.setEnabled(False)
+                if reducida is not None:
+                    reducida.setEnabled(True)
+                    # _reducida_actualizar_logica controla visible según N>0
+            else:
+                # Dinámica
+                if tira is not None:
+                    tira.setVisible(False)
+                    tira.setEnabled(False)
+                if reducida is not None:
+                    reducida.setVisible(False)
+                    reducida.setEnabled(False)
                 if franja is not None:
                     franja.setVisible(True)
                     franja.setEnabled(True)
+        except Exception:
+            pass
+
+    # ── B9.4 — Reducida sin scroll ──
+    def _reducida_ancho_util(self):
+        """B9.4 — ancho útil real sin disparar B9.5.
+
+        Preferencia: ancho actual de _contenedor_exploracion menos márgenes existentes.
+        Documentación: ancho_util = _contenedor_exploracion.width() - 2*REDUCIDA_MARGIN
+        (si width inválido 0, fallback a Tarjeta width - datos_widget).
+        No inventa segunda fórmula de aspect ratio.
+        """
+        try:
+            cont = getattr(self, "_contenedor_exploracion", None)
+            if cont is not None:
+                w = cont.width()
+                if isinstance(w, int) and w > 0:
+                    ancho = w - 2 * REDUCIDA_MARGIN
+                    # descontar contentsMargins horizontales (4 left+0 right aprox 4)
+                    try:
+                        m = cont.layout().contentsMargins() if cont.layout() else None
+                        if m is not None:
+                            ancho -= (m.left() + m.right())
+                    except Exception:
+                        pass
+                    if ancho > 0:
+                        return ancho
+            # fallback: Tarjeta width - datos_widget
+            w_self = self.width()
+            if isinstance(w_self, int) and w_self > 0:
+                try:
+                    datos = getattr(self, "_datos_widget", None)
+                    w_datos = datos.width() if datos is not None and datos.isVisible() else 240
+                except Exception:
+                    w_datos = 240
+                # restar datos + layout spacings + márgenes
+                ancho_fb = w_self - w_datos - 20 - 2 * REDUCIDA_MARGIN
+                if ancho_fb > 0:
+                    return ancho_fb
+        except Exception:
+            pass
+        return 0
+
+    def _reducida_cantidad_que_cabe(self):
+        """Cuántas previews caben en ancho_util con ancho_slot real B9.3."""
+        try:
+            ancho_util = self._reducida_ancho_util()
+            ancho_slot = self._tira_ancho_slot()
+            spacing = REDUCIDA_SPACING
+            cabe = _cantidad_reducida_que_cabe(ancho_util, ancho_slot, spacing)
+            return cabe
+        except Exception:
+            return 0
+
+    def _reducida_actualizar_logica(self):
+        """B9.4 — recalcula subset determinista equiespaciado y puebla contenedor reducido.
+
+        Densidad es autoridad única (no segunda densidad). Cantidad física = min(5, cantidad_que_cabe).
+        Si geometría inválida/0, fallback a 1 central. Nunca scroll ni recorte.
+        Solo recalcular al entrar a Reducida y al cambiar Densidad (B9.4); B9.6 hará resize continuo.
+        """
+        if getattr(self, "_modo_tira_b93", MODO_TIRA_DINAMICA) != MODO_REDUCIDA:
+            try:
+                rc = getattr(self, "_reducida_contenedor", None)
+                if rc is not None:
+                    rc.setVisible(False)
+            except Exception:
+                pass
+            return
+        if not getattr(self, "_expandida", False):
+            return
+        # universo lógico según Densidad (autoridad) — conservar para B9.3 mapping
+        dur = getattr(self, "_duracion", None)
+        densidad = getattr(self, "_densidad_manual", None)
+        logical = _ms_tira_densidad_ordenada(dur, densidad)
+        # mantener _tira_logical_ms como autoridad full incluso en Reducida para mapa marcadores
+        try:
+            self._tira_logical_ms = list(logical)
+        except Exception:
+            self._tira_logical_ms = logical
+        n = len(logical)
+        if n == 0:
+            try:
+                self._reducida_ms_subset = []
+            except Exception:
+                pass
+            try:
+                self._limpiar_reducida_b94()
+            except Exception:
+                pass
+            try:
+                rc = getattr(self, "_reducida_contenedor", None)
+                if rc is not None:
+                    rc.setVisible(False)
+            except Exception:
+                pass
+            return
+        # cantidad física que cabe
+        cabe = self._reducida_cantidad_que_cabe()
+        if cabe <= 0:
+            # geometría inválida => fallback seguro 1 central
+            cabe = 1
+        cantidad = min(REDUCIDA_MAX_PREVIEWS, cabe)
+        if cantidad < 1:
+            cantidad = 1
+        cantidad = min(cantidad, n)
+        subset = _seleccionar_ms_reducida(logical, cantidad)
+        self._reducida_ms_subset = subset
+        # refrescar UI y cache
+        try:
+            self._reducida_refrescar()
+        except Exception:
+            pass
+        # visibilidad exclusiva: mostrar reducida si tiene subset
+        try:
+            rc = getattr(self, "_reducida_contenedor", None)
+            if rc is not None:
+                if subset:
+                    rc.setVisible(True)
+                    rc.setEnabled(True)
+                else:
+                    rc.setVisible(False)
+        except Exception:
+            pass
+        # sincronizar cache y solicitar visuales faltantes (acotado <=5)
+        try:
+            self._sincronizar_cache_visual()
+        except Exception:
+            pass
+        # solicitar visuales para subset faltante
+        try:
+            misses = []
+            for ms in subset:
+                if ms not in getattr(self, "_cache_visual", {}) and ms not in getattr(self, "_cache_visual_pending", set()):
+                    misses.append(ms)
+            if misses:
+                for m in misses:
+                    self._cache_visual_pending.add(m)
+                try:
+                    self._cache_visual_gen += 1
+                except Exception:
+                    self._cache_visual_gen = 1
+                payload = {"video_id": getattr(self, "_video_id", None), "version": getattr(self, "_densidad_version", None), "ms_lista": misses, "request_id": self._cache_visual_gen, "gen": self._cache_visual_gen}
+                self.preview_visual_solicitada.emit(payload)
+        except Exception:
+            pass
+        # asegurar decoraciones
+        try:
+            self._reducida_actualizar_decoraciones()
+        except Exception:
+            pass
+
+    def _reducida_refrescar(self):
+        """Puebla/actualiza widgets reducidos para _reducida_ms_subset (<=5, sin scroll)."""
+        subset = getattr(self, "_reducida_ms_subset", []) or []
+        # asegurar contenedor y layout
+        cont = getattr(self, "_reducida_contenedor", None)
+        layout = None
+        try:
+            layout = cont.layout() if cont is not None else None
+        except Exception:
+            layout = None
+        # ajustar pool a len(subset)
+        cur_pool = getattr(self, "_reducida_previews_widgets", []) or []
+        # si subset vacío, limpiar
+        if not subset:
+            self._limpiar_reducida_b94()
+            return
+        # crear / reutilizar widgets
+        needed = len(subset)
+        # crear faltantes
+        while len(cur_pool) < needed:
+            w = PreviewTiraTemporal(cont)
+            w.installEventFilter(self)
+            try:
+                w.tira_left_clicked.connect(self._on_tira_left_clicked)
+                w.tira_right_clicked.connect(self._on_tira_right_clicked)
+            except Exception:
+                pass
+            # usar ancho natural B9.3, no achicar (B9.5 sería fit-to-width)
+            try:
+                ancho_slot = self._tira_ancho_slot()
+                w.setFixedWidth(ancho_slot)
+            except Exception:
+                pass
+            # setFixedHeight ya en PreviewTiraTemporal
+            w.hide()
+            cur_pool.append(w)
+            # añadir a layout
+            try:
+                if layout is not None:
+                    layout.addWidget(w)
+                else:
+                    w.setParent(cont)
+            except Exception:
+                pass
+        # si sobran, ocultar y remover del layout pero mantener para reutilizar? Spec dice mantener SOLO mostrados <=5.
+        # Eliminamos excedentes
+        if len(cur_pool) > needed:
+            for w in list(cur_pool[needed:]):
+                try:
+                    w.hide()
+                    w.clear_tira()
+                    if layout is not None:
+                        layout.removeWidget(w)
+                    w.setParent(None)
+                    w.deleteLater()
+                except Exception:
+                    pass
+            cur_pool = cur_pool[:needed]
+            self._reducida_previews_widgets = cur_pool
+        else:
+            self._reducida_previews_widgets = cur_pool
+        # asegurar que widgets en pool estén en layout (por si fueron removidos antes)
+        for w in cur_pool:
+            try:
+                if layout is not None and layout.indexOf(w) == -1:
+                    layout.addWidget(w)
+            except Exception:
+                pass
+        # actualizar cache map y pendiente
+        try:
+            self._sincronizar_cache_visual()
+        except Exception:
+            pass
+        dens_map = {}
+        try:
+            for ms, pm in getattr(self, "_cache_visual", {}).items():
+                if pm is not None and not pm.isNull():
+                    dens_map[ms] = pm
+        except Exception:
+            dens_map = {}
+        # reconstruir mapa marcadores si cambió logical
+        try:
+            self._reconstruir_mapa_marcadores_tira()
+        except Exception:
+            pass
+        try:
+            pendiente_ms_global = self._reducida_ms_pendiente_logico()
+        except Exception:
+            pendiente_ms_global = None
+        # bindear cada widget al sample
+        for idx, ms in enumerate(subset):
+            w = cur_pool[idx]
+            instante = ms / 1000.0
+            pixmap = dens_map.get(ms)
+            tiempo_txt = formatear_tiempo(instante) if _duracion_valida(self._duracion) else None
+            try:
+                marcadores_ms = self._marcadores_para_sample_tira(ms)
+            except Exception:
+                marcadores_ms = []
+            try:
+                segmentos_ms = self._segmentos_para_sample_tira(ms)
+            except Exception:
+                segmentos_ms = []
+            try:
+                ancho_slot = self._tira_ancho_slot()
+                w.setFixedWidth(ancho_slot)
+                w.setFixedHeight(dimensiones_miniatura()[1])
+                if pixmap is not None and not pixmap.isNull():
+                    w.set_preview(pixmap, tiempo_txt)
+                else:
+                    w._pixmap = None
+                    w._tiempo = tiempo_txt
+                    w.update()
+                pendiente = (pendiente_ms_global is not None and int(ms) == int(pendiente_ms_global))
+                w.bind_tira(ms, marcadores_ms, segmentos_ms, pendiente)
+                w.show()
+            except Exception:
+                pass
+        # ajustar altura contenedor
+        try:
+            alto = dimensiones_miniatura()[1]
+            if cont is not None:
+                cont.setFixedHeight(alto + TIRA_B93_ALTURA_EXTRA + 4)
+        except Exception:
+            pass
+        # verificar no overflow: ancho requerido <= ancho_util
+        try:
+            ancho_slot = self._tira_ancho_slot()
+            spacing = REDUCIDA_SPACING
+            margins = REDUCIDA_MARGIN * 2
+            req = len(subset) * ancho_slot + max(0, len(subset) - 1) * spacing + margins
+            ancho_util = self._reducida_ancho_util()
+            if ancho_util > 0 and req > ancho_util + 1:  # tolerancia 1px
+                # fallback: ya limitamos por _cantidad_que_cabe, pero si aún excede por redondeo, no crear scroll
+                pass
+        except Exception:
+            pass
+
+    def _limpiar_reducida_b94(self):
+        """Libera pool reducido sin perder metadata densa."""
+        try:
+            cont = getattr(self, "_reducida_contenedor", None)
+            layout = cont.layout() if cont is not None else None
+            for w in list(getattr(self, "_reducida_previews_widgets", []) or []):
+                try:
+                    w.hide()
+                    w.clear_tira()
+                    if layout is not None:
+                        layout.removeWidget(w)
+                    w.setParent(None)
+                    w.close()
+                    w.deleteLater()
+                except Exception:
+                    pass
+            self._reducida_previews_widgets = []
+        except Exception:
+            self._reducida_previews_widgets = []
+        try:
+            self._reducida_ms_subset = []
+        except Exception:
+            pass
+        try:
+            rc = getattr(self, "_reducida_contenedor", None)
+            if rc is not None:
+                rc.setVisible(False)
+        except Exception:
+            pass
+        try:
+            QApplication.processEvents()
+            QApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+            QApplication.processEvents()
+        except Exception:
+            pass
+
+    def _reducida_ms_pendiente_logico(self):
+        """Sample del subset que representa visualmente el extremo A pendiente, o None."""
+        try:
+            if not getattr(self, "_modo_crear_segmento", False):
+                return None
+            extremo = getattr(self, "_extremo_segmento", None)
+            if extremo is None or not isinstance(extremo, (int, float)) or isinstance(extremo, bool):
+                return None
+            subset = getattr(self, "_reducida_ms_subset", None) or []
+            if not subset:
+                return None
+            t_ms = int(round(float(extremo) * 1000))
+            if t_ms in subset:
+                return int(t_ms)
+            best = None
+            best_dist = None
+            for s in subset:
+                try:
+                    dist = abs(int(s) - t_ms)
+                except Exception:
+                    continue
+                if best_dist is None or dist < best_dist or (dist == best_dist and int(s) < int(best)):
+                    best_dist = dist
+                    best = s
+            return int(best) if best is not None else None
+        except Exception:
+            return None
+
+    def _reducida_actualizar_decoraciones(self):
+        try:
+            self._reconstruir_mapa_marcadores_tira()
+        except Exception:
+            pass
+        subset = getattr(self, "_reducida_ms_subset", None) or []
+        if not subset:
+            return
+        pendiente_ms = self._reducida_ms_pendiente_logico()
+        for w in getattr(self, "_reducida_previews_widgets", []) or []:
+            try:
+                ms = getattr(w, "_logical_ms", None)
+                if ms is None or ms not in subset:
+                    continue
+                marcadores = self._marcadores_para_sample_tira(ms)
+                segmentos = self._segmentos_para_sample_tira(ms)
+                pendiente = (pendiente_ms is not None and int(ms) == int(pendiente_ms))
+                w.bind_tira(ms, marcadores, segmentos, pendiente)
+            except Exception:
+                continue
+
+    def _reducida_actualizar_pendiente(self):
+        try:
+            pendiente_ms = self._reducida_ms_pendiente_logico()
+            for w in getattr(self, "_reducida_previews_widgets", []) or []:
+                try:
+                    ms = getattr(w, "_logical_ms", None)
+                    if ms is None:
+                        continue
+                    if pendiente_ms is not None and int(ms) == int(pendiente_ms):
+                        if not getattr(w, "_pendiente_tira", False):
+                            w.set_pendiente_tira(True)
+                    else:
+                        if getattr(w, "_pendiente_tira", False):
+                            w.set_pendiente_tira(False)
+                except Exception:
+                    continue
         except Exception:
             pass
 
@@ -3031,6 +3690,15 @@ class Tarjeta(QFrame):
     def _ms_visuales_necesarios(self):
         """Calcula conjunto requerido derivado de necesidad actual (viewport+overscan y vecindario dinámico)."""
         requeridos = set()
+        # Reducida: subset equiespaciado acotado <=5
+        if getattr(self, "_expandida", False) and getattr(self, "_modo_tira_b93", MODO_TIRA_DINAMICA) == MODO_REDUCIDA:
+            try:
+                subset = getattr(self, "_reducida_ms_subset", None) or []
+                for ms in subset:
+                    requeridos.add(ms)
+            except Exception:
+                pass
+            return requeridos
         # Tira: índices visibles + overscan calculado por viewport
         if getattr(self, "_expandida", False) and getattr(self, "_modo_tira_b93", MODO_TIRA_DINAMICA) == MODO_TIRA:
             logical = getattr(self, "_tira_logical_ms", []) or []
@@ -3354,17 +4022,38 @@ class Tarjeta(QFrame):
             pass
 
     def _actualizar_tira_tamano_b93(self):
-        """Reajusta tira al cambiar tamaño miniaturas sin I/O (repintado virtualizado)."""
+        """Reajusta tira/reducida al cambiar tamaño miniaturas sin I/O (repintado virtualizado)."""
         try:
             alto = dimensiones_miniatura()[1]
             if hasattr(self, "_tira_scroll") and self._tira_scroll is not None:
                 self._tira_scroll.setFixedHeight(alto + TIRA_B93_ALTURA_EXTRA + 8)
                 if hasattr(self, "_tira_contenedor") and self._tira_contenedor is not None:
                     self._tira_contenedor.setFixedHeight(alto + TIRA_B93_ALTURA_EXTRA)
+            if hasattr(self, "_reducida_contenedor") and self._reducida_contenedor is not None:
+                self._reducida_contenedor.setFixedHeight(alto + TIRA_B93_ALTURA_EXTRA + 4)
+                for w in getattr(self, "_reducida_previews_widgets", []) or []:
+                    try:
+                        w.setFixedWidth(self._tira_ancho_slot())
+                        w.reajustar()
+                    except Exception:
+                        pass
+                # No recalcular automáticamente cantidad en B9.4 (B9.6 lo hará); solo ajustar anchos sin cambiar subset
             # recalcular geometría lógica y viewport
-            self._tira_actualizar_logica()
-            self._tira_refrescar_viewport()
-            # también reajustar pixmaps en pool
+            modo = getattr(self, "_modo_tira_b93", MODO_TIRA_DINAMICA)
+            if modo == MODO_TIRA:
+                self._tira_actualizar_logica()
+                self._tira_refrescar_viewport()
+            elif modo == MODO_REDUCIDA:
+                # B9.4 NO recalcular continuamente por resize; mantener subset actual solo ajustar visual
+                for w in getattr(self, "_reducida_previews_widgets", []) or []:
+                    try:
+                        w.reajustar()
+                    except Exception:
+                        pass
+            else:
+                # Dinámica no necesita tira
+                pass
+            # también reajustar pixmaps en pool tira
             for w in getattr(self, "_tira_previews_widgets", []) or []:
                 try:
                     w.reajustar()
@@ -3461,10 +4150,15 @@ class Tarjeta(QFrame):
         ]
         self._refrescar_exploracion()
         # B9.3 — densidad autoridad: actualizar tira virtualizada sin reconstruir tarjeta
+        # B9.4 — también actualizar reducida si está activa (subset equiespaciado)
         try:
-            if getattr(self, "_expandida", False) and getattr(self, "_modo_tira_b93", MODO_TIRA_DINAMICA) == MODO_TIRA:
-                self._tira_actualizar_logica()
-                self._tira_refrescar_viewport()
+            if getattr(self, "_expandida", False):
+                modo = getattr(self, "_modo_tira_b93", MODO_TIRA_DINAMICA)
+                if modo == MODO_TIRA:
+                    self._tira_actualizar_logica()
+                    self._tira_refrescar_viewport()
+                elif modo == MODO_REDUCIDA:
+                    self._reducida_actualizar_logica()
         except Exception:
             pass
 
@@ -3552,6 +4246,10 @@ class Tarjeta(QFrame):
                 self._limpiar_tira_b93()
             except Exception:
                 pass
+            try:
+                self._limpiar_reducida_b94()
+            except Exception:
+                pass
             self._imagen_exploracion.setPixmap(QPixmap())
             self._imagen_exploracion.hide()
             self._cancelar_extremo_segmento()
@@ -3574,12 +4272,15 @@ class Tarjeta(QFrame):
         self._actualizar_tiempo_exploracion(0.0)
         self._mostrar_preview_para_instante(0.0)
         self._renderizar_marcadores()
-        # B9.3 — Vista exclusiva + si Vista=Tira, inicializar lógica virtualizada
+        # B9.3 — Vista exclusiva + si Vista=Tira/Reducida, inicializar lógica virtualizada
         try:
             self._tira_aplicar_visibilidad_exclusiva()
-            if getattr(self, "_modo_tira_b93", MODO_TIRA_DINAMICA) == MODO_TIRA:
+            modo = getattr(self, "_modo_tira_b93", MODO_TIRA_DINAMICA)
+            if modo == MODO_TIRA:
                 self._tira_actualizar_logica()
                 self._tira_refrescar_viewport()
+            elif modo == MODO_REDUCIDA:
+                self._reducida_actualizar_logica()
         except Exception:
             pass
         self.marcadores_solicitados.emit()
@@ -3811,8 +4512,11 @@ class Tarjeta(QFrame):
         if nuevos and self._expandida:
             self._refrescar_exploracion()
             try:
-                if getattr(self, "_modo_tira_b93", MODO_TIRA_DINAMICA) == MODO_TIRA:
+                modo = getattr(self, "_modo_tira_b93", MODO_TIRA_DINAMICA)
+                if modo == MODO_TIRA:
                     self._tira_refrescar_viewport()
+                elif modo == MODO_REDUCIDA:
+                    self._reducida_actualizar_logica()
             except Exception:
                 pass
         return nuevos
@@ -3847,11 +4551,14 @@ class Tarjeta(QFrame):
             self._previews_densos.sort(key=lambda d: d.get("instante", 0))
         except Exception:
             pass
-        # actualizar lógica tira
+        # actualizar lógica tira/reducida
         try:
-            if getattr(self, "_modo_tira_b93", MODO_TIRA_DINAMICA) == MODO_TIRA:
+            modo = getattr(self, "_modo_tira_b93", MODO_TIRA_DINAMICA)
+            if modo == MODO_TIRA:
                 self._tira_actualizar_logica()
                 self._tira_refrescar_viewport()
+            elif modo == MODO_REDUCIDA:
+                self._reducida_actualizar_logica()
         except Exception:
             pass
         return nuevos
@@ -4014,25 +4721,28 @@ class Tarjeta(QFrame):
             self._reconstruir_mapa_marcadores_tira()
         except Exception:
             pass
-        # actualizar cada widget visible con nuevo bind sin reconstruir pool
+        # tira
         logical = getattr(self, "_tira_logical_ms", None) or []
-        if not logical:
-            return
-        pendiente_ms = self._tira_ms_pendiente_logico()
-        # mapa inverso logical_idx -> ms ya conocido
-        for w in getattr(self, "_tira_previews_widgets", []) or []:
-            try:
-                ms = getattr(w, "_logical_ms", None)
-                if ms is None:
+        if logical:
+            pendiente_ms = self._tira_ms_pendiente_logico()
+            for w in getattr(self, "_tira_previews_widgets", []) or []:
+                try:
+                    ms = getattr(w, "_logical_ms", None)
+                    if ms is None:
+                        continue
+                    if ms not in logical:
+                        continue
+                    marcadores = self._marcadores_para_sample_tira(ms)
+                    segmentos = self._segmentos_para_sample_tira(ms)
+                    pendiente = (pendiente_ms is not None and int(ms) == int(pendiente_ms))
+                    w.bind_tira(ms, marcadores, segmentos, pendiente)
+                except Exception:
                     continue
-                if ms not in logical:
-                    continue
-                marcadores = self._marcadores_para_sample_tira(ms)
-                segmentos = self._segmentos_para_sample_tira(ms)
-                pendiente = (pendiente_ms is not None and int(ms) == int(pendiente_ms))
-                w.bind_tira(ms, marcadores, segmentos, pendiente)
-            except Exception:
-                continue
+        # reducida (siempre intentar, sin early return)
+        try:
+            self._reducida_actualizar_decoraciones()
+        except Exception:
+            pass
 
     def _tira_ms_pendiente_logico(self):
         """Devuelve el sample lógico ms que representa visualmente el extremo A pendiente, o None.
@@ -4080,7 +4790,6 @@ class Tarjeta(QFrame):
                     ms = getattr(w, "_logical_ms", None)
                     if ms is None:
                         continue
-                    # si widget no tiene logical (clear_tira) asegurar sin pendiente
                     if pendiente_ms is not None and int(ms) == int(pendiente_ms):
                         if not getattr(w, "_pendiente_tira", False):
                             w.set_pendiente_tira(True)
@@ -4089,6 +4798,10 @@ class Tarjeta(QFrame):
                             w.set_pendiente_tira(False)
                 except Exception:
                     continue
+        except Exception:
+            pass
+        try:
+            self._reducida_actualizar_pendiente()
         except Exception:
             pass
 
@@ -6254,17 +6967,16 @@ class VisorVideos(QMainWindow):
         self._encolar_exploracion(tarjeta.nombre)
 
     def _al_modo_tira_cambiada(self, ident, modo):
-        # B9.3 virtualizada: densidad es autoridad, Tira solo cambia vista (no segundo pipeline)
+        # B9.3 virtualizada: densidad es autoridad, Tira/Reducida solo cambian vista (no segundo pipeline)
         vid = ident if _es_video_id_valido(ident) else None
         tarjeta = self._tarjeta_por_id(vid) if _es_video_id_valido(vid) else self._tarjeta_por_nombre(ident)
         if tarjeta is None or not tarjeta._expandida:
             return
-        if modo == MODO_TIRA:
+        if modo in (MODO_TIRA, MODO_REDUCIDA):
             # asegurar que densidad actual tenga sus fotogramas (reutiliza cache)
-            # si faltan, encolar (solo densidad, sin tiempos_tira)
             self._encolar_exploracion(tarjeta.nombre)
         else:
-            # Dinámica: nada que encolar, tira ya liberada en Tarjeta
+            # Dinámica: nada que encolar, tira/reducida ya liberada en Tarjeta
             pass
 
     def _cancelar_exploracion_en_curso(self):
@@ -6448,7 +7160,6 @@ class VisorVideos(QMainWindow):
                 requeridos = tarjeta._ms_visuales_necesarios() if hasattr(tarjeta, "_ms_visuales_necesarios") else set()
                 for ms, img in imagenes.items():
                     if ms in fotogramas:
-                        # solo conservar si está en requeridos (si requeridos vacío, conservar temporal para primer pintado)
                         if requeridos and ms not in requeridos:
                             continue
                         try:
@@ -6463,8 +7174,11 @@ class VisorVideos(QMainWindow):
                 except Exception:
                     pass
                 try:
-                    if getattr(tarjeta, "_modo_tira_b93", MODO_TIRA_DINAMICA) == MODO_TIRA:
+                    modo_v = getattr(tarjeta, "_modo_tira_b93", MODO_TIRA_DINAMICA)
+                    if modo_v == MODO_TIRA:
                         tarjeta._tira_refrescar_viewport()
+                    elif modo_v == MODO_REDUCIDA:
+                        tarjeta._reducida_refrescar()
                 except Exception:
                     pass
                 try:
@@ -6715,9 +7429,12 @@ class VisorVideos(QMainWindow):
             # refrescar vistas afectadas
             try:
                 tarjeta._refrescar_exploracion()
-                if getattr(tarjeta, "_modo_tira_b93", MODO_TIRA_DINAMICA)==MODO_TIRA:
+                modo_v = getattr(tarjeta, "_modo_tira_b93", MODO_TIRA_DINAMICA)
+                if modo_v == MODO_TIRA:
                     tarjeta._tira_refrescar_viewport()
-                # si hover espera ese ms, repintar
+                elif modo_v == MODO_REDUCIDA:
+                    tarjeta._reducida_refrescar()
+                # si hover espera ese ms, repintar (solo Dinámica)
                 hover = getattr(tarjeta, "_hover_instante_actual", None)
                 if isinstance(hover, (int,float)) and not isinstance(hover,bool):
                     ms_hover = tarjeta._ms_mas_cercano(hover)

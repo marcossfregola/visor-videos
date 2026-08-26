@@ -146,18 +146,25 @@ def _mem():
     except:
         return None,None
 
-# 1 Default Vista=Dinámica 0 widgets
+# 1 Default Vista=Dinámica 0 widgets — B9.4 adaptación: combo ahora tiene 3 (Dinámica/Tira/Reducida) sin relajar resto
 def test_01_default_dinamica():
     fila=_filas(["a.mp4"],[100.0])[0]
     t=Tarjeta(fila)
     t.show(); QApplication.processEvents()
     ok = t._modo_tira_b93 == MODO_TIRA_DINAMICA
     ok = ok and t._selector_modo_tira.currentData()==MODO_TIRA_DINAMICA
-    ok = ok and t._selector_modo_tira.count()==2
+    ok = ok and t._selector_modo_tira.count()==3
     ok = ok and t._selector_modo_tira.itemText(0)=="Dinámica"
     ok = ok and t._selector_modo_tira.itemText(1)=="Tira"
+    ok = ok and t._selector_modo_tira.itemText(2)=="Reducida"
     ok = ok and not t._tira_scroll.isVisible()
     ok = ok and len(t._tira_previews_widgets)==0
+    # Reducida también oculta por defecto
+    try:
+        ok = ok and not t._reducida_contenedor.isVisible()
+        ok = ok and len(t._reducida_previews_widgets)==0
+    except Exception:
+        pass
     ok = ok and t._selector_modo_tira.objectName()=="selector_modo_tira"
     t.deleteLater(); QApplication.processEvents()
     return ok, f"modo={t._modo_tira_b93} widgets={len(t._tira_previews_widgets)}"
