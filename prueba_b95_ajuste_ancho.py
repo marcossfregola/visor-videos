@@ -207,7 +207,9 @@ def test_05_grilla_sin_overflow():
     ok = ok and not isinstance(t._ajustada_grid, QScrollArea)
     ok = ok and not t._ajustada_grid.parent().__class__.__name__=="QScrollArea"
     # verificar que Ajustada no tiene scrollbar horizontal visible
-    ok = ok and not hasattr(t._ajustada_grid, "horizontalScrollBar") or not t._ajustada_grid.horizontalScrollBar().isVisible() if hasattr(t._ajustada_grid, "horizontalScrollBar") else True
+    _has_hbar = hasattr(t._ajustada_grid, "horizontalScrollBar")
+    _no_hbar_visible = (not _has_hbar) or (not t._ajustada_grid.horizontalScrollBar().isVisible() if _has_hbar else True)
+    ok = ok and _no_hbar_visible
     t.deleteLater(); QApplication.processEvents()
     return ok, f"cols {cols} rows {rows} cw {cw} ch {ch} ancho_util {ancho_util} req {req} ok={ok}"
 
@@ -444,7 +446,7 @@ def test_13_dos_fijadas():
     _a_ajustada(ta); _a_ajustada(tb); QApplication.processEvents()
     ok = ta._modo_tira_b93==MODO_AJUSTADA and tb._modo_tira_b93==MODO_AJUSTADA
     ok = ok and len(ta._ajustada_logical_ms)==30 and len(tb._ajustada_logical_ms)==60
-    ok = ok and ta._ajustada_cols != tb._ajustada_cols or True # pueden coincidir, no obligatorio
+    # cols pueden coincidir o no — no hay invariante obligatorio sobre igualdad de columnas entre tarjetas distintas
     ok = ok and ta._cache_visual is not tb._cache_visual
     ok = ok and ta._ajustada_grid is not tb._ajustada_grid
     _cleanup_visores(v)
@@ -515,24 +517,51 @@ def test_15_no_persistencia():
         with open(ruta_cfg,"wb") as f: f.write(antes)
     return ok_cfg and ok_sql, f"cfg {ok_cfg} sql {ok_sql}"
 
-# 16 B9.6 no adelantada: resize puro no recalcula automáticamente
+# 16 B9.6 autoresize: resize puro recalcula solo geometría sin cambiar N ni regenerar (contrato B9.6)
 def test_16_no_resize_auto():
+    import time as _t
     fila=_filas(["a.mp4"],[100.0])[0]
     t=Tarjeta(fila); t.show(); t.resize(1200,600); QApplication.processEvents(); t.expandir(); QApplication.processEvents()
     t._densidad_manual=30
     t.set_metadata_densa(tiempos_objetivo(100.0,30), version="v16"); QApplication.processEvents()
     t._contenedor_exploracion.setFixedWidth(1200); QApplication.processEvents()
     _a_ajustada(t); QApplication.processEvents()
+    # estabilizar ultimo ancho
+    try:
+        t._responsive_b96_ultimo_ancho = t._responsive_b96_obtener_ancho_util()
+    except: pass
+    QApplication.processEvents()
     cols_antes=t._ajustada_cols; rows_antes=t._ajustada_rows; cw_antes=t._ajustada_cell_w
-    # resize puro
+    ancho_antes=t._ajustada_ancho_util()
+    n_antes=len(t._ajustada_logical_ms)
+    gen_antes=t._cache_visual_gen
+    # resize puro B9.6: cambiar ancho contenedor y disparar Tarjeta.resizeEvent coalescido
     t._contenedor_exploracion.setFixedWidth(700); QApplication.processEvents()
-    # sin cambiar modo/densidad, no debe recalcular automáticamente
-    cols_desp=t._ajustada_cols
-    ok = cols_desp==cols_antes and t._ajustada_rows==rows_antes and t._ajustada_cell_w==cw_antes
-    # tampoco crash
-    ok = ok and t._ajustada_grid.isVisible()
+    # disparar resizeEvent para coalescing B9.6
+    try:
+        from PySide6.QtGui import QResizeEvent
+        from PySide6.QtCore import QSize
+        ev=QResizeEvent(QSize(800,600), QSize(t.width(), t.height()))
+        t.resize(800,600); QApplication.sendEvent(t, ev)
+    except: pass
+    for _ in range(5):
+        QApplication.processEvents(); _t.sleep(0.02); QApplication.processEvents()
+    cols_desp=t._ajustada_cols; rows_desp=t._ajustada_rows; cw_desp=t._ajustada_cell_w
+    ancho_desp=t._ajustada_ancho_util()
+    # debe haber recalculado geometría (cols/cw/rows cambian) coherentemente
+    req = cols_desp*cw_desp + (cols_desp-1)*AJUSTADA_SPACING
+    ok = t._ajustada_grid.isVisible()
+    geom_cambio = (cols_desp != cols_antes or cw_desp != cw_antes or rows_desp != rows_antes)
+    ok = ok and geom_cambio
+    ok = ok and req <= ancho_desp +2
+    ok = ok and len(t._ajustada_logical_ms)==n_antes and n_antes==30
+    ok = ok and len(t._tira_logical_ms)==30
+    # no regeneración ni invalidación masiva: gen no incrementa masiva, cache no vaciada arbitraria
+    ok = ok and (t._cache_visual_gen - gen_antes) <=2
+    # no crash, 1 widget
+    ok = ok and len([w for w in t.findChildren(AjustadaGridWidget)])==1
     t.deleteLater(); QApplication.processEvents()
-    return ok, f"antes cols {cols_antes} después {cols_desp} cw {cw_antes}"
+    return ok, f"B9.6 antes cols {cols_antes} cw {cw_antes} ancho {ancho_antes} -> desp cols {cols_desp} cw {cw_desp} ancho {ancho_desp} N {n_antes}"
 
 # 17 Cambiar Densidad y reentrar a Ajustada sí recalcula
 def test_17_densidad_reentrar():

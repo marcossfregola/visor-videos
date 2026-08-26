@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QLayout,
     QLineEdit,
     QMainWindow,
     QMenu,
@@ -39,6 +40,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QRadioButton,
     QScrollArea,
+    QSizePolicy,
     QSplitter,
     QVBoxLayout,
     QWidget,
@@ -2273,6 +2275,16 @@ class Tarjeta(QFrame):
         self._barra_colapsada.setVisible(not self._expandida)
         layout.addWidget(self._barra_colapsada)
         layout.addWidget(self._contenedor_exploracion)
+        # B9.6 — permitir que el layout no imponga minimumSizeHint basado en 5 previews fijas
+        try:
+            layout.setSizeConstraint(QLayout.SetNoConstraint)
+        except Exception:
+            pass
+        try:
+            self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+            self.setMinimumWidth(0)
+        except Exception:
+            pass
 
     def actualizar_nombre(self, nuevo_nombre, nueva_ruta=None):
         """Actualiza el nombre y la carpeta del video tras renombrado (B7.1).
@@ -3077,6 +3089,19 @@ class Tarjeta(QFrame):
             self._reducida_contenedor.setFixedHeight(_alto_red + 8)
         except Exception:
             pass
+        # B9.6 — permitir que Tarjeta se achique aunque haya 5 previews fijas:
+        # Sin esto, QHBoxLayout impone minimumSizeHint = 5*slot+spacing y Tarjeta
+        # conserva ancho grande, _reducida_ancho_util ve ancho stale y nunca baja k.
+        try:
+            _layout_reducida.setSizeConstraint(QLayout.SetNoConstraint)
+        except Exception:
+            pass
+        try:
+            self._reducida_contenedor.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+            self._reducida_contenedor.setMinimumWidth(0)
+            self._reducida_contenedor.setMinimumHeight(_alto_red + 8 if '_alto_red' in locals() else 0)
+        except Exception:
+            pass
         self._reducida_contenedor.setVisible(False)
         # B9.5 — modalidad Ajustada: grilla TODAS al ancho, superficie custom pintada (1 widget, no 200)
         self._ajustada_grid = AjustadaGridWidget()
@@ -3092,6 +3117,10 @@ class Tarjeta(QFrame):
         self._ajustada_rows = 1
         self._ajustada_cell_w = 0
         self._ajustada_cell_h = 0
+        # B9.6 — estado responsive geometría (coalescing, guard reentrada)
+        self._responsive_b96_pending = False
+        self._responsive_b96_en_reajuste = False
+        self._responsive_b96_ultimo_ancho = None
         self._contenedor_exploracion = QWidget()
         disposicion = QVBoxLayout(self._contenedor_exploracion)
         disposicion.setContentsMargins(0, 4, 0, 0)
@@ -3101,6 +3130,16 @@ class Tarjeta(QFrame):
         disposicion.addWidget(self._tira_scroll)
         disposicion.addWidget(self._reducida_contenedor)
         disposicion.addWidget(self._ajustada_grid)
+        # B9.6 — permitir contracción sin imponer mínimo de previews fijas
+        try:
+            disposicion.setSizeConstraint(QLayout.SetNoConstraint)
+        except Exception:
+            pass
+        try:
+            self._contenedor_exploracion.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+            self._contenedor_exploracion.setMinimumWidth(0)
+        except Exception:
+            pass
         self._contenedor_exploracion.setVisible(False)
 
     def _al_cambiar_color_activo(self):
@@ -5021,9 +5060,21 @@ class Tarjeta(QFrame):
                     self._boton_fijar.blockSignals(False)
             except (AttributeError, RuntimeError):
                 pass
+            # B9.6 — reset estado responsive al expandir
+            try:
+                self._responsive_b96_pending = False
+                self._responsive_b96_en_reajuste = False
+                self._responsive_b96_ultimo_ancho = None
+            except Exception:
+                pass
             self._preparar_exploracion()
             try:
                 self._tira_aplicar_visibilidad_exclusiva()
+            except Exception:
+                pass
+            # B9.6 — inicializar ultimo ancho tras layout inicial
+            try:
+                QTimer.singleShot(0, lambda: setattr(self, "_responsive_b96_ultimo_ancho", self._responsive_b96_obtener_ancho_util()))
             except Exception:
                 pass
             # B9.3 — tira virtualizada se inicializa en _preparar_exploracion
@@ -5085,6 +5136,13 @@ class Tarjeta(QFrame):
             if barra is not None:
                 barra.setVisible(True)
                 self._sincronizar_barra_colapsada()
+            # B9.6 — limpiar estado responsive al colapsar
+            try:
+                self._responsive_b96_pending = False
+                self._responsive_b96_en_reajuste = False
+                self._responsive_b96_ultimo_ancho = None
+            except Exception:
+                pass
         self.expansion_cambiada.emit(self._video_id if _es_video_id_valido(self._video_id) else self._nombre, valor)
 
     def _preparar_exploracion(self):
@@ -5138,6 +5196,293 @@ class Tarjeta(QFrame):
         self._limitar_ancho_superficie()
         self._reposicionar_preview()
         self._renderizar_marcadores()
+
+    # ── B9.6 — geometría responsive mínima (coalescing, solo geometría, sin FFmpeg) ──
+    def _ajustada_recalcular_geometria_b96(self):
+        """B9.6 — recalcula SOLO cols/cell_w/cell_h/rows sobre logical vigente, sin invalidar cache/gen."""
+        if getattr(self, "_modo_tira_b93", MODO_TIRA_DINAMICA) != MODO_AJUSTADA:
+            return
+        if not getattr(self, "_expandida", False):
+            return
+        logical = getattr(self, "_tira_logical_ms", None) or getattr(self, "_ajustada_logical_ms", None) or []
+        # reutilizar universo lógico vigente; si vacío intentar fallback sin crear nuevo N? mantener N actual
+        if not logical:
+            # fallback: generar desde densidad vigente solo si no hay logical (no debería ocurrir en B9.6 expandida)
+            try:
+                dur = getattr(self, "_duracion", None)
+                dens = getattr(self, "_densidad_manual", None)
+                logical = _ms_tira_densidad_ordenada(dur, dens)
+                if not logical:
+                    return
+                # mantener autoridad sin sobrescribir si ya había, pero si vacío, setear
+                self._tira_logical_ms = list(logical)
+                self._ajustada_logical_ms = list(logical)
+            except Exception:
+                return
+        n = len(logical)
+        if n == 0:
+            return
+        ancho_util = self._ajustada_ancho_util()
+        if ancho_util <= 0:
+            try:
+                ancho_util = self._tira_ancho_slot() * 3
+            except Exception:
+                ancho_util = 320
+            if ancho_util <= 0:
+                ancho_util = 640
+        ancho_natural = self._tira_ancho_slot()
+        spacing = AJUSTADA_SPACING
+        margin = AJUSTADA_MARGIN
+        cols = _ajustada_calcular_cols(n, ancho_util, ancho_natural, spacing)
+        try:
+            cell_w = (ancho_util - (cols - 1) * spacing) // cols if cols > 0 else ancho_util
+            if cell_w > ancho_natural:
+                cell_w = ancho_natural
+            if cell_w < 40:
+                cell_w = 40
+        except Exception:
+            cell_w = ancho_natural
+        try:
+            asp = self._tira_aspect_ratio()
+            cell_h = int(round(cell_w / asp)) if asp else int(round(cell_w * 9 / 16))
+            if cell_h < 30:
+                cell_h = 30
+            if cell_h > 800:
+                cell_h = 800
+        except Exception:
+            cell_h = dimensiones_miniatura()[1]
+        rows = int(math.ceil(n / cols)) if cols else 1
+        self._ajustada_cols = cols
+        self._ajustada_rows = rows
+        self._ajustada_cell_w = cell_w
+        self._ajustada_cell_h = cell_h
+        try:
+            self._ajustada_grid.set_geometria(logical, cols, rows, cell_w, cell_h, spacing, margin, ancho_util, self._tira_aspect_ratio())
+        except Exception:
+            pass
+        # sincronizar necesidad visual acotada sin invalidar cache/gen (paint emitirá misses si corresponde)
+        try:
+            self._sincronizar_cache_visual()
+        except Exception:
+            pass
+        try:
+            self._ajustada_grid.update()
+        except Exception:
+            pass
+
+    def _reducida_recalcular_geometria_b96(self):
+        """B9.6 — recalcular subset físico según ancho actual, max 5, sin regenerar N."""
+        if getattr(self, "_modo_tira_b93", MODO_TIRA_DINAMICA) != MODO_REDUCIDA:
+            return
+        if not getattr(self, "_expandida", False):
+            return
+        logical = getattr(self, "_tira_logical_ms", None) or []
+        if not logical:
+            try:
+                dur = getattr(self, "_duracion", None)
+                dens = getattr(self, "_densidad_manual", None)
+                logical = _ms_tira_densidad_ordenada(dur, dens)
+                if not logical:
+                    return
+                self._tira_logical_ms = list(logical)
+            except Exception:
+                return
+        n = len(logical)
+        if n == 0:
+            return
+        cabe = self._reducida_cantidad_que_cabe()
+        if cabe <= 0:
+            cabe = 1
+        cantidad = min(REDUCIDA_MAX_PREVIEWS, cabe)
+        if cantidad < 1:
+            cantidad = 1
+        cantidad = min(cantidad, n)
+        subset = _seleccionar_ms_reducida(logical, cantidad)
+        prev = getattr(self, "_reducida_ms_subset", None) or []
+        if subset == prev:
+            # actualizar anchos visuales sin rebuild
+            try:
+                for w in getattr(self, "_reducida_previews_widgets", []) or []:
+                    try:
+                        w.setFixedWidth(self._tira_ancho_slot())
+                        w.reajustar()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            return
+        self._reducida_ms_subset = subset
+        try:
+            self._reducida_refrescar()
+        except Exception:
+            pass
+        try:
+            rc = getattr(self, "_reducida_contenedor", None)
+            if rc is not None:
+                if subset:
+                    rc.setVisible(True)
+                    rc.setEnabled(True)
+                else:
+                    rc.setVisible(False)
+        except Exception:
+            pass
+        try:
+            self._sincronizar_cache_visual()
+        except Exception:
+            pass
+        try:
+            misses = []
+            for ms in subset:
+                if ms not in getattr(self, "_cache_visual", {}) and ms not in getattr(self, "_cache_visual_pending", set()):
+                    misses.append(ms)
+            if misses:
+                for m in misses:
+                    self._cache_visual_pending.add(m)
+                try:
+                    self._cache_visual_gen += 1
+                except Exception:
+                    self._cache_visual_gen = 1
+                payload = {"video_id": getattr(self, "_video_id", None), "version": getattr(self, "_densidad_version", None), "ms_lista": misses, "request_id": self._cache_visual_gen, "gen": self._cache_visual_gen}
+                self.preview_visual_solicitada.emit(payload)
+        except Exception:
+            pass
+        try:
+            self._reducida_actualizar_decoraciones()
+        except Exception:
+            pass
+
+    def _tira_recalcular_viewport_b96(self):
+        """B9.6 — refrescar pool/viewport al resize preservando scroll horizontal."""
+        if getattr(self, "_modo_tira_b93", MODO_TIRA_DINAMICA) != MODO_TIRA:
+            return
+        if not getattr(self, "_expandida", False):
+            return
+        try:
+            scroll = getattr(self, "_tira_scroll", None)
+            if scroll is None:
+                return
+            hbar = scroll.horizontalScrollBar()
+            old_val = hbar.value()
+            old_max = hbar.maximum()
+            # actualizar rango si viewport cambió (total ancho lógico fijo)
+            try:
+                vp_w = scroll.viewport().width() if scroll.viewport() else 0
+                if vp_w <= 0:
+                    vp_w = scroll.width()
+                if vp_w <= 0:
+                    cont = getattr(self, "_contenedor_exploracion", None)
+                    vp_w = cont.width() if cont is not None and cont.width()>0 else 800
+                logical = getattr(self, "_tira_logical_ms", []) or []
+                n = len(logical)
+                if n > 0:
+                    ancho_slot = self._tira_ancho_slot()
+                    spacing = TIRA_B93_SPACING
+                    margins = TIRA_B93_MARGIN * 2
+                    total = n * ancho_slot + max(0, n-1) * spacing + margins
+                    new_max = max(0, total - vp_w)
+                    if new_max != old_max:
+                        hbar.setRange(0, new_max)
+                        # preservar posición media, clamp si excede nuevo max
+                        if old_val <= new_max:
+                            hbar.setValue(old_val)
+                        else:
+                            hbar.setValue(new_max)
+            except Exception:
+                pass
+            self._tira_refrescar_viewport()
+            # asegurar que no se resetea a 0 arbitrariamente cuando había posición media
+            try:
+                cur = hbar.value()
+                if old_max > 0 and old_val > 0 and old_val < old_max:
+                    # estábamos en posición media, si cur==0 y new_max>0 es regressión -> restaurar clamp
+                    if cur == 0 and hbar.maximum() > 0:
+                        hbar.setValue(min(old_val, hbar.maximum()))
+                        self._tira_refrescar_viewport()
+            except Exception:
+                pass
+        except Exception:
+            try:
+                self._tira_refrescar_viewport()
+            except Exception:
+                pass
+
+    def _responsive_b96_obtener_ancho_util(self):
+        """Obtiene ancho útil real después del layout según modo vigente."""
+        try:
+            modo = getattr(self, "_modo_tira_b93", MODO_TIRA_DINAMICA)
+            if modo == MODO_AJUSTADA:
+                return self._ajustada_ancho_util()
+            if modo == MODO_REDUCIDA:
+                return self._reducida_ancho_util()
+            if modo == MODO_TIRA:
+                try:
+                    scroll = getattr(self, "_tira_scroll", None)
+                    if scroll is not None:
+                        vw = scroll.viewport().width()
+                        if isinstance(vw, int) and vw > 0:
+                            return int(vw)
+                except Exception:
+                    pass
+                try:
+                    cont = getattr(self, "_contenedor_exploracion", None)
+                    if cont is not None:
+                        w = cont.width()
+                        if isinstance(w, int) and w > 0:
+                            return int(w)
+                except Exception:
+                    pass
+                try:
+                    return int(self.width())
+                except Exception:
+                    return 0
+            # Dinámica
+            try:
+                cont = getattr(self, "_contenedor_exploracion", None)
+                if cont is not None:
+                    return int(cont.width())
+            except Exception:
+                pass
+            return 0
+        except Exception:
+            return 0
+
+    def _responsive_b96_reajustar(self):
+        """Slot coalescido B9.6: recalcula solo geometría según modo, sin tocar scroll vertical global."""
+        try:
+            self._responsive_b96_pending = False
+        except Exception:
+            pass
+        if not getattr(self, "_expandida", False):
+            return
+        if getattr(self, "_responsive_b96_en_reajuste", False):
+            return
+        # obtener ancho útil real post-layout
+        try:
+            ancho_util = self._responsive_b96_obtener_ancho_util()
+        except Exception:
+            ancho_util = 0
+        # si ancho no cambió, no hacer nada (evita loop por cambios de altura)
+        try:
+            ultimo = getattr(self, "_responsive_b96_ultimo_ancho", None)
+            if ultimo is not None and ancho_util == ultimo:
+                return
+            self._responsive_b96_ultimo_ancho = int(ancho_util) if isinstance(ancho_util, int) else ancho_util
+        except Exception:
+            pass
+        self._responsive_b96_en_reajuste = True
+        try:
+            modo = getattr(self, "_modo_tira_b93", MODO_TIRA_DINAMICA)
+            if modo == MODO_AJUSTADA:
+                self._ajustada_recalcular_geometria_b96()
+            elif modo == MODO_REDUCIDA:
+                self._reducida_recalcular_geometria_b96()
+            elif modo == MODO_TIRA:
+                self._tira_recalcular_viewport_b96()
+            else:
+                # Dinámica: solo geometría existente
+                self._reajustar_geometria_exploracion()
+        finally:
+            self._responsive_b96_en_reajuste = False
 
     def _reconstruir_previews_exploracion(self):
         disponibles = []
@@ -6205,6 +6550,13 @@ class Tarjeta(QFrame):
         franja = getattr(self, "_franja", None)
         if franja is not None and self._expandida:
             QTimer.singleShot(0, self._reajustar_geometria_exploracion)
+            # B9.6 — coalescing puntual en event loop, sin polling
+            try:
+                if not getattr(self, "_responsive_b96_pending", False):
+                    self._responsive_b96_pending = True
+                    QTimer.singleShot(0, self._responsive_b96_reajustar)
+            except Exception:
+                pass
 
     def eventFilter(self, objeto, evento):
         # B9.3/P01 — routing wheel: Tira fuera del corredor => horizontal, corredor/tira-dentro/datos => vertical nativa

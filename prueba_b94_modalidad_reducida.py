@@ -193,8 +193,16 @@ def test_05_ancho_estrecho():
     ok = ok and req <= util + 1
     # verificar no QScrollArea
     ok = ok and not isinstance(t._reducida_contenedor, QScrollArea)
-    # verificar que no tiene scrollbars
-    ok = ok and t._reducida_contenedor.horizontalScrollBar if hasattr(t._reducida_contenedor, 'horizontalScrollBar') else True
+    # verificar que no tiene scrollbars — corrección precedencia: variable booleana inequívoca
+    has_hbar = hasattr(t._reducida_contenedor, 'horizontalScrollBar')
+    if has_hbar:
+        try:
+            condicion_no_hbar = not t._reducida_contenedor.horizontalScrollBar().isVisible()
+        except Exception:
+            condicion_no_hbar = True
+    else:
+        condicion_no_hbar = True
+    ok = ok and condicion_no_hbar
     # en realidad QWidget no tiene scrollbar, asegurar que layout es QHBoxLayout
     ok = ok and isinstance(t._reducida_contenedor.layout(), QHBoxLayout)
     t.deleteLater(); QApplication.processEvents()
@@ -633,33 +641,49 @@ def test_20_no_autofit():
     t.deleteLater(); QApplication.processEvents()
     return ok, f"pool {len(t._reducida_previews_widgets)} slot {slot}"
 
-# 21 no auto-resize B9.6 tras cambiar manualmente ancho sin cambiar modo/densidad no obligada recalcular, no crash/overflow
+# 21 B9.6 autoresize Reducida: tras resize debe recalcular cabe automáticamente max5 sin overflow
 def test_21_no_autoresize():
+    import time as _t
     fila=_filas(["a.mp4"],[100.0])[0]
     t=Tarjeta(fila); t.show(); t.resize(1200,600); QApplication.processEvents(); t.expandir(); QApplication.processEvents()
     t._densidad_manual=30
     t.set_metadata_densa(_ms_tira_densidad_ordenada(100.0,30), version="v21"); QApplication.processEvents()
     t._contenedor_exploracion.setFixedWidth(1800); QApplication.processEvents()
     _a_modo_red(t); QApplication.processEvents()
+    try:
+        t._responsive_b96_ultimo_ancho = t._responsive_b96_obtener_ancho_util()
+    except: pass
     subset_antes=list(getattr(t,"_reducida_ms_subset",[]))
     pool_antes=len(t._reducida_previews_widgets)
-    # cambiar ancho manualmente sin cambiar modo/densidad
+    slot=t._tira_ancho_slot()
+    # cambiar ancho manualmente y disparar resize B9.6
     t._contenedor_exploracion.setFixedWidth(400); QApplication.processEvents()
-    # B9.4 no debe recalcular automáticamente; solo garantizar no crash/overflow
-    # no provocar excepción y no crear scrollbar
-    ok=True
     try:
-        QApplication.processEvents()
-    except:
-        ok=False
-    ok = ok and len(t._reducida_previews_widgets)==pool_antes
-    ok = ok and getattr(t,"_reducida_ms_subset",[]) == subset_antes  # no recalculado
+        from PySide6.QtGui import QResizeEvent
+        from PySide6.QtCore import QSize
+        ev=QResizeEvent(QSize(600,600), QSize(t.width(), t.height()))
+        t.resize(600,600); QApplication.sendEvent(t, ev)
+    except: pass
+    for _ in range(5):
+        QApplication.processEvents(); _t.sleep(0.02); QApplication.processEvents()
+    subset_desp=list(getattr(t,"_reducida_ms_subset",[]))
+    pool_desp=len(t._reducida_previews_widgets)
+    ok=True
+    # debe haber recalculado: cabe 400 -> 1, no 5
+    geom_cambio = (pool_desp != pool_antes or subset_desp != subset_antes)
+    ok = ok and geom_cambio
+    ok = ok and 1 <= pool_desp <=5 and pool_desp==len(subset_desp) <=5
     ok = ok and not isinstance(t._reducida_contenedor, QScrollArea)
-    # requerido sigue <= util anterior? pero util ahora menor, podría overflow pero spec dice no debe haber overflow nuevo: como no recalculamos, el ancho requerido puede exceder nuevo util pero no debe crear scroll; pero test solo garantiza no crash y no scroll nuevo.
-    # Verificar que no se creó scroll
     ok = ok and t._reducida_contenedor.isVisible()
+    # previews normales no se encogen
+    for w in t._reducida_previews_widgets:
+        ok = ok and w.width()==slot
+    # logical N sigue 30
+    ok = ok and len(getattr(t,"_tira_logical_ms",[]))==30
+    # sin crash
+    ok = ok and isinstance(subset_desp, list)
     t.deleteLater(); QApplication.processEvents()
-    return ok, f"antes {pool_antes} subset {len(subset_antes)} después {len(t._reducida_previews_widgets)} no crash {ok}"
+    return ok, f"B9.6 antes {pool_antes} {len(subset_antes)} -> desp {pool_desp} {len(subset_desp)} slot {slot} ok={ok}"
 
 # runner
 import traceback
