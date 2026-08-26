@@ -640,6 +640,105 @@ def previews_de_por_id(video_id):
 
 ESTILO_SELECCIONADA = "Tarjeta { border: 3px solid #2196F3; }"
 
+# ── P09 — helpers alineación estable + elipsis Nombre ──
+class _NombreElidedLabel(QLabel):
+    """QLabel para valor Nombre con elipsis determinista sin wrapping.
+
+    - Conserva texto completo en _texto_completo; muestra elidedText según ancho disponible.
+    - Sin wordWrap, altura single-line, tooltip con valor completo.
+    - Evita recalcular si ancho no cambió; sin timers/polling.
+    - minimumSizeHint width 0 para permitir contracción B9.6.
+    """
+
+    def __init__(self, texto_completo="", parent=None):
+        super().__init__(parent)
+        self._texto_completo = ""
+        self._ultimo_ancho = -1
+        self.setWordWrap(False)
+        try:
+            self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            self.setMinimumWidth(0)
+        except Exception:
+            pass
+        self.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        if texto_completo:
+            self.set_texto_completo(texto_completo)
+
+    def set_texto_completo(self, texto):
+        try:
+            self._texto_completo = texto if isinstance(texto, str) else str(texto)
+        except Exception:
+            self._texto_completo = str(texto)
+        self._ultimo_ancho = -1
+        self._actualizar()
+        try:
+            self.setToolTip(self._texto_completo)
+        except Exception:
+            pass
+
+    def texto_completo(self):
+        return getattr(self, "_texto_completo", "")
+
+    def _actualizar(self):
+        try:
+            ancho = self.contentsRect().width()
+            if ancho <= 0:
+                ancho = self.width()
+            if ancho <= 0:
+                super().setText(self._texto_completo)
+                return
+            if ancho == self._ultimo_ancho:
+                return
+            self._ultimo_ancho = ancho
+            fm = self.fontMetrics()
+            elided = fm.elidedText(self._texto_completo, Qt.ElideRight, max(0, ancho))
+            super().setText(elided)
+        except Exception:
+            try:
+                super().setText(self._texto_completo)
+            except Exception:
+                pass
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        try:
+            self._actualizar()
+        except Exception:
+            pass
+
+    def minimumSizeHint(self):
+        try:
+            msh = super().minimumSizeHint()
+            return QSize(0, msh.height())
+        except Exception:
+            return QSize(0, 12)
+
+
+class _DatosColumnaWidget(QWidget):
+    """Columna datos con ancho preferido estable 240 pero contraíble a 0.
+
+    sizeHint width 240 => alineación visual estable en geometría normal (histórico).
+    P09-B9.7.2.1: se mantiene 240 y se aprovecha ancho de Nombre con layout vertical
+    (etiqueta Nombre en línea propia + valor debajo con ancho casi completo), de modo
+    que video_corto.mp4 (fm≈180) cabe sin elipsis aun con datos 240.
+    minimumSizeHint width 0 => permite contraerse sin overflow en ventana angosta (B9.6).
+    maximumWidth 240 impuesto externamente; sizePolicy Preferred.
+    """
+
+    def sizeHint(self):
+        try:
+            sh = super().sizeHint()
+            return QSize(240, sh.height())
+        except Exception:
+            return QSize(240, 100)
+
+    def minimumSizeHint(self):
+        try:
+            msh = super().minimumSizeHint()
+            return QSize(0, msh.height())
+        except Exception:
+            return QSize(0, 0)
+
 
 class PreviewConTiempo(QLabel):
     """Etiqueta de preview que superpone el instante temporal al fotograma.
@@ -2285,8 +2384,7 @@ class Tarjeta(QFrame):
         if _duracion_valida(duracion):
             duracion_texto = formatear_tiempo(duracion)
 
-        campos = [
-            ("Nombre", nombre),
+        campos_restantes = [
             ("Duración", duracion_texto),
             ("Resolución", resolucion),
             ("Codec", formatear_valor(codec)),
@@ -2295,7 +2393,45 @@ class Tarjeta(QFrame):
         ]
         columna_campos = QVBoxLayout()
         self._labels_campos = []
-        for etiqueta, valor in campos:
+        # ── P09: Nombre con elipsis determinista, sin wrapping — layout vertical para aprovechar 240 ──
+        # Diseño: etiqueta Nombre en línea propia compacta (4px) + valor debajo con ancho casi completo.
+        # Así video_corto.mp4 cabe con 240 sin ensanchar columna; altura aumenta 1 línea fija para todas.
+        fila_nombre_widget = QWidget()
+        fila_nombre_widget.setObjectName("fila_nombre_p09")
+        layout_nombre = QVBoxLayout(fila_nombre_widget)
+        layout_nombre.setContentsMargins(0, 0, 0, 0)
+        layout_nombre.setSpacing(2)
+        label_nombre_pref = QLabel("<b>Nombre:</b>")
+        label_nombre_pref.setTextFormat(Qt.RichText)
+        try:
+            label_nombre_pref.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        except Exception:
+            pass
+        label_nombre_pref.setWordWrap(False)
+        # valor con elipsis — ocupa todo el ancho útil de la columna
+        nombre_str = nombre if isinstance(nombre, str) else str(nombre) if nombre is not None else ""
+        label_nombre_valor = _NombreElidedLabel(nombre_str, fila_nombre_widget)
+        label_nombre_valor.setObjectName("nombre_valor_p09")
+        try:
+            label_nombre_valor.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            label_nombre_valor.setMinimumWidth(0)
+        except Exception:
+            pass
+        layout_nombre.addWidget(label_nombre_pref)
+        layout_nombre.addWidget(label_nombre_valor)
+        columna_campos.addWidget(fila_nombre_widget)
+        # mantener identidad para drag/eventFilter y tests
+        try:
+            label_nombre_pref.installEventFilter(self)
+            label_nombre_valor.installEventFilter(self)
+        except Exception:
+            pass
+        self._labels_campos.append(label_nombre_valor)
+        self._fila_nombre_widget = fila_nombre_widget
+        self._label_nombre_pref = label_nombre_pref
+        self._label_nombre_valor = label_nombre_valor
+        # resto de campos (sin elipsis, mantienen wordWrap True pero valores cortos no causan altura extra)
+        for etiqueta, valor in campos_restantes:
             campo = QLabel(f"<b>{etiqueta}:</b> {valor}")
             campo.setWordWrap(True)
             campo.installEventFilter(self)
@@ -2306,10 +2442,24 @@ class Tarjeta(QFrame):
         self._boton_expandir.setCheckable(True)
         self._boton_expandir.toggled.connect(self._al_toggle_expansion)
         columna_campos.insertWidget(0, self._boton_expandir)
-        datos_widget = QWidget()
+        datos_widget = _DatosColumnaWidget()
         datos_widget.setObjectName("datos_widget_b93")
         datos_widget.setMaximumWidth(240)
+        try:
+            datos_widget.setMinimumWidth(0)
+            datos_widget.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
+        except Exception:
+            pass
         datos_widget.setLayout(columna_campos)
+        # P09: permitir que la columna se contraiga sin imponer mínimo (B9.6)
+        try:
+            columna_campos.setSizeConstraint(QLayout.SetNoConstraint)
+        except Exception:
+            pass
+        try:
+            fila_principal.setSizeConstraint(QLayout.SetNoConstraint)
+        except Exception:
+            pass
         fila_principal.addWidget(datos_widget)
         # B9.3/P01 corredor vertical: referencia durable para geometría global
         self._datos_widget = datos_widget
@@ -2456,13 +2606,24 @@ class Tarjeta(QFrame):
                         self._carpeta_video = d.rstrip(os.sep) or d
             except Exception:
                 pass
-        # Actualizar QLabel de Nombre si existe (primer campo)
+        # Actualizar QLabel de Nombre (P09: elided label)
         try:
-            for lbl in self.findChildren(QLabel):
-                txt = lbl.text()
-                if txt.startswith("<b>Nombre:</b>"):
-                    lbl.setText(f"<b>Nombre:</b> {self._nombre}")
-                    break
+            lbl_val = getattr(self, "_label_nombre_valor", None)
+            if isinstance(lbl_val, _NombreElidedLabel):
+                lbl_val.set_texto_completo(self._nombre)
+            else:
+                for lbl in self.findChildren(QLabel):
+                    txt = lbl.text()
+                    if txt.startswith("<b>Nombre:</b>"):
+                        lbl.setText(f"<b>Nombre:</b> {self._nombre}")
+                        break
+        except Exception:
+            pass
+        # si existe valor nuevo, actualizar tooltip del label nombre
+        try:
+            lbl_val2 = getattr(self, "_label_nombre_valor", None)
+            if isinstance(lbl_val2, QLabel) and isinstance(self._nombre, str):
+                lbl_val2.setToolTip(self._nombre)
         except Exception:
             pass
         # B8.3B: actualizar tooltip para homónimos
