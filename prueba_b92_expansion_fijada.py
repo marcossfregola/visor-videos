@@ -82,21 +82,101 @@ def _esperar(pred, timeout=4000, paso=20):
     QApplication.processEvents()
     return pred()
 
+def _safe_tdir_cleanup(tdir):
+    """Cleanup robusto de TemporaryDirectory con retry ante WinError 32 (DB lock transitorio).
+
+    Contrato obligatorio 044-corregido:
+    - Reintentos limitados (6) solo para PermissionError/WinError 32 para absorber lapso normal de cierre Windows.
+    - Si despues del ultimo intento cleanup sigue fallando, el error se propaga y la prueba falla (no warning+return).
+    - Cualquier otra excepcion se propaga inmediatamente (no ocultar).
+    """
+    if tdir is None:
+        return
+    last_exc = None
+    for intento in range(6):
+        try:
+            tdir.cleanup()
+            return
+        except PermissionError as e:
+            last_exc = e
+            if intento >= 5:
+                raise
+            if intento == 4:
+                try:
+                    import gc as _gc
+                    _gc.collect()
+                except Exception:
+                    pass
+                for _ in range(5):
+                    QApplication.processEvents()
+                time.sleep(0.12)
+            else:
+                time.sleep(0.06 * (intento + 1))
+                for _ in range(3):
+                    QApplication.processEvents()
+        except Exception:
+            raise
+    if last_exc is not None:
+        raise last_exc
+
 def _limpiar(ventana):
     if ventana is None:
         return
     try:
-        for g in [getattr(ventana,'gestor',None), getattr(ventana,'gestor_previews',None), getattr(ventana,'gestor_exploracion',None), getattr(ventana,'gestor_marcadores',None), getattr(ventana,'gestor_segmentos',None), getattr(ventana,'gestor_resumen',None), getattr(ventana,'gestor_migracion',None)]:
-            if g and getattr(g,'hilo',None):
-                try: g.cerrar()
-                except Exception: pass
-    except Exception: pass
-    try: ventana.close()
-    except Exception: pass
-    try: ventana.deleteLater()
-    except Exception: pass
+        # cerrar TODOS los gestores (B9.5 añade gestor_previews_visuales y otros; histórico dejaba algunos vivos -> lock)
+        nombres_gestores = ["gestor","gestor_previews","gestor_previews_visuales","gestor_operaciones","gestor_marcadores","gestor_segmentos","gestor_reproduccion","gestor_exploracion","gestor_resumen","gestor_migracion","gestor_export","gestor_preparacion_lote","gestor_preparacion_secuencia","gestor_renombrado","gestor_mover","gestor_crear_carpeta","gestor_copiar","gestor_eliminar","gestor_lote","gestor_renombrar_masivo","gestor_navegacion_destino","gestor_prevalidacion_drop"]
+        for n in nombres_gestores:
+            g = getattr(ventana, n, None)
+            if g is not None:
+                try:
+                    # intentar cerrar aunque hilo sea None
+                    g.cerrar()
+                except Exception:
+                    pass
+        # esperar cierre de hilos con timeout (no busy, processEvents)
+        import time as _t
+        fin = _t.monotonic() + 2.5
+        while _t.monotonic() < fin:
+            QApplication.processEvents()
+            vivos = 0
+            for n in nombres_gestores:
+                g = getattr(ventana, n, None)
+                if g is not None:
+                    try:
+                        h = getattr(g, "hilo", None)
+                        if h is not None and h.isRunning():
+                            vivos += 1
+                    except Exception:
+                        pass
+            if vivos == 0:
+                break
+            _t.sleep(0.02)
+    except Exception:
+        pass
+    try:
+        ventana.close()
+    except Exception:
+        pass
+    try:
+        ventana.deleteLater()
+    except Exception:
+        pass
+    for _ in range(5):
+        QApplication.processEvents()
+    try:
+        time.sleep(0.08)
+        QApplication.processEvents()
+        QApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+    except Exception:
+        pass
     for _ in range(3):
         QApplication.processEvents()
+    try:
+        import gc as _gc
+        _gc.collect()
+        QApplication.processEvents()
+    except Exception:
+        pass
 
 def _ventana_con_tarjetas(nombres, duraciones=None):
     filas = _filas(nombres, duraciones)
@@ -153,7 +233,7 @@ def test_03_no_colapsa_fijada():
             tb.expandir(); QApplication.processEvents()
             ok = ta._expandida and tb._expandida and ta._fijada and not tb._fijada
         finally:
-            _limpiar(v); tdir.cleanup()
+            _limpiar(v); _safe_tdir_cleanup(tdir)
         return ok, f"ta_exp={ta._expandida} ta_fij={ta._fijada} tb_exp={tb._expandida}"
 
 # 4
@@ -169,7 +249,7 @@ def test_04_varias_fijadas_coexisten():
             ok = ta._expandida and tb._expandida and tc._expandida
             ok = ok and ta._fijada and tb._fijada and not tc._fijada
         finally:
-            _limpiar(v); tdir.cleanup()
+            _limpiar(v); _safe_tdir_cleanup(tdir)
         return ok, f"a:{ta._expandida}/{ta._fijada} b:{tb._expandida}/{tb._fijada} c:{tc._expandida}/{tc._fijada}"
 
 # 5
@@ -183,7 +263,7 @@ def test_05_autocolapso_no_fijadas():
             tb.expandir(); QApplication.processEvents()
             ok = tb._expandida and not ta._expandida
         finally:
-            _limpiar(v); tdir.cleanup()
+            _limpiar(v); _safe_tdir_cleanup(tdir)
         return ok, f"ta={ta._expandida} tb={tb._expandida}"
 
 # 6
@@ -211,7 +291,7 @@ def test_07_desfijar_vuelve_a_autocolapso():
             tb.expandir(); QApplication.processEvents()
             ok = tb._expandida and not ta._expandida
         finally:
-            _limpiar(v); tdir.cleanup()
+            _limpiar(v); _safe_tdir_cleanup(tdir)
         return ok, f"ta_fijada={ta._fijada} ta_exp={ta._expandida} tb_exp={tb._expandida}"
 
 # 8
@@ -235,7 +315,7 @@ def test_08_seleccion_no_rota():
             # marcadores/segmentos vacios no crash
             ok = ok and isinstance(ta._marcadores, list) and isinstance(ta._segmentos, list)
         finally:
-            _limpiar(v); tdir.cleanup()
+            _limpiar(v); _safe_tdir_cleanup(tdir)
         return ok, f"seleccion_ok={ok_sel} fijada_post={ta._fijada}"
 
 # 9
@@ -269,7 +349,7 @@ def test_09_no_persistencia():
                 conn.close()
             ok = ok_cfg and ok_sql
         finally:
-            _limpiar(v); tdir.cleanup()
+            _limpiar(v); _safe_tdir_cleanup(tdir)
         # restaurar config
         if antes==b"" and os.path.isfile(ruta_cfg):
             try: os.remove(ruta_cfg)
@@ -314,7 +394,7 @@ def test_10_no_altera_previews_ni_ffmpeg():
             # cantidad de previews visibles no cambia (slots)
             ok = ok and len(ta._etiquetas_previews)==cnt_antes
         finally:
-            _limpiar(v); tdir.cleanup()
+            _limpiar(v); _safe_tdir_cleanup(tdir)
         return ok, f"llamadas_ffmpeg={llamadas['n']} cantidad={escanear_mod.CANTIDAD_PREVIEWS}"
 
 # 11
@@ -356,7 +436,7 @@ def test_11_reconstruccion_sin_crash():
             ok_nueva = not ta2._fijada and not ta2._expandida
             ok = ok_viejas and ok_nueva
         finally:
-            _limpiar(v); tdir.cleanup()
+            _limpiar(v); _safe_tdir_cleanup(tdir)
         return ok, f"viejas_ok={ok_viejas} nueva_fijada={ta2._fijada}"
 
 def test_12_pycompile_y_diffcheck():

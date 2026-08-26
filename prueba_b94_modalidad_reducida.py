@@ -98,21 +98,23 @@ def _cleanup(v):
     for _ in range(3): QApplication.processEvents()
     gc.collect(); QApplication.processEvents()
 
-# 1 default sigue Dinámica; combo tiene exactamente 3 en orden
+# 1 default sigue Dinámica; combo tiene exactamente 4 en orden (B9.5 añade Ajustada)
 def test_01_default_combo():
     fila=_filas(["a.mp4"],[100.0])[0]
     t=Tarjeta(fila); t.show(); QApplication.processEvents()
     ok = t._modo_tira_b93 == MODO_TIRA_DINAMICA
-    ok = ok and t._selector_modo_tira.count()==3
+    ok = ok and t._selector_modo_tira.count()==4
     ok = ok and t._selector_modo_tira.itemText(0)=="Dinámica"
     ok = ok and t._selector_modo_tira.itemText(1)=="Tira"
     ok = ok and t._selector_modo_tira.itemText(2)=="Reducida"
+    ok = ok and t._selector_modo_tira.itemText(3)=="Ajustada"
     ok = ok and t._selector_modo_tira.currentData()==MODO_TIRA_DINAMICA
     ok = ok and not t._tira_scroll.isVisible()
     ok = ok and not t._reducida_contenedor.isVisible()
-    ok = ok and len(t._tira_previews_widgets)==0 and len(t._reducida_previews_widgets)==0
+    ok = ok and not t._ajustada_grid.isVisible()
+    ok = ok and len(t._tira_previews_widgets)==0 and len(t._reducida_previews_widgets)==0 and len(t._ajustada_grid._logical_ms)==0
     t.deleteLater(); QApplication.processEvents()
-    return ok, f"combo 3 ok={ok}"
+    return ok, f"combo 4 ok={ok}"
 
 # 2 helper subset: 15→5 con extremos y equiespaciado
 def test_02_helper_15_5():
