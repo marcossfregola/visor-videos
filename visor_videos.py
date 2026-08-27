@@ -196,6 +196,8 @@ REDUCIDA_MARGIN = TIRA_B93_MARGIN
 MODO_AJUSTADA = "ajustada"
 AJUSTADA_SPACING = TIRA_B93_SPACING
 AJUSTADA_MARGIN = TIRA_B93_MARGIN
+# B9.7.3 P06 — reintento visual acotado Ajustada (transitorio converge, permanente no tormenta)
+AJUSTADA_VISUAL_MAX_RETRIES = 3
 
 def _densidad_cantidad_objetivo(duracion, densidad_manual):
     """Cantidad objetivo vigente según Densidad (Auto->objetivo_total_densidad, int->manual)."""
@@ -3368,6 +3370,8 @@ class Tarjeta(QFrame):
         self._cache_visual = {}  # ms -> QPixmap acotado
         self._cache_visual_gen = 0  # token para descartar resultados viejos
         self._cache_visual_pending = set()  # ms pendientes de carga
+        # B9.7.3 P06 — retry acotado Ajustada: ms -> intentos consecutivos fallidos (max AJUSTADA_VISUAL_MAX_RETRIES)
+        self._ajustada_visual_retry = {}  # ms -> int
         self._hover_instante_actual = None
         self._tira_scroll.setVisible(False)
         # virtualización: scroll y resize refrescan viewport
@@ -3484,6 +3488,12 @@ class Tarjeta(QFrame):
             modo = MODO_TIRA_DINAMICA
         prev_modo = getattr(self, "_modo_tira_b93", MODO_TIRA_DINAMICA)
         self._modo_tira_b93 = modo
+        # B9.7.3 P06 — cambio Vista resetea retry acotado (evita bloqueo tras salir de Ajustada o entrar)
+        try:
+            if prev_modo != modo and hasattr(self, "_ajustada_visual_retry"):
+                self._ajustada_visual_retry.clear()
+        except Exception:
+            pass
         if modo == MODO_TIRA_DINAMICA:
             # B9.3/P01 — Tira/Reducida/Ajustada → Dinámica debe liberar TODO lo visual (QPixmap/pending/gen) manteniendo metadata _previews_densos
             try:
@@ -4329,6 +4339,13 @@ class Tarjeta(QFrame):
             for ms in visibles:
                 if ms not in getattr(self, "_cache_visual", {}) and ms not in getattr(self, "_cache_visual_pending", set()):
                     misses.append(ms)
+            # B9.7.3 P06 — filtrar misses por retry acotado (max AJUSTADA_VISUAL_MAX_RETRIES)
+            try:
+                retry = getattr(self, "_ajustada_visual_retry", {})
+                if retry and misses:
+                    misses = [ms for ms in misses if retry.get(ms, 0) < AJUSTADA_VISUAL_MAX_RETRIES]
+            except Exception:
+                pass
             if misses:
                 batch = misses[:12]
                 for m in batch:
@@ -4553,6 +4570,15 @@ class Tarjeta(QFrame):
                     misses.append(ms)
             if not misses:
                 return
+            # B9.7.3 P06 — filtrar por retry acotado
+            try:
+                retry = getattr(self, "_ajustada_visual_retry", {})
+                if retry:
+                    misses = [ms for ms in misses if retry.get(ms, 0) < AJUSTADA_VISUAL_MAX_RETRIES]
+                    if not misses:
+                        return
+            except Exception:
+                pass
             batch = misses[:12]
             for m in batch:
                 self._cache_visual_pending.add(m)
@@ -4920,6 +4946,19 @@ class Tarjeta(QFrame):
     def _sincronizar_cache_visual(self):
         """Expulsa todo QPixmap fuera del conjunto requerido y limpia pending no vigente."""
         requeridos = self._ms_visuales_necesarios()
+        # B9.7.3 P06 — limpiar retry para ms que dejaron de ser requeridos (reset acotado)
+        try:
+            retry = getattr(self, "_ajustada_visual_retry", None)
+            if isinstance(retry, dict) and retry:
+                if requeridos:
+                    for ms in list(retry.keys()):
+                        if ms not in requeridos:
+                            retry.pop(ms, None)
+                else:
+                    # si no hay requeridos y modo no necesita cache, limpiar agotá? mantener pero si colapsada ya se limpia afuera
+                    pass
+        except Exception:
+            pass
         # Si no hay requeridos (colapsada o sin viewport), vaciar cache si corresponde será manejado por colapso
         # pero para estabilidad, si requeridos vacío y expandida en Tira sin geometría, no evictar agresivo
         # Solo evictar lo fuera de requeridos cuando requeridos no vacío o estamos en Dinámica con hover
@@ -5342,6 +5381,12 @@ class Tarjeta(QFrame):
         # B9.3 — densidad autoridad: actualizar tira virtualizada sin reconstruir tarjeta
         # B9.4 — también actualizar reducida si está activa (subset equiespaciado)
         # B9.5 — también actualizar ajustada si está activa (grilla TODAS)
+        # B9.7.3 P06 — cambio densidad => reset retry (version cambiará via set_metadata_densa al completar, pero limpiar provisorio para evitar bloqueo)
+        try:
+            if hasattr(self, "_ajustada_visual_retry") and getattr(self, "_modo_tira_b93", None) == MODO_AJUSTADA:
+                self._ajustada_visual_retry.clear()
+        except Exception:
+            pass
         try:
             if getattr(self, "_expandida", False):
                 modo = getattr(self, "_modo_tira_b93", MODO_TIRA_DINAMICA)
@@ -5445,6 +5490,12 @@ class Tarjeta(QFrame):
                 self._cache_visual_pending.clear()
             except Exception:
                 self._cache_visual_pending = set()
+            # B9.7.3 P06 — reset retry acotado al colapsar/cambiar densidad/version
+            try:
+                if hasattr(self, "_ajustada_visual_retry"):
+                    self._ajustada_visual_retry.clear()
+            except Exception:
+                pass
             self._hover_instante_actual = None
             # B9.7.1 P23 — cancelar pendientes de simple click antes de liberar widgets
             try:
@@ -6054,6 +6105,20 @@ class Tarjeta(QFrame):
         """B9.3: establece metadata ligera para N tiempos sin QPixmap. Retorna True si hubo nuevos."""
         if not ms_lista:
             return False
+        # B9.7.3 P06 — reset retry acotado por version/densidad o nueva metadata
+        try:
+            old_ver = getattr(self, "_densidad_version", None)
+            if version is not None and version != old_ver:
+                # cambio de versión: reset total
+                if hasattr(self, "_ajustada_visual_retry"):
+                    self._ajustada_visual_retry.clear()
+            elif version is not None and hasattr(self, "_ajustada_visual_retry"):
+                # misma versión pero ms nuevos: reset solo esos ms (permite reintento tras generación tardía aunque metadata ya existía)
+                for ms in ms_lista or []:
+                    if isinstance(ms, int) and not isinstance(ms, bool):
+                        self._ajustada_visual_retry.pop(ms, None)
+        except Exception:
+            pass
         if version is not None:
             self._densidad_version = version
         nuevos = False
@@ -8709,6 +8774,14 @@ class VisorVideos(QMainWindow):
         fotogramas = filtrados
         if not fotogramas:
             return
+        # B9.7.3 P06 — generación tardía: reset retry acotado para ms que ahora tienen JPEG disponible (permite reintento tras agotar)
+        try:
+            retry = getattr(tarjeta, "_ajustada_visual_retry", None)
+            if isinstance(retry, dict):
+                for ms in fotogramas:
+                    retry.pop(ms, None)
+        except Exception:
+            pass
         # Guardar metadata ligera
         try:
             tarjeta.set_metadata_densa(fotogramas, version)
@@ -8718,6 +8791,14 @@ class VisorVideos(QMainWindow):
                 tarjeta._densidad_version = version
             except Exception:
                 pass
+        # Tras generación tardía con misma versión, forzar update Ajustada event-driven sin polling (si no hubo nueva metadata, igual reactivar)
+        try:
+            if getattr(tarjeta, "_modo_tira_b93", None) == MODO_AJUSTADA:
+                ag = getattr(tarjeta, "_ajustada_grid", None)
+                if ag is not None:
+                    ag.update()
+        except Exception:
+            pass
         # Si vinieron QImages (parcial), convertir a QPixmap y guardar en cache_visual derivada de necesidad
         if imagenes:
             try:
@@ -8744,6 +8825,13 @@ class VisorVideos(QMainWindow):
                         tarjeta._tira_refrescar_viewport()
                     elif modo_v == MODO_REDUCIDA:
                         tarjeta._reducida_refrescar()
+                    elif modo_v == MODO_AJUSTADA:
+                        try:
+                            ag = getattr(tarjeta, "_ajustada_grid", None)
+                            if ag is not None:
+                                ag.update()
+                        except Exception:
+                            pass
                 except Exception:
                     pass
                 try:
@@ -8876,14 +8964,37 @@ class VisorVideos(QMainWindow):
                                 pass
                     continue
                 if getattr(tarjeta, "_cache_visual_gen", None) != request_id:
+                    # B9.7.3 P06 — stale gen: preservar pending vigente que está en cola siguiente
+                    try:
+                        queued = set()
+                        for op_q in self._cola_previews_visuales:
+                            if op_q.get("video_id") == video_id:
+                                queued.update(op_q.get("ms_lista") or [])
+                        if self._preview_visual_op_actual and self._preview_visual_op_actual.get("video_id") == video_id:
+                            queued.update(self._preview_visual_op_actual.get("ms_lista") or [])
+                    except Exception:
+                        queued = set()
                     for ms in ms_lista:
+                        if ms in queued:
+                            continue
                         try:
                             tarjeta._cache_visual_pending.discard(ms)
                         except Exception:
                             pass
                     continue
                 if getattr(tarjeta, "_densidad_version", None) != version:
+                    try:
+                        queued = set()
+                        for op_q in self._cola_previews_visuales:
+                            if op_q.get("video_id") == video_id:
+                                queued.update(op_q.get("ms_lista") or [])
+                        if self._preview_visual_op_actual and self._preview_visual_op_actual.get("video_id") == video_id:
+                            queued.update(self._preview_visual_op_actual.get("ms_lista") or [])
+                    except Exception:
+                        queued = set()
                     for ms in ms_lista:
+                        if ms in queued:
+                            continue
                         try:
                             tarjeta._cache_visual_pending.discard(ms)
                         except Exception:
@@ -8979,6 +9090,12 @@ class VisorVideos(QMainWindow):
                     tarjeta._cache_visual_pending.discard(ms)
                 except Exception:
                     pass
+                # B9.7.3 P06 — éxito: reset contador retry acotado para este ms
+                try:
+                    if hasattr(tarjeta, "_ajustada_visual_retry"):
+                        tarjeta._ajustada_visual_retry.pop(ms, None)
+                except Exception:
+                    pass
                 try:
                     pm = QPixmap.fromImage(qimg)
                     if not pm.isNull():
@@ -8986,6 +9103,38 @@ class VisorVideos(QMainWindow):
                         tarjeta._cache_visual[ms] = pm_s
                 except Exception:
                     pass
+            # B9.7.3 P06 — batch parcial: limpiar pending huérfano y contar retry acotado (max AJUSTADA_VISUAL_MAX_RETRIES)
+            try:
+                op_actual = getattr(self, "_preview_visual_op_actual", None)
+                if isinstance(op_actual, dict) and op_actual.get("request_id") == request_id and op_actual.get("video_id") == video_id:
+                    solicitados = set(op_actual.get("ms_lista") or [])
+                    entregados = set(ms for ms, _ in imagenes)
+                    faltantes = solicitados - entregados
+                    if faltantes:
+                        queued = set()
+                        try:
+                            for op_q in getattr(self, "_cola_previews_visuales", []) or []:
+                                if op_q.get("video_id") == video_id:
+                                    queued.update(op_q.get("ms_lista") or [])
+                        except Exception:
+                            queued = set()
+                        for mf in list(faltantes):
+                            if mf not in queued:
+                                # retry acotado: incrementar para cualquier faltante (solo Ajustada tiene loop, pero contar igual para test determinista)
+                                try:
+                                    retry = getattr(tarjeta, "_ajustada_visual_retry", None)
+                                    if isinstance(retry, dict):
+                                        prev = retry.get(mf, 0)
+                                        if prev < AJUSTADA_VISUAL_MAX_RETRIES:
+                                            retry[mf] = prev + 1
+                                except Exception:
+                                    pass
+                                try:
+                                    tarjeta._cache_visual_pending.discard(mf)
+                                except Exception:
+                                    pass
+            except Exception:
+                pass
             # expulsar todo fuera del conjunto requerido
             try:
                 tarjeta._sincronizar_cache_visual()
@@ -8999,6 +9148,13 @@ class VisorVideos(QMainWindow):
                     tarjeta._tira_refrescar_viewport()
                 elif modo_v == MODO_REDUCIDA:
                     tarjeta._reducida_refrescar()
+                elif modo_v == MODO_AJUSTADA:
+                    try:
+                        ag = getattr(tarjeta, "_ajustada_grid", None)
+                        if ag is not None:
+                            ag.update()
+                    except Exception:
+                        pass
                 # si hover espera ese ms, repintar (solo Dinámica)
                 hover = getattr(tarjeta, "_hover_instante_actual", None)
                 if isinstance(hover, (int,float)) and not isinstance(hover,bool):
