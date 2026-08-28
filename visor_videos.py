@@ -389,10 +389,27 @@ TEXTOS_FACTOR_VISTA_AMPLIADA = (
     "3.5x",
 )
 FACTOR_VISTA_AMPLIADA_ACTUAL = FACTOR_VISTA_AMPLIADA
+FACTOR_VISTA_AMPLIADA_DESACTIVADO = 0
+FACTORES_VISTA_AMPLIADA_UI = (0, 1.2, 1.6, 2.0, 2.5, 3.0, 3.5)
+TEXTOS_FACTOR_VISTA_AMPLIADA_UI = (
+    "Desactivado",
+    "1.2x",
+    "1.6x",
+    "2.0x",
+    "2.5x",
+    "3.0x",
+    "3.5x",
+)
 
 
 def configurar_factor_vista_ampliada(factor):
     global FACTOR_VISTA_AMPLIADA_ACTUAL
+    if not isinstance(factor, bool) and (
+        factor == FACTOR_VISTA_AMPLIADA_DESACTIVADO
+        or factor == float(FACTOR_VISTA_AMPLIADA_DESACTIVADO)
+    ):
+        FACTOR_VISTA_AMPLIADA_ACTUAL = FACTOR_VISTA_AMPLIADA_DESACTIVADO
+        return
     if isinstance(factor, float) and factor in FACTORES_VISTA_AMPLIADA:
         FACTOR_VISTA_AMPLIADA_ACTUAL = factor
 
@@ -1650,7 +1667,7 @@ class PreferenciasDialog(QDialog):
         fila2 = QHBoxLayout()
         fila2.addWidget(QLabel("Tamaño de la vista ampliada:"))
         self.combo_factor_vista = QComboBox()
-        self.combo_factor_vista.addItems(list(TEXTOS_FACTOR_VISTA_AMPLIADA))
+        self.combo_factor_vista.addItems(list(TEXTOS_FACTOR_VISTA_AMPLIADA_UI))
         self.combo_factor_vista.setCurrentIndex(
             self._indice_factor(
                 obtener_tamano_vista_ampliada(ruta_config)
@@ -1709,14 +1726,20 @@ class PreferenciasDialog(QDialog):
         return 400
 
     def _indice_factor(self, factor):
+        if factor == FACTOR_VISTA_AMPLIADA_DESACTIVADO or factor == float(
+            FACTOR_VISTA_AMPLIADA_DESACTIVADO
+        ):
+            return FACTORES_VISTA_AMPLIADA_UI.index(
+                FACTOR_VISTA_AMPLIADA_DESACTIVADO
+            )
         if factor in FACTORES_VISTA_AMPLIADA:
-            return FACTORES_VISTA_AMPLIADA.index(factor)
-        return FACTORES_VISTA_AMPLIADA.index(1.6)
+            return FACTORES_VISTA_AMPLIADA_UI.index(factor)
+        return FACTORES_VISTA_AMPLIADA_UI.index(1.6)
 
     def factor_vista_seleccionado(self):
         indice = self.combo_factor_vista.currentIndex()
-        if 0 <= indice < len(FACTORES_VISTA_AMPLIADA):
-            return FACTORES_VISTA_AMPLIADA[indice]
+        if 0 <= indice < len(FACTORES_VISTA_AMPLIADA_UI):
+            return FACTORES_VISTA_AMPLIADA_UI[indice]
         return 1.6
 
 
@@ -7924,6 +7947,10 @@ class VisorVideos(QMainWindow):
     def _al_vista_solicitada(self, pixmap):
         if self._retardo_vista_ampliada == -1:
             return
+        if FACTOR_VISTA_AMPLIADA_ACTUAL == FACTOR_VISTA_AMPLIADA_DESACTIVADO or FACTOR_VISTA_AMPLIADA_ACTUAL == float(
+            FACTOR_VISTA_AMPLIADA_DESACTIVADO
+        ):
+            return
         if pixmap is None or pixmap.isNull():
             return
         self._timer_vista_ocultar.stop()
@@ -7993,6 +8020,11 @@ class VisorVideos(QMainWindow):
     def _aplicar_tamano_vista_ampliada(self, factor):
         guardar_tamano_vista_ampliada(factor, self._ruta_config)
         configurar_factor_vista_ampliada(factor)
+        if factor == FACTOR_VISTA_AMPLIADA_DESACTIVADO or factor == float(
+            FACTOR_VISTA_AMPLIADA_DESACTIVADO
+        ):
+            self._timer_vista_mostrar.stop()
+            self._ocultar_vista()
 
     def _poblar_combo_filtro(self):
         """Puebla el combo Mostrar: con Todos, Con marcadores/segmentos, Sin clasificar y por color (B6.5 UX)."""

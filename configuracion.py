@@ -20,6 +20,7 @@ CLAVE_RETARDO_VISTA_AMPLIADA = "retardo_vista_ampliada_ms"
 RETARDOS_VALIDOS_VISTA_AMPLIADA = (-1, 0, 250, 400, 600)
 CLAVE_TAMANO_VISTA_AMPLIADA = "tamano_vista_ampliada"
 FACTORES_VALIDOS_VISTA_AMPLIADA = (1.2, 1.6, 2.0, 2.5, 3.0, 3.5)
+FACTOR_VISTA_AMPLIADA_DESACTIVADO = 0
 CLAVE_SELECCION_CARPETAS = "carpetas_seleccionadas"
 CLAVE_MODO_ALCANCE = "modo_alcance"
 MODO_ALCANCE_SOLO = "solo_carpeta"
@@ -197,6 +198,14 @@ def obtener_retardo_vista_ampliada(ruta_config=None):
 
 
 def guardar_tamano_vista_ampliada(factor, ruta_config=None):
+    if not isinstance(factor, bool) and (
+        factor == FACTOR_VISTA_AMPLIADA_DESACTIVADO
+        or factor == float(FACTOR_VISTA_AMPLIADA_DESACTIVADO)
+    ):
+        datos = _leer(ruta_config) or {}
+        datos[CLAVE_TAMANO_VISTA_AMPLIADA] = FACTOR_VISTA_AMPLIADA_DESACTIVADO
+        _escribir(datos, ruta_config)
+        return FACTOR_VISTA_AMPLIADA_DESACTIVADO
     if (
         not isinstance(factor, float)
         or isinstance(factor, bool)
@@ -214,6 +223,11 @@ def obtener_tamano_vista_ampliada(ruta_config=None):
     if datos is None:
         return 1.6
     valor = datos.get(CLAVE_TAMANO_VISTA_AMPLIADA)
+    if not isinstance(valor, bool) and (
+        valor == FACTOR_VISTA_AMPLIADA_DESACTIVADO
+        or valor == float(FACTOR_VISTA_AMPLIADA_DESACTIVADO)
+    ):
+        return FACTOR_VISTA_AMPLIADA_DESACTIVADO
     if (
         not isinstance(valor, float)
         or isinstance(valor, bool)
