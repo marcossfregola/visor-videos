@@ -2555,7 +2555,29 @@ class Tarjeta(QFrame):
         self._area_imagenes.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self._area_imagenes.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self._area_imagenes.setWidget(contenedor_imagenes_widget)
-        fila_principal.addWidget(self._area_imagenes, 1)
+        self._construir_exploracion()
+        # P18 mínimo — barra B6.4 directamente ENCIMA del bloque de miniaturas,
+        # sin abarcar columna de datos (wrapper vertical barra+area).
+        self._barra_colapsada = BarraResumenColapsada()
+        self._barra_colapsada.set_datos(
+            self._duracion, self._marcadores, self._segmentos
+        )
+        self._barra_colapsada.setVisible(not self._expandida)
+        _bloque_imagenes_layout = QVBoxLayout()
+        _bloque_imagenes_layout.setContentsMargins(0, 0, 0, 0)
+        _bloque_imagenes_layout.setSpacing(2)
+        _bloque_imagenes_layout.addWidget(self._barra_colapsada)
+        _bloque_imagenes_layout.addWidget(self._area_imagenes)
+        _bloque_imagenes_widget = QWidget()
+        _bloque_imagenes_widget.setObjectName("bloque_imagenes_p18")
+        _bloque_imagenes_widget.setLayout(_bloque_imagenes_layout)
+        try:
+            _bloque_imagenes_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+            _bloque_imagenes_widget.setMinimumWidth(0)
+        except Exception:
+            pass
+        self._bloque_imagenes_widget = _bloque_imagenes_widget
+        fila_principal.addWidget(self._bloque_imagenes_widget, 1)
 
         self._check = QCheckBox()
         self._check.setVisible(False)
@@ -2564,13 +2586,6 @@ class Tarjeta(QFrame):
 
         layout = QVBoxLayout(self)
         layout.addLayout(fila_principal)
-        self._construir_exploracion()
-        self._barra_colapsada = BarraResumenColapsada()
-        self._barra_colapsada.set_datos(
-            self._duracion, self._marcadores, self._segmentos
-        )
-        self._barra_colapsada.setVisible(not self._expandida)
-        layout.addWidget(self._barra_colapsada)
         layout.addWidget(self._contenedor_exploracion)
         # B9.6 — permitir que el layout no imponga minimumSizeHint basado en 5 previews fijas
         try:
