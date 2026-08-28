@@ -25,7 +25,7 @@ Entorno verificado del proyecto (baseline registrado y actualizado post-Beta 7).
 
 ## Ubicaciones
 
-- Workspace actual: `C:\prueba` (repo Git, rama `beta8`, HEAD `33da65066867026d9a72bb333216bfd9fdc4b626`; parent B8.1 `d43c1b8e9c38d132c346933967e8e8bac7fdae9f`; base documental `d04a712`; `beta8` local no publicada, sin `origin/beta8`, sin tag/release B8).
+- Workspace actual: `C:\prueba` (repo Git, rama `beta9` cerrada y publicada `v9.0-beta` —último commit técnico B9.9 `03fd856c9e43ee092ce09d87bad8791292e19eb3` previo al cierre; hover `41216a1`; identidad `Beta 9 - B9.9` publicada vía tag anotado `v9.0-beta` en `origin/beta9`; baseline publicado `origin/beta8` + `v8.0-beta` `e851c7c`; `beta9` publicada; base documental `d04a712` divergida; sin GitHub Release ni instalador público; próximo foco Beta 10).
 - Workspace histórico: `C:\Codex\VisorVideo` (baseline de adopción).
 - Almacenamiento externo: `C:\ProjectStorage\VisorVideo` (backups `source-protect` / `adoption-baseline`, `tools\ffmpeg`).
 

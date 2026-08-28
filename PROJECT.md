@@ -23,16 +23,17 @@ El proposito central es permitir identificar rapidamente el contenido de un vide
 - Conservar una interfaz fluida con trabajo pesado fuera del hilo principal.
 - Preservar los datos del usuario como prioridad absoluta.
 
-## Alcance vigente (Beta 8 — cerrada funcionalmente `97cb2f7`)
+## Alcance vigente (Beta 9 — cerrada y publicada `v9.0-beta`)
 
-Producto evolucionado hasta Beta 8 (Beta 7 + B8.1–B8.4):
+Producto evolucionado hasta **Beta 9 — Exploración visual avanzada** (B9.0–B9.9 + hover desactivable, cerrada y publicada `v9.0-beta`/`origin/beta9`; Beta 8 cerrada y publicada `v8.0-beta`/`e851c7c` como baseline):
 
-- Exploración temporal interactiva (B4.1–B4.3), persistencia marcadores/segmentos (B4.2, B5), clasificación por color (B6.3) y resumen colapsado (B6.4).
+- Exploración temporal interactiva (B4.1–B4.3), persistencia marcadores/segmentos (B4.2, B5), clasificación por color (B6.3) y resumen colapsado (B6.4) reubicado sobre miniaturas en B9.8 (P18 simplificado).
 - Filtros estructurados y ordenamiento configurable (B6.5, B6.2).
 - Exportación de material: extracción de un segmento (B6.7), lote (B6.9), unión (B6.10) con motor `nombres.py` (B6.8).
 - Trazabilidad de videos derivados e integración robusta (B6.11–B6.12).
 - Organización de archivos (Beta 7 B7.1–B7.13): renombrado individual/masivo, mover/copiar/eliminar por lote, crear carpetas, modo Organización/Explorer con doble panel y drag & drop.
 - **Beta 8 — Identidad e integridad del catálogo (B8.1–B8.4 cerradas):** `video_id` autoridad lógica, `ruta_normalizada` (`abspath+normpath+normcase`) autoridad física `UNIQUE(ruta_normalizada)`, `nombre` no único (homónimos `AAAA.mp4` en `A/B` con `video_id` distinto), cache normal `v<id>`, `preparar_registros_basicos` con `basename`, navegación `MADRE/A/B` y descarte lecturas obsoletas por generación.
+- **Beta 9 — Exploración visual avanzada (B9.0 `8fe1054` → B9.9 `03fd856` + hover desactivable `41216a1`, cerrada y publicada `v9.0-beta`):** tarjetas fijadas persistentes durante la vista (múltiples fijadas; colapsar manualmente desfija), Densidad como única autoridad temporal `Auto/15/30/60/120/200`, vistas Dinámica/Tira/Reducida/Ajustada; Tira virtualizada horizontal con anotaciones temporales y marcadores/segmentos; Reducida sin scroll horizontal propio; Ajustada en grilla responsive virtualizada/acotada; doble clic temporal exacto en Tira/Reducida/Ajustada (P23); columna de datos estable con elipsis (P09); autorepaint/retries acotados P06 con correcciones B9.9 (pending agotado filtrado y stale por `video_id+version+request_id`); P18 solo reubicación de barra resumen B6.4 sobre miniaturas; hover ampliado desactivable con sentinel `0` persistente.
 
 ## Alcance base (heredado)
 
@@ -90,4 +91,4 @@ Prioridades vigentes: funcionalidad, UX, exploración visual, rendimiento, integ
 
 ## Estado operativo
 
-El estado actual, el historial y la arquitectura vigente se documentan en `STATUS.md`, `HISTORIAL_PROYECTO.md` y `ARCHITECTURE.md` respectivamente. Este documento no mezcla estado operativo.
+El estado actual, el historial y la arquitectura vigente se documentan en `STATUS.md`, `HISTORIAL_PROYECTO.md` y `ARCHITECTURE.md` respectivamente. Este documento no mezcla estado operativo. Beta 9 cerrada y publicada en `beta9`/`origin/beta9` + tag anotado `v9.0-beta` (último commit técnico B9.9 `03fd856` previo al cierre; hover `41216a1`; identidad `Beta 9 - B9.9`); baseline publicado `origin/beta8` + `v8.0-beta` `e851c7c`; sin GitHub Release ni instalador público; próximo foco Beta 10.

@@ -4,7 +4,7 @@ Arquitectura vigente del proyecto (condensada del documento tecnico heredado y d
 
 ## 1. Estructura general
 
-Workspace: `C:\prueba` (repo Git, rama `beta9` abierta B9.0 desde `v8.0-beta`/`e851c7c2be1c3d12aac8ccb633e1aaecea2b7d3d`; baseline publicado `origin/beta8` + `v8.0-beta` alineados en `e851c7c`; cierre técnico B8.4 `97cb2f7f30853ed3a80ac310b7112cac80440158` / cierre documental `38fbc88e30c892b75b3bf66d752c49ba4c057c33`, parent B8.3 `e4104ae53cf205811e57e582350733552aaa8740`; `main@d04a7124dcb7741d16c015d88909d12851c58289` divergida, NO base de `beta9`).
+Workspace: `C:\prueba` (repo Git, rama `beta9` cerrada y publicada `v9.0-beta` —último commit técnico B9.9 `03fd856c9e43ee092ce09d87bad8791292e19eb3` previo al cierre; hover desactivable `41216a1`; identidad `Beta 9 - B9.9` publicada vía tag anotado `v9.0-beta` en `origin/beta9`; baseline publicado `origin/beta8` + `v8.0-beta` alineados en `e851c7c`; origen B9.0 `8fe1054` desde `v8.0-beta`/`e851c7c`; B8.4 `97cb2f7f30853ed3a80ac310b7112cac80440158` / cierre documental `38fbc88e30c892b75b3bf66d752c49ba4c057c33`; `main@d04a7124dcb7741d16c015d88909d12851c58289` divergida, NO base de `beta9`; sin GitHub Release ni instalador público; próximo foco Beta 10 según ROADMAP).
 
 ```text
 visor_videos.py          Interfaz grafica PySide6 (ventana, tarjetas, previews, navegacion, organización)
@@ -42,10 +42,10 @@ Mantenidos como ajenos al visor: `main.py` (script de prueba de operaciones), `o
 ## 2. Responsabilidades por modulo
 
 - `escanear_videos.py`: unico modulo con responsabilidad sobre el dominio y los datos. Escaneo, preparación de registros, acceso SQLite con migración idempotente (videos, marcadores, segmentos, derivados, colores, `ruta_normalizada` B8.1), integración FFprobe/FFmpeg, reutilización/generación de miniaturas y previews, detección de diferencias, plan de sincronización, lectura paginada, paleta de colores, trazabilidad de derivados, y cache normal por `video_id` + migración legacy (B8.2).
-- `visor_videos.py`: interfaz grafica. Carga inicial asíncrona, "Cargar mas", filtro y ordenamiento, tarjetas con miniaturas/previews y exploración temporal, marcadores/segmentos con edición, selección, menú contextual, operaciones de organización por lote, panel Organización/Explorer con doble panel y drag & drop, escaneo asíncrono y recarga con preservación de filtros/orden/selección/viewport, y pipeline B8.1/B8.2 (guardar antes de miniaturas, `cantidad_miniaturas` por `video_id`, `v<id>`).
+- `visor_videos.py`: interfaz grafica. Carga inicial asíncrona, "Cargar mas", filtro y ordenamiento, tarjetas con miniaturas/previews y exploración temporal, marcadores/segmentos con edición, selección, menú contextual, operaciones de organización por lote, panel Organización/Explorer con doble panel y drag & drop, escaneo asíncrono y recarga con preservación de filtros/orden/selección/viewport, pipeline B8.1/B8.2 (guardar antes de miniaturas, `cantidad_miniaturas` por `video_id`, `v<id>`), y Beta 9: Densidad `Auto/15/30/60/120/200` autoridad temporal, vistas Dinámica/Tira/Reducida/Ajustada, Tira virtualizada horizontal con anotaciones temporales, Reducida sin scroll propio, Ajustada grilla responsive virtualizada, doble clic temporal exacto, columna datos estable con elipsis, autorepaint P06 con `version+request_id` y hover desactivable (`FACTOR_VISTA_AMPLIADA_DESACTIVADO=0`).
 - `arbol_navegacion.py`: panel izquierdo con nodo raiz "Este equipo", discos y carpetas con carga diferida, selección funcional, indicadores de escaneo, modo selección multicarpeta.
 - `rutas.py`: resolucion centralizada de rutas (raiz, BD, miniaturas, videos) independiente del CWD, con soporte PyInstaller, `ruta_video_existente`, `resolver_destino_drop`/`validar_destino_drop_completo`, `listar_subcarpetas` y `normalizar_ruta_clave` (B8.1: `strip+abspath+normpath+normcase`).
-- `configuracion.py`: persistencia de preferencias en `configuracion.json` (carpeta, subcarpetas, cantidad de previews, escaneo automático, tamaños, vista ampliada, modo alcance, orden, nombres de colores, versión/build).
+- `configuracion.py`: persistencia de preferencias en `configuracion.json` (carpeta, subcarpetas, cantidad de previews, escaneo automático, tamaños, vista ampliada, modo alcance, orden, nombres de colores, versión/build `Beta 9 - B9.9` publicada vía `v9.0-beta`/`origin/beta9`; `FACTOR_VISTA_AMPLIADA_DESACTIVADO=0` B9 hover).
 - `tareas.py`: infraestructura generica (`TareaBase` + `GestorTareas`).
 - `tareas_videos.py`: tareas específicas (escaneo, FFprobe, tamaños, miniaturas, lectura paginada, guardado, previews progresivas, sincronización, marcadores/segmentos/colores, exploración densa, exportación segmento/lote/secuencia, organización, prevalidación drop) y **B8.2** `TareaMiniaturasPorId`, `TareaPreviewsPorId`, `TareaMigrarCacheLegacy`, `TareaActualizarCantidadMiniaturas` (existen y verificadas por búsqueda en código).
 - `operaciones.py` + `copiar/mover/eliminar/crear_carpeta/lote/renombrar_*`: lógica pura de operaciones de archivos (copiar/pegar/eliminar a Papelera, mover, renombrar) — base para `TareaLoteOperaciones`.
@@ -92,8 +92,8 @@ Mantenidos como ajenos al visor: `main.py` (script de prueba de operaciones), `o
 
 ## 7. Pruebas
 
-- Amplia suite de pruebas automatizadas versionadas `prueba_*.py` (desde `prueba_tareas.py` hasta `prueba_drag_*`, `prueba_version_build.py`, `prueba_integracion_b612.py`, `prueba_b81_identidad.py`, `prueba_b82_cache_id.py`, etc.).
-- Arnés smoke (`prueba_smoke.py`) y suites de organización/exportación/derivados integradas.
+- Amplia suite de pruebas automatizadas versionadas `prueba_*.py` (desde `prueba_tareas.py` hasta `prueba_drag_*`, `prueba_version_build.py` `Beta 9 - B9.9`, `prueba_integracion_b612.py`, `prueba_b81_identidad.py`, `prueba_b82_cache_id.py`, `prueba_b92_*`–`prueba_b96_*`, `prueba_b971_*`–`prueba_b973_*`, `prueba_b9_hover_miniatura_desactivable.py`, etc.).
+- Arnés smoke (`prueba_smoke.py`) y suites de organización/exportación/derivados/Beta 9 integradas.
 - Fallos históricos y transitorios ver `STATUS.md`; tests no deben modificar estado real del usuario (`RULES.md` 7).
 
 ## 8. Puntos de extension previstos
@@ -106,7 +106,7 @@ Mantenidos como ajenos al visor: `main.py` (script de prueba de operaciones), `o
 
 - Centro de navegacion permanente extensible (ya con Organización/Explorer).
 - Herramientas de manipulación basadas en el modelo visual de escenas/previews sin timeline.
-- Cambios por etapas pequeñas; cada etapa extiende la arquitectura solo en su alcance aprobado. **Beta 8 — B8.1–B8.4 completadas y publicadas** (`v8.0-beta`/`e851c7c`; sin arquitectura futura de Beta 9 aún).
+- Cambios por etapas pequeñas; cada etapa extiende la arquitectura solo en su alcance aprobado. **Beta 8 — B8.1–B8.4 completadas y publicadas** (`v8.0-beta`/`e851c7c`) y **Beta 9 B9.0–B9.9 técnico `03fd856` + hover desactivable `41216a1` cerrada y publicada** (`v9.0-beta`/`origin/beta9`; último commit técnico B9.9 `03fd856` previo al cierre; identidad `Beta 9 - B9.9`; arquitectura Beta 9 vigente; sin GitHub Release ni instalador público; próximo foco Beta 10).
 
 ## 10. Decisiones arquitectonicas duraderas
 

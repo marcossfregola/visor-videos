@@ -28,19 +28,19 @@ Migración de DB existente, homónimos, cache, miniaturas/previews, FFprobe, sin
 
 **Objetivo:** mejorar directamente la función principal: identificar y explorar visualmente videos mediante previews.
 
-* **P01** — tarjetas expandidas con muchas más previews.
-* **P02** — gestión de expansión: qué tarjetas quedan abiertas/fijadas y cuáles pueden autocolapsar.
-* **P03** — distintos modos de expansión/inspección.
-* **P04** — mejor navegación entre muchas previews.
-* **P05** — tres modalidades de muchas previews: todas + scroll; cantidad reducida sin scroll; todas ajustadas automáticamente al ancho.
-* **P06** — actualización automática de previews después de generación.
+* **P01** — tarjetas expandidas con muchas más previews (Densidad como única autoridad temporal).
+* **P02** — gestión de expansión: tarjetas fijadas persistentes durante la vista; múltiples fijadas; colapsar manualmente desfija.
+* **P03** — distintos modos de expansión/inspección — vistas Dinámica, Tira, Reducida y Ajustada.
+* **P04** — mejor navegación entre muchas previews (Tira virtualizada horizontal con anotaciones temporales y marcadores/segmentos).
+* **P05** — tres modalidades: Tira (todas + scroll virtualizado), Reducida (cantidad reducida sin scroll propio), Ajustada (todas ajustadas al ancho en grilla responsive virtualizada/acotada).
+* **P06** — actualización automática de previews después de generación (autorepaint/retries acotados; B9.9 corrige pending agotado y stale por `video_id+version+request_id`).
 * **P07** — corregir flicker de vista ampliada/hover.
-* **P08** — activar/desactivar ampliación por hover, verificando primero lo ya implementado.
-* **P09** — alineación horizontal uniforme de previews/información; ancho estable para información y elipsis.
-* **P18** — mejorar ubicación del resumen de marcadores/segmentos cuando la tarjeta está colapsada.
-* **P23** — verificar/corregir doble clic en preview temporal para abrir exactamente en el timestamp correspondiente.
+* **P08** — hover ampliado desactivable con sentinel `0` persistente (`FACTOR_VISTA_AMPLIADA_DESACTIVADO`).
+* **P09** — alineación horizontal uniforme; columna de datos estable con elipsis.
+* **P18** — reubicación de barra resumen B6.4 sobre miniaturas cuando colapsada (solo reubicación, sin reestructuración).
+* **P23** — doble clic temporal exacto en Tira/Reducida/Ajustada.
 
-**Requisito técnico Beta 9:** `T04 — RAM/QPixmap` — **diagnóstico base completado en B9.1 (PC de desarrollo)**: riesgo de RAM/QPixmap caracterizado vía medición real (`WorkingSet64`/`PrivateMemorySize64`, 7 previews `512×288`, 1 expandida, 10 ciclos sin crecimiento acumulativo observado, cambio carpeta/recarga por flujo real, modelo `3P+2+2D`); validación en notebook objetivo sigue pendiente para configuraciones finales; no se ha implementado virtualización ni multi-expansión.
+**Requisito técnico Beta 9:** `T04 — RAM/QPixmap` — **diagnóstico base completado en B9.1 (PC de desarrollo)**: riesgo caracterizado vía medición real (`WorkingSet64`/`PrivateMemorySize64`, 7 previews `512×288`, 1 expandida, 10 ciclos sin crecimiento acumulativo observado, cambio carpeta/recarga por flujo real, modelo `3P+2+2D`); validación en notebook sigue pendiente; virtualización implementada en Tira/Ajustada (B9.3/B9.5).
 
 ## Beta 10 — VISTAS, NAVEGACIÓN Y ORGANIZACIÓN PERSONAL
 
@@ -73,11 +73,12 @@ Migración de DB existente, homónimos, cache, miniaturas/previews, FFprobe, sin
 Mantener registrada como deuda conocida, **NO convertirla automáticamente en una beta comprometida:**
 
 * **T01** — crecimiento acumulativo de cache/miniaturas.
-* **T02** — reutilización de metadata sin hash de contenido. Hash/fingerprint puede ser relevante más adelante para reconciliar movimientos externos, no para resolver T09.
-* **T06** — duplicación de helpers/infraestructura de tests.
-* **T11** — tests históricos potencialmente no aislados.
-* **T12** — fallo transitorio no reproducido.
+* **T02** — reutilización de metadata sin hash de contenido (`mtime` sin hash). Hash/fingerprint puede ser relevante más adelante para reconciliar movimientos externos, no para resolver T09.
+* **T06** — duplicación de helpers/infraestructura de tests (helpers de tests duplicados).
+* **T11** — tests históricos potencialmente no aislados / warnings `QMouseEvent`/`disconnect` no bloqueantes.
+* **T12** — fallo transitorio no reproducido (incl. `prueba_doble_clic.py` T10/T12/T13/T14 histórica).
 * **T15** — coexistencia FFmpeg 8.1.1 / 9.0 mientras no produzca fallo real.
+* **Deudas Beta 9 aceptadas no bloqueantes:** `prueba_doble_clic.py` T10/T12/T13/T14 (histórica), `prueba_pulido_ancho_layout.py` T08, `prueba_carga_visual_b462.py` P02/P06 histórica ajena a P06; Vista Ajustada Densidad 120/200 pocas miniaturas blancas permanentes (validación humana); rendimiento densidad alta demora por FFmpeg secuencial por muestra faltante (costo dominante, sin reducir N); warnings `QMouseEvent`/`disconnect`.
 
 `T04` pasa a requisito explícito de Beta 9. `T03`/`T16` pasan al alcance Beta 8. `T05`/`T07`/`T08` pasan a Beta 10 según lo anterior. `T09` es el núcleo técnico de Beta 8.
 
@@ -94,13 +95,27 @@ Lo no listado arriba permanece en `BACKLOG.md` como **quizá**: selección intel
 
 **Beta 8 — CERRADA Y PUBLICADA** `beta8`/`origin/beta8` y `v8.0-beta` → `e851c7c2be1c3d12aac8ccb633e1aaecea2b7d3d` (HEAD `B8 Preparar identidad de publicación`; técnico `97cb2f7`, documental `38fbc88`; validación humana aprobada).
 
-## Beta 9 — apertura
+## Beta 9 — progreso (cerrada y publicada `v9.0-beta`)
 
-**B9.0 — Apertura — 2026-08-24:** rama `beta9` creada localmente exactamente desde `v8.0-beta`/`e851c7c2be1c3d12aac8ccb633e1aaecea2b7d3d` (baseline publicado de Beta 8; NO desde `main` `d04a712`). Sin implementación funcional; alcance Beta 9 permanece P01–P09, P18, P23 y T04 según lo ya decidido. Sin push/tag/Release.
+- **B9.0 — Apertura — 2026-08-24:** `8fe1054` rama `beta9` creada exactamente desde `v8.0-beta`/`e851c7c2be1c3d12aac8ccb633e1aaecea2b7d3d` (NO desde `main` `d04a712`). Sin push/tag/Release.
+- **B9.1 — Diagnóstico T04 — `76f3777048bb44e76b40ccf61ab07b605e914d64`:** medición real PC desarrollo (`WorkingSet64`/`PrivateMemorySize64`, 7 previews `512×288`, 1 expandida, 10 ciclos sin crecimiento acumulativo, modelo `3P+2+2D`); notebook pendiente.
+- **B9.2 — Gestión expansión fijada — `d81fc93fe5f12d4ab3367a8fefb459851d77e67a`:** tarjetas fijadas persistentes, múltiples fijadas, colapsar desfija.
+- **B9.3 — Tira virtual — `431f1fa8f142e6d776713a6cfe7c17ab3645945d`:** Tira virtualizada horizontal, anotaciones temporales, marcadores/segmentos; Densidad `Auto/15/30/60/120/200` autoridad temporal.
+- **B9.4 — Reducida — `4d475cefd6ef974c3baa57e65ecb4c7d962d9971`:** modalidad Reducida sin scroll horizontal propio.
+- **B9.5 — Ajustada — `4dcaae0e3400eaa065f115cf1ff70df649cfdb3b`:** Vista Ajustada en grilla.
+- **B9.6 — Geometría responsive — `24bd7a9e86d92925e57d71d6f94b458f3d1017fa`:** grilla responsive.
+- **B9.7.1 — Doble clic temporal — `8c1ea0c6e5cec3c6bdf3cf9808a6ba959c30a790`:** doble clic exacto Tira/Reducida/Ajustada.
+- **B9.7.2 — Alineación/elipsis — `4de180d43d1dfd4db819582cfaf56fea4325eb43`:** columna datos estable con elipsis.
+- **B9.7.3 — Autorepaint Ajustada — `2e2335b795ce4d10ee55d600fd468bddecf8b825`:** actualización automática P06.
+- **B9.8 P18 — `4909020e11e52121d0a2a13307964bed7247cbde`:** reubicación barra resumen B6.4 sobre miniaturas (simplificado, sin reestructuración).
+- **Hover desactivable — `41216a10edfed416d32df7a39e7eaccd77b9b5ae`:** sentinel `0` persistente (`FACTOR_VISTA_AMPLIADA_DESACTIVADO`).
+- **B9.9 — Convergencia visual — `03fd856c9e43ee092ce09d87bad8791292e19eb3`:** corrige pending agotado (`retry>=3`) y stale por `video_id+version+request_id`; estabiliza regresiones.
+
+**Beta 9 — CERRADA Y PUBLICADA** `beta9`/`origin/beta9` + tag anotado `v9.0-beta` (último commit técnico B9.9 `03fd856` previo al cierre; hover `41216a1`; identidad `Beta 9 - B9.9`); sin GitHub Release ni instalador público; próximo foco Beta 10.
 
 ## Próximo paso exacto
 
-**Beta 9 — Exploración visual avanzada** (P01–P09, P18, P23, T04) — **en planificación (B9.0), sin implementación**. `beta8` cerrada y publicada, sin pendientes de identidad/cache.
+**Beta 9 — cerrada y publicada `v9.0-beta`.** Próximo: **Beta 10 — Vistas, navegación y organización personal** (P10/P11/P22/P12–P14/P24/T07/T08/T05).
 
 ## Criterio
 
