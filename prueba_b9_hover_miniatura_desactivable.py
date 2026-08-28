@@ -153,6 +153,20 @@ def _ventana_con(factor=None):
 
 def main():
     app = QApplication.instance() or QApplication(sys.argv)
+    # B9.9 fix histórico 106: evitar menú modal bloqueante (QMenu.exec)
+    # Mock local no destructivo — preserva assertions reales del hover
+    try:
+        from PySide6.QtWidgets import QMenu as _QMenu
+        _orig_exec = _QMenu.exec
+        _QMenu.exec = lambda self, *a, **k: None
+        visor_videos.QMenu.exec = lambda self, *a, **k: None  # type: ignore[attr-defined]
+    except Exception:
+        _orig_exec = None
+    try:
+        _orig_mostrar = VisorVideos._mostrar_menu_contextual
+        VisorVideos._mostrar_menu_contextual = lambda self, ident: None  # type: ignore[assignment]
+    except Exception:
+        _orig_mostrar = None
 
     _CONTADOR[0] = 1
     configurar_factor_vista_ampliada(1.6)

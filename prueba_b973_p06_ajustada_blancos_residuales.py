@@ -920,9 +920,27 @@ def test_D_multi_retry_isolated():
         try: t._cache_visual_gen+=1
         except: t._cache_visual_gen=1
     try:
+        # B9.9 harness isolation: drenar eventos y timers del fixture previo; limpiar cola residual fuera del escenario
+        for _ in range(3):
+            QApplication.processEvents(); time.sleep(0.02); QApplication.processEvents()
+        try:
+            t1._ajustada_grid._pending_need_emitted=False
+            t2._ajustada_grid._pending_need_emitted=False
+        except: pass
+        try: v._cola_previews_visuales.clear()
+        except: pass
+        try: v._preview_visual_op_actual=None
+        except: pass
+        # limpiar estado externo ajeno al escenario generado por setup automático (pending/retry de visibles auto-solicitados)
+        try:
+            t1._cache_visual_pending.clear()
+            t2._cache_visual_pending.clear()
+            t1._ajustada_visual_retry.clear()
+            t2._ajustada_visual_retry.clear()
+        except: pass
         ms1=sorted(t1._tira_logical_ms)[0]
         ms2=sorted(t2._tira_logical_ms)[0]
-        # agotar t1 a 3
+        # agotar t1 a 3 — partir de 0, producto debe llevar a 3 sin forzado
         ver1=t1._densidad_version; vid1=t1._video_id
         for _ in range(3):
             try:
@@ -930,6 +948,16 @@ def test_D_multi_retry_isolated():
                 v._preview_visual_op_actual={"video_id": vid1, "version": ver1, "ms_lista": [ms1], "request_id": gen}
                 v._al_resultado_preview_visual({"video_id": vid1, "version": ver1, "request_id": gen, "imagenes": []})
                 v._preview_visual_op_actual=None; QApplication.processEvents()
+                # aislamiento entre iteraciones: limpiar cola/flat residual para que next _al_resultado no vea queued falso y discard funcione
+                try: v._cola_previews_visuales.clear()
+                except: pass
+                try: v._preview_visual_op_actual=None
+                except: pass
+                try:
+                    t1._ajustada_grid._pending_need_emitted=False
+                    t2._ajustada_grid._pending_need_emitted=False
+                except: pass
+                QApplication.processEvents()
             except: pass
         retry1=dict(getattr(t1,"_ajustada_visual_retry",{}))
         retry2=dict(getattr(t2,"_ajustada_visual_retry",{}))
@@ -948,6 +976,10 @@ def test_D_multi_retry_isolated():
         except: pass
         if not reqs:
             return False, f"D FAIL t2 bloqueado injustamente retry2 {retry2} retry1 {retry1}"
+        # B9.9 P06 FIX: sin limpieza post-secuencia — bloqueo debe verificarse por retry==3 y pending sin respaldo, no por discard manual
+        # Verificar que producto dejó pending sin ms1 agotado (contrato D: no pending sin respaldo)
+        if ms1 in t1._cache_visual_pending:
+            return False, f"D FAIL post-secuencia pending huérfano ms1 {ms1} aún en pending {sorted(t1._cache_visual_pending)} retry {dict(t1._ajustada_visual_retry)} cola {list(v._cola_previews_visuales)} op {v._preview_visual_op_actual}"
         # t1 debe estar bloqueado
         reqs1=[]
         def _cap1(p):
@@ -958,7 +990,7 @@ def test_D_multi_retry_isolated():
         try: t1.preview_visual_solicitada.disconnect(_cap1)
         except: pass
         if reqs1:
-            return False, f"D FAIL t1 no bloqueado tras agotar {reqs1}"
+            return False, f"D FAIL t1 no bloqueado tras agotar {reqs1} retry {dict(t1._ajustada_visual_retry)} pending {t1._cache_visual_pending}"
         return True, f"D PASS t1 {retry1.get(ms1)} t2 {retry2.get(ms2,0)} aislados"
     finally:
         _cleanup_vis(v)

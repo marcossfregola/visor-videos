@@ -5009,6 +5009,13 @@ class Tarjeta(QFrame):
                 pass
             try:
                 cur_pending = getattr(self, "_cache_visual_pending", set()) or set()
+                # B9.9 P06 FIX: no mantener pending agotado (retry==3) sin respaldo
+                try:
+                    retry = getattr(self, "_ajustada_visual_retry", {}) or {}
+                    if retry:
+                        cur_pending = set(m for m in cur_pending if retry.get(m, 0) < AJUSTADA_VISUAL_MAX_RETRIES)
+                except Exception:
+                    pass
                 self._cache_visual_pending = set(m for m in cur_pending if m in requeridos and m not in self._cache_visual)
             except Exception:
                 self._cache_visual_pending = set()
@@ -6074,6 +6081,13 @@ class Tarjeta(QFrame):
             return
         if ms in getattr(self, "_cache_visual_pending", set()):
             return
+        # B9.9 P06 FIX: filtrar retry agotado antes de marcar pending/emitir
+        try:
+            retry = getattr(self, "_ajustada_visual_retry", {}) or {}
+            if retry.get(ms, 0) >= AJUSTADA_VISUAL_MAX_RETRIES:
+                return
+        except Exception:
+            pass
         try:
             self._cache_visual_gen += 1
         except Exception:
@@ -6091,6 +6105,15 @@ class Tarjeta(QFrame):
         except Exception:
             vecinos = []
         ms_list = [ms] + [v for v in vecinos if v not in self._cache_visual and v not in self._cache_visual_pending]
+        # B9.9 P06 FIX: filtrar vecinos agotados
+        try:
+            retry2 = getattr(self, "_ajustada_visual_retry", {}) or {}
+            if retry2:
+                ms_list = [m for m in ms_list if retry2.get(m, 0) < AJUSTADA_VISUAL_MAX_RETRIES]
+                if not ms_list:
+                    return
+        except Exception:
+            pass
         ms_list = ms_list[:5]
         # pending representa requests actuales; sin pop arbitrario
         for m in ms_list:
@@ -9011,14 +9034,22 @@ class VisorVideos(QMainWindow):
                                 pass
                     continue
                 if getattr(tarjeta, "_cache_visual_gen", None) != request_id:
-                    # B9.7.3 P06 — stale gen: preservar pending vigente que está en cola siguiente
+                    # B9.9 P06 FIX: preservar solo pending vigente (video_id/version/request_id vigente), no cualquier ms coincidente
                     try:
                         queued = set()
+                        cur_ver = getattr(tarjeta, "_densidad_version", None)
+                        cur_gen = getattr(tarjeta, "_cache_visual_gen", None)
                         for op_q in self._cola_previews_visuales:
-                            if op_q.get("video_id") == video_id:
-                                queued.update(op_q.get("ms_lista") or [])
-                        if self._preview_visual_op_actual and self._preview_visual_op_actual.get("video_id") == video_id:
-                            queued.update(self._preview_visual_op_actual.get("ms_lista") or [])
+                            if op_q.get("video_id") != video_id:
+                                continue
+                            if op_q.get("version") != cur_ver:
+                                continue
+                            if op_q.get("request_id") != cur_gen:
+                                continue
+                            queued.update(op_q.get("ms_lista") or [])
+                        op_act = getattr(self, "_preview_visual_op_actual", None)
+                        if op_act and op_act.get("video_id") == video_id and op_act.get("version") == cur_ver and op_act.get("request_id") == cur_gen:
+                            queued.update(op_act.get("ms_lista") or [])
                     except Exception:
                         queued = set()
                     for ms in ms_lista:
@@ -9032,11 +9063,19 @@ class VisorVideos(QMainWindow):
                 if getattr(tarjeta, "_densidad_version", None) != version:
                     try:
                         queued = set()
+                        cur_ver = getattr(tarjeta, "_densidad_version", None)
+                        cur_gen = getattr(tarjeta, "_cache_visual_gen", None)
                         for op_q in self._cola_previews_visuales:
-                            if op_q.get("video_id") == video_id:
-                                queued.update(op_q.get("ms_lista") or [])
-                        if self._preview_visual_op_actual and self._preview_visual_op_actual.get("video_id") == video_id:
-                            queued.update(self._preview_visual_op_actual.get("ms_lista") or [])
+                            if op_q.get("video_id") != video_id:
+                                continue
+                            if op_q.get("version") != cur_ver:
+                                continue
+                            if op_q.get("request_id") != cur_gen:
+                                continue
+                            queued.update(op_q.get("ms_lista") or [])
+                        op_act = getattr(self, "_preview_visual_op_actual", None)
+                        if op_act and op_act.get("video_id") == video_id and op_act.get("version") == cur_ver and op_act.get("request_id") == cur_gen:
+                            queued.update(op_act.get("ms_lista") or [])
                     except Exception:
                         queued = set()
                     for ms in ms_lista:
@@ -9095,18 +9134,24 @@ class VisorVideos(QMainWindow):
             tarjeta = self._tarjeta_por_id(video_id)
             if tarjeta is None or not tarjeta._expandida:
                 return
-            # invalidación por generación/version — no borrar pending de generación nueva válida (C)
+            # invalidación por generación/version — no borrar pending de generación nueva válida (C) — B9.9 P06 FIX vigente por version/request_id
             if getattr(tarjeta, "_cache_visual_gen", None) != request_id:
-                # descartar resultado viejo pero preservar pending si ms aún requerido por op encolada vigente
+                # descartar resultado viejo pero preservar pending solo si ms aún requerido por op vigente (version/request_id vigente)
                 try:
                     queued_ms = set()
+                    cur_ver = getattr(tarjeta, "_densidad_version", None)
+                    cur_gen = getattr(tarjeta, "_cache_visual_gen", None)
                     for op_q in self._cola_previews_visuales:
-                        if op_q.get("video_id") == video_id:
-                            queued_ms.update(op_q.get("ms_lista") or [])
-                    # también considerar op activa si es del mismo video pero con gen vigente (no este stale)
-                    if getattr(self, "_preview_visual_op_actual", None) and self._preview_visual_op_actual.get("video_id") == video_id:
-                        # si activa es vigente, no aplica (este stale es diferente request_id)
-                        pass
+                        if op_q.get("video_id") != video_id:
+                            continue
+                        if op_q.get("version") != cur_ver:
+                            continue
+                        if op_q.get("request_id") != cur_gen:
+                            continue
+                        queued_ms.update(op_q.get("ms_lista") or [])
+                    op_act = getattr(self, "_preview_visual_op_actual", None)
+                    if op_act and op_act.get("video_id") == video_id and op_act.get("version") == cur_ver and op_act.get("request_id") == cur_gen:
+                        queued_ms.update(op_act.get("ms_lista") or [])
                 except Exception:
                     queued_ms = set()
                 for ms, _ in imagenes:
@@ -9119,9 +9164,19 @@ class VisorVideos(QMainWindow):
             if getattr(tarjeta, "_densidad_version", None) != version:
                 try:
                     queued_ms = set()
+                    cur_ver = getattr(tarjeta, "_densidad_version", None)
+                    cur_gen = getattr(tarjeta, "_cache_visual_gen", None)
                     for op_q in self._cola_previews_visuales:
-                        if op_q.get("video_id") == video_id:
-                            queued_ms.update(op_q.get("ms_lista") or [])
+                        if op_q.get("video_id") != video_id:
+                            continue
+                        if op_q.get("version") != cur_ver:
+                            continue
+                        if op_q.get("request_id") != cur_gen:
+                            continue
+                        queued_ms.update(op_q.get("ms_lista") or [])
+                    op_act = getattr(self, "_preview_visual_op_actual", None)
+                    if op_act and op_act.get("video_id") == video_id and op_act.get("version") == cur_ver and op_act.get("request_id") == cur_gen:
+                        queued_ms.update(op_act.get("ms_lista") or [])
                 except Exception:
                     queued_ms = set()
                 for ms, _ in imagenes:
@@ -9150,7 +9205,7 @@ class VisorVideos(QMainWindow):
                         tarjeta._cache_visual[ms] = pm_s
                 except Exception:
                     pass
-            # B9.7.3 P06 — batch parcial: limpiar pending huérfano y contar retry acotado (max AJUSTADA_VISUAL_MAX_RETRIES)
+            # B9.9 P06 FIX — batch parcial vigente: limpiar pending huérfano verificando cola vigente por request_id/version, no solo ms
             try:
                 op_actual = getattr(self, "_preview_visual_op_actual", None)
                 if isinstance(op_actual, dict) and op_actual.get("request_id") == request_id and op_actual.get("video_id") == video_id:
@@ -9160,9 +9215,16 @@ class VisorVideos(QMainWindow):
                     if faltantes:
                         queued = set()
                         try:
+                            cur_ver = getattr(tarjeta, "_densidad_version", None)
+                            cur_gen = getattr(tarjeta, "_cache_visual_gen", None)
                             for op_q in getattr(self, "_cola_previews_visuales", []) or []:
-                                if op_q.get("video_id") == video_id:
-                                    queued.update(op_q.get("ms_lista") or [])
+                                if op_q.get("video_id") != video_id:
+                                    continue
+                                if op_q.get("version") != cur_ver:
+                                    continue
+                                if op_q.get("request_id") != cur_gen:
+                                    continue
+                                queued.update(op_q.get("ms_lista") or [])
                         except Exception:
                             queued = set()
                         for mf in list(faltantes):

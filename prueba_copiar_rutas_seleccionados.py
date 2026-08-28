@@ -38,6 +38,17 @@ def verifica(condicion, descripcion):
 
 
 def _clipboard():
+    # B9.9 robustez headless Windows: clipboard puede tardar tras setText
+    for _ in range(20):
+        QApplication.processEvents()
+        txt = QApplication.clipboard().text()
+        # si hay contenido, esperar un poco más por estabilidad y retornar
+        if txt:
+            time.sleep(0.02)
+            QApplication.processEvents()
+            txt2 = QApplication.clipboard().text()
+            return txt2 if txt2 else txt
+        time.sleep(0.015)
     QApplication.processEvents()
     return QApplication.clipboard().text()
 
@@ -85,19 +96,22 @@ def main():
 
     _CONTADOR[0] = 1
 
-    carpeta_temp = tempfile.TemporaryDirectory()
+    # B9.9 fix: alinear fixture con contrato ruta_video_existente —
+    # los archivos deben existir exactamente en la ruta persistida del catálogo
+    # (temp.name), no en una carpeta separada.
+    carpeta_temp = None  # compat: mantener nombre para lecturas si hiciera falta
     try:
         for nombre_arch in ["v001.mp4", "v002.mp4", "v003.mp4", "v004.mp4", "v005.mp4"]:
-            with open(os.path.join(carpeta_temp.name, nombre_arch), "w") as f:
+            with open(os.path.join(temp.name, nombre_arch), "w") as f:
                 f.write("contenido")
 
-        ventana.carpeta_seleccionada = carpeta_temp.name
+        ventana.carpeta_seleccionada = temp.name
 
         # --- unico elemento seleccionado ---
         ventana._limpiar_seleccion()
         ventana._al_seleccionar_tarjeta("v003.mp4", False)
         ventana._copiar_rutas_seleccionados()
-        ruta_esperada = os.path.abspath(os.path.join(carpeta_temp.name, "v003.mp4"))
+        ruta_esperada = os.path.abspath(os.path.join(temp.name, "v003.mp4"))
         verifica(
             _clipboard() == ruta_esperada,
             "unico seleccionado: una ruta en el portapapeles",
@@ -114,9 +128,9 @@ def main():
             len(rutas) == 3,
             "multiples seleccionados: 3 lineas en el portapapeles",
         )
-        ruta_001 = os.path.abspath(os.path.join(carpeta_temp.name, "v001.mp4"))
-        ruta_003 = os.path.abspath(os.path.join(carpeta_temp.name, "v003.mp4"))
-        ruta_005 = os.path.abspath(os.path.join(carpeta_temp.name, "v005.mp4"))
+        ruta_001 = os.path.abspath(os.path.join(temp.name, "v001.mp4"))
+        ruta_003 = os.path.abspath(os.path.join(temp.name, "v003.mp4"))
+        ruta_005 = os.path.abspath(os.path.join(temp.name, "v005.mp4"))
         verifica(
             rutas == [ruta_001, ruta_003, ruta_005],
             "multiples seleccionados: orden visible correcto",
@@ -128,10 +142,18 @@ def main():
         verifica(True, "sin carpeta seleccionada: no lanza excepcion")
 
         # --- sin elementos seleccionados no copia nada ---
-        ventana.carpeta_seleccionada = carpeta_temp.name
+        ventana.carpeta_seleccionada = temp.name
         ventana._limpiar_seleccion()
+        QApplication.clipboard().clear()
+        QApplication.processEvents()
         QApplication.clipboard().setText("antes")
         QApplication.processEvents()
+        # robustez headless Windows: clipboard puede tardar tras multi-line
+        for _ in range(30):
+            QApplication.processEvents()
+            if QApplication.clipboard().text() == "antes":
+                break
+            time.sleep(0.02)
         ventana._copiar_rutas_seleccionados()
         verifica(
             _clipboard() == "antes",
@@ -139,9 +161,9 @@ def main():
         )
 
         # --- "Copiar ruta" original sigue funcionando ---
-        ventana.carpeta_seleccionada = carpeta_temp.name
+        ventana.carpeta_seleccionada = temp.name
         ventana._copiar_ruta("v002.mp4")
-        ruta_002 = os.path.abspath(os.path.join(carpeta_temp.name, "v002.mp4"))
+        ruta_002 = os.path.abspath(os.path.join(temp.name, "v002.mp4"))
         verifica(
             _clipboard() == ruta_002,
             "Copiar ruta original: ruta individual correcta",
@@ -165,7 +187,11 @@ def main():
             "VisorVideos tiene metodo _copiar_rutas_seleccionados",
         )
     finally:
-        carpeta_temp.cleanup()
+        if carpeta_temp is not None:
+            try:
+                carpeta_temp.cleanup()
+            except Exception:
+                pass
 
     ventana.close()
     ventana.gestor.cerrar()
